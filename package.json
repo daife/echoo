@@ -1,0 +1,21 @@
+{
+  "name": "echoo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "dev": "turbo dev",
+    "dev:client": "pnpm --filter @echoo/client dev",
+    "dev:server": "pnpm --filter @echoo/server dev",
+    "build": "turbo build",
+    "typecheck": "turbo typecheck",
+    "lint": "turbo lint",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "turbo": "^2.5.5",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,2 @@
+description = "Default permissions for the Echoo keepalive plugin"
+permissions = ["allow-start", "allow-stop", "allow-status"]
