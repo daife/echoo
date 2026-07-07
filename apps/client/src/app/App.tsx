@@ -1,7 +1,9 @@
 import { Bell, ChatCircleText, Compass, GearSix, House, LinkSimple, UserCircle } from "@phosphor-icons/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "./providers/AuthProvider";
 import { BindingsPanel } from "../features/bindings/components/BindingsPanel";
 import { ConversationRail } from "../features/conversations/components/ConversationRail";
+import { AuthPage } from "../pages/auth/AuthPage";
 import { CreateAgentPage } from "../pages/create-agent/CreateAgentPage";
 import { ExplorePage } from "../pages/explore/ExplorePage";
 import { HomePage } from "../pages/home/HomePage";
@@ -9,7 +11,7 @@ import { MessagesPage } from "../pages/messages/MessagesPage";
 import { ProfilePage } from "../pages/profile/ProfilePage";
 import { SettingsPage } from "../pages/settings/SettingsPage";
 
-type AppView = "home" | "messages" | "bindings" | "settings" | "explore" | "profile" | "create";
+type AppView = "home" | "messages" | "bindings" | "settings" | "explore" | "profile" | "create" | "auth";
 
 const navItems = [
   { id: "home", label: "Home", icon: House },
@@ -19,9 +21,29 @@ const navItems = [
 ] satisfies { id: AppView; label: string; icon: typeof House }[];
 
 export function App() {
+  const auth = useAuth();
   const [view, setView] = useState<AppView>("home");
-  const showConversationRail = view === "home" || view === "messages" || view === "bindings" || view === "settings";
+  const protectedView = view === "messages" || view === "bindings" || view === "settings" || view === "profile" || view === "create";
+  const showConversationRail =
+    (view === "home" || view === "messages" || view === "bindings" || view === "settings") && (!protectedView || !!auth.user);
+
+  useEffect(() => {
+    if (auth.authLinkParams.resetToken || auth.authLinkParams.verificationToken) {
+      setView("auth");
+    }
+  }, [auth.authLinkParams.resetToken, auth.authLinkParams.verificationToken]);
+
   const ActivePage = useMemo(() => {
+    if (auth.isLoading) {
+      return (
+        <div className="grid min-h-[calc(100dvh-8rem)] place-items-center">
+          <div className="glass-panel rounded-full px-5 py-3 text-sm text-white/70">Checking your session</div>
+        </div>
+      );
+    }
+    if (view === "auth" || (protectedView && !auth.user)) {
+      return <AuthPage onAuthenticated={() => setView(view === "auth" ? "messages" : view)} />;
+    }
     if (view === "explore") return <ExplorePage />;
     if (view === "profile") return <ProfilePage onOpenChat={() => setView("messages")} />;
     if (view === "create") return <CreateAgentPage />;
@@ -29,7 +51,7 @@ export function App() {
     if (view === "bindings") return <BindingsPanel />;
     if (view === "settings") return <SettingsPage />;
     return <HomePage onCreateAgent={() => setView("create")} onOpenChat={() => setView("messages")} />;
-  }, [view]);
+  }, [auth.isLoading, auth.user, protectedView, view]);
 
   return (
     <div className="relative min-h-[100dvh] overflow-hidden bg-[#09090b] text-[#e5e2e1]">
@@ -56,7 +78,7 @@ export function App() {
             <button
               aria-label="Profile"
               className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/[0.04] text-white transition hover:border-white/20"
-              onClick={() => setView("profile")}
+              onClick={() => setView(auth.user ? "profile" : "auth")}
             >
               <UserCircle size={24} weight="duotone" />
             </button>

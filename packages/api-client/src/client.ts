@@ -20,7 +20,8 @@ export class ApiClient {
     body?: unknown,
     query?: Record<string, string | number | undefined>
   ): Promise<T> {
-    const url = new URL(path, this.options.baseUrl);
+    const baseUrl = this.options.baseUrl.endsWith("/") ? this.options.baseUrl : `${this.options.baseUrl}/`;
+    const url = new URL(path.replace(/^\/+/, ""), baseUrl);
     Object.entries(query ?? {}).forEach(([key, value]) => {
       if (value !== undefined) url.searchParams.set(key, String(value));
     });
@@ -36,7 +37,14 @@ export class ApiClient {
     });
 
     if (!response.ok) {
-      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+      let detail = response.statusText;
+      try {
+        const payload = (await response.json()) as { error?: string; message?: string };
+        detail = payload.message ?? payload.error ?? detail;
+      } catch {
+        // Keep the status text when the response body is not JSON.
+      }
+      throw new Error(detail || `API request failed: ${response.status}`);
     }
 
     return (await response.json()) as T;

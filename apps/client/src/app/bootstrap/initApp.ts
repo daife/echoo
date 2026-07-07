@@ -1,4 +1,5 @@
-import { ApiClient, MessageApi } from "@echoo/api-client";
+import { ApiClient, AuthApi, MessageApi } from "@echoo/api-client";
+import { AuthService } from "../../services/AuthService";
 import { MessageService } from "../../services/MessageService";
 import type { RuntimeBundle } from "../../runtimes/factory/RuntimeBundle";
 
@@ -9,6 +10,7 @@ export function initApp(runtime: RuntimeBundle) {
   });
 
   return {
+    authService: new AuthService(new AuthApi(api), runtime.auth, runtime.storage),
     messageService: new MessageService(new MessageApi(api), runtime.storage)
   };
 }

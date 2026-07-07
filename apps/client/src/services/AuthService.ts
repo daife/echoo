@@ -1,14 +1,71 @@
-import type { AuthTokens } from "@echoo/shared";
+import type {
+  AuthSession,
+  ForgotPasswordRequest,
+  LoginRequest,
+  RegisterResponse,
+  RegisterRequest,
+  ResetPasswordRequest,
+  VerifyEmailRequest,
+  UserProfile
+} from "@echoo/shared";
+import type { AuthApi } from "@echoo/api-client";
 import type { AuthRuntime } from "../runtimes/contracts";
+import type { StorageRuntime } from "../runtimes/contracts";
+
+const currentUserKey = "auth.currentUser";
 
 export class AuthService {
-  constructor(private readonly auth: AuthRuntime) {}
+  constructor(
+    private readonly api: AuthApi,
+    private readonly auth: AuthRuntime,
+    private readonly storage: StorageRuntime
+  ) {}
 
-  saveSession(tokens: AuthTokens) {
-    return this.auth.saveTokens(tokens);
+  register(body: RegisterRequest): Promise<RegisterResponse> {
+    return this.api.register(body);
   }
 
-  signOut() {
-    return this.auth.clearTokens();
+  async login(body: LoginRequest) {
+    return this.saveSession(await this.api.login(body));
+  }
+
+  forgotPassword(body: ForgotPasswordRequest) {
+    return this.api.forgotPassword(body);
+  }
+
+  resetPassword(body: ResetPasswordRequest) {
+    return this.api.resetPassword(body);
+  }
+
+  verifyEmail(body: VerifyEmailRequest) {
+    return this.api.verifyEmail(body);
+  }
+
+  async loadCurrentUser() {
+    const token = await this.auth.getAccessToken();
+    if (!token) return null;
+
+    const cached = await this.storage.getSetting<UserProfile>(currentUserKey);
+    if (cached) return cached;
+
+    try {
+      const user = await this.api.me();
+      await this.storage.setSetting(currentUserKey, user);
+      return user;
+    } catch {
+      await this.signOut();
+      return null;
+    }
+  }
+
+  async saveSession(session: AuthSession) {
+    await this.auth.saveTokens(session.tokens);
+    await this.storage.setSetting(currentUserKey, session.user);
+    return session.user;
+  }
+
+  async signOut() {
+    await this.auth.clearTokens();
+    await this.storage.removeSetting(currentUserKey);
   }
 }
