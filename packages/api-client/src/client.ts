@@ -14,6 +14,14 @@ export class ApiClient {
     return this.request<T>("POST", path, body);
   }
 
+  resolveServerPath(path?: string): string | undefined {
+    if (!path) return undefined;
+    if (/^https?:\/\//i.test(path)) return path;
+    const baseUrl = this.options.baseUrl.endsWith("/") ? this.options.baseUrl : `${this.options.baseUrl}/`;
+    const origin = new URL(baseUrl).origin;
+    return `${origin}${path.startsWith("/") ? path : `/${path}`}`;
+  }
+
   private async request<T>(
     method: string,
     path: string,

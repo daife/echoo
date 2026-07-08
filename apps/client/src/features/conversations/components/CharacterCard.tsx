@@ -6,7 +6,8 @@ export interface CharacterCardAgent {
   kind: string;
   description: string;
   gradient: string;
-  openingLine?: string;
+  avatarResourcePath?: string;
+  coverResourcePath?: string;
 }
 
 export function CharacterCard({
@@ -18,10 +19,13 @@ export function CharacterCard({
 }) {
   return (
     <article className="group overflow-hidden rounded-2xl border border-white/8 bg-[#121214] transition duration-300 hover:border-white/18 hover:bg-[#18181b]">
-      <div className={`relative h-56 bg-gradient-to-br ${agent.gradient}`}>
+      <div className={`relative h-56 overflow-hidden bg-gradient-to-br ${agent.gradient}`}>
+        {agent.coverResourcePath ? <img className="absolute inset-0 h-full w-full object-cover opacity-70" src={agent.coverResourcePath} alt="" /> : null}
         <div className="absolute inset-x-8 bottom-0 top-10 rounded-t-full border border-white/10 bg-black/20 backdrop-blur-xl" />
         <div className="absolute bottom-6 left-6 right-6 flex items-end justify-between">
-          <div className="h-20 w-20 rounded-full border border-white/20 bg-white/[0.06] shadow-[0_0_38px_rgba(255,255,255,0.12)]" />
+          <div className="h-20 w-20 overflow-hidden rounded-full border border-white/20 bg-white/[0.06] shadow-[0_0_38px_rgba(255,255,255,0.12)]">
+            {agent.avatarResourcePath ? <img className="h-full w-full object-cover" src={agent.avatarResourcePath} alt={agent.name} /> : null}
+          </div>
           <span className="rounded-full border border-white/12 bg-white/[0.04] px-3 py-1 text-xs text-white/70 backdrop-blur-xl">
             {agent.kind}
           </span>

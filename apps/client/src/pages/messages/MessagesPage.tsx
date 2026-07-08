@@ -35,7 +35,7 @@ export function MessagesPage({ agent }: { agent?: Agent }) {
         {
           id: `${agent.id}-opening`,
           from: "agent",
-          text: agent.openingLine
+          text: agent.introduction || agent.persona
         }
       ]
     : thread;

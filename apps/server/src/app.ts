@@ -8,6 +8,7 @@ import { registerInterfaceBindingRoutes } from "./modules/channels/channels.cont
 import { registerConversationRoutes } from "./modules/conversations/conversations.controller.js";
 import { registerMessagingRoutes } from "./modules/messaging/messaging.controller.js";
 import { registerRealtimeGateway } from "./modules/realtime/ws.gateway.js";
+import { registerResourceRoutes } from "./modules/resources/resources.controller.js";
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
@@ -23,6 +24,7 @@ export async function buildApp() {
   await app.register(registerMessagingRoutes, { prefix: "/api" });
   await app.register(registerConversationRoutes, { prefix: "/api/conversations" });
   await app.register(registerInterfaceBindingRoutes, { prefix: "/api/interface-bindings" });
+  await app.register(registerResourceRoutes, { prefix: "/api/resources" });
   await app.register(registerRealtimeGateway);
 
   return app;

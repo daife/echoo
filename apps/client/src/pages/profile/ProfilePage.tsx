@@ -45,9 +45,10 @@ export function ProfilePage({
     id: agent.id,
     name: agent.name,
     kind: agent.type === "slice" ? "Slice" : "Core",
-    description: agent.persona,
+    description: agent.introduction || agent.persona,
     gradient: "from-white/16 via-white/5 to-transparent",
-    openingLine: agent.openingLine,
+    avatarResourcePath: agent.avatarResourcePath,
+    coverResourcePath: agent.coverResourcePath,
     source: agent
   }));
 
