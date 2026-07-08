@@ -23,12 +23,9 @@ export async function registerAuthRoutes(app: FastifyInstance) {
   });
 
   app.get("/me", async (request, reply) => {
-    try {
-      const payload = await request.jwtVerify<{ sub: string }>();
-      return authService.me(payload.sub);
-    } catch {
-      return reply.code(401).send({ error: "UNAUTHORIZED", message: "Please sign in again." });
-    }
+    const userId = await request.requireUserId(reply);
+    if (!userId) return;
+    return authService.me(userId);
   });
 
   app.post<{ Body: ForgotPasswordBody }>("/password/forgot", async (request, reply) => {

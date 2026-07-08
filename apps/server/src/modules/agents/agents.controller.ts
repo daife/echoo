@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { ZodError } from "zod";
 import type { CreateSliceAgentRequest } from "@echoo/shared";
 import { AgentsService } from "./agents.service.js";
@@ -7,13 +7,13 @@ export async function registerAgentRoutes(app: FastifyInstance) {
   const agents = new AgentsService();
 
   app.get("/", async (request, reply) => {
-    const userId = await getAuthenticatedUserId(request, reply);
+    const userId = await request.requireUserId(reply);
     if (!userId) return;
     return agents.listMyAgents(userId);
   });
 
   app.post<{ Body: CreateSliceAgentRequest }>("/", async (request, reply) => {
-    const userId = await getAuthenticatedUserId(request, reply);
+    const userId = await request.requireUserId(reply);
     if (!userId) return;
 
     try {
@@ -26,14 +26,4 @@ export async function registerAgentRoutes(app: FastifyInstance) {
       throw error;
     }
   });
-}
-
-async function getAuthenticatedUserId(request: FastifyRequest, reply: FastifyReply) {
-  try {
-    const payload = await request.jwtVerify<{ sub: string }>();
-    return payload.sub;
-  } catch {
-    reply.code(401).send({ error: "UNAUTHORIZED", message: "Please sign in again." });
-    return null;
-  }
 }
