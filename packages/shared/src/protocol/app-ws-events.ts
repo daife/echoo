@@ -6,6 +6,17 @@ export type AppWsServerEvent =
       message: Message;
     }
   | {
+      type: "message.delta";
+      messageId: string;
+      conversationId: string;
+      delta: string;
+      updatedAt: number;
+    }
+  | {
+      type: "message.completed";
+      message: Message;
+    }
+  | {
       type: "message.status_changed";
       messageId: string;
       status: "sent" | "delivered" | "failed" | "read";

@@ -1,9 +1,11 @@
 import type { AppWsServerEvent, Message } from "@echoo/shared";
-import type { AuthRuntime, MessageRuntime } from "../contracts";
+import type { AuthRuntime, MessageDeltaEvent, MessageRuntime } from "../contracts";
 
 export class WebMessageRuntime implements MessageRuntime {
   private socket: WebSocket | null = null;
   private readonly messageCreatedHandlers = new Set<(message: Message) => void>();
+  private readonly messageDeltaHandlers = new Set<(event: MessageDeltaEvent) => void>();
+  private readonly messageCompletedHandlers = new Set<(message: Message) => void>();
 
   constructor(private readonly auth: AuthRuntime) {}
 
@@ -21,6 +23,17 @@ export class WebMessageRuntime implements MessageRuntime {
       if (payload.type === "message.created") {
         this.socket?.send(JSON.stringify({ type: "ack", messageId: payload.message.id }));
         this.messageCreatedHandlers.forEach((handler) => handler(payload.message));
+        return;
+      }
+
+      if (payload.type === "message.delta") {
+        this.messageDeltaHandlers.forEach((handler) => handler(payload));
+        return;
+      }
+
+      if (payload.type === "message.completed") {
+        this.socket?.send(JSON.stringify({ type: "ack", messageId: payload.message.id }));
+        this.messageCompletedHandlers.forEach((handler) => handler(payload.message));
       }
     };
   }
@@ -37,5 +50,15 @@ export class WebMessageRuntime implements MessageRuntime {
   onMessageCreated(handler: (message: Message) => void): () => void {
     this.messageCreatedHandlers.add(handler);
     return () => this.messageCreatedHandlers.delete(handler);
+  }
+
+  onMessageDelta(handler: (event: MessageDeltaEvent) => void): () => void {
+    this.messageDeltaHandlers.add(handler);
+    return () => this.messageDeltaHandlers.delete(handler);
+  }
+
+  onMessageCompleted(handler: (message: Message) => void): () => void {
+    this.messageCompletedHandlers.add(handler);
+    return () => this.messageCompletedHandlers.delete(handler);
   }
 }

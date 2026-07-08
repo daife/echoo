@@ -10,6 +10,7 @@ export interface CreateUserTextMessageInput {
   conversationId: string;
   text: string;
   clientMessageId?: string | null;
+  stream?: boolean;
 }
 
 export interface CreateUserTextMessageResult {
@@ -67,7 +68,15 @@ export class MessagingService {
 
     if (!conversation.agentId) return { message };
 
-    const assistantMessage = await this.createAssistantReply(input.ownerUserId, input.conversationId, conversation.agentId);
+    if (input.stream === false) {
+      const assistantMessage = await this.createAssistantReply(input.ownerUserId, input.conversationId, conversation.agentId);
+      return { message, assistantMessage };
+    }
+
+    const assistantMessage = this.createAssistantPlaceholder(input.ownerUserId, input.conversationId, conversation.agentId);
+    this.appPush.pushToUser(input.ownerUserId, { type: "message.created", message: assistantMessage });
+    void this.streamAssistantReply(input.ownerUserId, input.conversationId, conversation.agentId, assistantMessage);
+
     return { message, assistantMessage };
   }
 
@@ -82,6 +91,25 @@ export class MessagingService {
       });
     }
     return updated;
+  }
+
+  private createAssistantPlaceholder(ownerUserId: string, conversationId: string, agentId: string) {
+    const now = Date.now();
+
+    return this.repository.save({
+      ownerUserId,
+      id: `msg_${randomUUID()}`,
+      conversationId,
+      senderId: agentId,
+      role: "assistant",
+      direction: "incoming",
+      contentType: "text",
+      content: { text: "" },
+      status: "pending",
+      metadata: { streaming: true },
+      createdAt: now,
+      updatedAt: now
+    });
   }
 
   private async createAssistantReply(ownerUserId: string, conversationId: string, agentId: string) {
@@ -103,7 +131,7 @@ export class MessagingService {
         status: "delivered",
         providerId: reply.providerId,
         model: reply.model,
-        metadata: reply.raw ? { raw: reply.raw } : undefined,
+        metadata: { streaming: false, ...(reply.raw ? { raw: reply.raw } : {}) },
         createdAt: now,
         updatedAt: now
       });
@@ -128,7 +156,7 @@ export class MessagingService {
         contentType: "text",
         content: { text: "AI reply is temporarily unavailable. Check the server provider configuration and try again." },
         status: "failed",
-        metadata: { kind: "ai_error" },
+        metadata: { kind: "ai_error", streaming: false },
         error: {
           message: error instanceof Error ? error.message : "Unknown AI provider error"
         },
@@ -144,6 +172,84 @@ export class MessagingService {
         incrementUnread: true
       });
       this.appPush.pushToUser(ownerUserId, { type: "message.created", message });
+      return message;
+    }
+  }
+
+  private async streamAssistantReply(ownerUserId: string, conversationId: string, agentId: string, pendingMessage: Message) {
+    let streamedText = "";
+
+    try {
+      const reply = await this.agentRuntime.createStreamingReply({ ownerUserId, conversationId }, (delta) => {
+        streamedText += delta.text;
+        this.appPush.pushToUser(ownerUserId, {
+          type: "message.delta",
+          messageId: pendingMessage.id,
+          conversationId,
+          delta: delta.text,
+          updatedAt: Date.now()
+        });
+      });
+
+      if (!reply) return undefined;
+      const now = Date.now();
+
+      const message = this.repository.save({
+        ownerUserId,
+        id: pendingMessage.id,
+        conversationId,
+        senderId: agentId,
+        role: "assistant",
+        direction: "incoming",
+        contentType: "text",
+        content: { text: reply.text },
+        status: "delivered",
+        providerId: reply.providerId,
+        model: reply.model,
+        metadata: { streaming: true, ...(reply.raw ? { raw: reply.raw } : {}) },
+        createdAt: pendingMessage.createdAt,
+        updatedAt: now
+      });
+
+      this.conversations.updatePreview({
+        ownerUserId,
+        conversationId,
+        preview: reply.text,
+        updatedAt: now,
+        incrementUnread: true
+      });
+      this.appPush.pushToUser(ownerUserId, { type: "message.completed", message });
+      return message;
+    } catch (error) {
+      const now = Date.now();
+      const message = this.repository.save({
+        ownerUserId,
+        id: pendingMessage.id,
+        conversationId,
+        senderId: agentId,
+        role: "assistant",
+        direction: "incoming",
+        contentType: "text",
+        content: {
+          text: streamedText || "AI reply is temporarily unavailable. Check the server provider configuration and try again."
+        },
+        status: "failed",
+        metadata: { kind: "ai_error", streaming: true },
+        error: {
+          message: error instanceof Error ? error.message : "Unknown AI provider error"
+        },
+        createdAt: pendingMessage.createdAt,
+        updatedAt: now
+      });
+
+      this.conversations.updatePreview({
+        ownerUserId,
+        conversationId,
+        preview: "AI reply failed.",
+        updatedAt: now,
+        incrementUnread: true
+      });
+      this.appPush.pushToUser(ownerUserId, { type: "message.completed", message });
       return message;
     }
   }

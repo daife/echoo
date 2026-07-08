@@ -13,6 +13,11 @@ export interface AgentRuntimeResult {
   raw?: unknown;
 }
 
+export interface AgentRuntimeDelta {
+  text: string;
+  raw?: unknown;
+}
+
 export class AgentRuntimeService {
   constructor(
     private readonly agents = new AgentRepository(),
@@ -39,6 +44,49 @@ export class AgentRuntimeService {
       providerId: result.providerId,
       model: result.model,
       raw: result.raw
+    };
+  }
+
+  async createStreamingReply(
+    input: { ownerUserId: string; conversationId: string },
+    onDelta: (delta: AgentRuntimeDelta) => void
+  ): Promise<AgentRuntimeResult | null> {
+    const agent = this.agents.findByConversation(input.ownerUserId, input.conversationId);
+    if (!agent) return null;
+
+    const provider = this.providers.getDefaultProvider();
+    const model = this.providers.getDefaultModel();
+    const completion = {
+      model,
+      sessionId: input.conversationId,
+      messages: this.buildChatMessages(agent, this.messages.listByConversation(input.ownerUserId, input.conversationId)),
+      temperature: Number(process.env.DEFAULT_TEXT_TEMPERATURE ?? 0.8),
+      maxTokens: process.env.DEFAULT_TEXT_MAX_TOKENS ? Number(process.env.DEFAULT_TEXT_MAX_TOKENS) : undefined
+    };
+
+    if (!provider.streamChatCompletion) {
+      const result = await provider.createChatCompletion(completion);
+      onDelta({ text: result.text, raw: result.raw });
+      return result;
+    }
+
+    let text = "";
+    let lastRaw: unknown;
+
+    for await (const delta of provider.streamChatCompletion(completion)) {
+      if (!delta.text) continue;
+      text += delta.text;
+      lastRaw = delta.raw;
+      onDelta({ text: delta.text, raw: delta.raw });
+    }
+
+    if (!text.trim()) throw new Error(`${provider.id} chat completion returned an empty streamed response.`);
+
+    return {
+      text,
+      providerId: provider.id,
+      model,
+      raw: lastRaw
     };
   }
 

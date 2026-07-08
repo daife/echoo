@@ -1,7 +1,7 @@
 import type { MessageApi } from "@echoo/api-client";
 import { createMarkReadTask, nextMessageCursor } from "@echoo/domain";
 import { SYNC_KEYS, type LocalMessage, type Message } from "@echoo/shared";
-import type { StorageRuntime } from "../runtimes/contracts";
+import type { MessageDeltaEvent, StorageRuntime } from "../runtimes/contracts";
 
 export class MessageService {
   constructor(
@@ -29,7 +29,7 @@ export class MessageService {
     return messages;
   }
 
-  async sendTextMessage(input: { conversationId: string; text: string; clientMessageId?: string }) {
+  async sendTextMessage(input: { conversationId: string; text: string; clientMessageId?: string; stream?: boolean }) {
     const clientMessageId = input.clientMessageId ?? `client_${crypto.randomUUID()}`;
     const pending: LocalMessage = {
       id: clientMessageId,
@@ -52,12 +52,24 @@ export class MessageService {
       const result = await this.api.createTextMessage({
         conversationId: input.conversationId,
         text: input.text,
-        clientMessageId
+        clientMessageId,
+        stream: input.stream
       });
       await this.storage.deleteMessage(pending.id);
       await this.storage.saveMessage({ ...result.message, syncStatus: "synced" });
       if (result.assistantMessage) {
-        await this.storage.saveMessage({ ...result.assistantMessage, syncStatus: "synced" });
+        const currentAssistantMessage = await this.storage.getMessage(result.assistantMessage.id);
+        if (!currentAssistantMessage || currentAssistantMessage.status === "pending") {
+          await this.storage.saveMessage({
+            ...result.assistantMessage,
+            content: {
+              ...result.assistantMessage.content,
+              text: currentAssistantMessage?.content.text || result.assistantMessage.content.text
+            },
+            updatedAt: Math.max(currentAssistantMessage?.updatedAt ?? 0, result.assistantMessage.updatedAt),
+            syncStatus: "synced"
+          });
+        }
       }
       return result;
     } catch (error) {
@@ -73,6 +85,26 @@ export class MessageService {
   }
 
   async ingestRealtimeMessage(message: Message) {
+    await this.storage.saveMessage({ ...message, syncStatus: "synced" });
+  }
+
+  async ingestRealtimeDelta(event: MessageDeltaEvent) {
+    const message = await this.storage.getMessage(event.messageId);
+    if (!message) return;
+
+    await this.storage.saveMessage({
+      ...message,
+      content: {
+        ...message.content,
+        text: `${message.content.text ?? ""}${event.delta}`
+      },
+      status: "pending",
+      updatedAt: event.updatedAt,
+      syncStatus: "synced"
+    });
+  }
+
+  async ingestRealtimeCompleted(message: Message) {
     await this.storage.saveMessage({ ...message, syncStatus: "synced" });
   }
 

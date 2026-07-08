@@ -4,7 +4,8 @@ import { MessagingService } from "./messaging.service.js";
 
 const createTextMessageSchema = z.object({
   text: z.string().trim().min(1).max(20_000),
-  clientMessageId: z.string().trim().min(1).max(200).optional()
+  clientMessageId: z.string().trim().min(1).max(200).optional(),
+  stream: z.boolean().optional()
 });
 
 export async function registerMessagingRoutes(app: FastifyInstance) {
@@ -42,7 +43,8 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
       ownerUserId: userId,
       conversationId: request.params.conversationId,
       text: parsed.data.text,
-      clientMessageId: parsed.data.clientMessageId
+      clientMessageId: parsed.data.clientMessageId,
+      stream: parsed.data.stream ?? true
     });
 
     if (!result) return reply.code(404).send({ error: "CONVERSATION_NOT_FOUND" });

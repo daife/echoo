@@ -1,5 +1,5 @@
 import type { Message } from "@echoo/shared";
-import type { MessageRuntime } from "../contracts";
+import type { MessageDeltaEvent, MessageRuntime } from "../contracts";
 import { tauriInvoke } from "./tauriInvoke";
 
 export class TauriMessageRuntime implements MessageRuntime {
@@ -16,6 +16,14 @@ export class TauriMessageRuntime implements MessageRuntime {
   }
 
   onMessageCreated(_handler: (message: Message) => void): () => void {
+    return () => undefined;
+  }
+
+  onMessageDelta(_handler: (event: MessageDeltaEvent) => void): () => void {
+    return () => undefined;
+  }
+
+  onMessageCompleted(_handler: (message: Message) => void): () => void {
     return () => undefined;
   }
 }

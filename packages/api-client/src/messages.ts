@@ -19,10 +19,12 @@ export class MessageApi {
     conversationId: string;
     text: string;
     clientMessageId?: string;
+    stream?: boolean;
   }): Promise<{ message: Message; assistantMessage?: Message }> {
     return this.client.post<{ message: Message; assistantMessage?: Message }>(`/conversations/${input.conversationId}/messages`, {
       text: input.text,
-      clientMessageId: input.clientMessageId
+      clientMessageId: input.clientMessageId,
+      stream: input.stream
     });
   }
 

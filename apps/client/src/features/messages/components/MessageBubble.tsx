@@ -39,7 +39,15 @@ export function MessageBubble({ message }: { message: MessageBubbleModel }) {
               : "rounded-tl-sm border border-white/8 bg-white/[0.03] text-white/82 backdrop-blur-xl"
           }`}
         >
-          {message.text}
+          {message.status === "typing" && !message.text ? (
+            <div className="flex h-6 items-center gap-1.5">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-white/35" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-white/35 [animation-delay:150ms]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-white/35 [animation-delay:300ms]" />
+            </div>
+          ) : (
+            message.text
+          )}
         </div>
         {message.status ? <span className="mr-1 text-[10px] text-white/30">{message.status}</span> : null}
       </div>
