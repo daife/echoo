@@ -43,12 +43,19 @@ const migrations = [
         id TEXT PRIMARY KEY,
         owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
         type TEXT NOT NULL CHECK (type IN ('core', 'slice')),
+        avatar_resource_path TEXT,
+        cover_resource_path TEXT,
         name TEXT NOT NULL,
+        attributes_json TEXT NOT NULL DEFAULT '[]',
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        introduction TEXT NOT NULL DEFAULT '',
+        is_public INTEGER NOT NULL DEFAULT 0,
+        linked_agent_ids_json TEXT NOT NULL DEFAULT '[]',
+        unlock_conditions_json TEXT,
         persona TEXT NOT NULL,
         background TEXT NOT NULL,
         personality TEXT NOT NULL,
-        speech_style TEXT NOT NULL,
-        opening_line TEXT NOT NULL,
+        response_style TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -73,7 +80,7 @@ const migrations = [
     `,
   },
   {
-    id: "003_slice_agent_resources_and_metadata",
+    id: "003_resources",
     sql: `
       CREATE TABLE IF NOT EXISTS resources (
         id TEXT PRIMARY KEY,
@@ -87,16 +94,6 @@ const migrations = [
       );
 
       CREATE INDEX IF NOT EXISTS idx_resources_owner_user_id ON resources(owner_user_id);
-
-      ALTER TABLE agents ADD COLUMN avatar_resource_path TEXT;
-      ALTER TABLE agents ADD COLUMN cover_resource_path TEXT;
-      ALTER TABLE agents ADD COLUMN attributes_json TEXT NOT NULL DEFAULT '[]';
-      ALTER TABLE agents ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';
-      ALTER TABLE agents ADD COLUMN introduction TEXT NOT NULL DEFAULT '';
-      ALTER TABLE agents ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0;
-      ALTER TABLE agents ADD COLUMN linked_agent_ids_json TEXT NOT NULL DEFAULT '[]';
-      ALTER TABLE agents ADD COLUMN unlock_conditions_json TEXT;
-      ALTER TABLE agents ADD COLUMN response_style TEXT NOT NULL DEFAULT '';
     `,
   },
 ] as const;
@@ -142,27 +139,11 @@ function applyMigrations(db: DatabaseSync) {
 
     db.exec("BEGIN");
     try {
-      applyMigrationSql(db, migration.sql);
+      db.exec(migration.sql);
       recordApplied.run(migration.id, Date.now());
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
-      throw error;
-    }
-  }
-}
-
-function applyMigrationSql(db: DatabaseSync, sql: string) {
-  for (const statement of sql
-    .split(";")
-    .map((part) => part.trim())
-    .filter(Boolean)) {
-    try {
-      db.exec(`${statement};`);
-    } catch (error) {
-      if (error instanceof Error && /duplicate column name/i.test(error.message)) {
-        continue;
-      }
       throw error;
     }
   }

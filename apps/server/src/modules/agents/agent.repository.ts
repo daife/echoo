@@ -20,8 +20,6 @@ interface AgentRow {
   background: string;
   personality: string;
   response_style: string;
-  speech_style: string;
-  opening_line: string;
   conversation_id: string;
   created_at: number;
   updated_at: number;
@@ -81,12 +79,10 @@ export class AgentRepository {
               persona,
               background,
               personality,
-              speech_style,
-              opening_line,
               response_style,
               created_at,
               updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `
         )
         .run(
@@ -105,8 +101,6 @@ export class AgentRepository {
           input.persona,
           input.background,
           input.personality,
-          input.responseStyle,
-          input.introduction || input.persona,
           input.responseStyle,
           now,
           now
@@ -177,7 +171,7 @@ function rowToAgent(row: AgentRow): Agent {
     persona: row.persona,
     background: row.background,
     personality: row.personality,
-    responseStyle: row.response_style || row.speech_style,
+    responseStyle: row.response_style,
     conversationId: row.conversation_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at
