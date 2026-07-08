@@ -22,7 +22,13 @@ const agents = [
   }
 ];
 
-export function HomePage({ onCreateAgent, onOpenChat }: { onCreateAgent: () => void; onOpenChat: () => void }) {
+export function HomePage({
+  onCreateAgent,
+  onOpenChat
+}: {
+  onCreateAgent: () => void;
+  onOpenChat: () => void;
+}) {
   return (
     <section className="relative space-y-8">
       <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
@@ -111,7 +117,7 @@ export function HomePage({ onCreateAgent, onOpenChat }: { onCreateAgent: () => v
         </div>
         <div className="grid gap-5 lg:grid-cols-3">
           {agents.map((agent) => (
-            <CharacterCard key={agent.name} agent={agent} onOpenChat={onOpenChat} />
+            <CharacterCard key={agent.name} agent={agent} onOpenChat={() => onOpenChat()} />
           ))}
         </div>
       </div>

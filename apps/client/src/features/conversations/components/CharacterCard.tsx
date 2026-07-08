@@ -1,13 +1,21 @@
 import { ArrowUpRight } from "@phosphor-icons/react";
 
 export interface CharacterCardAgent {
+  id?: string;
   name: string;
   kind: string;
   description: string;
   gradient: string;
+  openingLine?: string;
 }
 
-export function CharacterCard({ agent, onOpenChat }: { agent: CharacterCardAgent; onOpenChat: () => void }) {
+export function CharacterCard({
+  agent,
+  onOpenChat
+}: {
+  agent: CharacterCardAgent;
+  onOpenChat: (agent: CharacterCardAgent) => void;
+}) {
   return (
     <article className="group overflow-hidden rounded-2xl border border-white/8 bg-[#121214] transition duration-300 hover:border-white/18 hover:bg-[#18181b]">
       <div className={`relative h-56 bg-gradient-to-br ${agent.gradient}`}>
@@ -24,7 +32,7 @@ export function CharacterCard({ agent, onOpenChat }: { agent: CharacterCardAgent
           <h3 className="text-2xl font-semibold text-white">{agent.name}</h3>
           <button
             className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-white/60 transition group-hover:border-white/20 group-hover:text-white active:scale-95"
-            onClick={onOpenChat}
+            onClick={() => onOpenChat(agent)}
             aria-label={`Open ${agent.name}`}
           >
             <ArrowUpRight size={18} />

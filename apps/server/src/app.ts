@@ -2,6 +2,7 @@ import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
+import { registerAgentRoutes } from "./modules/agents/agents.controller.js";
 import { registerAuthRoutes } from "./modules/auth/auth.controller.js";
 import { registerInterfaceBindingRoutes } from "./modules/channels/channels.controller.js";
 import { registerConversationRoutes } from "./modules/conversations/conversations.controller.js";
@@ -18,6 +19,7 @@ export async function buildApp() {
   app.get("/health", async () => ({ ok: true, name: "echoo-server" }));
 
   await app.register(registerAuthRoutes, { prefix: "/api/auth" });
+  await app.register(registerAgentRoutes, { prefix: "/api/agents" });
   await app.register(registerMessagingRoutes, { prefix: "/api" });
   await app.register(registerConversationRoutes, { prefix: "/api/conversations" });
   await app.register(registerInterfaceBindingRoutes, { prefix: "/api/interface-bindings" });

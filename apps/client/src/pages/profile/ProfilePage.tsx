@@ -1,4 +1,5 @@
 import { ChatCircleDots, GearSix, Heart, NotePencil, PencilSimple, Robot } from "@phosphor-icons/react";
+import type { Agent } from "@echoo/shared";
 import { CharacterCard } from "../../features/conversations/components/CharacterCard";
 
 const creations = [
@@ -31,7 +32,25 @@ const posts = [
   }
 ];
 
-export function ProfilePage({ onOpenChat }: { onOpenChat: () => void }) {
+export function ProfilePage({
+  agents,
+  isLoadingAgents,
+  onOpenAgent
+}: {
+  agents: Agent[];
+  isLoadingAgents: boolean;
+  onOpenAgent: (agent: Agent) => void;
+}) {
+  const cards = agents.map((agent) => ({
+    id: agent.id,
+    name: agent.name,
+    kind: agent.type === "slice" ? "Slice" : "Core",
+    description: agent.persona,
+    gradient: "from-white/16 via-white/5 to-transparent",
+    openingLine: agent.openingLine,
+    source: agent
+  }));
+
   return (
     <section className="space-y-8">
       <div className="relative overflow-hidden rounded-2xl border border-white/8 bg-[#0d0d10]/80 p-7 text-center md:p-10">
@@ -46,9 +65,9 @@ export function ProfilePage({ onOpenChat }: { onOpenChat: () => void }) {
           </p>
           <div className="mt-7 grid w-full max-w-2xl grid-cols-3 border-y border-white/10 py-5">
             {[
-              ["12", "Agents"],
-              ["8", "Core"],
-              ["4", "Slice"]
+              [String(agents.length), "Agents"],
+              [String(agents.filter((agent) => agent.type === "core").length), "Core"],
+              [String(agents.filter((agent) => agent.type === "slice").length), "Slice"]
             ].map(([value, label]) => (
               <div key={label}>
                 <div className="text-2xl font-semibold text-white">{value}</div>
@@ -82,11 +101,19 @@ export function ProfilePage({ onOpenChat }: { onOpenChat: () => void }) {
             <h2 className="text-2xl font-semibold text-white">My agents</h2>
             <span className="text-sm text-white/40">Core and Slice</span>
           </div>
-          <div className="grid gap-5 md:grid-cols-2">
-            {creations.map((agent) => (
-              <CharacterCard key={agent.name} agent={agent} onOpenChat={onOpenChat} />
-            ))}
-          </div>
+          {isLoadingAgents ? (
+            <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-6 text-sm text-white/45">Loading your agents...</div>
+          ) : cards.length > 0 ? (
+            <div className="grid gap-5 md:grid-cols-2">
+              {cards.map((agent) => (
+                <CharacterCard key={agent.id} agent={agent} onOpenChat={() => onOpenAgent(agent.source)} />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-6 text-sm leading-6 text-white/50">
+              You have not created any agents yet. Create a Slice agent to start a new conversation.
+            </div>
+          )}
         </div>
         <aside className="glass-panel h-fit rounded-2xl p-6">
           <div className="flex items-center gap-3">

@@ -9,7 +9,7 @@ import {
 import type { FastifyInstance } from "fastify";
 import { EmailService } from "./email.service.js";
 import { PasswordService } from "./password.service.js";
-import { TokenService } from "./token.service.js";
+import { accessTokenTtlMs, TokenService } from "./token.service.js";
 import type { ForgotPasswordBody, LoginBody, RegisterBody, ResetPasswordBody, VerifyEmailBody } from "./auth.types.js";
 import { toUserProfile, UserRepository } from "./user.repository.js";
 
@@ -123,7 +123,7 @@ export class AuthService {
       tokens: {
         accessToken: this.tokenService.createAccessToken(userId),
         refreshToken: this.tokenService.createRefreshToken(userId),
-        expiresAt: Date.now() + 15 * 60 * 1000
+        expiresAt: Date.now() + accessTokenTtlMs
       }
     };
   }

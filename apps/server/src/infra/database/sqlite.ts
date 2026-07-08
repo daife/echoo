@@ -36,6 +36,42 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_user_id ON email_verification_tokens(user_id);
     `,
   },
+  {
+    id: "002_agents_and_conversations",
+    sql: `
+      CREATE TABLE IF NOT EXISTS agents (
+        id TEXT PRIMARY KEY,
+        owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('core', 'slice')),
+        name TEXT NOT NULL,
+        persona TEXT NOT NULL,
+        background TEXT NOT NULL,
+        personality TEXT NOT NULL,
+        speech_style TEXT NOT NULL,
+        opening_line TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS conversations (
+        id TEXT PRIMARY KEY,
+        owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        type TEXT NOT NULL,
+        agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
+        external_binding_id TEXT,
+        last_message_preview TEXT,
+        unread_count INTEGER NOT NULL DEFAULT 0,
+        pinned_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_agents_owner_user_id ON agents(owner_user_id);
+      CREATE INDEX IF NOT EXISTS idx_conversations_owner_user_id ON conversations(owner_user_id);
+      CREATE INDEX IF NOT EXISTS idx_conversations_agent_id ON conversations(agent_id);
+    `,
+  },
 ] as const;
 
 let database: DatabaseSync | null = null;

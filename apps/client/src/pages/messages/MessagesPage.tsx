@@ -1,4 +1,5 @@
 import { Microphone, PaperPlaneRight, Paperclip, Plus, Waveform } from "@phosphor-icons/react";
+import type { Agent } from "@echoo/shared";
 import { MessageBubble } from "../../features/messages/components/MessageBubble";
 
 const thread = [
@@ -26,7 +27,19 @@ const thread = [
   }
 ];
 
-export function MessagesPage() {
+export function MessagesPage({ agent }: { agent?: Agent }) {
+  const title = agent?.name ?? "Aster";
+  const subtitle = agent ? `${agent.type === "slice" ? "Slice" : "Core"} agent, online now` : "Memory agent, online now";
+  const messages = agent
+    ? [
+        {
+          id: `${agent.id}-opening`,
+          from: "agent",
+          text: agent.openingLine
+        }
+      ]
+    : thread;
+
   return (
     <section className="grid min-h-[calc(100dvh-8rem)] grid-rows-[auto_1fr_auto] overflow-hidden rounded-2xl border border-white/8 bg-[#0d0d10]/80">
       <header className="flex items-center justify-between border-b border-white/8 p-5">
@@ -35,8 +48,8 @@ export function MessagesPage() {
             <Waveform size={25} weight="thin" />
           </div>
           <div>
-            <h1 className="text-lg font-semibold text-white">Aster</h1>
-            <p className="text-sm text-white/42">Memory agent, online now</p>
+            <h1 className="text-lg font-semibold text-white">{title}</h1>
+            <p className="text-sm text-white/42">{subtitle}</p>
           </div>
         </div>
         <button className="rounded-full border border-white/10 px-4 py-2 text-sm text-white/65 transition hover:border-white/20 hover:text-white active:scale-95">
@@ -50,7 +63,7 @@ export function MessagesPage() {
             Yesterday 21:45
           </span>
         </div>
-        {thread.map((message) => (
+        {messages.map((message) => (
           <MessageBubble key={message.id} message={message} />
         ))}
         <div className="flex items-center gap-3 self-start">

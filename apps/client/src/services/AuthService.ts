@@ -45,9 +45,6 @@ export class AuthService {
     const token = await this.auth.getAccessToken();
     if (!token) return null;
 
-    const cached = await this.storage.getSetting<UserProfile>(currentUserKey);
-    if (cached) return cached;
-
     try {
       const user = await this.api.me();
       await this.storage.setSetting(currentUserKey, user);

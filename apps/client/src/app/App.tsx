@@ -1,6 +1,9 @@
 import { Bell, ChatCircleText, Compass, GearSix, House, LinkSimple, UserCircle } from "@phosphor-icons/react";
+import type { Agent, CreateSliceAgentRequest } from "@echoo/shared";
 import { useEffect, useMemo, useState } from "react";
+import { initApp } from "./bootstrap/initApp";
 import { useAuth } from "./providers/AuthProvider";
+import { useRuntime } from "./providers/RuntimeProvider";
 import { BindingsPanel } from "../features/bindings/components/BindingsPanel";
 import { ConversationRail } from "../features/conversations/components/ConversationRail";
 import { AuthPage } from "../pages/auth/AuthPage";
@@ -22,7 +25,12 @@ const navItems = [
 
 export function App() {
   const auth = useAuth();
+  const runtime = useRuntime();
+  const services = useMemo(() => initApp(runtime), [runtime]);
   const [view, setView] = useState<AppView>("home");
+  const [myAgents, setMyAgents] = useState<Agent[]>([]);
+  const [isLoadingAgents, setIsLoadingAgents] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const protectedView = view === "messages" || view === "bindings" || view === "settings" || view === "profile" || view === "create";
   const showConversationRail =
     (view === "home" || view === "messages" || view === "bindings" || view === "settings") && (!protectedView || !!auth.user);
@@ -32,6 +40,56 @@ export function App() {
       setView("auth");
     }
   }, [auth.authLinkParams.resetToken, auth.authLinkParams.verificationToken]);
+
+  useEffect(() => {
+    if (!auth.user) {
+      setMyAgents([]);
+      setSelectedAgent(null);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingAgents(true);
+    void services.agentService
+      .listMyAgents()
+      .then((agents) => {
+        if (!cancelled) setMyAgents(agents);
+      })
+      .catch(async (error) => {
+        if (cancelled) return;
+        if (error instanceof Error && error.message === "Please sign in again.") {
+          await auth.signOut();
+          setView("auth");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingAgents(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.user, services.agentService]);
+
+  const openAgent = (agent: Agent) => {
+    setSelectedAgent(agent);
+    setView("messages");
+  };
+
+  const createSliceAgent = async (input: CreateSliceAgentRequest) => {
+    try {
+      const { agent } = await services.agentService.createSliceAgent(input);
+      setMyAgents((current) => [agent, ...current.filter((item) => item.id !== agent.id)]);
+      openAgent(agent);
+      return agent;
+    } catch (error) {
+      if (error instanceof Error && error.message === "Please sign in again.") {
+        await auth.signOut();
+        setView("auth");
+      }
+      throw error;
+    }
+  };
 
   const ActivePage = useMemo(() => {
     if (auth.isLoading) {
@@ -45,13 +103,13 @@ export function App() {
       return <AuthPage onAuthenticated={() => setView(view === "auth" ? "messages" : view)} />;
     }
     if (view === "explore") return <ExplorePage />;
-    if (view === "profile") return <ProfilePage onOpenChat={() => setView("messages")} />;
-    if (view === "create") return <CreateAgentPage />;
-    if (view === "messages") return <MessagesPage />;
+    if (view === "profile") return <ProfilePage agents={myAgents} isLoadingAgents={isLoadingAgents} onOpenAgent={openAgent} />;
+    if (view === "create") return <CreateAgentPage onCreateSliceAgent={createSliceAgent} />;
+    if (view === "messages") return <MessagesPage agent={selectedAgent ?? undefined} />;
     if (view === "bindings") return <BindingsPanel />;
     if (view === "settings") return <SettingsPage />;
     return <HomePage onCreateAgent={() => setView("create")} onOpenChat={() => setView("messages")} />;
-  }, [auth.isLoading, auth.user, protectedView, view]);
+  }, [auth.isLoading, auth.user, isLoadingAgents, myAgents, protectedView, selectedAgent, view]);
 
   return (
     <div className="relative min-h-[100dvh] overflow-hidden bg-[#09090b] text-[#e5e2e1]">
@@ -112,7 +170,7 @@ export function App() {
           </nav>
         </aside>
 
-        {showConversationRail ? <ConversationRail onOpenChat={() => setView("messages")} /> : null}
+        {showConversationRail ? <ConversationRail agents={myAgents} onOpenAgent={openAgent} onOpenChat={() => setView("messages")} /> : null}
 
         <main className="min-w-0">{ActivePage}</main>
       </div>
