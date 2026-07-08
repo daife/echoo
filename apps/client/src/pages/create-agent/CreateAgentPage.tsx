@@ -22,6 +22,8 @@ const initialForm: SliceForm = {
   attributes: [],
   tags: [],
   introduction: "",
+  prologueHtml: "",
+  openingLine: "",
   isPublic: false,
   linkedAgentIds: [],
   unlockConditions: null,
@@ -220,6 +222,26 @@ export function CreateAgentPage({
               />
             </label>
 
+            <label className="block">
+              <span className="text-sm font-medium text-white/78">叙引（HTML，可选）</span>
+              <textarea
+                className="mt-2 min-h-28 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 font-mono text-xs leading-5 text-white outline-none transition placeholder:text-white/28 focus:border-white/25"
+                value={form.prologueHtml ?? ""}
+                placeholder="<p>用于在对话界面最前面的容器中展示。</p>"
+                onChange={(event) => updateField("prologueHtml", event.target.value)}
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-sm font-medium text-white/78">开场白（可选）</span>
+              <textarea
+                className="mt-2 min-h-20 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/28 focus:border-white/25"
+                value={form.openingLine ?? ""}
+                placeholder="进入对话时，智能体先说的一句话。"
+                onChange={(event) => updateField("openingLine", event.target.value)}
+              />
+            </label>
+
             <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
               <div className="flex items-center justify-between gap-4">
                 <span className="text-sm font-medium text-white/78">属性</span>
@@ -365,6 +387,8 @@ function buildCreatePayload(form: SliceForm): CreateSliceAgentRequest | string {
     ...form,
     ...requiredText,
     introduction: form.introduction?.trim() ?? "",
+    prologueHtml: form.prologueHtml?.trim() ?? "",
+    openingLine: form.openingLine?.trim() ?? "",
     attributes,
     tags,
     linkedAgentIds

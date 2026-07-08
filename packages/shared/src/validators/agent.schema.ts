@@ -22,6 +22,8 @@ export const createSliceAgentSchema = z.object({
   attributes: z.array(agentAttributeSchema).max(50).optional().default([]),
   tags: z.array(z.string().trim().min(1).max(40)).max(30).optional().default([]),
   introduction: optionalText(2000),
+  prologueHtml: optionalText(12000),
+  openingLine: optionalText(2000),
   isPublic: z.boolean(),
   linkedAgentIds: z.array(z.string().trim().min(1).max(120)).max(50).optional().default([]),
   unlockConditions: z.record(z.string(), z.unknown()).nullish(),

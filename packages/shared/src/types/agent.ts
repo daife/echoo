@@ -21,6 +21,8 @@ export interface Agent {
   attributes: AgentAttribute[];
   tags: string[];
   introduction: string;
+  prologueHtml: string;
+  openingLine: string;
   isPublic: boolean;
   linkedAgentIds: string[];
   unlockConditions?: Record<string, unknown>;
@@ -41,6 +43,8 @@ export interface CreateSliceAgentRequest {
   attributes?: AgentAttribute[];
   tags?: string[];
   introduction?: string;
+  prologueHtml?: string;
+  openingLine?: string;
   isPublic: boolean;
   linkedAgentIds?: string[];
   unlockConditions?: Record<string, unknown> | null;

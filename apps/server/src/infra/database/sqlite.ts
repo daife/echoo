@@ -49,6 +49,8 @@ const migrations = [
         attributes_json TEXT NOT NULL DEFAULT '[]',
         tags_json TEXT NOT NULL DEFAULT '[]',
         introduction TEXT NOT NULL DEFAULT '',
+        prologue_html TEXT NOT NULL DEFAULT '',
+        opening_line TEXT NOT NULL DEFAULT '',
         is_public INTEGER NOT NULL DEFAULT 0,
         linked_agent_ids_json TEXT NOT NULL DEFAULT '[]',
         unlock_conditions_json TEXT,

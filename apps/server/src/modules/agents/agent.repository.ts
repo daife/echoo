@@ -13,6 +13,8 @@ interface AgentRow {
   attributes_json: string;
   tags_json: string;
   introduction: string;
+  prologue_html: string;
+  opening_line: string;
   is_public: number;
   linked_agent_ids_json: string;
   unlock_conditions_json: string | null;
@@ -73,6 +75,8 @@ export class AgentRepository {
               attributes_json,
               tags_json,
               introduction,
+              prologue_html,
+              opening_line,
               is_public,
               linked_agent_ids_json,
               unlock_conditions_json,
@@ -82,7 +86,7 @@ export class AgentRepository {
               response_style,
               created_at,
               updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `
         )
         .run(
@@ -95,6 +99,8 @@ export class AgentRepository {
           JSON.stringify(input.attributes ?? []),
           JSON.stringify(input.tags ?? []),
           input.introduction ?? "",
+          input.prologueHtml ?? "",
+          input.openingLine ?? "",
           input.isPublic ? 1 : 0,
           JSON.stringify(input.linkedAgentIds ?? []),
           input.unlockConditions ? JSON.stringify(input.unlockConditions) : null,
@@ -122,7 +128,7 @@ export class AgentRepository {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           `
         )
-        .run(conversationId, ownerUserId, input.name, "agent", agentId, input.introduction || input.persona, 0, now, now);
+        .run(conversationId, ownerUserId, input.name, "agent", agentId, input.openingLine || input.introduction || input.persona, 0, now, now);
 
       this.db.exec("COMMIT");
     } catch (error) {
@@ -140,6 +146,8 @@ export class AgentRepository {
       attributes: input.attributes ?? [],
       tags: input.tags ?? [],
       introduction: input.introduction ?? "",
+      prologueHtml: input.prologueHtml ?? "",
+      openingLine: input.openingLine ?? "",
       isPublic: input.isPublic,
       linkedAgentIds: input.linkedAgentIds ?? [],
       ...(input.unlockConditions ? { unlockConditions: input.unlockConditions } : {}),
@@ -165,6 +173,8 @@ function rowToAgent(row: AgentRow): Agent {
     attributes: parseJson<AgentAttribute[]>(row.attributes_json, []),
     tags: parseJson<string[]>(row.tags_json, []),
     introduction: row.introduction,
+    prologueHtml: row.prologue_html,
+    openingLine: row.opening_line,
     isPublic: row.is_public === 1,
     linkedAgentIds: parseJson<string[]>(row.linked_agent_ids_json, []),
     ...(row.unlock_conditions_json ? { unlockConditions: parseJson<Record<string, unknown>>(row.unlock_conditions_json, {}) } : {}),

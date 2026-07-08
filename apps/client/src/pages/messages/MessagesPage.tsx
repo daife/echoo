@@ -31,14 +31,17 @@ export function MessagesPage({ agent }: { agent?: Agent }) {
   const title = agent?.name ?? "Aster";
   const subtitle = agent ? `${agent.type === "slice" ? "Slice" : "Core"} agent, online now` : "Memory agent, online now";
   const messages = agent
-    ? [
-        {
-          id: `${agent.id}-opening`,
-          from: "agent",
-          text: agent.introduction || agent.persona
-        }
-      ]
+    ? agent.openingLine
+      ? [
+          {
+            id: `${agent.id}-opening`,
+            from: "agent",
+            text: agent.openingLine
+          }
+        ]
+      : []
     : thread;
+  const prologueHtml = agent?.prologueHtml ?? "";
 
   return (
     <section className="grid min-h-[calc(100dvh-8rem)] grid-rows-[auto_1fr_auto] overflow-hidden rounded-2xl border border-white/8 bg-[#0d0d10]/80">
@@ -58,6 +61,14 @@ export function MessagesPage({ agent }: { agent?: Agent }) {
       </header>
 
       <main className="flex flex-col gap-6 overflow-y-auto px-5 py-8 no-scrollbar md:px-10">
+        {prologueHtml ? (
+          <iframe
+            className="h-[420px] w-full rounded-2xl border border-white/8 bg-transparent"
+            sandbox="allow-scripts"
+            srcDoc={buildPrologueDocument(prologueHtml)}
+            title={`${title} prologue`}
+          />
+        ) : null}
         <div className="flex justify-center">
           <span className="rounded-full border border-white/8 bg-white/[0.025] px-4 py-1 text-xs uppercase tracking-[0.16em] text-white/30">
             Yesterday 21:45
@@ -99,4 +110,36 @@ export function MessagesPage({ agent }: { agent?: Agent }) {
       </footer>
     </section>
   );
+}
+
+function buildPrologueDocument(html: string) {
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: transparent;
+        color: #f5f1ee;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      body {
+        overflow-x: hidden;
+      }
+
+      img,
+      video,
+      canvas,
+      svg {
+        max-width: 100%;
+      }
+    </style>
+  </head>
+  <body>${html}</body>
+</html>`;
 }
