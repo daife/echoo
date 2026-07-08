@@ -12,6 +12,7 @@ export function normalizeInboundMessage(input: {
     id: `msg_${crypto.randomUUID()}`,
     conversationId: input.conversationId,
     senderId: input.senderId,
+    role: "user",
     direction: "incoming",
     contentType: input.contentType ?? "text",
     content: { text: input.text },

@@ -1,6 +1,7 @@
 import { Waveform } from "@phosphor-icons/react";
 
 export interface MessageBubbleModel {
+  id: string;
   from: string;
   text: string;
   status?: string;

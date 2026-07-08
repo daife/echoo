@@ -50,6 +50,23 @@ export class AgentRepository {
     return rows.map(rowToAgent);
   }
 
+  findByConversation(ownerUserId: string, conversationId: string): Agent | null {
+    const row = this.db
+      .prepare(
+        `
+          SELECT
+            agents.*,
+            conversations.id AS conversation_id
+          FROM agents
+          JOIN conversations ON conversations.agent_id = agents.id
+          WHERE agents.owner_user_id = ? AND conversations.id = ?
+        `
+      )
+      .get(ownerUserId, conversationId) as AgentRow | undefined;
+
+    return row ? rowToAgent(row) : null;
+  }
+
   createSlice(ownerUserId: string, input: CreateSliceAgentRequest): Agent {
     const now = Date.now();
     const agentId = `agent_${randomUUID()}`;
@@ -129,6 +146,43 @@ export class AgentRepository {
           `
         )
         .run(conversationId, ownerUserId, input.name, "agent", agentId, input.openingLine || input.introduction || input.persona, 0, now, now);
+
+      if (input.openingLine?.trim()) {
+        const messageId = `msg_${randomUUID()}`;
+        this.db
+          .prepare(
+            `
+              INSERT INTO messages (
+                id,
+                owner_user_id,
+                conversation_id,
+                sender_id,
+                role,
+                direction,
+                content_type,
+                content_json,
+                status,
+                metadata_json,
+                created_at,
+                updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `
+          )
+          .run(
+            messageId,
+            ownerUserId,
+            conversationId,
+            agentId,
+            "assistant",
+            "incoming",
+            "text",
+            JSON.stringify({ text: input.openingLine }),
+            "delivered",
+            JSON.stringify({ kind: "opening_line" }),
+            now,
+            now
+          );
+      }
 
       this.db.exec("COMMIT");
     } catch (error) {

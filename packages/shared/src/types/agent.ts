@@ -30,6 +30,10 @@ export interface Agent {
   background: string;
   personality: string;
   responseStyle: string;
+  /**
+   * Persistent session id for this user's conversation with the agent.
+   * Server-side storage currently uses conversations.id as the session id.
+   */
   conversationId: string;
   createdAt: number;
   updatedAt: number;

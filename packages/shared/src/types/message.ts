@@ -1,4 +1,5 @@
 export type MessageDirection = "incoming" | "outgoing";
+export type MessageRole = "user" | "assistant" | "system";
 export type MessageStatus = "pending" | "sent" | "delivered" | "failed" | "read";
 export type MessageContentType = "text" | "image" | "file" | "voice" | "video" | "system";
 
@@ -11,12 +12,21 @@ export interface MessageContent {
 
 export interface Message {
   id: string;
+  clientMessageId?: string;
+  /**
+   * Persistent session id for the conversation this message belongs to.
+   */
   conversationId: string;
   senderId: string;
+  role: MessageRole;
   direction: MessageDirection;
   contentType: MessageContentType;
   content: MessageContent;
   status: MessageStatus;
+  providerId?: string;
+  model?: string;
+  metadata?: Record<string, unknown>;
+  error?: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
   readAt?: number;

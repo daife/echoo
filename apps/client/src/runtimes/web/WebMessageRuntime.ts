@@ -1,8 +1,9 @@
-import type { AppWsServerEvent } from "@echoo/shared";
+import type { AppWsServerEvent, Message } from "@echoo/shared";
 import type { AuthRuntime, MessageRuntime } from "../contracts";
 
 export class WebMessageRuntime implements MessageRuntime {
   private socket: WebSocket | null = null;
+  private readonly messageCreatedHandlers = new Set<(message: Message) => void>();
 
   constructor(private readonly auth: AuthRuntime) {}
 
@@ -18,7 +19,8 @@ export class WebMessageRuntime implements MessageRuntime {
     this.socket.onmessage = (event) => {
       const payload = JSON.parse(event.data as string) as AppWsServerEvent;
       if (payload.type === "message.created") {
-        this.socket?.send(JSON.stringify({ type: "ack", messageId: payload.messageId }));
+        this.socket?.send(JSON.stringify({ type: "ack", messageId: payload.message.id }));
+        this.messageCreatedHandlers.forEach((handler) => handler(payload.message));
       }
     };
   }
@@ -30,5 +32,10 @@ export class WebMessageRuntime implements MessageRuntime {
 
   async getStatus(): Promise<"running" | "stopped" | "unsupported"> {
     return this.socket?.readyState === WebSocket.OPEN ? "running" : "stopped";
+  }
+
+  onMessageCreated(handler: (message: Message) => void): () => void {
+    this.messageCreatedHandlers.add(handler);
+    return () => this.messageCreatedHandlers.delete(handler);
   }
 }

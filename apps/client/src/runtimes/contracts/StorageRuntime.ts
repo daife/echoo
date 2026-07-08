@@ -6,8 +6,9 @@ export interface StorageRuntime {
   removeSetting(key: string): Promise<void>;
   saveMessage(message: LocalMessage): Promise<void>;
   saveMessages(messages: LocalMessage[]): Promise<void>;
+  deleteMessage(id: string): Promise<void>;
   getMessage(id: string): Promise<LocalMessage | null>;
-  listMessages(options?: { limit?: number; before?: number; unreadOnly?: boolean }): Promise<LocalMessage[]>;
+  listMessages(options?: { limit?: number; before?: number; unreadOnly?: boolean; conversationId?: string }): Promise<LocalMessage[]>;
   markMessageRead(id: string, readAt: number): Promise<void>;
   getSyncState(key: string): Promise<string | null>;
   setSyncState(key: string, value: string): Promise<void>;

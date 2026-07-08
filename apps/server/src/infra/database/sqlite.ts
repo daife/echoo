@@ -98,6 +98,36 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_resources_owner_user_id ON resources(owner_user_id);
     `,
   },
+  {
+    id: "004_messages",
+    sql: `
+      CREATE TABLE IF NOT EXISTS messages (
+        id TEXT PRIMARY KEY,
+        owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+        conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        client_message_id TEXT,
+        sender_id TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+        direction TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing')),
+        content_type TEXT NOT NULL CHECK (content_type IN ('text', 'image', 'file', 'voice', 'video', 'system')),
+        content_json TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'sent', 'delivered', 'failed', 'read')),
+        provider_id TEXT,
+        model TEXT,
+        metadata_json TEXT,
+        error_json TEXT,
+        read_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_owner_client_message_id
+        ON messages(owner_user_id, client_message_id)
+        WHERE client_message_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_messages_owner_created_at ON messages(owner_user_id, created_at, id);
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation_created_at ON messages(conversation_id, created_at, id);
+    `,
+  },
 ] as const;
 
 let database: DatabaseSync | null = null;

@@ -1,11 +1,9 @@
+import type { Message } from "../types/message";
+
 export type AppWsServerEvent =
   | {
       type: "message.created";
-      messageId: string;
-      conversationId: string;
-      title: string;
-      body: string;
-      createdAt: number;
+      message: Message;
     }
   | {
       type: "message.status_changed";

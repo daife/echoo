@@ -1,6 +1,9 @@
 export type ConversationType = "direct" | "group" | "agent";
 
 export interface Conversation {
+  /**
+   * Persistent session id. One user conversation keeps this id for its lifetime.
+   */
   id: string;
   title: string;
   type: ConversationType;

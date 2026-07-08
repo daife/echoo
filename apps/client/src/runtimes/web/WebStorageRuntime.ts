@@ -28,15 +28,21 @@ export class WebStorageRuntime implements StorageRuntime {
     await tx.done;
   }
 
+  async deleteMessage(id: string): Promise<void> {
+    const db = await getEchooDb();
+    await db.delete("messages", id);
+  }
+
   async getMessage(id: string): Promise<LocalMessage | null> {
     const db = await getEchooDb();
     return (await db.get("messages", id)) ?? null;
   }
 
-  async listMessages(options?: { limit?: number; before?: number; unreadOnly?: boolean }): Promise<LocalMessage[]> {
+  async listMessages(options?: { limit?: number; before?: number; unreadOnly?: boolean; conversationId?: string }): Promise<LocalMessage[]> {
     const db = await getEchooDb();
     const messages = await db.getAll("messages");
     return messages
+      .filter((message) => (options?.conversationId ? message.conversationId === options.conversationId : true))
       .filter((message) => (options?.before ? message.createdAt < options.before : true))
       .filter((message) => (options?.unreadOnly ? message.status !== "read" : true))
       .sort((left, right) => left.createdAt - right.createdAt)
