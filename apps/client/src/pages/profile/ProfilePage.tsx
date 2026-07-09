@@ -49,6 +49,8 @@ export function ProfilePage({
     gradient: "from-white/16 via-white/5 to-transparent",
     avatarResourcePath: agent.avatarResourcePath,
     coverResourcePath: agent.coverResourcePath,
+    attributes: agent.attributes,
+    tags: agent.tags,
     source: agent
   }));
 

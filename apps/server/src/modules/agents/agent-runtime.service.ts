@@ -1,6 +1,8 @@
-import type { Agent, Message } from "@echoo/shared";
+import { buildFigureSystemPrompt } from "@echoo/shared";
+import type { Agent, Message, UserProfile } from "@echoo/shared";
 import type { ChatCompletionMessage } from "../ai/ai-provider.interface.js";
 import { AiProviderRegistry } from "../ai/ai-provider.registry.js";
+import { UserRepository, toUserProfile } from "../auth/user.repository.js";
 import { MessageRepository } from "../messaging/message.repository.js";
 import { AgentRepository } from "./agent.repository.js";
 
@@ -21,19 +23,21 @@ export class AgentRuntimeService {
   constructor(
     private readonly agents = new AgentRepository(),
     private readonly messages = new MessageRepository(),
-    private readonly providers = new AiProviderRegistry()
+    private readonly providers = new AiProviderRegistry(),
+    private readonly users = new UserRepository()
   ) {}
 
   async createReply(input: { ownerUserId: string; conversationId: string }): Promise<AgentRuntimeResult | null> {
     const agent = this.agents.findByConversation(input.ownerUserId, input.conversationId);
     if (!agent) return null;
+    const user = this.findUserProfile(input.ownerUserId);
 
     const provider = this.providers.getDefaultProvider();
     const model = this.providers.getDefaultModel();
     const result = await provider.createChatCompletion({
       model,
       sessionId: input.conversationId,
-      messages: this.buildChatMessages(agent, this.messages.listRecentForContext(input.ownerUserId, input.conversationId, CONTEXT_MESSAGE_LIMIT)),
+      messages: this.buildChatMessages(agent, user, this.messages.listRecentForContext(input.ownerUserId, input.conversationId, CONTEXT_MESSAGE_LIMIT)),
       temperature: Number(process.env.DEFAULT_TEXT_TEMPERATURE ?? 0.8),
       maxTokens: process.env.DEFAULT_TEXT_MAX_TOKENS ? Number(process.env.DEFAULT_TEXT_MAX_TOKENS) : undefined
     });
@@ -51,13 +55,14 @@ export class AgentRuntimeService {
   ): Promise<AgentRuntimeResult | null> {
     const agent = this.agents.findByConversation(input.ownerUserId, input.conversationId);
     if (!agent) return null;
+    const user = this.findUserProfile(input.ownerUserId);
 
     const provider = this.providers.getDefaultProvider();
     const model = this.providers.getDefaultModel();
     const completion = {
       model,
       sessionId: input.conversationId,
-      messages: this.buildChatMessages(agent, this.messages.listRecentForContext(input.ownerUserId, input.conversationId, CONTEXT_MESSAGE_LIMIT)),
+      messages: this.buildChatMessages(agent, user, this.messages.listRecentForContext(input.ownerUserId, input.conversationId, CONTEXT_MESSAGE_LIMIT)),
       temperature: Number(process.env.DEFAULT_TEXT_TEMPERATURE ?? 0.8),
       maxTokens: process.env.DEFAULT_TEXT_MAX_TOKENS ? Number(process.env.DEFAULT_TEXT_MAX_TOKENS) : undefined
     };
@@ -85,42 +90,20 @@ export class AgentRuntimeService {
     };
   }
 
-  private buildChatMessages(agent: Agent, history: Message[]): ChatCompletionMessage[] {
+  private buildChatMessages(agent: Agent, user: UserProfile | null, history: Message[]): ChatCompletionMessage[] {
     return [
       {
         role: "system",
-        content: buildSystemPrompt(agent)
+        content: buildFigureSystemPrompt(agent, { user })
       },
       ...selectContextMessages(agent, history)
     ];
   }
-}
 
-function buildSystemPrompt(agent: Agent) {
-  const attributes = agent.attributes.length
-    ? agent.attributes.map((attribute) => `- ${attribute.key}: ${attribute.value}`).join("\n")
-    : "- 未设定";
-
-  return [
-    `你是“${agent.name}”。`,
-    "",
-    "你的属性：",
-    attributes,
-    "",
-    "你的人设：",
-    agent.persona || "未设定。",
-    "",
-    "你的背景：",
-    agent.background || "未设定。",
-    "",
-    "你的性格：",
-    agent.personality || "未设定。",
-    "",
-    "严格遵守以下回复风格：",
-    agent.responseStyle || "自然、简洁、有情绪感知力。",
-    "",
-    "请始终以这个身份与用户自然对话，不要跳出角色。"
-  ].join("\n");
+  private findUserProfile(ownerUserId: string) {
+    const user = this.users.findById(ownerUserId);
+    return user ? toUserProfile(user) : null;
+  }
 }
 
 function selectContextMessages(agent: Agent, history: Message[]): ChatCompletionMessage[] {

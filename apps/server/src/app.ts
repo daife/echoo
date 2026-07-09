@@ -14,7 +14,11 @@ import { registerResourceRoutes } from "./modules/resources/resources.controller
 export async function buildApp() {
   const app = Fastify({ logger: true });
 
-  await app.register(cors, { origin: true });
+  await app.register(cors, {
+    origin: true,
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
+  });
   await app.register(jwt, { secret: process.env.JWT_SECRET ?? "dev-secret" });
   await app.register(websocket);
   registerAuthDecorators(app);

@@ -293,6 +293,12 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_agents_owner_user_id ON agents(owner_user_id);
     `,
   },
+  {
+    id: "007_agent_current_situation",
+    sql: `
+      ALTER TABLE agents ADD COLUMN current_situation TEXT NOT NULL DEFAULT '';
+    `,
+  },
 ] as const;
 
 let database: DatabaseSync | null = null;

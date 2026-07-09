@@ -5,6 +5,7 @@ export * from "./constants/syncKeys";
 export * from "./protocol/ack-payload";
 export * from "./protocol/app-ws-events";
 export * from "./protocol/notification-payload";
+export * from "./prompts/figure-system-prompt";
 export * from "./types/auth";
 export * from "./types/agent";
 export * from "./types/interfaceBinding";

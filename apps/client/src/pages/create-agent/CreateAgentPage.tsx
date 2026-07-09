@@ -1,6 +1,7 @@
 import { ArrowRight, Brain, CirclesThreePlus, Sparkle, Trash, UploadSimple } from "@phosphor-icons/react";
-import type { Agent, AgentAttribute, AgentResourceUpload, CreateSliceFigureRequest } from "@echoo/shared";
+import { buildFigureSystemPrompt, type Agent, type AgentAttribute, type AgentResourceUpload, type CreateSliceFigureRequest } from "@echoo/shared";
 import { useState } from "react";
+import { useAuth } from "../../app/providers/AuthProvider";
 
 type SliceFigureForm = CreateSliceFigureRequest;
 
@@ -23,6 +24,7 @@ const initialForm: SliceFigureForm = {
   tags: [],
   introduction: "",
   prologueHtml: "",
+  currentSituation: "",
   openingLine: "",
   isPublic: false,
   linkedAgentIds: [],
@@ -38,14 +40,17 @@ export function CreateAgentPage({
 }: {
   onCreateSliceFigure: (input: CreateSliceFigureRequest) => Promise<Agent>;
 }) {
+  const { user } = useAuth();
   const [form, setForm] = useState<SliceFigureForm>(initialForm);
   const [jsonInput, setJsonInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [promptPreview, setPromptPreview] = useState<string | null>(null);
 
   const updateField = (key: keyof SliceFigureForm, value: SliceFigureForm[keyof SliceFigureForm]) => {
     setForm((current) => ({ ...current, [key]: value }));
     setError(null);
+    setPromptPreview(null);
   };
 
   const updateAttribute = (index: number, key: keyof AgentAttribute, value: string) => {
@@ -98,6 +103,7 @@ export function CreateAgentPage({
         isPublic: Boolean(parsed.isPublic)
       });
       setError(null);
+      setPromptPreview(null);
     } catch {
       setError("JSON 无法解析，请检查格式。");
     }
@@ -117,6 +123,7 @@ export function CreateAgentPage({
       await onCreateSliceFigure(payload);
       setForm(initialForm);
       setJsonInput("");
+      setPromptPreview(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "创建失败，请稍后再试。");
     } finally {
@@ -233,6 +240,16 @@ export function CreateAgentPage({
             </label>
 
             <label className="block">
+              <span className="text-sm font-medium text-white/78">当前情景（可选）</span>
+              <textarea
+                className="mt-2 min-h-24 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/28 focus:border-white/25"
+                value={form.currentSituation ?? ""}
+                placeholder="例如：{{user.name}} 刚结束一天工作，正在深夜和 figure 说话。"
+                onChange={(event) => updateField("currentSituation", event.target.value)}
+              />
+            </label>
+
+            <label className="block">
               <span className="text-sm font-medium text-white/78">开场白（可选）</span>
               <textarea
                 className="mt-2 min-h-20 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/28 focus:border-white/25"
@@ -244,7 +261,10 @@ export function CreateAgentPage({
 
             <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
               <div className="flex items-center justify-between gap-4">
-                <span className="text-sm font-medium text-white/78">属性</span>
+                <div>
+                  <span className="text-sm font-medium text-white/78">属性</span>
+                  <p className="mt-1 text-xs text-white/35">用于卡片内部右上角标注，不进入 system prompt。</p>
+                </div>
                 <button className="text-sm text-white/55 hover:text-white" type="button" onClick={() => updateField("attributes", [...(form.attributes ?? []), { key: "", value: "" }])}>
                   Add
                 </button>
@@ -269,7 +289,10 @@ export function CreateAgentPage({
 
             <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
               <div className="flex items-center justify-between gap-4">
-                <span className="text-sm font-medium text-white/78">Tag</span>
+                <div>
+                  <span className="text-sm font-medium text-white/78">Tag</span>
+                  <p className="mt-1 text-xs text-white/35">用于卡片底部标注，不进入 system prompt。</p>
+                </div>
                 <button className="text-sm text-white/55 hover:text-white" type="button" onClick={() => updateField("tags", [...(form.tags ?? []), ""])}>
                   Add
                 </button>
@@ -308,6 +331,30 @@ export function CreateAgentPage({
               </span>
               <input checked={form.isPublic} type="checkbox" onChange={(event) => updateField("isPublic", event.target.checked)} />
             </label>
+          </div>
+
+          <div className="mt-7">
+            <p className="mb-3 text-xs leading-5 text-white/38">
+              System prompt 字段可使用 {"{{user.name}}"}、{"{{user.displayName}}"}、{"{{user.email}}"}、{"{{user.id}}"} 占位符。
+            </p>
+            <button
+              className="rounded-full border border-white/12 px-4 py-2 text-sm text-white/65 transition hover:border-white/25 hover:text-white"
+              type="button"
+              onClick={() => setPromptPreview(buildFigureSystemPrompt(form, { user }))}
+            >
+              预览提示词
+            </button>
+            {promptPreview ? (
+              <div className="mt-4 rounded-xl border border-white/10 bg-black/25 p-4">
+                <div className="mb-3 flex items-center justify-between gap-4">
+                  <span className="text-sm font-medium text-white/78">System prompt 预览</span>
+                  <button className="text-xs text-white/45 transition hover:text-white" type="button" onClick={() => setPromptPreview(null)}>
+                    收起
+                  </button>
+                </div>
+                <pre className="max-h-96 overflow-auto whitespace-pre-wrap text-xs leading-5 text-white/65">{promptPreview}</pre>
+              </div>
+            ) : null}
           </div>
 
           {error ? <p className="mt-5 rounded-xl border border-white/10 bg-white/[0.035] p-4 text-sm text-white/70">{error}</p> : null}
@@ -388,6 +435,7 @@ function buildCreatePayload(form: SliceFigureForm): CreateSliceFigureRequest | s
     ...requiredText,
     introduction: form.introduction?.trim() ?? "",
     prologueHtml: form.prologueHtml?.trim() ?? "",
+    currentSituation: form.currentSituation?.trim() ?? "",
     openingLine: form.openingLine?.trim() ?? "",
     attributes,
     tags,

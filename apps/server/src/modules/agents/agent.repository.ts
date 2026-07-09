@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Agent, AgentAttribute, CreateSliceFigureRequest } from "@echoo/shared";
+import type { Agent, AgentAttribute, CreateSliceFigureRequest, UpdateSliceFigureRequest } from "@echoo/shared";
 import { getDatabase } from "../../infra/database/sqlite.js";
 import { ResourceRepository } from "../resources/resource.repository.js";
 
@@ -14,6 +14,7 @@ interface AgentRow {
   tags_json: string;
   introduction: string;
   prologue_html: string;
+  current_situation: string;
   opening_line: string;
   is_public: number;
   linked_agent_ids_json: string;
@@ -67,6 +68,23 @@ export class AgentRepository {
     return row ? rowToAgent(row) : null;
   }
 
+  findById(ownerUserId: string, agentId: string): Agent | null {
+    const row = this.db
+      .prepare(
+        `
+          SELECT
+            agents.*,
+            conversations.id AS conversation_id
+          FROM agents
+          JOIN conversations ON conversations.agent_id = agents.id
+          WHERE agents.owner_user_id = ? AND agents.id = ?
+        `
+      )
+      .get(ownerUserId, agentId) as AgentRow | undefined;
+
+    return row ? rowToAgent(row) : null;
+  }
+
   createSliceFigure(ownerUserId: string, input: CreateSliceFigureRequest): Agent {
     const now = Date.now();
     const agentId = `agent_${randomUUID()}`;
@@ -93,6 +111,7 @@ export class AgentRepository {
               tags_json,
               introduction,
               prologue_html,
+              current_situation,
               opening_line,
               is_public,
               linked_agent_ids_json,
@@ -103,7 +122,7 @@ export class AgentRepository {
               response_style,
               created_at,
               updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `
         )
         .run(
@@ -117,6 +136,7 @@ export class AgentRepository {
           JSON.stringify(input.tags ?? []),
           input.introduction ?? "",
           input.prologueHtml ?? "",
+          input.currentSituation ?? "",
           input.openingLine ?? "",
           input.isPublic ? 1 : 0,
           JSON.stringify(input.linkedAgentIds ?? []),
@@ -197,6 +217,7 @@ export class AgentRepository {
       tags: input.tags ?? [],
       introduction: input.introduction ?? "",
       prologueHtml: input.prologueHtml ?? "",
+      currentSituation: input.currentSituation ?? "",
       openingLine: input.openingLine ?? "",
       isPublic: input.isPublic,
       linkedAgentIds: input.linkedAgentIds ?? [],
@@ -209,6 +230,75 @@ export class AgentRepository {
       createdAt: now,
       updatedAt: now
     };
+  }
+
+  updateSliceFigure(ownerUserId: string, agentId: string, input: UpdateSliceFigureRequest): Agent | null {
+    const existing = this.findById(ownerUserId, agentId);
+    if (!existing) return null;
+
+    const now = Date.now();
+    this.db.exec("BEGIN");
+    try {
+      this.db
+        .prepare(
+          `
+            UPDATE agents
+            SET
+              name = ?,
+              attributes_json = ?,
+              tags_json = ?,
+              introduction = ?,
+              prologue_html = ?,
+              current_situation = ?,
+              opening_line = ?,
+              is_public = ?,
+              linked_agent_ids_json = ?,
+              unlock_conditions_json = ?,
+              persona = ?,
+              background = ?,
+              personality = ?,
+              response_style = ?,
+              updated_at = ?
+            WHERE owner_user_id = ? AND id = ?
+          `
+        )
+        .run(
+          input.name,
+          JSON.stringify(input.attributes ?? []),
+          JSON.stringify(input.tags ?? []),
+          input.introduction ?? "",
+          input.prologueHtml ?? "",
+          input.currentSituation ?? "",
+          input.openingLine ?? "",
+          input.isPublic ? 1 : 0,
+          JSON.stringify(input.linkedAgentIds ?? []),
+          input.unlockConditions ? JSON.stringify(input.unlockConditions) : null,
+          input.persona,
+          input.background,
+          input.personality,
+          input.responseStyle,
+          now,
+          ownerUserId,
+          agentId
+        );
+
+      this.db
+        .prepare(
+          `
+            UPDATE conversations
+            SET title = ?, last_message_preview = ?, updated_at = ?
+            WHERE owner_user_id = ? AND agent_id = ?
+          `
+        )
+        .run(input.name, input.openingLine || input.introduction || input.persona, now, ownerUserId, agentId);
+
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+
+    return this.findById(ownerUserId, agentId);
   }
 }
 
@@ -224,6 +314,7 @@ function rowToAgent(row: AgentRow): Agent {
     tags: parseJson<string[]>(row.tags_json, []),
     introduction: row.introduction,
     prologueHtml: row.prologue_html,
+    currentSituation: row.current_situation,
     openingLine: row.opening_line,
     isPublic: row.is_public === 1,
     linkedAgentIds: parseJson<string[]>(row.linked_agent_ids_json, []),

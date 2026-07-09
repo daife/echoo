@@ -1,5 +1,5 @@
 import { Bell, ChatCircleText, Compass, GearSix, House, LinkSimple, UserCircle } from "@phosphor-icons/react";
-import type { Agent, CreateSliceFigureRequest } from "@echoo/shared";
+import type { Agent, CreateSliceFigureRequest, UpdateSliceFigureRequest } from "@echoo/shared";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { initApp } from "./bootstrap/initApp";
 import { useAuth } from "./providers/AuthProvider";
@@ -97,6 +97,21 @@ export function App() {
     }
   };
 
+  const updateSliceFigure = async (agentId: string, input: UpdateSliceFigureRequest) => {
+    try {
+      const { agent } = await services.agentService.updateSliceFigure(agentId, input);
+      setMyAgents((current) => current.map((item) => (item.id === agent.id ? agent : item)));
+      setSelectedAgent((current) => (current?.id === agent.id ? agent : current));
+      return agent;
+    } catch (error) {
+      if (error instanceof Error && error.message === "Please sign in again.") {
+        await auth.signOut();
+        setView("auth");
+      }
+      throw error;
+    }
+  };
+
   const ActivePage = useMemo(() => {
     if (auth.isLoading) {
       return (
@@ -111,7 +126,7 @@ export function App() {
     if (view === "explore") return <ExplorePage />;
     if (view === "profile") return <ProfilePage agents={myAgents} isLoadingAgents={isLoadingAgents} onOpenAgent={openAgent} />;
     if (view === "create") return <CreateAgentPage onCreateSliceFigure={createSliceFigure} />;
-    if (view === "messages") return <MessagesPage agent={selectedAgent ?? undefined} onConversationDeleted={handleConversationDeleted} />;
+    if (view === "messages") return <MessagesPage agent={selectedAgent ?? undefined} onAgentUpdated={updateSliceFigure} onConversationDeleted={handleConversationDeleted} />;
     if (view === "bindings") return <BindingsPanel />;
     if (view === "settings") return <SettingsPage />;
     return <HomePage onCreateAgent={() => setView("create")} onOpenChat={() => setView("messages")} />;

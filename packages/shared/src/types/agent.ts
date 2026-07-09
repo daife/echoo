@@ -22,6 +22,7 @@ export interface Agent {
   tags: string[];
   introduction: string;
   prologueHtml: string;
+  currentSituation: string;
   openingLine: string;
   isPublic: boolean;
   linkedAgentIds: string[];
@@ -48,6 +49,7 @@ export interface CreateSliceFigureRequest {
   tags?: string[];
   introduction?: string;
   prologueHtml?: string;
+  currentSituation?: string;
   openingLine?: string;
   isPublic: boolean;
   linkedAgentIds?: string[];
@@ -57,6 +59,8 @@ export interface CreateSliceFigureRequest {
   personality: string;
   responseStyle: string;
 }
+
+export type UpdateSliceFigureRequest = Omit<CreateSliceFigureRequest, "type" | "avatar" | "cover">;
 
 export interface CreateAgentResponse {
   agent: Agent;

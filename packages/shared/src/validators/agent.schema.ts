@@ -23,6 +23,7 @@ export const createSliceFigureSchema = z.object({
   tags: z.array(z.string().trim().min(1).max(40)).max(30).optional().default([]),
   introduction: optionalText(2000),
   prologueHtml: optionalText(12000),
+  currentSituation: optionalText(4000),
   openingLine: optionalText(2000),
   isPublic: z.boolean(),
   linkedAgentIds: z.array(z.string().trim().min(1).max(120)).max(50).optional().default([]),
@@ -31,4 +32,10 @@ export const createSliceFigureSchema = z.object({
   background: requiredText("Background"),
   personality: requiredText("Personality"),
   responseStyle: requiredText("Response style")
+});
+
+export const updateSliceFigureSchema = createSliceFigureSchema.omit({
+  type: true,
+  avatar: true,
+  cover: true
 });

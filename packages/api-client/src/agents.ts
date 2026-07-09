@@ -1,4 +1,4 @@
-import type { Agent, CreateAgentResponse, CreateSliceFigureRequest } from "@echoo/shared";
+import type { Agent, CreateAgentResponse, CreateSliceFigureRequest, UpdateSliceFigureRequest } from "@echoo/shared";
 import type { ApiClient } from "./client";
 
 export class AgentsApi {
@@ -11,6 +11,12 @@ export class AgentsApi {
   createSliceFigure(body: CreateSliceFigureRequest): Promise<CreateAgentResponse> {
     return this.client
       .post<CreateAgentResponse>("/agents", body)
+      .then((response) => ({ agent: normalizeAgentResources(this.client, response.agent) }));
+  }
+
+  updateSliceFigure(agentId: string, body: UpdateSliceFigureRequest): Promise<CreateAgentResponse> {
+    return this.client
+      .patch<CreateAgentResponse>(`/agents/${agentId}`, body)
       .then((response) => ({ agent: normalizeAgentResources(this.client, response.agent) }));
   }
 }
