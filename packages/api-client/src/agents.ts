@@ -1,4 +1,11 @@
-import type { Agent, CreateAgentResponse, CreateSliceFigureRequest, UpdateSliceFigureRequest } from "@echoo/shared";
+import type {
+  Agent,
+  CreateAgentResponse,
+  CreatePrimeFigureRequest,
+  CreateSliceFigureRequest,
+  UpdatePrimeFigureRequest,
+  UpdateSliceFigureRequest
+} from "@echoo/shared";
 import type { ApiClient } from "./client";
 
 export class AgentsApi {
@@ -14,9 +21,21 @@ export class AgentsApi {
       .then((response) => ({ agent: normalizeAgentResources(this.client, response.agent) }));
   }
 
+  createPrimeFigure(body: CreatePrimeFigureRequest): Promise<CreateAgentResponse> {
+    return this.client
+      .post<CreateAgentResponse>("/agents", body)
+      .then((response) => ({ agent: normalizeAgentResources(this.client, response.agent) }));
+  }
+
   updateSliceFigure(agentId: string, body: UpdateSliceFigureRequest): Promise<CreateAgentResponse> {
     return this.client
       .patch<CreateAgentResponse>(`/agents/${agentId}`, body)
+      .then((response) => ({ agent: normalizeAgentResources(this.client, response.agent) }));
+  }
+
+  updatePrimeFigure(agentId: string, body: UpdatePrimeFigureRequest): Promise<CreateAgentResponse> {
+    return this.client
+      .patch<CreateAgentResponse>(`/agents/${agentId}/prime-figure`, body)
       .then((response) => ({ agent: normalizeAgentResources(this.client, response.agent) }));
   }
 }

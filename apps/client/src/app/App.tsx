@@ -125,8 +125,16 @@ export function App() {
     }
     if (view === "explore") return <ExplorePage />;
     if (view === "profile") return <ProfilePage agents={myAgents} isLoadingAgents={isLoadingAgents} onOpenAgent={openAgent} />;
-    if (view === "create") return <CreateAgentPage onCreateSliceFigure={createSliceFigure} />;
-    if (view === "messages") return <MessagesPage agent={selectedAgent ?? undefined} onAgentUpdated={updateSliceFigure} onConversationDeleted={handleConversationDeleted} />;
+    if (view === "create") return <CreateAgentPage createHandlers={{ "slice-figure": createSliceFigure }} />;
+    if (view === "messages") {
+      return (
+        <MessagesPage
+          agent={selectedAgent ?? undefined}
+          updateHandlers={{ "slice-figure": updateSliceFigure }}
+          onConversationDeleted={handleConversationDeleted}
+        />
+      );
+    }
     if (view === "bindings") return <BindingsPanel />;
     if (view === "settings") return <SettingsPage />;
     return <HomePage onCreateAgent={() => setView("create")} onOpenChat={() => setView("messages")} />;

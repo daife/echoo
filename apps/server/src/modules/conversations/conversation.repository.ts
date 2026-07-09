@@ -4,7 +4,7 @@ import { getDatabase } from "../../infra/database/sqlite.js";
 interface ConversationRow {
   id: string;
   title: string;
-  type: "direct" | "group" | "slice-figure" | "prime-figure";
+  type: "direct" | "group" | "slice-figure" | "prime-figure" | "prime-world";
   agent_id: string | null;
   external_binding_id: string | null;
   last_message_preview: string | null;

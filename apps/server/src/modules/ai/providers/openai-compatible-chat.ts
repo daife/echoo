@@ -1,10 +1,11 @@
-import type { AiProviderId, ChatCompletionInput, ChatCompletionResult, ChatDelta } from "../ai-provider.interface.js";
+import type { AiProviderId, ChatCompletionInput, ChatCompletionMessage, ChatCompletionResult, ChatDelta, ChatToolCall } from "../ai-provider.interface.js";
 
 type OpenAiCompatibleContent = string | Array<{ type?: string; text?: string }> | undefined;
 
 interface OpenAiCompatibleChoice {
   message?: {
     content?: OpenAiCompatibleContent;
+    tool_calls?: ChatToolCall[];
   };
 }
 
@@ -50,13 +51,7 @@ export async function createOpenAiCompatibleChatCompletion(input: {
       Authorization: `Bearer ${input.apiKey}`,
       ...input.headers
     },
-    body: JSON.stringify({
-      model: input.completion.model,
-      ...input.extraBody,
-      messages: input.completion.messages,
-      temperature: input.completion.temperature,
-      max_tokens: input.completion.maxTokens
-    })
+    body: JSON.stringify(buildRequestBody(input))
   });
 
   if (!response.ok) {
@@ -66,12 +61,14 @@ export async function createOpenAiCompatibleChatCompletion(input: {
 
   const payload = (await response.json()) as OpenAiCompatibleResponse;
   const text = normalizeContent(payload.choices?.[0]?.message?.content);
-  if (!text) throw new Error(`${input.providerId} chat completion returned an empty response.`);
+  const toolCalls = payload.choices?.[0]?.message?.tool_calls;
+  if (!text && !toolCalls?.length) throw new Error(`${input.providerId} chat completion returned an empty response.`);
 
   return {
     providerId: input.providerId,
     model: input.completion.model,
-    text
+    text,
+    ...(toolCalls?.length ? { toolCalls } : {})
   };
 }
 
@@ -127,11 +124,7 @@ async function requestChatCompletion(input: OpenAiCompatibleRequestInput, extraB
       ...input.headers
     },
     body: JSON.stringify({
-      model: input.completion.model,
-      ...input.extraBody,
-      messages: input.completion.messages,
-      temperature: input.completion.temperature,
-      max_tokens: input.completion.maxTokens,
+      ...buildRequestBody(input),
       ...extraBody
     })
   });
@@ -142,6 +135,36 @@ async function requestChatCompletion(input: OpenAiCompatibleRequestInput, extraB
   }
 
   return response;
+}
+
+function buildRequestBody(input: OpenAiCompatibleRequestInput) {
+  return {
+    model: input.completion.model,
+    ...input.extraBody,
+    messages: input.completion.messages.map(toOpenAiMessage),
+    temperature: input.completion.temperature,
+    max_tokens: input.completion.maxTokens,
+    response_format: input.completion.responseFormat,
+    tools: input.completion.tools,
+    tool_choice: input.completion.toolChoice,
+    parallel_tool_calls: input.completion.tools?.length ? false : undefined,
+    ...(input.completion.reasoningMode === "disabled"
+      ? {
+          reasoning: { enabled: false, exclude: true },
+          reasoning_effort: "none"
+        }
+      : {})
+  };
+}
+
+function toOpenAiMessage(message: ChatCompletionMessage) {
+  return {
+    role: message.role,
+    content: message.content,
+    ...(message.name ? { name: message.name } : {}),
+    ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
+    ...(message.toolCalls?.length ? { tool_calls: message.toolCalls } : {})
+  };
 }
 
 async function readErrorDetail(response: Response) {

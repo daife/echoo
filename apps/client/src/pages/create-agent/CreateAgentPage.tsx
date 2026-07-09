@@ -1,9 +1,36 @@
 import { ArrowRight, Brain, CirclesThreePlus, Sparkle, Trash, UploadSimple } from "@phosphor-icons/react";
-import { buildFigureSystemPrompt, type Agent, type AgentAttribute, type AgentResourceUpload, type CreateSliceFigureRequest } from "@echoo/shared";
+import { buildFigureSystemPrompt, type Agent, type AgentAttribute, type AgentResourceUpload, type AgentType, type CreateSliceFigureRequest } from "@echoo/shared";
 import { useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 
 type SliceFigureForm = CreateSliceFigureRequest;
+export type CreateAgentHandlers = {
+  "slice-figure": (input: CreateSliceFigureRequest) => Promise<Agent>;
+};
+
+const createOptions = [
+  {
+    type: "prime-figure",
+    label: "Prime Figure",
+    title: "Prime Figure later",
+    description: "长期推进、稳定记忆、数值和日程控制会走独立创建流程。",
+    icon: Brain
+  },
+  {
+    type: "slice-figure",
+    label: "Slice Figure",
+    title: "Create a Slice Figure",
+    description: "适合短场景、轻量人格、快速试验和临时任务。",
+    icon: CirclesThreePlus
+  },
+  {
+    type: "prime-world",
+    label: "Prime World",
+    title: "Prime World later",
+    description: "世界状态、规则推进和多主体事件会走独立创建流程。",
+    icon: Sparkle
+  }
+] satisfies Array<{ type: AgentType; label: string; title: string; description: string; icon: typeof Brain }>;
 
 const requiredFields = [
   { key: "name", label: "名字", placeholder: "例如：Mira" },
@@ -36,11 +63,12 @@ const initialForm: SliceFigureForm = {
 };
 
 export function CreateAgentPage({
-  onCreateSliceFigure
+  createHandlers
 }: {
-  onCreateSliceFigure: (input: CreateSliceFigureRequest) => Promise<Agent>;
+  createHandlers: CreateAgentHandlers;
 }) {
   const { user } = useAuth();
+  const [selectedType, setSelectedType] = useState<AgentType>("slice-figure");
   const [form, setForm] = useState<SliceFigureForm>(initialForm);
   const [jsonInput, setJsonInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -120,7 +148,7 @@ export function CreateAgentPage({
 
     setIsSubmitting(true);
     try {
-      await onCreateSliceFigure(payload);
+      await createHandlers["slice-figure"](payload);
       setForm(initialForm);
       setJsonInput("");
       setPromptPreview(null);
@@ -136,41 +164,48 @@ export function CreateAgentPage({
       <div className="glass-panel overflow-hidden rounded-2xl p-7 md:p-10">
         <div className="mb-8 flex items-center gap-3 text-sm text-white/50">
           <Sparkle size={18} />
-          Co-create a Slice Figure
+          Co-create an Agent
         </div>
         <h1 className="max-w-3xl text-5xl font-semibold leading-[1.05] text-white md:text-6xl">
-          Shape a focused companion from identity, story, and response style.
+          Shape an LLM-driven agent from the right creation flow.
         </h1>
         <p className="mt-5 max-w-2xl text-sm leading-6 text-white/52">
-          当前先开放 Slice Figure 创建。头像和封面会作为用户资源上传到服务器，figure 只保存资源访问路径。
+          当前先开放 Slice Figure 创建。Prime Figure 和 Prime World 已保留独立入口，后续会接入各自的创建界面。
         </p>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
         <div className="space-y-5">
-          <article className="glass-panel rounded-2xl p-6 opacity-55">
-            <div className="flex items-start justify-between gap-6">
-              <div className="grid h-14 w-14 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-white">
-                <Brain size={28} weight="duotone" />
-              </div>
-              <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/45">Prime Figure</span>
-            </div>
-            <h2 className="mt-8 text-3xl font-semibold text-white">Prime Figure later</h2>
-            <p className="mt-3 text-sm leading-6 text-white/52">长期推进、稳定记忆、数值和日程控制会走独立创建流程。</p>
-          </article>
+          {createOptions.map((option) => {
+            const Icon = option.icon;
+            const active = selectedType === option.type;
+            const implemented = option.type === "slice-figure";
 
-          <article className="glass-panel rounded-2xl p-6 ring-1 ring-white/12">
-            <div className="flex items-start justify-between gap-6">
-              <div className="grid h-14 w-14 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-white">
-                <CirclesThreePlus size={28} weight="duotone" />
-              </div>
-              <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#09090b]">Slice Figure</span>
-            </div>
-            <h2 className="mt-8 text-3xl font-semibold text-white">Create a Slice Figure</h2>
-            <p className="mt-3 text-sm leading-6 text-white/52">适合短场景、轻量人格、快速试验和临时任务。</p>
-          </article>
+            return (
+              <button
+                key={option.type}
+                className={`glass-panel w-full rounded-2xl p-6 text-left transition active:scale-[0.99] ${
+                  active ? "ring-1 ring-white/12" : "opacity-55 hover:opacity-80"
+                }`}
+                type="button"
+                onClick={() => setSelectedType(option.type)}
+              >
+                <div className="flex items-start justify-between gap-6">
+                  <div className="grid h-14 w-14 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-white">
+                    <Icon size={28} weight="duotone" />
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs ${active ? "bg-white font-semibold text-[#09090b]" : "border border-white/10 text-white/45"}`}>
+                    {implemented ? option.label : `${option.label} later`}
+                  </span>
+                </div>
+                <h2 className="mt-8 text-3xl font-semibold text-white">{option.title}</h2>
+                <p className="mt-3 text-sm leading-6 text-white/52">{option.description}</p>
+              </button>
+            );
+          })}
 
-          <div className="glass-panel rounded-2xl p-5">
+          {selectedType === "slice-figure" ? (
+            <div className="glass-panel rounded-2xl p-5">
             <h2 className="text-lg font-semibold text-white">一键 JSON 导入</h2>
             <textarea
               className="mt-3 min-h-40 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-xs leading-5 text-white outline-none placeholder:text-white/28 focus:border-white/25"
@@ -185,10 +220,12 @@ export function CreateAgentPage({
             >
               Apply JSON
             </button>
-          </div>
+            </div>
+          ) : null}
         </div>
 
-        <form className="glass-panel rounded-2xl p-6 md:p-8" onSubmit={submit}>
+        {selectedType === "slice-figure" ? (
+          <form className="glass-panel rounded-2xl p-6 md:p-8" onSubmit={submit}>
           <div className="grid gap-5">
             <div className="grid gap-4 md:grid-cols-2">
               <ImageInput label="头像" value={form.avatar ?? null} onChange={(value) => updateField("avatar", value)} />
@@ -367,9 +404,28 @@ export function CreateAgentPage({
             {isSubmitting ? "Creating..." : "Create Slice Figure"}
             <ArrowRight size={17} />
           </button>
-        </form>
+          </form>
+        ) : (
+          <UnavailableCreatePanel type={selectedType} />
+        )}
       </div>
     </section>
+  );
+}
+
+function UnavailableCreatePanel({ type }: { type: Exclude<AgentType, "slice-figure"> }) {
+  const option = createOptions.find((item) => item.type === type);
+
+  return (
+    <div className="glass-panel grid min-h-[28rem] place-items-center rounded-2xl p-8 text-center">
+      <div className="max-w-md">
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-white">
+          <Brain size={26} weight="duotone" />
+        </div>
+        <h2 className="mt-5 text-2xl font-semibold text-white">{option?.label ?? "Agent"} creation is not implemented yet.</h2>
+        <p className="mt-3 text-sm leading-6 text-white/48">这个类型已经有独立入口，后续会接入自己的字段、校验和提交方法。</p>
+      </div>
+    </div>
   );
 }
 

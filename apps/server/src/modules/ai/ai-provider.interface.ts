@@ -1,8 +1,29 @@
 export type AiProviderId = "openrouter" | "xai";
 
 export interface ChatCompletionMessage {
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
+  name?: string;
+  toolCallId?: string;
+  toolCalls?: ChatToolCall[];
+}
+
+export interface ChatToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description?: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+export interface ChatToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
 }
 
 export interface ChatCompletionInput {
@@ -14,12 +35,17 @@ export interface ChatCompletionInput {
   messages: ChatCompletionMessage[];
   temperature?: number;
   maxTokens?: number;
+  responseFormat?: Record<string, unknown>;
+  tools?: ChatToolDefinition[];
+  toolChoice?: "none" | "auto" | "required" | Record<string, unknown>;
+  reasoningMode?: "disabled";
 }
 
 export interface ChatCompletionResult {
   providerId: AiProviderId;
   model: string;
   text: string;
+  toolCalls?: ChatToolCall[];
 }
 
 export interface ChatDelta {

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Message } from "@echoo/shared";
 import { AgentRuntimeService } from "../agents/agent-runtime.service.js";
+import { PrimeFigureRuntimeService } from "../agents/kinds/prime-figure/prime-figure-runtime.service.js";
+import { PrimeMessageRepository } from "../agents/kinds/prime-figure/prime-message.repository.js";
 import { ConversationRepository } from "../conversations/conversation.repository.js";
 import { AppPushService } from "../realtime/delivery.service.js";
 import { MessageRepository } from "./message.repository.js";
@@ -23,7 +25,9 @@ export class MessagingService {
     private readonly repository = new MessageRepository(),
     private readonly conversations = new ConversationRepository(),
     private readonly appPush = new AppPushService(),
-    private readonly agentRuntime = new AgentRuntimeService()
+    private readonly agentRuntime = new AgentRuntimeService(),
+    private readonly primeMessages = new PrimeMessageRepository(),
+    private readonly primeRuntime = new PrimeFigureRuntimeService()
   ) {}
 
   listMessages(ownerUserId: string, after?: string | null, conversationId?: string | null, limit?: number) {
@@ -69,6 +73,21 @@ export class MessagingService {
     this.appPush.pushToUser(input.ownerUserId, { type: "message.created", message });
 
     if (!conversation.agentId) return { message };
+
+    if (conversation.type === "prime-figure") {
+      this.primeMessages.save({
+        ownerUserId: input.ownerUserId,
+        agentId: conversation.agentId,
+        conversationId: input.conversationId,
+        sender: "end_user",
+        direction: "incoming",
+        content: { type: "text", text: input.text },
+        occurredAtMs: now,
+        timezone: process.env.TZ ?? "UTC"
+      });
+      void this.primeRuntime.createDecision({ ownerUserId: input.ownerUserId, conversationId: input.conversationId });
+      return { message };
+    }
 
     if (input.stream === false) {
       const assistantMessage = await this.createAssistantReply(input.ownerUserId, input.conversationId);

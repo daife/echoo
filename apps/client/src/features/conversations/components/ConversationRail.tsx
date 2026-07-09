@@ -19,7 +19,7 @@ export function ConversationRail({
 }) {
   const visibleConversations =
     agents.length > 0
-      ? agents.map((agent) => ({ name: agent.name, text: agent.introduction || agent.persona, unread: 0, agent }))
+      ? agents.map((agent) => ({ name: agent.name, text: agent.introduction || getAgentFallbackText(agent), unread: 0, agent }))
       : conversations.map((conversation) => ({ ...conversation, agent: null }));
 
   return (
@@ -64,4 +64,8 @@ export function ConversationRail({
       </div>
     </aside>
   );
+}
+
+function getAgentFallbackText(agent: Agent) {
+  return agent.type === "slice-figure" ? agent.detail.persona : "";
 }

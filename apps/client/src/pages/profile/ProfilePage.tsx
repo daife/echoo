@@ -44,8 +44,8 @@ export function ProfilePage({
   const cards = agents.map((agent) => ({
     id: agent.id,
     name: agent.name,
-    kind: agent.type === "slice-figure" ? "Slice Figure" : "Prime Figure",
-    description: agent.introduction || agent.persona,
+    kind: formatAgentType(agent),
+    description: agent.introduction || getAgentFallbackDescription(agent),
     gradient: "from-white/16 via-white/5 to-transparent",
     avatarResourcePath: agent.avatarResourcePath,
     coverResourcePath: agent.coverResourcePath,
@@ -150,4 +150,14 @@ export function ProfilePage({
       </div>
     </section>
   );
+}
+
+function formatAgentType(agent: Agent) {
+  if (agent.type === "slice-figure") return "Slice Figure";
+  if (agent.type === "prime-world") return "Prime World";
+  return "Prime Figure";
+}
+
+function getAgentFallbackDescription(agent: Agent) {
+  return agent.type === "slice-figure" ? agent.detail.persona : "";
 }

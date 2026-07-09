@@ -1,17 +1,21 @@
 import { GearSix, Microphone, PaperPlaneRight, Paperclip, PencilSimple, Plus, Trash, Waveform, X } from "@phosphor-icons/react";
-import { buildFigureSystemPrompt, type Agent, type AgentAttribute, type LocalMessage, type UpdateSliceFigureRequest, type UserProfile } from "@echoo/shared";
+import { buildFigureSystemPrompt, type Agent, type AgentAttribute, type LocalMessage, type SliceFigureAgent, type UpdateSliceFigureRequest, type UserProfile } from "@echoo/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { MessageBubble, type MessageBubbleModel } from "../../features/messages/components/MessageBubble";
 import { useConversationMessages } from "./useConversationMessages";
 
+export type UpdateAgentHandlers = {
+  "slice-figure": (agentId: string, input: UpdateSliceFigureRequest) => Promise<Agent>;
+};
+
 export function MessagesPage({
   agent,
-  onAgentUpdated,
+  updateHandlers,
   onConversationDeleted
 }: {
   agent?: Agent;
-  onAgentUpdated?: (agentId: string, input: UpdateSliceFigureRequest) => Promise<Agent>;
+  updateHandlers: UpdateAgentHandlers;
   onConversationDeleted?: (conversationId: string) => void;
 }) {
   const { user } = useAuth();
@@ -39,9 +43,11 @@ export function MessagesPage({
   const mainRef = useRef<HTMLElement | null>(null);
   const title = agent?.name ?? "Choose a figure";
   const subtitle = agent
-    ? `${agent.type === "slice-figure" ? "Slice Figure" : "Prime Figure"}, online now`
+    ? `${formatAgentType(agent)}, online now`
     : "Open or create a figure to start chatting";
-  const prologueHtml = agent?.prologueHtml ?? "";
+  const sliceDetail = agent?.type === "slice-figure" ? agent.detail : null;
+  const prologueHtml = sliceDetail?.prologueHtml ?? "";
+  const editor = agent ? getAgentEditor(agent, updateHandlers) : null;
 
   useEffect(() => {
     mainRef.current?.scrollTo({ top: mainRef.current.scrollHeight, behavior: "smooth" });
@@ -49,12 +55,12 @@ export function MessagesPage({
 
   const visibleMessages = useMemo(() => {
     if (messages.length > 0) return messages.map((message) => toBubbleMessage(message, canRollback));
-    if (agent?.openingLine) {
+    if (agent?.type === "slice-figure" && agent.detail.openingLine) {
       return [
         {
           id: `${agent.id}-opening`,
           from: "agent",
-          text: agent.openingLine
+          text: agent.detail.openingLine
         }
       ];
     }
@@ -123,21 +129,23 @@ export function MessagesPage({
                 }
               />
             </label>
-            <button
-              className="mt-3 flex w-full items-center justify-between gap-4 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-3 text-left transition hover:border-white/18 hover:bg-white/[0.055]"
-              type="button"
-              onClick={() => {
-                setIsSettingsOpen(false);
-                setEditError(null);
-                setIsEditOpen(true);
-              }}
-            >
-              <div>
-                <div className="text-sm font-medium text-white/88">修改 Figure</div>
-                <div className="mt-1 text-xs leading-5 text-white/38">修改姓名、人设、情景、属性和 tag。</div>
-              </div>
-              <PencilSimple className="text-white/60" size={17} />
-            </button>
+            {editor ? (
+              <button
+                className="mt-3 flex w-full items-center justify-between gap-4 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-3 text-left transition hover:border-white/18 hover:bg-white/[0.055]"
+                type="button"
+                onClick={() => {
+                  setIsSettingsOpen(false);
+                  setEditError(null);
+                  setIsEditOpen(true);
+                }}
+              >
+                <div>
+                  <div className="text-sm font-medium text-white/88">{editor.actionLabel}</div>
+                  <div className="mt-1 text-xs leading-5 text-white/38">{editor.actionDescription}</div>
+                </div>
+                <PencilSimple className="text-white/60" size={17} />
+              </button>
+            ) : null}
             <button
               className="mt-3 flex w-full items-center justify-between gap-4 rounded-lg border border-red-300/20 bg-red-400/[0.06] px-3 py-3 text-left transition hover:border-red-200/35 hover:bg-red-400/[0.09] disabled:cursor-not-allowed disabled:opacity-55"
               disabled={isDeletingConversation}
@@ -220,37 +228,59 @@ export function MessagesPage({
           </button>
         </form>
       </footer>
-      {isEditOpen ? (
-        <EditFigureDialog
-          agent={agent}
-          error={editError}
-          isSubmitting={isUpdatingAgent}
-          user={user}
-          onClose={() => {
-            if (isUpdatingAgent) return;
-            setIsEditOpen(false);
-            setEditError(null);
-          }}
-          onSubmit={async (payload) => {
-            if (!onAgentUpdated) return;
-            setIsUpdatingAgent(true);
-            setEditError(null);
-            try {
-              await onAgentUpdated(agent.id, payload);
+      {isEditOpen && editor
+        ? editor.renderDialog({
+            error: editError,
+            isSubmitting: isUpdatingAgent,
+            user,
+            onClose: () => {
+              if (isUpdatingAgent) return;
               setIsEditOpen(false);
-            } catch (caught) {
-              setEditError(caught instanceof Error ? caught.message : "修改失败，请稍后再试。");
-            } finally {
-              setIsUpdatingAgent(false);
+              setEditError(null);
+            },
+            onSubmit: async (payload) => {
+              setIsUpdatingAgent(true);
+              setEditError(null);
+              try {
+                await editor.update(payload);
+                setIsEditOpen(false);
+              } catch (caught) {
+                setEditError(caught instanceof Error ? caught.message : "修改失败，请稍后再试。");
+              } finally {
+                setIsUpdatingAgent(false);
+              }
             }
-          }}
-        />
-      ) : null}
+          })
+        : null}
     </section>
   );
 }
 
-function EditFigureDialog({
+type AgentEditor = {
+  actionLabel: string;
+  actionDescription: string;
+  update: (payload: UpdateSliceFigureRequest) => Promise<Agent>;
+  renderDialog: (props: {
+    user: Pick<UserProfile, "id" | "email" | "displayName"> | null;
+    isSubmitting: boolean;
+    error: string | null;
+    onClose: () => void;
+    onSubmit: (payload: UpdateSliceFigureRequest) => Promise<void>;
+  }) => React.ReactNode;
+};
+
+function getAgentEditor(agent: Agent, updateHandlers: UpdateAgentHandlers): AgentEditor | null {
+  if (agent.type !== "slice-figure") return null;
+
+  return {
+    actionLabel: "修改 Slice Figure",
+    actionDescription: "修改姓名、人设、情景、属性和 tag。",
+    update: (payload) => updateHandlers["slice-figure"](agent.id, payload),
+    renderDialog: (props) => <EditSliceFigureDialog agent={agent} {...props} />
+  };
+}
+
+function EditSliceFigureDialog({
   agent,
   user,
   isSubmitting,
@@ -258,7 +288,7 @@ function EditFigureDialog({
   onClose,
   onSubmit
 }: {
-  agent: Agent;
+  agent: SliceFigureAgent;
   user: Pick<UserProfile, "id" | "email" | "displayName"> | null;
   isSubmitting: boolean;
   error: string | null;
@@ -326,7 +356,7 @@ function EditFigureDialog({
       <form className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/10 bg-[#101014] p-5 shadow-[0_24px_100px_rgba(0,0,0,0.55)] md:p-7" onSubmit={submit}>
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-semibold text-white">修改 Figure</h2>
+            <h2 className="text-xl font-semibold text-white">修改 Slice Figure</h2>
             <p className="mt-1 text-sm text-white/42">沿用创建 Figure 的字段逻辑，属性和 tag 只用于展示。</p>
           </div>
           <button className="grid h-9 w-9 place-items-center rounded-full text-white/50 transition hover:bg-white/[0.06] hover:text-white" type="button" onClick={onClose}>
@@ -510,23 +540,29 @@ function EditableTags({
   );
 }
 
-function agentToUpdateForm(agent: Agent): UpdateSliceFigureRequest {
+function agentToUpdateForm(agent: SliceFigureAgent): UpdateSliceFigureRequest {
   return {
     name: agent.name,
     attributes: agent.attributes,
     tags: agent.tags,
     introduction: agent.introduction,
-    prologueHtml: agent.prologueHtml,
-    currentSituation: agent.currentSituation,
-    openingLine: agent.openingLine,
+    prologueHtml: agent.detail.prologueHtml,
+    currentSituation: agent.detail.currentSituation,
+    openingLine: agent.detail.openingLine,
     isPublic: agent.isPublic,
-    linkedAgentIds: agent.linkedAgentIds,
-    unlockConditions: agent.unlockConditions ?? null,
-    persona: agent.persona,
-    background: agent.background,
-    personality: agent.personality,
-    responseStyle: agent.responseStyle
+    linkedAgentIds: agent.detail.linkedAgentIds,
+    unlockConditions: agent.detail.unlockConditions ?? null,
+    persona: agent.detail.persona,
+    background: agent.detail.background,
+    personality: agent.detail.personality,
+    responseStyle: agent.detail.responseStyle
   };
+}
+
+function formatAgentType(agent: Agent) {
+  if (agent.type === "slice-figure") return "Slice Figure";
+  if (agent.type === "prime-world") return "Prime World";
+  return "Prime Figure";
 }
 
 function buildUpdatePayload(form: UpdateSliceFigureRequest): UpdateSliceFigureRequest | string {
