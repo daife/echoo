@@ -26,7 +26,7 @@ export function SettingsPage() {
           ["Account system", "Email login, token refresh, multi-device sessions"],
           ["Storage runtime", "Web IndexedDB now, Tauri SQLite later"],
           ["Realtime", "WebSocket foreground on Web, native keepalive on Android"],
-          ["Interface binding", "One external interface can bind to one agent conversation"],
+          ["Interface binding", "One external interface can bind to one figure session"],
           ["Notifications", "Native service owns Android background notifications"]
         ].map(([title, detail]) => (
           <div key={title} className="flex items-center justify-between gap-5 p-5">

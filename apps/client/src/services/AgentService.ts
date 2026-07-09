@@ -1,5 +1,5 @@
 import type { AgentsApi } from "@echoo/api-client";
-import type { CreateSliceAgentRequest } from "@echoo/shared";
+import type { CreateSliceFigureRequest } from "@echoo/shared";
 
 export class AgentService {
   constructor(private readonly api: AgentsApi) {}
@@ -8,7 +8,7 @@ export class AgentService {
     return this.api.listMyAgents();
   }
 
-  createSliceAgent(input: CreateSliceAgentRequest) {
-    return this.api.createSliceAgent(input);
+  createSliceFigure(input: CreateSliceFigureRequest) {
+    return this.api.createSliceFigure(input);
   }
 }

@@ -4,15 +4,23 @@ import type { ApiClient } from "./client";
 export class MessageApi {
   constructor(private readonly client: ApiClient) {}
 
-  listMessages(options?: { after?: string | null; conversationId?: string | null }): Promise<Message[]> {
+  listMessages(options?: { after?: string | null; conversationId?: string | null; limit?: number | null }): Promise<Message[]> {
     return this.client.get<Message[]>("/messages", {
       after: options?.after ?? undefined,
-      conversationId: options?.conversationId ?? undefined
+      conversationId: options?.conversationId ?? undefined,
+      limit: options?.limit ?? undefined
     });
   }
 
-  listConversationMessages(conversationId: string): Promise<Message[]> {
-    return this.client.get<Message[]>(`/conversations/${conversationId}/messages`);
+  listConversationMessages(
+    conversationId: string,
+    options?: { after?: string | null; before?: string | null; limit?: number | null }
+  ): Promise<Message[]> {
+    return this.client.get<Message[]>(`/conversations/${conversationId}/messages`, {
+      after: options?.after ?? undefined,
+      before: options?.before ?? undefined,
+      limit: options?.limit ?? undefined
+    });
   }
 
   createTextMessage(input: {
@@ -30,5 +38,16 @@ export class MessageApi {
 
   markRead(messageId: string, readAt: number): Promise<{ ok: true }> {
     return this.client.post<{ ok: true }>(`/messages/${messageId}/read`, { readAt });
+  }
+
+  deleteConversation(conversationId: string): Promise<{ ok: true }> {
+    return this.client.delete<{ ok: true }>(`/conversations/${conversationId}`);
+  }
+
+  rollbackConversation(conversationId: string, messageId: string): Promise<{ ok: true; retainedThroughMessageId: string; deletedCount: number }> {
+    return this.client.post<{ ok: true; retainedThroughMessageId: string; deletedCount: number }>(
+      `/conversations/${conversationId}/rollback`,
+      { messageId }
+    );
   }
 }

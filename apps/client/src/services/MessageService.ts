@@ -1,7 +1,8 @@
 import type { MessageApi } from "@echoo/api-client";
 import { createMarkReadTask, nextMessageCursor } from "@echoo/domain";
 import { SYNC_KEYS, type LocalMessage, type Message } from "@echoo/shared";
-import type { MessageDeltaEvent, StorageRuntime } from "../runtimes/contracts";
+import type { StorageRuntime } from "../runtimes/contracts";
+import { createPendingTextMessage } from "./localMessageState";
 
 export class MessageService {
   constructor(
@@ -11,7 +12,7 @@ export class MessageService {
 
   async syncMessages() {
     const lastId = await this.storage.getSyncState(SYNC_KEYS.lastMessageId);
-    const messages = await this.api.listMessages({ after: lastId });
+    const messages = await this.api.listMessages({ after: lastId, limit: 500 });
 
     await this.storage.saveMessages(messages.map((message) => ({ ...message, syncStatus: "synced" as const })));
 
@@ -24,27 +25,13 @@ export class MessageService {
   }
 
   async syncConversationMessages(conversationId: string) {
-    const messages = await this.api.listConversationMessages(conversationId);
+    const messages = await this.api.listConversationMessages(conversationId, { limit: 100 });
     await this.saveSyncedMessages(messages);
     return messages;
   }
 
   async sendTextMessage(input: { conversationId: string; text: string; clientMessageId?: string; stream?: boolean }) {
-    const clientMessageId = input.clientMessageId ?? `client_${crypto.randomUUID()}`;
-    const pending: LocalMessage = {
-      id: clientMessageId,
-      clientMessageId,
-      conversationId: input.conversationId,
-      senderId: "me",
-      role: "user",
-      direction: "outgoing",
-      contentType: "text",
-      content: { text: input.text },
-      status: "pending",
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      syncStatus: "pending"
-    };
+    const pending = createPendingTextMessage(input);
 
     await this.storage.saveMessage(pending);
 
@@ -52,7 +39,7 @@ export class MessageService {
       const result = await this.api.createTextMessage({
         conversationId: input.conversationId,
         text: input.text,
-        clientMessageId,
+        clientMessageId: pending.clientMessageId,
         stream: input.stream
       });
       await this.storage.deleteMessage(pending.id);
@@ -77,31 +64,17 @@ export class MessageService {
         ...pending,
         status: "failed",
         syncStatus: "failed",
-        updatedAt: Date.now(),
-        error: { message: error instanceof Error ? error.message : "Message send failed." }
+        updatedAt: Date.now()
       });
       throw error;
     }
   }
 
   async ingestRealtimeMessage(message: Message) {
+    if (message.clientMessageId && message.clientMessageId !== message.id) {
+      await this.storage.deleteMessage(message.clientMessageId);
+    }
     await this.storage.saveMessage({ ...message, syncStatus: "synced" });
-  }
-
-  async ingestRealtimeDelta(event: MessageDeltaEvent) {
-    const message = await this.storage.getMessage(event.messageId);
-    if (!message) return;
-
-    await this.storage.saveMessage({
-      ...message,
-      content: {
-        ...message.content,
-        text: `${message.content.text ?? ""}${event.delta}`
-      },
-      status: "pending",
-      updatedAt: event.updatedAt,
-      syncStatus: "synced"
-    });
   }
 
   async ingestRealtimeCompleted(message: Message) {
@@ -112,6 +85,17 @@ export class MessageService {
     const readAt = Date.now();
     await this.storage.markMessageRead(messageId, readAt);
     await this.storage.enqueueSyncTask(createMarkReadTask(messageId, readAt));
+  }
+
+  async deleteConversation(conversationId: string) {
+    await this.api.deleteConversation(conversationId);
+    await this.storage.deleteConversationMessages(conversationId);
+  }
+
+  async rollbackConversation(conversationId: string, messageId: string) {
+    const result = await this.api.rollbackConversation(conversationId, messageId);
+    await this.storage.deleteConversationMessagesAfter(conversationId, result.retainedThroughMessageId);
+    return result;
   }
 
   async listLocalMessages(conversationId?: string): Promise<LocalMessage[]> {

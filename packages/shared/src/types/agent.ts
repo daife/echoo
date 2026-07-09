@@ -1,4 +1,4 @@
-export type AgentType = "core" | "slice";
+export type AgentType = "prime-figure" | "slice-figure";
 
 export interface AgentAttribute {
   key: string;
@@ -31,7 +31,7 @@ export interface Agent {
   personality: string;
   responseStyle: string;
   /**
-   * Persistent session id for this user's conversation with the agent.
+   * Persistent session id for this user's session with the figure.
    * Server-side storage currently uses conversations.id as the session id.
    */
   conversationId: string;
@@ -39,8 +39,8 @@ export interface Agent {
   updatedAt: number;
 }
 
-export interface CreateSliceAgentRequest {
-  type: "slice";
+export interface CreateSliceFigureRequest {
+  type: "slice-figure";
   avatar?: AgentResourceUpload | null;
   cover?: AgentResourceUpload | null;
   name: string;

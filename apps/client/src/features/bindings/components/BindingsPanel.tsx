@@ -4,13 +4,13 @@ const bindings = [
   {
     name: "Interface 01",
     agent: "Aster",
-    description: "Bound to Aster's conversation. Incoming text is treated as that same agent chat.",
+    description: "Bound to Aster's figure session. Incoming text is treated as that same session.",
     status: "active"
   },
   {
     name: "Interface 02",
     agent: "Unbound",
-    description: "Ready to bind to one agent conversation. One interface can only own one binding.",
+    description: "Ready to bind to one figure session. One interface can only own one binding.",
     status: "empty"
   },
   {
@@ -26,9 +26,9 @@ export function BindingsPanel() {
     <section className="space-y-6">
       <div>
         <p className="text-xs uppercase tracking-[0.22em] text-white/38">Bindings</p>
-        <h1 className="mt-2 text-4xl font-semibold text-white">Agent interfaces</h1>
+        <h1 className="mt-2 text-4xl font-semibold text-white">Figure interfaces</h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-white/52">
-          Each external interface binds to one agent conversation. Messages and model replies stay attached to that agent chat across
+          Each external interface binds to one figure session. Messages and model replies stay attached to that figure session across
           Web, Android, iOS, Windows, and the bound interface.
         </p>
       </div>
@@ -49,7 +49,7 @@ export function BindingsPanel() {
                       {active ? "bound" : "open"}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm text-white/42">Agent: {binding.agent}</p>
+                  <p className="mt-1 text-sm text-white/42">Figure: {binding.agent}</p>
                 </div>
                 {active ? (
                   <CheckCircle size={22} className="text-white/60" weight="duotone" />

@@ -4,7 +4,6 @@ export function mapQqText(text: string) {
   return normalizeInboundMessage({
     interfaceType: "qq",
     conversationId: "conv_qq",
-    senderId: "qq_user",
     text
   });
 }

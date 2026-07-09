@@ -9,4 +9,4 @@ Echoo starts with four runtime contracts:
 
 Business services depend on contracts only. Platform-specific details live under `apps/client/src/runtimes/web` and `apps/client/src/runtimes/tauri`.
 
-External interface provider details do not enter the chat UI or core agent flow. The client consumes agent conversations and binding status; server connectors resolve which external interface should receive the mirrored model reply.
+External interface provider details do not enter the chat UI or figure session flow. The client consumes figure sessions and binding status; server connectors resolve which external interface should receive the mirrored model reply.

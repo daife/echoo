@@ -15,4 +15,4 @@ Non-responsibilities:
 - Do not write settings.
 - Do not update read state.
 - Do not connect directly to external provider APIs.
-- Do not decide which agent conversation an external interface is bound to.
+- Do not decide which figure session an external interface is bound to.

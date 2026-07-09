@@ -7,6 +7,8 @@ export interface StorageRuntime {
   saveMessage(message: LocalMessage): Promise<void>;
   saveMessages(messages: LocalMessage[]): Promise<void>;
   deleteMessage(id: string): Promise<void>;
+  deleteConversationMessages(conversationId: string): Promise<void>;
+  deleteConversationMessagesAfter(conversationId: string, retainedThroughMessageId: string): Promise<void>;
   getMessage(id: string): Promise<LocalMessage | null>;
   listMessages(options?: { limit?: number; before?: number; unreadOnly?: boolean; conversationId?: string }): Promise<LocalMessage[]>;
   markMessageRead(id: string, readAt: number): Promise<void>;

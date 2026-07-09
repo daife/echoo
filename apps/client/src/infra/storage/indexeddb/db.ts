@@ -7,6 +7,7 @@ interface EchooDb extends DBSchema {
     value: LocalMessage;
     indexes: {
       "by-conversation": string;
+      "by-conversation-created-at": [string, number];
       "by-created-at": number;
     };
   };
@@ -17,12 +18,24 @@ interface EchooDb extends DBSchema {
 }
 
 export function getEchooDb() {
-  return openDB<EchooDb>("echoo", 1, {
-    upgrade(db) {
-      const messages = db.createObjectStore("messages", { keyPath: "id" });
-      messages.createIndex("by-conversation", "conversationId");
-      messages.createIndex("by-created-at", "createdAt");
-      db.createObjectStore("syncTasks", { keyPath: "id" });
+  return openDB<EchooDb>("echoo", 2, {
+    upgrade(db, _oldVersion, _newVersion, transaction) {
+      const messages = db.objectStoreNames.contains("messages")
+        ? transaction.objectStore("messages")
+        : db.createObjectStore("messages", { keyPath: "id" });
+
+      if (!messages.indexNames.contains("by-conversation")) {
+        messages.createIndex("by-conversation", "conversationId");
+      }
+      if (!messages.indexNames.contains("by-conversation-created-at")) {
+        messages.createIndex("by-conversation-created-at", ["conversationId", "createdAt"]);
+      }
+      if (!messages.indexNames.contains("by-created-at")) {
+        messages.createIndex("by-created-at", "createdAt");
+      }
+      if (!db.objectStoreNames.contains("syncTasks")) {
+        db.createObjectStore("syncTasks", { keyPath: "id" });
+      }
     }
   });
 }

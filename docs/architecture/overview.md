@@ -10,11 +10,11 @@ client UI and features
   -> browser APIs, Tauri commands, Rust tasks, Kotlin service
 ```
 
-Echoo is not a provider-source inbox. The client sees agent conversations. Provider details stay inside the server connector and binding layer.
+Echoo is not a provider-source inbox. The client sees figure sessions. Provider details stay inside the server connector and binding layer.
 
 ```text
 external interface
-  -> bound agent conversation
+  -> bound figure session
   -> model reply
   -> Echoo clients and bound external interface
 ```

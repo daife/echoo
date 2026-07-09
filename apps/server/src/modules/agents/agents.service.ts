@@ -1,5 +1,5 @@
-import { createSliceAgentSchema } from "@echoo/shared";
-import type { CreateSliceAgentRequest } from "@echoo/shared";
+import { createSliceFigureSchema } from "@echoo/shared";
+import type { CreateSliceFigureRequest } from "@echoo/shared";
 import { AgentRepository } from "./agent.repository.js";
 
 export class AgentsService {
@@ -9,8 +9,8 @@ export class AgentsService {
     return this.repository.listByOwner(userId);
   }
 
-  createSliceAgent(userId: string, input: CreateSliceAgentRequest) {
-    const body = createSliceAgentSchema.parse(input);
-    return this.repository.createSlice(userId, body);
+  createSliceFigure(userId: string, input: CreateSliceFigureRequest) {
+    const body = createSliceFigureSchema.parse(input);
+    return this.repository.createSliceFigure(userId, body);
   }
 }

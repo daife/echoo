@@ -1,6 +1,6 @@
 import { Bell, ChatCircleText, Compass, GearSix, House, LinkSimple, UserCircle } from "@phosphor-icons/react";
-import type { Agent, CreateSliceAgentRequest } from "@echoo/shared";
-import { useEffect, useMemo, useState } from "react";
+import type { Agent, CreateSliceFigureRequest } from "@echoo/shared";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { initApp } from "./bootstrap/initApp";
 import { useAuth } from "./providers/AuthProvider";
 import { useRuntime } from "./providers/RuntimeProvider";
@@ -76,9 +76,15 @@ export function App() {
     setView("messages");
   };
 
-  const createSliceAgent = async (input: CreateSliceAgentRequest) => {
+  const handleConversationDeleted = useCallback((conversationId: string) => {
+    setMyAgents((current) => current.filter((agent) => agent.conversationId !== conversationId));
+    setSelectedAgent((current) => (current?.conversationId === conversationId ? null : current));
+    setView("home");
+  }, []);
+
+  const createSliceFigure = async (input: CreateSliceFigureRequest) => {
     try {
-      const { agent } = await services.agentService.createSliceAgent(input);
+      const { agent } = await services.agentService.createSliceFigure(input);
       setMyAgents((current) => [agent, ...current.filter((item) => item.id !== agent.id)]);
       openAgent(agent);
       return agent;
@@ -104,12 +110,12 @@ export function App() {
     }
     if (view === "explore") return <ExplorePage />;
     if (view === "profile") return <ProfilePage agents={myAgents} isLoadingAgents={isLoadingAgents} onOpenAgent={openAgent} />;
-    if (view === "create") return <CreateAgentPage onCreateSliceAgent={createSliceAgent} />;
-    if (view === "messages") return <MessagesPage agent={selectedAgent ?? undefined} />;
+    if (view === "create") return <CreateAgentPage onCreateSliceFigure={createSliceFigure} />;
+    if (view === "messages") return <MessagesPage agent={selectedAgent ?? undefined} onConversationDeleted={handleConversationDeleted} />;
     if (view === "bindings") return <BindingsPanel />;
     if (view === "settings") return <SettingsPage />;
     return <HomePage onCreateAgent={() => setView("create")} onOpenChat={() => setView("messages")} />;
-  }, [auth.isLoading, auth.user, isLoadingAgents, myAgents, protectedView, selectedAgent, view]);
+  }, [auth.isLoading, auth.user, handleConversationDeleted, isLoadingAgents, myAgents, protectedView, selectedAgent, view]);
 
   return (
     <div className="relative min-h-[100dvh] overflow-hidden bg-[#09090b] text-[#e5e2e1]">

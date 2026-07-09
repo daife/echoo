@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { ZodError } from "zod";
-import type { CreateSliceAgentRequest } from "@echoo/shared";
+import type { CreateSliceFigureRequest } from "@echoo/shared";
 import { AgentsService } from "./agents.service.js";
 
 export async function registerAgentRoutes(app: FastifyInstance) {
@@ -12,12 +12,12 @@ export async function registerAgentRoutes(app: FastifyInstance) {
     return agents.listMyAgents(userId);
   });
 
-  app.post<{ Body: CreateSliceAgentRequest }>("/", async (request, reply) => {
+  app.post<{ Body: CreateSliceFigureRequest }>("/", async (request, reply) => {
     const userId = await request.requireUserId(reply);
     if (!userId) return;
 
     try {
-      const agent = agents.createSliceAgent(userId, request.body);
+      const agent = agents.createSliceFigure(userId, request.body);
       return reply.code(201).send({ agent });
     } catch (error) {
       if (error instanceof ZodError) {

@@ -71,8 +71,7 @@ export async function createOpenAiCompatibleChatCompletion(input: {
   return {
     providerId: input.providerId,
     model: input.completion.model,
-    text,
-    raw: payload
+    text
   };
 }
 
@@ -102,7 +101,7 @@ export async function* streamOpenAiCompatibleChatCompletion(input: OpenAiCompati
 
       const payload = parseStreamChunk(event);
       const text = normalizeDeltaContent(payload?.choices?.[0]?.delta?.content);
-      if (text) yield { text, raw: payload };
+      if (text) yield { text };
     }
   }
 
@@ -111,7 +110,7 @@ export async function* streamOpenAiCompatibleChatCompletion(input: OpenAiCompati
   if (event && event !== "[DONE]") {
     const payload = parseStreamChunk(event);
     const text = normalizeDeltaContent(payload?.choices?.[0]?.delta?.content);
-    if (text) yield { text, raw: payload };
+    if (text) yield { text };
   }
 }
 

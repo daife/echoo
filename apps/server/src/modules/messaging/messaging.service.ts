@@ -26,13 +26,17 @@ export class MessagingService {
     private readonly agentRuntime = new AgentRuntimeService()
   ) {}
 
-  listMessages(ownerUserId: string, after?: string | null, conversationId?: string | null) {
-    return this.repository.listAfter(ownerUserId, after, conversationId);
+  listMessages(ownerUserId: string, after?: string | null, conversationId?: string | null, limit?: number) {
+    return this.repository.listAfter(ownerUserId, after, conversationId, limit);
   }
 
-  listConversationMessages(ownerUserId: string, conversationId: string) {
+  listConversationMessages(
+    ownerUserId: string,
+    conversationId: string,
+    options?: { after?: string | null; before?: string | null; limit?: number }
+  ) {
     if (!this.conversations.findByIdForOwner(ownerUserId, conversationId)) return null;
-    return this.repository.listByConversation(ownerUserId, conversationId);
+    return this.repository.listByConversation(ownerUserId, conversationId, options);
   }
 
   async createUserTextMessage(input: CreateUserTextMessageInput): Promise<CreateUserTextMessageResult | null> {
@@ -48,9 +52,7 @@ export class MessagingService {
       id: `msg_${randomUUID()}`,
       ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
       conversationId: input.conversationId,
-      senderId: input.ownerUserId,
       role: "user",
-      direction: "outgoing",
       contentType: "text",
       content: { text: input.text },
       status: "sent",
@@ -69,13 +71,13 @@ export class MessagingService {
     if (!conversation.agentId) return { message };
 
     if (input.stream === false) {
-      const assistantMessage = await this.createAssistantReply(input.ownerUserId, input.conversationId, conversation.agentId);
+      const assistantMessage = await this.createAssistantReply(input.ownerUserId, input.conversationId);
       return { message, assistantMessage };
     }
 
-    const assistantMessage = this.createAssistantPlaceholder(input.ownerUserId, input.conversationId, conversation.agentId);
+    const assistantMessage = this.createAssistantPlaceholder(input.ownerUserId, input.conversationId);
     this.appPush.pushToUser(input.ownerUserId, { type: "message.created", message: assistantMessage });
-    void this.streamAssistantReply(input.ownerUserId, input.conversationId, conversation.agentId, assistantMessage);
+    void this.streamAssistantReply(input.ownerUserId, input.conversationId, assistantMessage);
 
     return { message, assistantMessage };
   }
@@ -93,26 +95,51 @@ export class MessagingService {
     return updated;
   }
 
-  private createAssistantPlaceholder(ownerUserId: string, conversationId: string, agentId: string) {
+  rollbackConversation(ownerUserId: string, conversationId: string, messageId: string) {
+    const conversation = this.conversations.findByIdForOwner(ownerUserId, conversationId);
+    if (!conversation) return { kind: "not_found" as const };
+    if (conversation.type !== "slice-figure") return { kind: "unsupported_type" as const };
+
+    const anchor = this.repository.findByIdInConversation(ownerUserId, conversationId, messageId);
+    if (!anchor) return { kind: "message_not_found" as const };
+
+    const retainedThrough =
+      anchor.role === "user" ? this.repository.findNextAssistantMessage(ownerUserId, conversationId, anchor) ?? anchor : anchor;
+    const deletedCount = this.repository.deleteAfterMessage(ownerUserId, conversationId, retainedThrough);
+    const lastMessage = this.repository.findLastByConversation(ownerUserId, conversationId);
+    const now = Date.now();
+
+    this.conversations.updatePreview({
+      ownerUserId,
+      conversationId,
+      preview: lastMessage?.content.text ?? null,
+      updatedAt: now
+    });
+
+    return {
+      kind: "ok" as const,
+      retainedThroughMessageId: retainedThrough.id,
+      deletedCount
+    };
+  }
+
+  private createAssistantPlaceholder(ownerUserId: string, conversationId: string) {
     const now = Date.now();
 
     return this.repository.save({
       ownerUserId,
       id: `msg_${randomUUID()}`,
       conversationId,
-      senderId: agentId,
       role: "assistant",
-      direction: "incoming",
       contentType: "text",
       content: { text: "" },
       status: "pending",
-      metadata: { streaming: true },
       createdAt: now,
       updatedAt: now
     });
   }
 
-  private async createAssistantReply(ownerUserId: string, conversationId: string, agentId: string) {
+  private async createAssistantReply(ownerUserId: string, conversationId: string) {
     const now = Date.now();
 
     try {
@@ -123,15 +150,12 @@ export class MessagingService {
         ownerUserId,
         id: `msg_${randomUUID()}`,
         conversationId,
-        senderId: agentId,
         role: "assistant",
-        direction: "incoming",
         contentType: "text",
         content: { text: reply.text },
         status: "delivered",
         providerId: reply.providerId,
         model: reply.model,
-        metadata: { streaming: false, ...(reply.raw ? { raw: reply.raw } : {}) },
         createdAt: now,
         updatedAt: now
       });
@@ -150,16 +174,11 @@ export class MessagingService {
         ownerUserId,
         id: `msg_${randomUUID()}`,
         conversationId,
-        senderId: agentId,
         role: "assistant",
-        direction: "incoming",
         contentType: "text",
         content: { text: "AI reply is temporarily unavailable. Check the server provider configuration and try again." },
         status: "failed",
-        metadata: { kind: "ai_error", streaming: false },
-        error: {
-          message: error instanceof Error ? error.message : "Unknown AI provider error"
-        },
+        metadata: { kind: "ai_error" },
         createdAt: now,
         updatedAt: now
       });
@@ -176,7 +195,7 @@ export class MessagingService {
     }
   }
 
-  private async streamAssistantReply(ownerUserId: string, conversationId: string, agentId: string, pendingMessage: Message) {
+  private async streamAssistantReply(ownerUserId: string, conversationId: string, pendingMessage: Message) {
     let streamedText = "";
 
     try {
@@ -193,20 +212,18 @@ export class MessagingService {
 
       if (!reply) return undefined;
       const now = Date.now();
+      if (!this.repository.findByIdInConversation(ownerUserId, conversationId, pendingMessage.id)) return undefined;
 
       const message = this.repository.save({
         ownerUserId,
         id: pendingMessage.id,
         conversationId,
-        senderId: agentId,
         role: "assistant",
-        direction: "incoming",
         contentType: "text",
         content: { text: reply.text },
         status: "delivered",
         providerId: reply.providerId,
         model: reply.model,
-        metadata: { streaming: true, ...(reply.raw ? { raw: reply.raw } : {}) },
         createdAt: pendingMessage.createdAt,
         updatedAt: now
       });
@@ -222,22 +239,18 @@ export class MessagingService {
       return message;
     } catch (error) {
       const now = Date.now();
+      if (!this.repository.findByIdInConversation(ownerUserId, conversationId, pendingMessage.id)) return undefined;
       const message = this.repository.save({
         ownerUserId,
         id: pendingMessage.id,
         conversationId,
-        senderId: agentId,
         role: "assistant",
-        direction: "incoming",
         contentType: "text",
         content: {
           text: streamedText || "AI reply is temporarily unavailable. Check the server provider configuration and try again."
         },
         status: "failed",
-        metadata: { kind: "ai_error", streaming: true },
-        error: {
-          message: error instanceof Error ? error.message : "Unknown AI provider error"
-        },
+        metadata: { kind: "ai_error" },
         createdAt: pendingMessage.createdAt,
         updatedAt: now
       });

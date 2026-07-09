@@ -1,8 +1,8 @@
 import { ArrowRight, Brain, CirclesThreePlus, Sparkle, Trash, UploadSimple } from "@phosphor-icons/react";
-import type { Agent, AgentAttribute, AgentResourceUpload, CreateSliceAgentRequest } from "@echoo/shared";
+import type { Agent, AgentAttribute, AgentResourceUpload, CreateSliceFigureRequest } from "@echoo/shared";
 import { useState } from "react";
 
-type SliceForm = CreateSliceAgentRequest;
+type SliceFigureForm = CreateSliceFigureRequest;
 
 const requiredFields = [
   { key: "name", label: "名字", placeholder: "例如：Mira" },
@@ -14,10 +14,10 @@ const requiredFields = [
     label: "回复风格",
     placeholder: "例如：简短、诗意的回复，用括号表示人物心理和动作，比如（愣了一下）"
   }
-] satisfies Array<{ key: keyof Pick<SliceForm, "name" | "persona" | "background" | "personality" | "responseStyle">; label: string; placeholder: string }>;
+] satisfies Array<{ key: keyof Pick<SliceFigureForm, "name" | "persona" | "background" | "personality" | "responseStyle">; label: string; placeholder: string }>;
 
-const initialForm: SliceForm = {
-  type: "slice",
+const initialForm: SliceFigureForm = {
+  type: "slice-figure",
   name: "",
   attributes: [],
   tags: [],
@@ -34,16 +34,16 @@ const initialForm: SliceForm = {
 };
 
 export function CreateAgentPage({
-  onCreateSliceAgent
+  onCreateSliceFigure
 }: {
-  onCreateSliceAgent: (input: CreateSliceAgentRequest) => Promise<Agent>;
+  onCreateSliceFigure: (input: CreateSliceFigureRequest) => Promise<Agent>;
 }) {
-  const [form, setForm] = useState<SliceForm>(initialForm);
+  const [form, setForm] = useState<SliceFigureForm>(initialForm);
   const [jsonInput, setJsonInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const updateField = (key: keyof SliceForm, value: SliceForm[keyof SliceForm]) => {
+  const updateField = (key: keyof SliceFigureForm, value: SliceFigureForm[keyof SliceFigureForm]) => {
     setForm((current) => ({ ...current, [key]: value }));
     setError(null);
   };
@@ -86,11 +86,11 @@ export function CreateAgentPage({
 
   const importJson = () => {
     try {
-      const parsed = JSON.parse(jsonInput) as Partial<CreateSliceAgentRequest>;
+      const parsed = JSON.parse(jsonInput) as Partial<CreateSliceFigureRequest>;
       setForm({
         ...initialForm,
         ...parsed,
-        type: "slice",
+        type: "slice-figure",
         attributes: parsed.attributes ?? [],
         tags: parsed.tags ?? [],
         linkedAgentIds: parsed.linkedAgentIds ?? [],
@@ -114,7 +114,7 @@ export function CreateAgentPage({
 
     setIsSubmitting(true);
     try {
-      await onCreateSliceAgent(payload);
+      await onCreateSliceFigure(payload);
       setForm(initialForm);
       setJsonInput("");
     } catch (caught) {
@@ -129,13 +129,13 @@ export function CreateAgentPage({
       <div className="glass-panel overflow-hidden rounded-2xl p-7 md:p-10">
         <div className="mb-8 flex items-center gap-3 text-sm text-white/50">
           <Sparkle size={18} />
-          Co-create a Slice agent
+          Co-create a Slice Figure
         </div>
         <h1 className="max-w-3xl text-5xl font-semibold leading-[1.05] text-white md:text-6xl">
           Shape a focused companion from identity, story, and response style.
         </h1>
         <p className="mt-5 max-w-2xl text-sm leading-6 text-white/52">
-          当前先开放 Slice 类型创建。头像和封面会作为用户资源上传到服务器，agent 只保存资源访问路径。
+          当前先开放 Slice Figure 创建。头像和封面会作为用户资源上传到服务器，figure 只保存资源访问路径。
         </p>
       </div>
 
@@ -146,10 +146,10 @@ export function CreateAgentPage({
               <div className="grid h-14 w-14 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-white">
                 <Brain size={28} weight="duotone" />
               </div>
-              <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/45">Core</span>
+              <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/45">Prime Figure</span>
             </div>
-            <h2 className="mt-8 text-3xl font-semibold text-white">Core later</h2>
-            <p className="mt-3 text-sm leading-6 text-white/52">长期陪伴、稳定记忆和深层关系设置会走独立创建流程。</p>
+            <h2 className="mt-8 text-3xl font-semibold text-white">Prime Figure later</h2>
+            <p className="mt-3 text-sm leading-6 text-white/52">长期推进、稳定记忆、数值和日程控制会走独立创建流程。</p>
           </article>
 
           <article className="glass-panel rounded-2xl p-6 ring-1 ring-white/12">
@@ -157,9 +157,9 @@ export function CreateAgentPage({
               <div className="grid h-14 w-14 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-white">
                 <CirclesThreePlus size={28} weight="duotone" />
               </div>
-              <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#09090b]">Slice</span>
+              <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#09090b]">Slice Figure</span>
             </div>
-            <h2 className="mt-8 text-3xl font-semibold text-white">Create a Slice</h2>
+            <h2 className="mt-8 text-3xl font-semibold text-white">Create a Slice Figure</h2>
             <p className="mt-3 text-sm leading-6 text-white/52">适合短场景、轻量人格、快速试验和临时任务。</p>
           </article>
 
@@ -217,7 +217,7 @@ export function CreateAgentPage({
               <textarea
                 className="mt-2 min-h-20 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/28 focus:border-white/25"
                 value={form.introduction ?? ""}
-                placeholder="公开展示或 My agents 卡片上的简介"
+                placeholder="公开展示或 My figures 卡片上的简介"
                 onChange={(event) => updateField("introduction", event.target.value)}
               />
             </label>
@@ -237,7 +237,7 @@ export function CreateAgentPage({
               <textarea
                 className="mt-2 min-h-20 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/28 focus:border-white/25"
                 value={form.openingLine ?? ""}
-                placeholder="进入对话时，智能体先说的一句话。"
+                placeholder="进入会话时，figure 先展示的一句话。"
                 onChange={(event) => updateField("openingLine", event.target.value)}
               />
             </label>
@@ -297,7 +297,7 @@ export function CreateAgentPage({
             </div>
 
             <label className="block">
-              <span className="text-sm font-medium text-white/78">链接的智能体 ID（逗号分隔）</span>
+              <span className="text-sm font-medium text-white/78">链接的 figure ID（逗号分隔）</span>
               <input className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-white/[0.035] px-4 text-sm text-white outline-none" value={(form.linkedAgentIds ?? []).join(", ")} placeholder="agent_xxx, agent_yyy" onChange={(event) => updateList("linkedAgentIds", event.target.value)} />
             </label>
 
@@ -317,7 +317,7 @@ export function CreateAgentPage({
             disabled={isSubmitting}
             type="submit"
           >
-            {isSubmitting ? "Creating..." : "Create Slice"}
+            {isSubmitting ? "Creating..." : "Create Slice Figure"}
             <ArrowRight size={17} />
           </button>
         </form>
@@ -355,7 +355,7 @@ function ImageInput({
   );
 }
 
-function buildCreatePayload(form: SliceForm): CreateSliceAgentRequest | string {
+function buildCreatePayload(form: SliceFigureForm): CreateSliceFigureRequest | string {
   const requiredText = {
     name: form.name.trim(),
     persona: form.persona.trim(),
@@ -381,7 +381,7 @@ function buildCreatePayload(form: SliceForm): CreateSliceAgentRequest | string {
   if (tags.some((tag) => !tag)) return "Tag 不能包含空值，请补全或删除该 tag。";
 
   const linkedAgentIds = (form.linkedAgentIds ?? []).map((agentId) => (typeof agentId === "string" ? agentId.trim() : ""));
-  if (linkedAgentIds.some((agentId) => !agentId)) return "链接的智能体 ID 不能包含空值。";
+  if (linkedAgentIds.some((agentId) => !agentId)) return "链接的 figure ID 不能包含空值。";
 
   return {
     ...form,

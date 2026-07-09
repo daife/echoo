@@ -33,6 +33,32 @@ export class WebStorageRuntime implements StorageRuntime {
     await db.delete("messages", id);
   }
 
+  async deleteConversationMessages(conversationId: string): Promise<void> {
+    const db = await getEchooDb();
+    const tx = db.transaction("messages", "readwrite");
+    let cursor = await tx.store.index("by-conversation").openCursor(conversationId);
+
+    while (cursor) {
+      await cursor.delete();
+      cursor = await cursor.continue();
+    }
+
+    await tx.done;
+  }
+
+  async deleteConversationMessagesAfter(conversationId: string, retainedThroughMessageId: string): Promise<void> {
+    const messages = await this.listMessages({ conversationId, limit: Number.MAX_SAFE_INTEGER });
+    const retainedThroughIndex = messages.findIndex((message) => message.id === retainedThroughMessageId);
+    if (retainedThroughIndex < 0) return;
+
+    const deleteIds = messages.slice(retainedThroughIndex + 1).map((message) => message.id);
+
+    const db = await getEchooDb();
+    const tx = db.transaction("messages", "readwrite");
+    await Promise.all(deleteIds.map((id) => tx.store.delete(id)));
+    await tx.done;
+  }
+
   async getMessage(id: string): Promise<LocalMessage | null> {
     const db = await getEchooDb();
     return (await db.get("messages", id)) ?? null;
@@ -40,13 +66,32 @@ export class WebStorageRuntime implements StorageRuntime {
 
   async listMessages(options?: { limit?: number; before?: number; unreadOnly?: boolean; conversationId?: string }): Promise<LocalMessage[]> {
     const db = await getEchooDb();
-    const messages = await db.getAll("messages");
-    return messages
-      .filter((message) => (options?.conversationId ? message.conversationId === options.conversationId : true))
-      .filter((message) => (options?.before ? message.createdAt < options.before : true))
-      .filter((message) => (options?.unreadOnly ? message.status !== "read" : true))
-      .sort((left, right) => left.createdAt - right.createdAt)
-      .slice(-(options?.limit ?? 100));
+    const limit = Math.max(1, options?.limit ?? 100);
+    const messages: LocalMessage[] = [];
+    const source = options?.conversationId
+      ? db.transaction("messages").store.index("by-conversation-created-at")
+      : db.transaction("messages").store.index("by-created-at");
+    const range = options?.conversationId
+      ? IDBKeyRange.bound(
+          [options.conversationId, 0],
+          [options.conversationId, options.before ?? Number.MAX_SAFE_INTEGER],
+          false,
+          Boolean(options.before)
+        )
+      : options?.before
+        ? IDBKeyRange.upperBound(options.before, true)
+        : undefined;
+
+    let cursor = await source.openCursor(range, "prev");
+    while (cursor && messages.length < limit) {
+      const message = cursor.value;
+      if (!options?.unreadOnly || message.status !== "read") {
+        messages.push(message);
+      }
+      cursor = await cursor.continue();
+    }
+
+    return messages.reverse();
   }
 
   async markMessageRead(id: string, readAt: number): Promise<void> {

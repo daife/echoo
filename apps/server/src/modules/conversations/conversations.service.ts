@@ -6,4 +6,9 @@ export class ConversationsService {
   listConversations(ownerUserId: string) {
     return this.repository.listByOwner(ownerUserId);
   }
+
+  deleteConversation(ownerUserId: string, conversationId: string) {
+    if (!this.repository.findByIdForOwner(ownerUserId, conversationId)) return false;
+    return this.repository.deleteForOwner(ownerUserId, conversationId);
+  }
 }

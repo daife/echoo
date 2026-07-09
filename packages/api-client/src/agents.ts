@@ -1,4 +1,4 @@
-import type { Agent, CreateAgentResponse, CreateSliceAgentRequest } from "@echoo/shared";
+import type { Agent, CreateAgentResponse, CreateSliceFigureRequest } from "@echoo/shared";
 import type { ApiClient } from "./client";
 
 export class AgentsApi {
@@ -8,7 +8,7 @@ export class AgentsApi {
     return this.client.get<Agent[]>("/agents").then((agents) => agents.map((agent) => normalizeAgentResources(this.client, agent)));
   }
 
-  createSliceAgent(body: CreateSliceAgentRequest): Promise<CreateAgentResponse> {
+  createSliceFigure(body: CreateSliceFigureRequest): Promise<CreateAgentResponse> {
     return this.client
       .post<CreateAgentResponse>("/agents", body)
       .then((response) => ({ agent: normalizeAgentResources(this.client, response.agent) }));

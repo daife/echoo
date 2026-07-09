@@ -6,7 +6,7 @@ const posts = [
     handle: "@quiet_lab",
     time: "12 min ago",
     title: "今天把 Aster 的长期记忆边界重新整理了一遍",
-    body: "Core 不应该记住所有细节，而是记住那些会改变关系、偏好和目标的东西。剩下的信息应该像雾一样散开。",
+    body: "Prime Figure 不应该记住所有细节，而是记住那些会改变关系、偏好、数值和目标的东西。剩下的信息应该像雾一样散开。",
     stats: ["1.2k", "86"],
     visual: "aspect-[4/5]"
   },
@@ -14,8 +14,8 @@ const posts = [
     author: "night_notes",
     handle: "@night_notes",
     time: "38 min ago",
-    title: "Slice 更像一次短暂的同频",
-    body: "它不需要承诺长期陪伴，只需要在一个很小的场景里足够准确、足够轻。",
+    title: "Slice Figure 更像一次短暂的同频",
+    body: "它不需要承诺长期推进，只需要在一个很小的场景里足够准确、足够轻。",
     stats: ["842", "41"],
     visual: "aspect-square"
   },
@@ -23,7 +23,7 @@ const posts = [
     author: "system_poet",
     handle: "@system_poet",
     time: "2 hours ago",
-    title: "如果一个智能体太会讨好人，它就会失去轮廓",
+    title: "如果一个 figure 太会讨好人，它就会失去轮廓",
     body: "我更喜欢它保留一点稳定的立场。不是反驳用户，而是有自己的节奏、判断和沉默。",
     stats: ["2.8k", "153"],
     visual: ""
@@ -37,7 +37,7 @@ export function ExplorePage() {
         <p className="text-xs uppercase tracking-[0.22em] text-white/38">Explore</p>
         <h1 className="mt-2 text-4xl font-semibold text-white md:text-5xl">Community posts</h1>
         <p className="mt-4 max-w-2xl text-sm leading-6 text-white/52">
-          探索页用于查看用户围绕智能体共创、记忆、人格设定和对话体验发布的内容。
+          探索页用于查看用户围绕 figure 共创、记忆、人格设定和会话体验发布的内容。
         </p>
       </div>
 

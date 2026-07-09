@@ -4,7 +4,7 @@ import { getDatabase } from "../../infra/database/sqlite.js";
 interface ConversationRow {
   id: string;
   title: string;
-  type: "direct" | "group" | "agent";
+  type: "direct" | "group" | "slice-figure" | "prime-figure";
   agent_id: string | null;
   external_binding_id: string | null;
   last_message_preview: string | null;
@@ -49,7 +49,7 @@ export class ConversationRepository {
   updatePreview(input: {
     ownerUserId: string;
     conversationId: string;
-    preview: string;
+    preview: string | null;
     updatedAt: number;
     incrementUnread?: boolean;
   }) {
@@ -65,6 +65,19 @@ export class ConversationRepository {
         `
       )
       .run(input.preview, input.incrementUnread ? 1 : 0, input.updatedAt, input.ownerUserId, input.conversationId);
+  }
+
+  deleteForOwner(ownerUserId: string, conversationId: string) {
+    const result = this.db
+      .prepare(
+        `
+          DELETE FROM conversations
+          WHERE owner_user_id = ? AND id = ?
+        `
+      )
+      .run(ownerUserId, conversationId);
+
+    return result.changes > 0;
   }
 }
 

@@ -3,7 +3,6 @@ import type { ExternalInterfaceType, Message, MessageContentType } from "@echoo/
 export function normalizeInboundMessage(input: {
   interfaceType: ExternalInterfaceType;
   conversationId: string;
-  senderId: string;
   text: string;
   contentType?: MessageContentType;
 }): Message {
@@ -11,9 +10,7 @@ export function normalizeInboundMessage(input: {
   return {
     id: `msg_${crypto.randomUUID()}`,
     conversationId: input.conversationId,
-    senderId: input.senderId,
     role: "user",
-    direction: "incoming",
     contentType: input.contentType ?? "text",
     content: { text: input.text },
     status: "delivered",

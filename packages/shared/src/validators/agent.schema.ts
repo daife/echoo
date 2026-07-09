@@ -14,8 +14,8 @@ export const agentAttributeSchema = z.object({
   value: requiredText("Attribute value", 240)
 });
 
-export const createSliceAgentSchema = z.object({
-  type: z.literal("slice"),
+export const createSliceFigureSchema = z.object({
+  type: z.literal("slice-figure"),
   avatar: imageUploadSchema.nullish(),
   cover: imageUploadSchema.nullish(),
   name: requiredText("Agent name", 80),

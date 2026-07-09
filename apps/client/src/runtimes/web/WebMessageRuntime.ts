@@ -3,6 +3,7 @@ import type { AuthRuntime, MessageDeltaEvent, MessageRuntime } from "../contract
 
 export class WebMessageRuntime implements MessageRuntime {
   private socket: WebSocket | null = null;
+  private connectPromise: Promise<void> | null = null;
   private readonly messageCreatedHandlers = new Set<(message: Message) => void>();
   private readonly messageDeltaHandlers = new Set<(event: MessageDeltaEvent) => void>();
   private readonly messageCompletedHandlers = new Set<(message: Message) => void>();
@@ -10,18 +11,37 @@ export class WebMessageRuntime implements MessageRuntime {
   constructor(private readonly auth: AuthRuntime) {}
 
   async startRealtime(): Promise<void> {
-    if (this.socket && this.socket.readyState <= WebSocket.OPEN) return;
+    if (this.socket && this.socket.readyState <= WebSocket.OPEN) return this.connectPromise ?? Promise.resolve();
+    if (this.connectPromise) return this.connectPromise;
 
+    const connectPromise = this.openSocket();
+    this.connectPromise = connectPromise;
+    try {
+      await connectPromise;
+    } finally {
+      if (this.connectPromise === connectPromise) {
+        this.connectPromise = null;
+      }
+    }
+  }
+
+  private async openSocket(): Promise<void> {
     const url = import.meta.env.VITE_WS_URL ?? "ws://localhost:8787/ws";
     const token = await this.auth.getAccessToken();
+    if (this.socket && this.socket.readyState <= WebSocket.OPEN) return;
+
     const socketUrl = new URL(url);
     if (token) socketUrl.searchParams.set("token", token);
 
-    this.socket = new WebSocket(socketUrl);
-    this.socket.onmessage = (event) => {
+    const socket = new WebSocket(socketUrl);
+    this.socket = socket;
+    socket.onclose = () => {
+      if (this.socket === socket) this.socket = null;
+    };
+    socket.onmessage = (event) => {
       const payload = JSON.parse(event.data as string) as AppWsServerEvent;
       if (payload.type === "message.created") {
-        this.socket?.send(JSON.stringify({ type: "ack", messageId: payload.message.id }));
+        socket.send(JSON.stringify({ type: "ack", messageId: payload.message.id }));
         this.messageCreatedHandlers.forEach((handler) => handler(payload.message));
         return;
       }
@@ -32,7 +52,7 @@ export class WebMessageRuntime implements MessageRuntime {
       }
 
       if (payload.type === "message.completed") {
-        this.socket?.send(JSON.stringify({ type: "ack", messageId: payload.message.id }));
+        socket.send(JSON.stringify({ type: "ack", messageId: payload.message.id }));
         this.messageCompletedHandlers.forEach((handler) => handler(payload.message));
       }
     };

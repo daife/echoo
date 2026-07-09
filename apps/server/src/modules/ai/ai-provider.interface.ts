@@ -20,12 +20,10 @@ export interface ChatCompletionResult {
   providerId: AiProviderId;
   model: string;
   text: string;
-  raw?: unknown;
 }
 
 export interface ChatDelta {
   text?: string;
-  raw?: unknown;
 }
 
 export interface AiTextProvider {

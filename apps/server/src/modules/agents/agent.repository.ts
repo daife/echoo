@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import type { Agent, AgentAttribute, CreateSliceAgentRequest } from "@echoo/shared";
+import type { Agent, AgentAttribute, CreateSliceFigureRequest } from "@echoo/shared";
 import { getDatabase } from "../../infra/database/sqlite.js";
 import { ResourceRepository } from "../resources/resource.repository.js";
 
 interface AgentRow {
   id: string;
   owner_user_id: string;
-  type: "core" | "slice";
+  type: "prime-figure" | "slice-figure";
   avatar_resource_path: string | null;
   cover_resource_path: string | null;
   name: string;
@@ -67,7 +67,7 @@ export class AgentRepository {
     return row ? rowToAgent(row) : null;
   }
 
-  createSlice(ownerUserId: string, input: CreateSliceAgentRequest): Agent {
+  createSliceFigure(ownerUserId: string, input: CreateSliceFigureRequest): Agent {
     const now = Date.now();
     const agentId = `agent_${randomUUID()}`;
     const conversationId = `conv_${randomUUID()}`;
@@ -109,7 +109,7 @@ export class AgentRepository {
         .run(
           agentId,
           ownerUserId,
-          "slice",
+          "slice-figure",
           avatar?.publicPath ?? null,
           cover?.publicPath ?? null,
           input.name,
@@ -145,7 +145,7 @@ export class AgentRepository {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           `
         )
-        .run(conversationId, ownerUserId, input.name, "agent", agentId, input.openingLine || input.introduction || input.persona, 0, now, now);
+        .run(conversationId, ownerUserId, input.name, "slice-figure", agentId, input.openingLine || input.introduction || input.persona, 0, now, now);
 
       if (input.openingLine?.trim()) {
         const messageId = `msg_${randomUUID()}`;
@@ -153,28 +153,24 @@ export class AgentRepository {
           .prepare(
             `
               INSERT INTO messages (
-                id,
-                owner_user_id,
-                conversation_id,
-                sender_id,
-                role,
-                direction,
-                content_type,
-                content_json,
-                status,
-                metadata_json,
-                created_at,
-                updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `
+              id,
+              owner_user_id,
+              conversation_id,
+              role,
+              content_type,
+              content_json,
+              status,
+              metadata_json,
+              created_at,
+              updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `
           )
           .run(
             messageId,
             ownerUserId,
             conversationId,
-            agentId,
             "assistant",
-            "incoming",
             "text",
             JSON.stringify({ text: input.openingLine }),
             "delivered",
@@ -193,7 +189,7 @@ export class AgentRepository {
     return {
       id: agentId,
       ownerUserId,
-      type: "slice",
+      type: "slice-figure",
       ...(avatar ? { avatarResourcePath: avatar.publicPath } : {}),
       ...(cover ? { coverResourcePath: cover.publicPath } : {}),
       name: input.name,

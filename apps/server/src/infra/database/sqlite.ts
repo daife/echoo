@@ -42,7 +42,7 @@ const migrations = [
       CREATE TABLE IF NOT EXISTS agents (
         id TEXT PRIMARY KEY,
         owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-        type TEXT NOT NULL CHECK (type IN ('core', 'slice')),
+        type TEXT NOT NULL CHECK (type IN ('prime-figure', 'slice-figure')),
         avatar_resource_path TEXT,
         cover_resource_path TEXT,
         name TEXT NOT NULL,
@@ -106,16 +106,13 @@ const migrations = [
         owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
         conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
         client_message_id TEXT,
-        sender_id TEXT NOT NULL,
         role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
-        direction TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing')),
         content_type TEXT NOT NULL CHECK (content_type IN ('text', 'image', 'file', 'voice', 'video', 'system')),
         content_json TEXT NOT NULL,
         status TEXT NOT NULL CHECK (status IN ('pending', 'sent', 'delivered', 'failed', 'read')),
         provider_id TEXT,
         model TEXT,
         metadata_json TEXT,
-        error_json TEXT,
         read_at INTEGER,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
@@ -126,6 +123,174 @@ const migrations = [
         WHERE client_message_id IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_messages_owner_created_at ON messages(owner_user_id, created_at, id);
       CREATE INDEX IF NOT EXISTS idx_messages_conversation_created_at ON messages(conversation_id, created_at, id);
+      CREATE INDEX IF NOT EXISTS idx_messages_owner_conversation_created_at
+        ON messages(owner_user_id, conversation_id, created_at, id);
+    `,
+  },
+  {
+    id: "005_compact_messages",
+    sql: `
+      DROP TABLE IF EXISTS messages_next;
+
+      CREATE TABLE messages_next (
+        id TEXT PRIMARY KEY,
+        owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+        conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        client_message_id TEXT,
+        role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+        content_type TEXT NOT NULL CHECK (content_type IN ('text', 'image', 'file', 'voice', 'video', 'system')),
+        content_json TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'sent', 'delivered', 'failed', 'read')),
+        provider_id TEXT,
+        model TEXT,
+        metadata_json TEXT,
+        read_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      INSERT OR IGNORE INTO messages_next (
+        id,
+        owner_user_id,
+        conversation_id,
+        client_message_id,
+        role,
+        content_type,
+        content_json,
+        status,
+        provider_id,
+        model,
+        metadata_json,
+        read_at,
+        created_at,
+        updated_at
+      )
+      SELECT
+        id,
+        owner_user_id,
+        conversation_id,
+        client_message_id,
+        role,
+        content_type,
+        CASE
+          WHEN json_valid(content_json) THEN json_remove(content_json, '$.raw')
+          ELSE content_json
+        END,
+        status,
+        provider_id,
+        model,
+        CASE
+          WHEN metadata_json LIKE '%"kind":"opening_line"%' THEN '{"kind":"opening_line"}'
+          WHEN metadata_json LIKE '%"kind":"ai_error"%' THEN '{"kind":"ai_error"}'
+          ELSE NULL
+        END,
+        read_at,
+        created_at,
+        updated_at
+      FROM messages;
+
+      DROP TABLE messages;
+      ALTER TABLE messages_next RENAME TO messages;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_owner_client_message_id
+        ON messages(owner_user_id, client_message_id)
+        WHERE client_message_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_messages_owner_created_at ON messages(owner_user_id, created_at, id);
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation_created_at ON messages(conversation_id, created_at, id);
+      CREATE INDEX IF NOT EXISTS idx_messages_owner_conversation_created_at
+        ON messages(owner_user_id, conversation_id, created_at, id);
+    `,
+  },
+  {
+    id: "006_figure_agent_types",
+    disableForeignKeys: true,
+    sql: `
+      DROP TABLE IF EXISTS agents_next;
+
+      CREATE TABLE agents_next (
+        id TEXT PRIMARY KEY,
+        owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('prime-figure', 'slice-figure')),
+        avatar_resource_path TEXT,
+        cover_resource_path TEXT,
+        name TEXT NOT NULL,
+        attributes_json TEXT NOT NULL DEFAULT '[]',
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        introduction TEXT NOT NULL DEFAULT '',
+        prologue_html TEXT NOT NULL DEFAULT '',
+        opening_line TEXT NOT NULL DEFAULT '',
+        is_public INTEGER NOT NULL DEFAULT 0,
+        linked_agent_ids_json TEXT NOT NULL DEFAULT '[]',
+        unlock_conditions_json TEXT,
+        persona TEXT NOT NULL,
+        background TEXT NOT NULL,
+        personality TEXT NOT NULL,
+        response_style TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      INSERT OR IGNORE INTO agents_next (
+        id,
+        owner_user_id,
+        type,
+        avatar_resource_path,
+        cover_resource_path,
+        name,
+        attributes_json,
+        tags_json,
+        introduction,
+        prologue_html,
+        opening_line,
+        is_public,
+        linked_agent_ids_json,
+        unlock_conditions_json,
+        persona,
+        background,
+        personality,
+        response_style,
+        created_at,
+        updated_at
+      )
+      SELECT
+        id,
+        owner_user_id,
+        CASE
+          WHEN type = 'core' THEN 'prime-figure'
+          WHEN type = 'slice' THEN 'slice-figure'
+          ELSE type
+        END,
+        avatar_resource_path,
+        cover_resource_path,
+        name,
+        attributes_json,
+        tags_json,
+        introduction,
+        prologue_html,
+        opening_line,
+        is_public,
+        linked_agent_ids_json,
+        unlock_conditions_json,
+        persona,
+        background,
+        personality,
+        response_style,
+        created_at,
+        updated_at
+      FROM agents;
+
+      DROP TABLE agents;
+      ALTER TABLE agents_next RENAME TO agents;
+
+      UPDATE conversations
+      SET type = (
+        SELECT agents.type
+        FROM agents
+        WHERE agents.id = conversations.agent_id
+      )
+      WHERE agent_id IS NOT NULL;
+
+      CREATE INDEX IF NOT EXISTS idx_agents_owner_user_id ON agents(owner_user_id);
     `,
   },
 ] as const;
@@ -169,6 +334,9 @@ function applyMigrations(db: DatabaseSync) {
   for (const migration of migrations) {
     if (isApplied.get(migration.id)) continue;
 
+    if ("disableForeignKeys" in migration && migration.disableForeignKeys) {
+      db.exec("PRAGMA foreign_keys = OFF;");
+    }
     db.exec("BEGIN");
     try {
       db.exec(migration.sql);
@@ -177,6 +345,10 @@ function applyMigrations(db: DatabaseSync) {
     } catch (error) {
       db.exec("ROLLBACK");
       throw error;
+    } finally {
+      if ("disableForeignKeys" in migration && migration.disableForeignKeys) {
+        db.exec("PRAGMA foreign_keys = ON;");
+      }
     }
   }
 }

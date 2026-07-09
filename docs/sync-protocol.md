@@ -16,8 +16,8 @@ Realtime flow:
 
 ```text
 bound external interface receives user text
-  -> server appends it to the bound agent conversation
-  -> model produces a reply for that same conversation
+  -> server appends it to the bound figure session
+  -> model produces a reply for that same session
   -> server sends message.created to Echoo clients
   -> server mirrors the reply through the bound interface
   -> foreground client stores message and updates UI

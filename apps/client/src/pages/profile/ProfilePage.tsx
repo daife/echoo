@@ -5,27 +5,27 @@ import { CharacterCard } from "../../features/conversations/components/Character
 const creations = [
   {
     name: "Aster",
-    kind: "Core",
-    description: "长期记忆型智能体，擅长陪你梳理项目、情绪和日常决策。",
+    kind: "Prime Figure",
+    description: "推进型 figure，擅长长期关系、数值变化、行为和日程推进。",
     gradient: "from-white/22 via-white/7 to-transparent"
   },
   {
     name: "Mira",
-    kind: "Slice",
-    description: "轻量陪伴人格，适合短对话、灵感速记和睡前复盘。",
+    kind: "Slice Figure",
+    description: "轻量 figure，适合短对话、片段场景、灵感速记和睡前复盘。",
     gradient: "from-white/16 via-white/5 to-transparent"
   }
 ];
 
 const posts = [
   {
-    title: "关于 Core 记忆的三条边界",
+    title: "关于 Prime Figure 记忆的三条边界",
     body: "长期记忆应该服务于关系，而不是复制聊天记录。",
     likes: "812",
     replies: "34"
   },
   {
-    title: "我为什么喜欢 Slice",
+    title: "我为什么喜欢 Slice Figure",
     body: "它像一段短促但准确的共鸣，不需要承担完整人格。",
     likes: "509",
     replies: "21"
@@ -44,7 +44,7 @@ export function ProfilePage({
   const cards = agents.map((agent) => ({
     id: agent.id,
     name: agent.name,
-    kind: agent.type === "slice" ? "Slice" : "Core",
+    kind: agent.type === "slice-figure" ? "Slice Figure" : "Prime Figure",
     description: agent.introduction || agent.persona,
     gradient: "from-white/16 via-white/5 to-transparent",
     avatarResourcePath: agent.avatarResourcePath,
@@ -62,13 +62,13 @@ export function ProfilePage({
           </div>
           <h1 className="mt-6 text-4xl font-semibold text-white md:text-5xl">Aether</h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-white/52">
-            一个正在共创智能体的人。偏好安静、连续、带长期记忆的对话体验。
+            一个正在共创 figure 的人。偏好安静、连续、带长期记忆的会话体验。
           </p>
           <div className="mt-7 grid w-full max-w-2xl grid-cols-3 border-y border-white/10 py-5">
             {[
-              [String(agents.length), "Agents"],
-              [String(agents.filter((agent) => agent.type === "core").length), "Core"],
-              [String(agents.filter((agent) => agent.type === "slice").length), "Slice"]
+              [String(agents.length), "Figures"],
+              [String(agents.filter((agent) => agent.type === "prime-figure").length), "Prime"],
+              [String(agents.filter((agent) => agent.type === "slice-figure").length), "Slice"]
             ].map(([value, label]) => (
               <div key={label}>
                 <div className="text-2xl font-semibold text-white">{value}</div>
@@ -99,11 +99,11 @@ export function ProfilePage({
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
         <div>
           <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-2xl font-semibold text-white">My agents</h2>
-            <span className="text-sm text-white/40">Core and Slice</span>
+            <h2 className="text-2xl font-semibold text-white">My figures</h2>
+            <span className="text-sm text-white/40">Prime Figure and Slice Figure</span>
           </div>
           {isLoadingAgents ? (
-            <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-6 text-sm text-white/45">Loading your agents...</div>
+            <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-6 text-sm text-white/45">Loading your figures...</div>
           ) : cards.length > 0 ? (
             <div className="grid gap-5 md:grid-cols-2">
               {cards.map((agent) => (
@@ -112,7 +112,7 @@ export function ProfilePage({
             </div>
           ) : (
             <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-6 text-sm leading-6 text-white/50">
-              You have not created any agents yet. Create a Slice agent to start a new conversation.
+              You have not created any figures yet. Create a Slice Figure to start a new conversation.
             </div>
           )}
         </div>
