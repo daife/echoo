@@ -183,6 +183,7 @@ export type PrimeMessageContent =
     }
   | {
       type: "voice";
+      description: string;
       transcript: string;
       resourceUrl?: string;
     }

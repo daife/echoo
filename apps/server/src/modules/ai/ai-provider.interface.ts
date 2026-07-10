@@ -1,4 +1,4 @@
-export type AiProviderId = "openrouter" | "xai";
+export type AiProviderId = "openrouter";
 
 export interface ChatCompletionMessage {
   role: "system" | "user" | "assistant" | "tool";

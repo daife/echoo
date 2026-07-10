@@ -115,6 +115,7 @@ export const primeMessageContentSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("voice"),
+    description: requiredText("Voice description", 4000),
     transcript: requiredText("Voice transcript", 12000),
     resourceUrl: urlLikeSchema.optional()
   }),

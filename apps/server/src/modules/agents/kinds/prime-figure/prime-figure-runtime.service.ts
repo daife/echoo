@@ -200,8 +200,13 @@ const primeMessageContentSchema = {
     },
     {
       type: "object",
-      properties: { type: { const: "voice" }, transcript: { type: "string" }, resourceUrl: { type: "string" } },
-      required: ["type", "transcript"],
+      properties: {
+        type: { const: "voice" },
+        description: { type: "string" },
+        transcript: { type: "string" },
+        resourceUrl: { type: "string" }
+      },
+      required: ["type", "description", "transcript"],
       additionalProperties: false
     },
     {
