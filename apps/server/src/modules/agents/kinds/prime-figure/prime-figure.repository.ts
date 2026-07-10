@@ -11,6 +11,9 @@ export class PrimeFigureRepository {
           INSERT INTO agent_prime_figures (
             agent_id,
             status,
+            prologue_html,
+            linked_agent_ids_json,
+            unlock_conditions_json,
             persona,
             background,
             personality,
@@ -20,12 +23,15 @@ export class PrimeFigureRepository {
             schedule_json,
             itinerary_json,
             variable_definitions_json
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       )
       .run(
         agentId,
         "active",
+        input.prologueHtml ?? "",
+        JSON.stringify(input.linkedAgentIds ?? []),
+        input.unlockConditions ? JSON.stringify(input.unlockConditions) : null,
         input.persona,
         input.background,
         input.personality,
@@ -44,6 +50,9 @@ export class PrimeFigureRepository {
         `
           UPDATE agent_prime_figures
           SET
+            prologue_html = ?,
+            linked_agent_ids_json = ?,
+            unlock_conditions_json = ?,
             persona = ?,
             background = ?,
             personality = ?,
@@ -57,6 +66,9 @@ export class PrimeFigureRepository {
         `
       )
       .run(
+        input.prologueHtml ?? "",
+        JSON.stringify(input.linkedAgentIds ?? []),
+        input.unlockConditions ? JSON.stringify(input.unlockConditions) : null,
         input.persona,
         input.background,
         input.personality,

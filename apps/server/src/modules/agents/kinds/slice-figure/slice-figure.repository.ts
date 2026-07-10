@@ -18,8 +18,9 @@ export class SliceFigureRepository {
             persona,
             background,
             personality,
-            response_style
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            response_style,
+            system_prompt
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       )
       .run(
@@ -32,7 +33,8 @@ export class SliceFigureRepository {
         input.persona,
         input.background,
         input.personality,
-        input.responseStyle
+        input.responseStyle,
+        input.systemPrompt
       );
   }
 
@@ -50,7 +52,8 @@ export class SliceFigureRepository {
             persona = ?,
             background = ?,
             personality = ?,
-            response_style = ?
+            response_style = ?,
+            system_prompt = ?
           WHERE agent_id = ?
         `
       )
@@ -64,8 +67,8 @@ export class SliceFigureRepository {
         input.background,
         input.personality,
         input.responseStyle,
+        input.systemPrompt,
         agentId
       );
   }
 }
-

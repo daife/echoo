@@ -45,6 +45,7 @@ export const createSliceFigureSchema = createAgentBaseSchema.extend({
   background: requiredText("Background"),
   personality: requiredText("Personality"),
   responseStyle: requiredText("Response style"),
+  systemPrompt: requiredText("System prompt", 12000),
 });
 
 const primeVariableValueSchema = z.union([
@@ -167,6 +168,13 @@ export const primeFigureStateSchema = z.object({
 
 export const createPrimeFigureSchema = createAgentBaseSchema.extend({
   type: z.literal("prime-figure"),
+  prologueHtml: optionalText(12000),
+  linkedAgentIds: z
+    .array(z.string().trim().min(1).max(120))
+    .max(50)
+    .optional()
+    .default([]),
+  unlockConditions: z.record(z.string(), z.unknown()).nullish(),
   persona: requiredText("Persona"),
   background: requiredText("Background"),
   personality: requiredText("Personality"),

@@ -1,5 +1,5 @@
 import { GearSix, Microphone, PaperPlaneRight, Paperclip, PencilSimple, Plus, Trash, Waveform, X } from "@phosphor-icons/react";
-import { buildFigureSystemPrompt, type Agent, type AgentAttribute, type LocalMessage, type SliceFigureAgent, type UpdateSliceFigureRequest, type UserProfile } from "@echoo/shared";
+import { buildFigureSystemPrompt, type Agent, type AgentAttribute, type LocalMessage, type SliceFigureAgent, type UpdateSliceFigureRequest } from "@echoo/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { MessageBubble, type MessageBubbleModel } from "../../features/messages/components/MessageBubble";
@@ -45,8 +45,10 @@ export function MessagesPage({
   const subtitle = agent
     ? `${formatAgentType(agent)}, online now`
     : "Open or create a figure to start chatting";
-  const sliceDetail = agent?.type === "slice-figure" ? agent.detail : null;
-  const prologueHtml = sliceDetail?.prologueHtml ?? "";
+  const prologueHtml =
+    agent?.type === "slice-figure" || agent?.type === "prime-figure"
+      ? agent.detail.prologueHtml
+      : "";
   const editor = agent ? getAgentEditor(agent, updateHandlers) : null;
 
   useEffect(() => {
@@ -261,7 +263,7 @@ type AgentEditor = {
   actionDescription: string;
   update: (payload: UpdateSliceFigureRequest) => Promise<Agent>;
   renderDialog: (props: {
-    user: Pick<UserProfile, "id" | "email" | "displayName"> | null;
+    user: { displayName: string } | null;
     isSubmitting: boolean;
     error: string | null;
     onClose: () => void;
@@ -289,7 +291,7 @@ function EditSliceFigureDialog({
   onSubmit
 }: {
   agent: SliceFigureAgent;
-  user: Pick<UserProfile, "id" | "email" | "displayName"> | null;
+  user: { displayName: string } | null;
   isSubmitting: boolean;
   error: string | null;
   onClose: () => void;
@@ -370,6 +372,7 @@ function EditSliceFigureDialog({
           <TextField label="背景" required multiline value={form.background} onChange={(value) => updateField("background", value)} />
           <TextField label="性格" required multiline value={form.personality} onChange={(value) => updateField("personality", value)} />
           <TextField label="回复风格" required multiline value={form.responseStyle} onChange={(value) => updateField("responseStyle", value)} />
+          <TextField label="System prompt 模板" required multiline mono value={form.systemPrompt} onChange={(value) => updateField("systemPrompt", value)} />
           <TextField label="介绍" multiline value={form.introduction ?? ""} onChange={(value) => updateField("introduction", value)} />
           <TextField label="叙引（HTML，可选）" multiline mono value={form.prologueHtml ?? ""} onChange={(value) => updateField("prologueHtml", value)} />
           <TextField label="当前情景（可选）" multiline value={form.currentSituation ?? ""} onChange={(value) => updateField("currentSituation", value)} />
@@ -401,7 +404,7 @@ function EditSliceFigureDialog({
 
         <div className="mt-5">
           <p className="mb-3 text-xs leading-5 text-white/38">
-            System prompt 字段可使用 {"{{user.name}}"}、{"{{user.displayName}}"}、{"{{user.email}}"}、{"{{user.id}}"} 占位符。
+            可用：{"{{user.name}}"}、{"{{figure.persona}}"}、{"{{figure.background}}"}、{"{{figure.personality}}"}、{"{{figure.responseStyle}}"}、{"{{figure.currentSituation}}"}。不提供 user id、email 等字段。
           </p>
           <button className="rounded-full border border-white/12 px-4 py-2 text-sm text-white/65 transition hover:border-white/25 hover:text-white" type="button" onClick={() => setPromptPreview(buildFigureSystemPrompt(form, { user }))}>
             预览提示词
@@ -555,7 +558,8 @@ function agentToUpdateForm(agent: SliceFigureAgent): UpdateSliceFigureRequest {
     persona: agent.detail.persona,
     background: agent.detail.background,
     personality: agent.detail.personality,
-    responseStyle: agent.detail.responseStyle
+    responseStyle: agent.detail.responseStyle,
+    systemPrompt: agent.detail.systemPrompt
   };
 }
 
@@ -571,7 +575,8 @@ function buildUpdatePayload(form: UpdateSliceFigureRequest): UpdateSliceFigureRe
     persona: form.persona.trim(),
     background: form.background.trim(),
     personality: form.personality.trim(),
-    responseStyle: form.responseStyle.trim()
+    responseStyle: form.responseStyle.trim(),
+    systemPrompt: form.systemPrompt.trim()
   };
 
   if (!requiredText.name) return "名字不能为空。";
@@ -579,6 +584,7 @@ function buildUpdatePayload(form: UpdateSliceFigureRequest): UpdateSliceFigureRe
   if (!requiredText.background) return "背景不能为空。";
   if (!requiredText.personality) return "性格不能为空。";
   if (!requiredText.responseStyle) return "回复风格不能为空。";
+  if (!requiredText.systemPrompt) return "System prompt 不能为空。";
 
   const attributes = (form.attributes ?? []).map((attribute) => ({
     key: typeof attribute.key === "string" ? attribute.key.trim() : "",

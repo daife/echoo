@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Message } from "@echoo/shared";
-import { AgentRuntimeService } from "../agents/agent-runtime.service.js";
 import { PrimeFigureRuntimeService } from "../agents/kinds/prime-figure/prime-figure-runtime.service.js";
 import { PrimeMessageRepository } from "../agents/kinds/prime-figure/prime-message.repository.js";
+import { SliceFigureRuntimeService } from "../agents/kinds/slice-figure/slice-figure-runtime.service.js";
 import { ConversationRepository } from "../conversations/conversation.repository.js";
 import { AppPushService } from "../realtime/delivery.service.js";
 import { MessageRepository } from "./message.repository.js";
@@ -25,7 +25,7 @@ export class MessagingService {
     private readonly repository = new MessageRepository(),
     private readonly conversations = new ConversationRepository(),
     private readonly appPush = new AppPushService(),
-    private readonly agentRuntime = new AgentRuntimeService(),
+    private readonly sliceRuntime = new SliceFigureRuntimeService(),
     private readonly primeMessages = new PrimeMessageRepository(),
     private readonly primeRuntime = new PrimeFigureRuntimeService(),
   ) {}
@@ -114,6 +114,8 @@ export class MessagingService {
       });
       return { message };
     }
+
+    if (conversation.type !== "slice-figure") return { message };
 
     if (input.stream === false) {
       const assistantMessage = await this.createAssistantReply(
@@ -232,7 +234,7 @@ export class MessagingService {
     const now = Date.now();
 
     try {
-      const reply = await this.agentRuntime.createReply({
+      const reply = await this.sliceRuntime.createReply({
         ownerUserId,
         conversationId,
       });
@@ -303,7 +305,7 @@ export class MessagingService {
     let streamedText = "";
 
     try {
-      const reply = await this.agentRuntime.createStreamingReply(
+      const reply = await this.sliceRuntime.createStreamingReply(
         { ownerUserId, conversationId },
         (delta) => {
           streamedText += delta.text;

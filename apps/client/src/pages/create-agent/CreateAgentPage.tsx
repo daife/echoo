@@ -1,5 +1,4 @@
 import {
-  ArrowRight,
   Brain,
   CirclesThreePlus,
   Plus,
@@ -9,6 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import {
   buildFigureSystemPrompt,
+  DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT,
   type Agent,
   type AgentAttribute,
   type AgentResourceUpload,
@@ -22,7 +22,6 @@ import {
 import { useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 
-type SliceFigureForm = CreateSliceFigureRequest;
 export type CreateAgentHandlers = {
   "slice-figure": (input: CreateSliceFigureRequest) => Promise<Agent>;
   "prime-figure": (input: CreatePrimeFigureRequest) => Promise<Agent>;
@@ -33,8 +32,7 @@ const createOptions = [
     type: "prime-figure",
     label: "Prime Figure",
     title: "Create a Prime Figure",
-    description:
-      "持续人格、带时间的记忆和情绪、日程感知，以及创作者定义的结构化状态。",
+    description: "持续人格、带时间的记忆和情绪、日程感知，以及创作者定义的结构化状态。",
     icon: Brain,
   },
   {
@@ -48,7 +46,7 @@ const createOptions = [
     type: "prime-world",
     label: "Prime World",
     title: "Prime World later",
-    description: "世界状态、规则推进和多主体事件会走独立创建流程。",
+    description: "世界状态、规则推进和多主体事件会走完全独立的创建与 Runtime 流程。",
     icon: Sparkle,
   },
 ] satisfies Array<{
@@ -59,130 +57,115 @@ const createOptions = [
   icon: typeof Brain;
 }>;
 
-const requiredFields = [
-  { key: "name", label: "名字", placeholder: "例如：Mira" },
-  { key: "persona", label: "人设", placeholder: "它是谁？和用户是什么关系？" },
-  {
-    key: "background",
-    label: "背景",
-    placeholder: "它从哪里来？经历、世界观或任务背景是什么？",
-  },
-  {
-    key: "personality",
-    label: "性格",
-    placeholder: "温柔、克制、直接、幽默、安静...",
-  },
-  {
-    key: "responseStyle",
-    label: "回复风格",
-    placeholder:
-      "例如：简短、诗意的回复，用括号表示人物心理和动作，比如（愣了一下）",
-  },
-] satisfies Array<{
-  key: keyof Pick<
-    SliceFigureForm,
-    "name" | "persona" | "background" | "personality" | "responseStyle"
-  >;
-  label: string;
-  placeholder: string;
-}>;
+export function CreateAgentPage({ createHandlers }: { createHandlers: CreateAgentHandlers }) {
+  const [selectedType, setSelectedType] = useState<AgentType>("slice-figure");
 
-const initialForm: SliceFigureForm = {
+  return (
+    <section className="space-y-8">
+      <div className="glass-panel overflow-hidden rounded-2xl p-6 md:p-10">
+        <div className="mb-5 flex items-center gap-3 text-sm text-white/50 md:mb-8">
+          <Sparkle size={18} />
+          Co-create an Agent
+        </div>
+        <h1 className="max-w-3xl text-4xl font-semibold leading-[1.05] text-white md:text-6xl">
+          Create the right kind of living Figure.
+        </h1>
+        <p className="mt-5 max-w-2xl text-sm leading-6 text-white/52">
+          每种 Agent 都拥有独立的会话类型与 Runtime；共享展示数据，但不共享行为管线。
+        </p>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-[0.72fr_1.28fr]">
+        <div className="space-y-5">
+          {createOptions.map((option) => {
+            const Icon = option.icon;
+            const active = selectedType === option.type;
+            return (
+              <button
+                key={option.type}
+                className={`glass-panel w-full rounded-2xl p-4 text-left transition active:scale-[0.99] md:p-6 ${
+                  active ? "ring-1 ring-white/12" : "opacity-55 hover:opacity-80"
+                }`}
+                type="button"
+                onClick={() => setSelectedType(option.type)}
+              >
+                <div className="flex items-start justify-between gap-6">
+                  <div className="grid h-11 w-11 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-white md:h-14 md:w-14">
+                    <Icon className="h-5 w-5 md:h-7 md:w-7" weight="duotone" />
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs ${active ? "bg-white font-semibold text-[#09090b]" : "border border-white/10 text-white/45"}`}>
+                    {option.type === "prime-world" ? `${option.label} later` : option.label}
+                  </span>
+                </div>
+                <h2 className="mt-4 text-xl font-semibold text-white md:mt-8 md:text-3xl">{option.title}</h2>
+                <p className="mt-3 hidden text-sm leading-6 text-white/52 md:block">{option.description}</p>
+              </button>
+            );
+          })}
+        </div>
+
+        {selectedType === "slice-figure" ? (
+          <SliceFigureCreateForm onCreate={createHandlers["slice-figure"]} />
+        ) : selectedType === "prime-figure" ? (
+          <PrimeFigureCreateForm onCreate={createHandlers["prime-figure"]} />
+        ) : (
+          <UnavailableCreatePanel />
+        )}
+      </div>
+    </section>
+  );
+}
+
+const initialSliceForm: CreateSliceFigureRequest = {
   type: "slice-figure",
   name: "",
   attributes: [],
   tags: [],
   introduction: "",
   prologueHtml: "",
-  currentSituation: "",
-  openingLine: "",
-  isPublic: false,
   linkedAgentIds: [],
   unlockConditions: null,
+  isPublic: false,
   persona: "",
   background: "",
   personality: "",
   responseStyle: "",
+  currentSituation: "",
+  openingLine: "",
+  systemPrompt: DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT,
 };
 
-export function CreateAgentPage({
-  createHandlers,
-}: {
-  createHandlers: CreateAgentHandlers;
-}) {
+function SliceFigureCreateForm({ onCreate }: { onCreate: (input: CreateSliceFigureRequest) => Promise<Agent> }) {
   const { user } = useAuth();
-  const [selectedType, setSelectedType] = useState<AgentType>("slice-figure");
-  const [form, setForm] = useState<SliceFigureForm>(initialForm);
+  const [form, setForm] = useState<CreateSliceFigureRequest>(initialSliceForm);
   const [jsonInput, setJsonInput] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [unlockText, setUnlockText] = useState("");
   const [promptPreview, setPromptPreview] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const updateField = (
-    key: keyof SliceFigureForm,
-    value: SliceFigureForm[keyof SliceFigureForm],
-  ) => {
+  const setField = <K extends keyof CreateSliceFigureRequest>(key: K, value: CreateSliceFigureRequest[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
     setError(null);
     setPromptPreview(null);
   };
 
-  const updateAttribute = (
-    index: number,
-    key: keyof AgentAttribute,
-    value: string,
-  ) => {
-    const attributes = [...(form.attributes ?? [])];
-    attributes[index] = {
-      ...(attributes[index] ?? { key: "", value: "" }),
-      [key]: value,
-    };
-    updateField("attributes", attributes);
-  };
-
-  const removeAttribute = (index: number) => {
-    updateField(
-      "attributes",
-      (form.attributes ?? []).filter((_, itemIndex) => itemIndex !== index),
-    );
-  };
-
-  const updateTag = (index: number, value: string) => {
-    const tags = [...(form.tags ?? [])];
-    tags[index] = value;
-    updateField("tags", tags);
-  };
-
-  const removeTag = (index: number) => {
-    updateField(
-      "tags",
-      (form.tags ?? []).filter((_, itemIndex) => itemIndex !== index),
-    );
-  };
-
-  const updateList = (key: "tags" | "linkedAgentIds", value: string) => {
-    updateField(
-      key,
-      value
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean),
-    );
-  };
-
   const importJson = () => {
     try {
       const parsed = JSON.parse(jsonInput) as Partial<CreateSliceFigureRequest>;
-      setForm({
-        ...initialForm,
+      const next = {
+        ...initialSliceForm,
         ...parsed,
-        type: "slice-figure",
+        type: "slice-figure" as const,
         attributes: parsed.attributes ?? [],
         tags: parsed.tags ?? [],
         linkedAgentIds: parsed.linkedAgentIds ?? [],
         unlockConditions: parsed.unlockConditions ?? null,
+        systemPrompt: parsed.systemPrompt ?? DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT,
         isPublic: Boolean(parsed.isPublic),
-      });
+      };
+      setForm(next);
+      setUnlockText(next.unlockConditions ? JSON.stringify(next.unlockConditions, null, 2) : "");
       setError(null);
       setPromptPreview(null);
     } catch {
@@ -192,535 +175,18 @@ export function CreateAgentPage({
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setError(null);
-    const payload = buildCreatePayload(form);
-    if (typeof payload === "string") {
-      setError(payload);
-      return;
-    }
-
+    const result = buildSlicePayload(form, unlockText);
+    if (typeof result === "string") return setError(result);
     setIsSubmitting(true);
+    setError(null);
     try {
-      await createHandlers["slice-figure"](payload);
-      setForm(initialForm);
+      await onCreate(result);
+      setForm(initialSliceForm);
       setJsonInput("");
+      setUnlockText("");
       setPromptPreview(null);
     } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "创建失败，请稍后再试。",
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <section className="space-y-8">
-      <div className="glass-panel overflow-hidden rounded-2xl p-7 md:p-10">
-        <div className="mb-8 flex items-center gap-3 text-sm text-white/50">
-          <Sparkle size={18} />
-          Co-create an Agent
-        </div>
-        <h1 className="max-w-3xl text-5xl font-semibold leading-[1.05] text-white md:text-6xl">
-          Shape an LLM-driven agent from the right creation flow.
-        </h1>
-        <p className="mt-5 max-w-2xl text-sm leading-6 text-white/52">
-          Slice Figure 面向即时场景，Prime Figure
-          面向长期连续的人格、记忆、情绪与自主沉默。
-        </p>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
-        <div className="space-y-5">
-          {createOptions.map((option) => {
-            const Icon = option.icon;
-            const active = selectedType === option.type;
-            const implemented = option.type !== "prime-world";
-
-            return (
-              <button
-                key={option.type}
-                className={`glass-panel w-full rounded-2xl p-6 text-left transition active:scale-[0.99] ${
-                  active
-                    ? "ring-1 ring-white/12"
-                    : "opacity-55 hover:opacity-80"
-                }`}
-                type="button"
-                onClick={() => setSelectedType(option.type)}
-              >
-                <div className="flex items-start justify-between gap-6">
-                  <div className="grid h-14 w-14 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-white">
-                    <Icon size={28} weight="duotone" />
-                  </div>
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs ${active ? "bg-white font-semibold text-[#09090b]" : "border border-white/10 text-white/45"}`}
-                  >
-                    {implemented ? option.label : `${option.label} later`}
-                  </span>
-                </div>
-                <h2 className="mt-8 text-3xl font-semibold text-white">
-                  {option.title}
-                </h2>
-                <p className="mt-3 text-sm leading-6 text-white/52">
-                  {option.description}
-                </p>
-              </button>
-            );
-          })}
-
-          {selectedType === "slice-figure" ? (
-            <div className="glass-panel rounded-2xl p-5">
-              <h2 className="text-lg font-semibold text-white">
-                一键 JSON 导入
-              </h2>
-              <textarea
-                className="mt-3 min-h-40 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-xs leading-5 text-white outline-none placeholder:text-white/28 focus:border-white/25"
-                value={jsonInput}
-                placeholder='{"name":"Mira","isPublic":false,"persona":"...","background":"...","personality":"...","responseStyle":"..."}'
-                onChange={(event) => setJsonInput(event.target.value)}
-              />
-              <button
-                className="mt-3 rounded-full border border-white/12 px-4 py-2 text-sm text-white/65 transition hover:border-white/25 hover:text-white"
-                type="button"
-                onClick={importJson}
-              >
-                Apply JSON
-              </button>
-            </div>
-          ) : null}
-        </div>
-
-        {selectedType === "slice-figure" ? (
-          <form
-            className="glass-panel rounded-2xl p-6 md:p-8"
-            onSubmit={submit}
-          >
-            <div className="grid gap-5">
-              <div className="grid gap-4 md:grid-cols-2">
-                <ImageInput
-                  label="头像"
-                  value={form.avatar ?? null}
-                  onChange={(value) => updateField("avatar", value)}
-                />
-                <ImageInput
-                  label="封面"
-                  value={form.cover ?? null}
-                  onChange={(value) => updateField("cover", value)}
-                />
-              </div>
-
-              {requiredFields.map((field) => {
-                const isName = field.key === "name";
-                return (
-                  <label key={field.key} className="block">
-                    <span className="text-sm font-medium text-white/78">
-                      {field.label} *
-                    </span>
-                    {isName ? (
-                      <input
-                        className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-white/[0.035] px-4 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-white/25"
-                        value={form[field.key]}
-                        placeholder={field.placeholder}
-                        onChange={(event) =>
-                          updateField(field.key, event.target.value)
-                        }
-                      />
-                    ) : (
-                      <textarea
-                        className="mt-2 min-h-24 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/28 focus:border-white/25"
-                        value={form[field.key]}
-                        placeholder={field.placeholder}
-                        onChange={(event) =>
-                          updateField(field.key, event.target.value)
-                        }
-                      />
-                    )}
-                  </label>
-                );
-              })}
-
-              <label className="block">
-                <span className="text-sm font-medium text-white/78">介绍</span>
-                <textarea
-                  className="mt-2 min-h-20 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/28 focus:border-white/25"
-                  value={form.introduction ?? ""}
-                  placeholder="公开展示或 My figures 卡片上的简介"
-                  onChange={(event) =>
-                    updateField("introduction", event.target.value)
-                  }
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-sm font-medium text-white/78">
-                  叙引（HTML，可选）
-                </span>
-                <textarea
-                  className="mt-2 min-h-28 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 font-mono text-xs leading-5 text-white outline-none transition placeholder:text-white/28 focus:border-white/25"
-                  value={form.prologueHtml ?? ""}
-                  placeholder="<p>用于在对话界面最前面的容器中展示。</p>"
-                  onChange={(event) =>
-                    updateField("prologueHtml", event.target.value)
-                  }
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-sm font-medium text-white/78">
-                  当前情景（可选）
-                </span>
-                <textarea
-                  className="mt-2 min-h-24 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/28 focus:border-white/25"
-                  value={form.currentSituation ?? ""}
-                  placeholder="例如：{{user.name}} 刚结束一天工作，正在深夜和 figure 说话。"
-                  onChange={(event) =>
-                    updateField("currentSituation", event.target.value)
-                  }
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-sm font-medium text-white/78">
-                  开场白（可选）
-                </span>
-                <textarea
-                  className="mt-2 min-h-20 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/28 focus:border-white/25"
-                  value={form.openingLine ?? ""}
-                  placeholder="进入会话时，figure 先展示的一句话。"
-                  onChange={(event) =>
-                    updateField("openingLine", event.target.value)
-                  }
-                />
-              </label>
-
-              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <span className="text-sm font-medium text-white/78">
-                      属性
-                    </span>
-                    <p className="mt-1 text-xs text-white/35">
-                      用于卡片内部右上角标注，不进入 system prompt。
-                    </p>
-                  </div>
-                  <button
-                    className="text-sm text-white/55 hover:text-white"
-                    type="button"
-                    onClick={() =>
-                      updateField("attributes", [
-                        ...(form.attributes ?? []),
-                        { key: "", value: "" },
-                      ])
-                    }
-                  >
-                    Add
-                  </button>
-                </div>
-                <div className="mt-3 grid gap-3">
-                  {(form.attributes ?? []).map((attribute, index) => (
-                    <div
-                      key={index}
-                      className="grid gap-3 md:grid-cols-[1fr_1fr_auto]"
-                    >
-                      <input
-                        className="h-11 rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none"
-                        value={attribute.key}
-                        placeholder="年龄"
-                        onChange={(event) =>
-                          updateAttribute(index, "key", event.target.value)
-                        }
-                      />
-                      <input
-                        className="h-11 rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none"
-                        value={attribute.value}
-                        placeholder="19"
-                        onChange={(event) =>
-                          updateAttribute(index, "value", event.target.value)
-                        }
-                      />
-                      <button
-                        aria-label="删除属性"
-                        className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 text-white/45 transition hover:border-white/20 hover:text-white"
-                        type="button"
-                        onClick={() => removeAttribute(index)}
-                      >
-                        <Trash size={16} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <span className="text-sm font-medium text-white/78">
-                      Tag
-                    </span>
-                    <p className="mt-1 text-xs text-white/35">
-                      用于卡片底部标注，不进入 system prompt。
-                    </p>
-                  </div>
-                  <button
-                    className="text-sm text-white/55 hover:text-white"
-                    type="button"
-                    onClick={() =>
-                      updateField("tags", [...(form.tags ?? []), ""])
-                    }
-                  >
-                    Add
-                  </button>
-                </div>
-                <div className="mt-3 grid gap-3">
-                  {(form.tags ?? []).map((tag, index) => (
-                    <div
-                      key={index}
-                      className="grid gap-3 md:grid-cols-[1fr_auto]"
-                    >
-                      <input
-                        className="h-11 rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none"
-                        value={tag}
-                        placeholder="陪伴"
-                        onChange={(event) =>
-                          updateTag(index, event.target.value)
-                        }
-                      />
-                      <button
-                        aria-label="删除 tag"
-                        className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 text-white/45 transition hover:border-white/20 hover:text-white"
-                        type="button"
-                        onClick={() => removeTag(index)}
-                      >
-                        <Trash size={16} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <label className="block">
-                <span className="text-sm font-medium text-white/78">
-                  链接的 figure ID（逗号分隔）
-                </span>
-                <input
-                  className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-white/[0.035] px-4 text-sm text-white outline-none"
-                  value={(form.linkedAgentIds ?? []).join(", ")}
-                  placeholder="agent_xxx, agent_yyy"
-                  onChange={(event) =>
-                    updateList("linkedAgentIds", event.target.value)
-                  }
-                />
-              </label>
-
-              <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.025] p-4">
-                <span>
-                  <span className="block text-sm font-medium text-white/78">
-                    是否公开 *
-                  </span>
-                  <span className="mt-1 block text-xs text-white/40">
-                    公开后可用于未来的探索页和分享场景。
-                  </span>
-                </span>
-                <input
-                  checked={form.isPublic}
-                  type="checkbox"
-                  onChange={(event) =>
-                    updateField("isPublic", event.target.checked)
-                  }
-                />
-              </label>
-            </div>
-
-            <div className="mt-7">
-              <p className="mb-3 text-xs leading-5 text-white/38">
-                System prompt 字段可使用 {"{{user.name}}"}、
-                {"{{user.displayName}}"}、{"{{user.email}}"}、{"{{user.id}}"}{" "}
-                占位符。
-              </p>
-              <button
-                className="rounded-full border border-white/12 px-4 py-2 text-sm text-white/65 transition hover:border-white/25 hover:text-white"
-                type="button"
-                onClick={() =>
-                  setPromptPreview(buildFigureSystemPrompt(form, { user }))
-                }
-              >
-                预览提示词
-              </button>
-              {promptPreview ? (
-                <div className="mt-4 rounded-xl border border-white/10 bg-black/25 p-4">
-                  <div className="mb-3 flex items-center justify-between gap-4">
-                    <span className="text-sm font-medium text-white/78">
-                      System prompt 预览
-                    </span>
-                    <button
-                      className="text-xs text-white/45 transition hover:text-white"
-                      type="button"
-                      onClick={() => setPromptPreview(null)}
-                    >
-                      收起
-                    </button>
-                  </div>
-                  <pre className="max-h-96 overflow-auto whitespace-pre-wrap text-xs leading-5 text-white/65">
-                    {promptPreview}
-                  </pre>
-                </div>
-              ) : null}
-            </div>
-
-            {error ? (
-              <p className="mt-5 rounded-xl border border-white/10 bg-white/[0.035] p-4 text-sm text-white/70">
-                {error}
-              </p>
-            ) : null}
-
-            <button
-              className="mt-7 flex w-full items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-medium text-[#09090b] transition disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
-              disabled={isSubmitting}
-              type="submit"
-            >
-              {isSubmitting ? "Creating..." : "Create Slice Figure"}
-              <ArrowRight size={17} />
-            </button>
-          </form>
-        ) : selectedType === "prime-figure" ? (
-          <PrimeFigureCreateForm onCreate={createHandlers["prime-figure"]} />
-        ) : (
-          <UnavailableCreatePanel type={selectedType} />
-        )}
-      </div>
-    </section>
-  );
-}
-
-type PrimeVariableDraft = Omit<
-  PrimeFigureVariableDefinition,
-  "defaultValue"
-> & { defaultValueText: string };
-
-const weekdayOptions = [
-  ["mon", "一"],
-  ["tue", "二"],
-  ["wed", "三"],
-  ["thu", "四"],
-  ["fri", "五"],
-  ["sat", "六"],
-  ["sun", "日"],
-] as const;
-
-function PrimeFigureCreateForm({
-  onCreate,
-}: {
-  onCreate: (input: CreatePrimeFigureRequest) => Promise<Agent>;
-}) {
-  const [form, setForm] = useState<CreatePrimeFigureRequest>(() => ({
-    type: "prime-figure",
-    name: "",
-    attributes: [],
-    tags: [],
-    introduction: "",
-    isPublic: false,
-    persona: "",
-    background: "",
-    personality: "",
-    responseStyle: "",
-    decisionStyle: "",
-    currentSituation: "",
-    schedule: {
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-      segments: [],
-    },
-    itinerary: "",
-    variableDefinitions: [],
-    initialMood: "",
-    initialRelationshipStatus: "",
-  }));
-  const [variables, setVariables] = useState<PrimeVariableDraft[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const setField = <K extends keyof CreatePrimeFigureRequest>(
-    key: K,
-    value: CreatePrimeFigureRequest[K],
-  ) => {
-    setForm((current) => ({ ...current, [key]: value }));
-    setError(null);
-  };
-
-  const updateSegment = (
-    index: number,
-    patch: Partial<PrimeFigureScheduleSegment>,
-  ) => {
-    const segments = [...(form.schedule?.segments ?? [])];
-    segments[index] = {
-      ...(segments[index] as PrimeFigureScheduleSegment),
-      ...patch,
-    };
-    setField("schedule", {
-      timezone: form.schedule?.timezone ?? "UTC",
-      segments,
-    });
-  };
-
-  const addSegment = () => {
-    setField("schedule", {
-      timezone: form.schedule?.timezone ?? "UTC",
-      segments: [
-        ...(form.schedule?.segments ?? []),
-        {
-          label: "",
-          days: ["mon", "tue", "wed", "thu", "fri"],
-          start: "09:00",
-          end: "18:00",
-          description: "",
-        },
-      ],
-    });
-  };
-
-  const addVariable = () => {
-    setVariables((current) => [
-      ...current,
-      {
-        key: "",
-        label: "",
-        type: "string",
-        description: "",
-        required: false,
-        defaultValueText: "",
-      },
-    ]);
-  };
-
-  const updateVariable = (
-    index: number,
-    patch: Partial<PrimeVariableDraft>,
-  ) => {
-    setVariables((current) =>
-      current.map((variable, itemIndex) =>
-        itemIndex === index ? { ...variable, ...patch } : variable,
-      ),
-    );
-    setError(null);
-  };
-
-  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const payload = buildPrimeCreatePayload(form, variables);
-    if (typeof payload === "string") {
-      setError(payload);
-      return;
-    }
-
-    setIsSubmitting(true);
-    setError(null);
-    try {
-      await onCreate(payload);
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Prime Figure 创建失败，请稍后再试。",
-      );
+      setError(caught instanceof Error ? caught.message : "创建失败，请稍后再试。");
     } finally {
       setIsSubmitting(false);
     }
@@ -728,694 +194,391 @@ function PrimeFigureCreateForm({
 
   return (
     <form className="glass-panel rounded-2xl p-6 md:p-8" onSubmit={submit}>
-      <div className="flex items-start gap-4 border-b border-white/10 pb-6">
-        <div className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.04]">
-          <Brain size={24} weight="duotone" />
-        </div>
-        <div>
-          <h2 className="text-2xl font-semibold text-white">Prime Figure</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-white/48">
-            定义一个从自身人格出发行动的长期 Figure。所有精确时间都会以 Figure
-            的日程时区解释。
-          </p>
-        </div>
-      </div>
+      <FormHeader icon={CirclesThreePlus} title="Slice Figure" description="展示信息不会进入模型上下文；下方人格与对话配置可由 system prompt 模板引用。" />
 
-      <FormSection
-        title="身份与声音"
-        description="这些字段构成稳定人格，Runtime 会在每轮决策中保持它们。"
-      >
-        <div className="grid gap-4 md:grid-cols-2">
-          <ImageInput
-            label="头像"
-            value={form.avatar ?? null}
-            onChange={(value) => setField("avatar", value)}
-          />
-          <ImageInput
-            label="封面"
-            value={form.cover ?? null}
-            onChange={(value) => setField("cover", value)}
-          />
-        </div>
-        <PrimeTextField
-          label="名字"
-          required
-          value={form.name}
-          placeholder="例如：Mira"
-          onChange={(value) => setField("name", value)}
-        />
-        <PrimeTextField
-          label="公开介绍"
-          value={form.introduction ?? ""}
-          placeholder="在 Figure 列表中展示的简短介绍"
-          onChange={(value) => setField("introduction", value)}
-        />
-        <PrimeTextField
-          multiline
-          label="人设"
-          required
-          value={form.persona}
-          placeholder="Figure是谁，与enduser是什么关系"
-          onChange={(value) => setField("persona", value)}
-        />
-        <PrimeTextField
-          multiline
-          label="背景"
-          required
-          value={form.background}
-          placeholder="经历、环境、世界观与长期处境"
-          onChange={(value) => setField("background", value)}
-        />
-        <PrimeTextField
-          multiline
-          label="性格"
-          required
-          value={form.personality}
-          placeholder="偏好、边界、缺点、矛盾和稳定行为模式"
-          onChange={(value) => setField("personality", value)}
-        />
-        <PrimeTextField
-          multiline
-          label="回复风格"
-          required
-          value={form.responseStyle}
-          placeholder="语言长度、语气、动作表达和禁忌"
-          onChange={(value) => setField("responseStyle", value)}
-        />
-        <PrimeTextField
-          multiline
-          label="决策风格"
-          value={form.decisionStyle ?? ""}
-          placeholder="如何权衡沉默、回应、记忆和自身边界"
-          onChange={(value) => setField("decisionStyle", value)}
-        />
-        <PrimeTextField
-          multiline
-          label="当前处境"
-          value={form.currentSituation ?? ""}
-          placeholder="Figure此刻正在经历的长期情境"
-          onChange={(value) => setField("currentSituation", value)}
-        />
-        <div className="grid gap-4 md:grid-cols-2">
-          <PrimeTextField
-            label="初始情绪"
-            value={form.initialMood ?? ""}
-            placeholder="例如：平静，但有些疲惫"
-            onChange={(value) => setField("initialMood", value)}
-          />
-          <PrimeTextField
-            label="初始关系状态"
-            value={form.initialRelationshipStatus ?? ""}
-            placeholder="例如：熟悉但仍保持边界"
-            onChange={(value) => setField("initialRelationshipStatus", value)}
-          />
-        </div>
-        <PrimeTextField
-          multiline
-          label="行程与长期安排"
-          value={form.itinerary ?? ""}
-          placeholder="使用易读时间，例如：2026-07-12T09:30 前往上海"
-          onChange={(value) => setField("itinerary", value)}
+      <JsonImport value={jsonInput} onChange={setJsonInput} onApply={importJson} placeholder='{"type":"slice-figure","name":"Mira","systemPrompt":"你的人设：\\n{{figure.persona}}",...}' />
+
+      <FormSection title="展示与关系数据 · 不进入上下文" description="仅用于界面展示、发现、序引或未来的关联与解锁能力。">
+        <DisplayFields
+          form={form}
+          unlockText={unlockText}
+          onUnlockTextChange={setUnlockText}
+          onChange={setField}
         />
       </FormSection>
 
-      <FormSection
-        title="日程感知"
-        description="Runtime 会把消息落入的具体时段转换成 hint，不把原始时间戳交给模型。"
-      >
-        <PrimeTextField
-          label="IANA 时区"
-          required
-          value={form.schedule?.timezone ?? "UTC"}
-          placeholder="Asia/Shanghai"
-          onChange={(value) =>
-            setField("schedule", {
-              timezone: value,
-              segments: form.schedule?.segments ?? [],
-            })
-          }
-        />
-        <div className="space-y-4">
-          {(form.schedule?.segments ?? []).map((segment, index) => (
-            <div
-              key={index}
-              className="rounded-xl border border-white/10 bg-black/15 p-4"
-            >
-              <div className="grid gap-3 md:grid-cols-[1fr_120px_120px_auto]">
-                <input
-                  className={compactInputClass}
-                  value={segment.label}
-                  placeholder="工作"
-                  onChange={(event) =>
-                    updateSegment(index, { label: event.target.value })
-                  }
-                />
-                <input
-                  className={compactInputClass}
-                  type="time"
-                  value={segment.start}
-                  onChange={(event) =>
-                    updateSegment(index, { start: event.target.value })
-                  }
-                />
-                <input
-                  className={compactInputClass}
-                  type="time"
-                  value={segment.end}
-                  onChange={(event) =>
-                    updateSegment(index, { end: event.target.value })
-                  }
-                />
-                <button
-                  aria-label="删除日程"
-                  className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 text-white/45 transition hover:border-white/25 hover:text-white active:scale-95"
-                  type="button"
-                  onClick={() =>
-                    setField("schedule", {
-                      timezone: form.schedule?.timezone ?? "UTC",
-                      segments: (form.schedule?.segments ?? []).filter(
-                        (_, itemIndex) => itemIndex !== index,
-                      ),
-                    })
-                  }
-                >
-                  <Trash size={16} />
-                </button>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {weekdayOptions.map(([day, label]) => {
-                  const active = segment.days.includes(day);
-                  return (
-                    <button
-                      key={day}
-                      className={`h-9 min-w-9 rounded-lg border px-2 text-xs transition active:scale-95 ${active ? "border-white bg-white text-[#09090b]" : "border-white/10 text-white/45 hover:text-white"}`}
-                      type="button"
-                      onClick={() =>
-                        updateSegment(index, {
-                          days: active
-                            ? segment.days.filter((item) => item !== day)
-                            : [...segment.days, day],
-                        })
-                      }
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-              <textarea
-                className={`${compactInputClass} mt-3 min-h-20 py-3`}
-                value={segment.description}
-                placeholder="这个时段Figure通常在做什么，是否方便回应"
-                onChange={(event) =>
-                  updateSegment(index, { description: event.target.value })
-                }
-              />
-            </div>
-          ))}
-        </div>
-        <button
-          className="flex items-center gap-2 rounded-xl border border-white/12 px-4 py-2.5 text-sm text-white/65 transition hover:border-white/25 hover:text-white active:scale-[0.98]"
-          type="button"
-          onClick={addSegment}
-        >
-          <Plus size={16} />
-          添加日程时段
-        </button>
-      </FormSection>
-
-      <FormSection
-        title="创作者参数"
-        description="description 会直接进入 strict schema。必填参数每轮必须给出非 null 值，可选参数用 null 表示沿用原值。"
-      >
-        <div className="space-y-4">
-          {variables.map((variable, index) => (
-            <div
-              key={index}
-              className="rounded-xl border border-white/10 bg-black/15 p-4"
-            >
-              <div className="grid gap-3 md:grid-cols-2">
-                <input
-                  className={compactInputClass}
-                  value={variable.key}
-                  placeholder="参数 key，例如 trust"
-                  onChange={(event) =>
-                    updateVariable(index, { key: event.target.value })
-                  }
-                />
-                <input
-                  className={compactInputClass}
-                  value={variable.label}
-                  placeholder="显示名称，例如 信任程度"
-                  onChange={(event) =>
-                    updateVariable(index, { label: event.target.value })
-                  }
-                />
-              </div>
-              <textarea
-                className={`${compactInputClass} mt-3 min-h-20 py-3`}
-                value={variable.description}
-                placeholder="必填。说明这个参数代表什么，以及模型应如何判断它"
-                onChange={(event) =>
-                  updateVariable(index, { description: event.target.value })
-                }
-              />
-              <div className="mt-3 grid gap-3 md:grid-cols-[160px_1fr_auto_auto]">
-                <select
-                  className={compactInputClass}
-                  value={variable.type}
-                  onChange={(event) =>
-                    updateVariable(index, {
-                      type: event.target.value as PrimeFigureVariableType,
-                      defaultValueText: "",
-                    })
-                  }
-                >
-                  <option value="string">string</option>
-                  <option value="number">number</option>
-                  <option value="boolean">boolean</option>
-                  <option value="json">json</option>
-                </select>
-                {variable.type === "boolean" ? (
-                  <select
-                    className={compactInputClass}
-                    value={variable.defaultValueText}
-                    onChange={(event) =>
-                      updateVariable(index, {
-                        defaultValueText: event.target.value,
-                      })
-                    }
-                  >
-                    <option value="">无默认值</option>
-                    <option value="true">true</option>
-                    <option value="false">false</option>
-                  </select>
-                ) : (
-                  <input
-                    className={compactInputClass}
-                    value={variable.defaultValueText}
-                    placeholder={
-                      variable.type === "json"
-                        ? "默认 JSON，可留空"
-                        : "默认值，可留空"
-                    }
-                    onChange={(event) =>
-                      updateVariable(index, {
-                        defaultValueText: event.target.value,
-                      })
-                    }
-                  />
-                )}
-                <label className="flex h-11 items-center gap-2 rounded-xl border border-white/10 px-3 text-xs text-white/65">
-                  <input
-                    checked={variable.required}
-                    type="checkbox"
-                    onChange={(event) =>
-                      updateVariable(index, { required: event.target.checked })
-                    }
-                  />
-                  每轮必填
-                </label>
-                <button
-                  aria-label="删除参数"
-                  className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 text-white/45 transition hover:border-white/25 hover:text-white active:scale-95"
-                  type="button"
-                  onClick={() =>
-                    setVariables((current) =>
-                      current.filter((_, itemIndex) => itemIndex !== index),
-                    )
-                  }
-                >
-                  <Trash size={16} />
-                </button>
-              </div>
-              {variable.type === "number" ? (
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <input
-                    className={compactInputClass}
-                    type="number"
-                    value={variable.min ?? ""}
-                    placeholder="最小值，可留空"
-                    onChange={(event) =>
-                      updateVariable(index, {
-                        min:
-                          event.target.value === ""
-                            ? undefined
-                            : Number(event.target.value),
-                      })
-                    }
-                  />
-                  <input
-                    className={compactInputClass}
-                    type="number"
-                    value={variable.max ?? ""}
-                    placeholder="最大值，可留空"
-                    onChange={(event) =>
-                      updateVariable(index, {
-                        max:
-                          event.target.value === ""
-                            ? undefined
-                            : Number(event.target.value),
-                      })
-                    }
-                  />
-                </div>
-              ) : null}
-            </div>
-          ))}
-        </div>
-        <button
-          className="flex items-center gap-2 rounded-xl border border-white/12 px-4 py-2.5 text-sm text-white/65 transition hover:border-white/25 hover:text-white active:scale-[0.98]"
-          type="button"
-          onClick={addVariable}
-        >
-          <Plus size={16} />
-          添加创作者参数
-        </button>
-      </FormSection>
-
-      <label className="mt-7 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.025] p-4">
-        <span>
-          <span className="block text-sm font-medium text-white/78">
-            公开 Prime Figure
-          </span>
-          <span className="mt-1 block text-xs text-white/40">
-            允许它出现在未来的探索和分享场景。
-          </span>
-        </span>
-        <input
-          checked={form.isPublic}
-          type="checkbox"
-          onChange={(event) => setField("isPublic", event.target.checked)}
-        />
-      </label>
-
-      {error ? (
-        <p className="mt-5 rounded-xl border border-red-300/20 bg-red-400/[0.06] p-4 text-sm text-red-50/85">
-          {error}
+      <FormSection title="人格与对话 · 进入上下文" description="带 * 的字段必填。system prompt 决定这些字段如何组织和发送给模型。">
+        <TextField label="人设" required multiline value={form.persona} placeholder="Figure 是谁，与 user 是什么关系" onChange={(value) => setField("persona", value)} />
+        <TextField label="背景" required multiline value={form.background} placeholder="经历、环境、世界观与任务背景" onChange={(value) => setField("background", value)} />
+        <TextField label="性格" required multiline value={form.personality} placeholder="偏好、边界、缺点和稳定行为模式" onChange={(value) => setField("personality", value)} />
+        <TextField label="回复风格" required multiline value={form.responseStyle} placeholder="语言长度、语气、动作表达和禁忌" onChange={(value) => setField("responseStyle", value)} />
+        <TextField label="当前情景" multiline value={form.currentSituation ?? ""} placeholder="可在模板中通过 {{figure.currentSituation}} 引用" onChange={(value) => setField("currentSituation", value)} />
+        <TextField label="开场白" multiline value={form.openingLine ?? ""} placeholder="作为首条 assistant 消息写入会话，因此会进入对话历史" onChange={(value) => setField("openingLine", value)} />
+        <TextField label="System prompt 模板" required multiline mono value={form.systemPrompt} placeholder={DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT} onChange={(value) => setField("systemPrompt", value)} />
+        <p className="text-xs leading-5 text-white/42">
+          可用：{"{{user.name}}"}、{"{{figure.persona}}"}、{"{{figure.background}}"}、{"{{figure.personality}}"}、{"{{figure.responseStyle}}"}、{"{{figure.currentSituation}}"}。不提供 user id、email 等字段。
         </p>
-      ) : null}
-      <button
-        className="mt-7 flex w-full items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-medium text-[#09090b] transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98]"
-        disabled={isSubmitting}
-        type="submit"
-      >
-        {isSubmitting ? "Creating Prime Figure..." : "Create Prime Figure"}
-        <ArrowRight size={17} />
-      </button>
+        <button className="w-fit rounded-full border border-white/12 px-4 py-2 text-sm text-white/65 transition hover:border-white/25 hover:text-white" type="button" onClick={() => setPromptPreview(buildFigureSystemPrompt(form, { user }))}>
+          预览解析后的完整 system prompt
+        </button>
+        {promptPreview !== null ? <PromptPreview value={promptPreview} /> : null}
+      </FormSection>
+
+      <SubmitState error={error} isSubmitting={isSubmitting} label="Create Slice Figure" />
     </form>
   );
 }
 
-const compactInputClass =
-  "h-11 w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 text-sm text-white outline-none placeholder:text-white/28 focus:border-white/30";
+type PrimeVariableDraft = Omit<PrimeFigureVariableDefinition, "defaultValue"> & {
+  defaultValueText: string;
+};
 
-function FormSection({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="mt-8 border-t border-white/10 pt-7">
-      <h3 className="text-lg font-semibold text-white">{title}</h3>
-      <p className="mt-2 max-w-2xl text-xs leading-5 text-white/42">
-        {description}
-      </p>
-      <div className="mt-5 grid gap-4">{children}</div>
-    </section>
-  );
-}
+const initialPrimeForm = (): CreatePrimeFigureRequest => ({
+  type: "prime-figure",
+  name: "",
+  attributes: [],
+  tags: [],
+  introduction: "",
+  prologueHtml: "",
+  linkedAgentIds: [],
+  unlockConditions: null,
+  isPublic: false,
+  persona: "",
+  background: "",
+  personality: "",
+  responseStyle: "",
+  decisionStyle: "",
+  currentSituation: "",
+  schedule: {
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    segments: [],
+  },
+  itinerary: "",
+  variableDefinitions: [],
+  initialMood: "",
+  initialRelationshipStatus: "",
+});
 
-function PrimeTextField({
-  label,
-  value,
-  placeholder,
-  required,
-  multiline,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  placeholder: string;
-  required?: boolean;
-  multiline?: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="block">
-      <span className="text-sm font-medium text-white/78">
-        {label}
-        {required ? " *" : ""}
-      </span>
-      {multiline ? (
-        <textarea
-          className={`${compactInputClass} mt-2 min-h-24 py-3 leading-6`}
-          required={required}
-          value={value}
-          placeholder={placeholder}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      ) : (
-        <input
-          className={`${compactInputClass} mt-2`}
-          required={required}
-          value={value}
-          placeholder={placeholder}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      )}
-    </label>
-  );
-}
+const weekdays = [
+  ["mon", "一"], ["tue", "二"], ["wed", "三"], ["thu", "四"],
+  ["fri", "五"], ["sat", "六"], ["sun", "日"],
+] as const;
 
-function buildPrimeCreatePayload(
-  form: CreatePrimeFigureRequest,
-  drafts: PrimeVariableDraft[],
-): CreatePrimeFigureRequest | string {
-  for (const [label, value] of [
-    ["名字", form.name],
-    ["人设", form.persona],
-    ["背景", form.background],
-    ["性格", form.personality],
-    ["回复风格", form.responseStyle],
-  ] as const) {
-    if (!value.trim()) return `${label}不能为空。`;
-  }
-  const timezone = form.schedule?.timezone.trim();
-  if (!timezone) return "日程时区不能为空。";
-  try {
-    new Intl.DateTimeFormat("zh-CN", { timeZone: timezone }).format();
-  } catch {
-    return "日程时区不是有效的 IANA 时区，例如 Asia/Shanghai。";
-  }
-  for (const segment of form.schedule?.segments ?? []) {
-    if (
-      !segment.label.trim() ||
-      !segment.description.trim() ||
-      !segment.days.length
-    )
-      return "每个日程时段都需要名称、description 和至少一个星期选项。";
-  }
+function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigureRequest) => Promise<Agent> }) {
+  const [form, setForm] = useState<CreatePrimeFigureRequest>(initialPrimeForm);
+  const [variables, setVariables] = useState<PrimeVariableDraft[]>([]);
+  const [unlockText, setUnlockText] = useState("");
+  const [jsonInput, setJsonInput] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const keys = new Set<string>();
-  const variableDefinitions: PrimeFigureVariableDefinition[] = [];
-  for (const draft of drafts) {
-    const key = draft.key.trim();
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
-      return "参数 key 必须以字母或下划线开头，并且只包含字母、数字和下划线。";
-    if (keys.has(key)) return `参数 key 重复：${key}`;
-    keys.add(key);
-    if (!draft.label.trim()) return `参数 ${key} 缺少显示名称。`;
-    if (!draft.description.trim()) return `参数 ${key} 必须提供 description。`;
-    if (
-      draft.type === "number" &&
-      draft.min !== undefined &&
-      draft.max !== undefined &&
-      draft.min > draft.max
-    )
-      return `参数 ${key} 的最小值不能大于最大值。`;
-
-    const parsedDefault = parseVariableDefault(draft);
-    if (
-      typeof parsedDefault === "string" &&
-      parsedDefault.startsWith("__error:")
-    )
-      return parsedDefault.slice(8);
-    variableDefinitions.push({
-      key,
-      label: draft.label.trim(),
-      type: draft.type,
-      description: draft.description.trim(),
-      required: draft.required,
-      ...(parsedDefault !== undefined ? { defaultValue: parsedDefault } : {}),
-      ...(draft.type === "number" && draft.min !== undefined
-        ? { min: draft.min }
-        : {}),
-      ...(draft.type === "number" && draft.max !== undefined
-        ? { max: draft.max }
-        : {}),
-    });
-  }
-
-  return {
-    ...form,
-    name: form.name.trim(),
-    introduction: form.introduction?.trim() ?? "",
-    persona: form.persona.trim(),
-    background: form.background.trim(),
-    personality: form.personality.trim(),
-    responseStyle: form.responseStyle.trim(),
-    decisionStyle: form.decisionStyle?.trim() ?? "",
-    currentSituation: form.currentSituation?.trim() ?? "",
-    itinerary: form.itinerary?.trim() ?? "",
-    initialMood: form.initialMood?.trim() ?? "",
-    initialRelationshipStatus: form.initialRelationshipStatus?.trim() ?? "",
-    schedule: { timezone, segments: form.schedule?.segments ?? [] },
-    variableDefinitions,
+  const setField = <K extends keyof CreatePrimeFigureRequest>(key: K, value: CreatePrimeFigureRequest[K]) => {
+    setForm((current) => ({ ...current, [key]: value }));
+    setError(null);
   };
-}
 
-function parseVariableDefault(draft: PrimeVariableDraft) {
-  const value = draft.defaultValueText.trim();
-  if (!value) return undefined;
-  if (draft.type === "string") return value;
-  if (draft.type === "boolean") return value === "true";
-  if (draft.type === "number") {
-    const number = Number(value);
-    return Number.isFinite(number)
-      ? number
-      : `__error:参数 ${draft.key || "未命名"} 的默认值必须是数字。`;
-  }
-  try {
-    return JSON.parse(value) as Record<string, unknown> | unknown[] | null;
-  } catch {
-    return `__error:参数 ${draft.key || "未命名"} 的默认值不是有效 JSON。`;
-  }
-}
+  const importJson = () => {
+    try {
+      const parsed = JSON.parse(jsonInput) as Partial<CreatePrimeFigureRequest>;
+      const next: CreatePrimeFigureRequest = {
+        ...initialPrimeForm(),
+        ...parsed,
+        type: "prime-figure",
+        attributes: parsed.attributes ?? [],
+        tags: parsed.tags ?? [],
+        linkedAgentIds: parsed.linkedAgentIds ?? [],
+        unlockConditions: parsed.unlockConditions ?? null,
+        schedule: parsed.schedule ?? initialPrimeForm().schedule,
+        variableDefinitions: parsed.variableDefinitions ?? [],
+        isPublic: Boolean(parsed.isPublic),
+      };
+      setForm(next);
+      setVariables((next.variableDefinitions ?? []).map(variableToDraft));
+      setUnlockText(next.unlockConditions ? JSON.stringify(next.unlockConditions, null, 2) : "");
+      setError(null);
+    } catch {
+      setError("JSON 无法解析，请检查格式。");
+    }
+  };
 
-function UnavailableCreatePanel({
-  type,
-}: {
-  type: Exclude<AgentType, "slice-figure">;
-}) {
-  const option = createOptions.find((item) => item.type === type);
+  const updateSegment = (index: number, patch: Partial<PrimeFigureScheduleSegment>) => {
+    const segments = [...(form.schedule?.segments ?? [])];
+    segments[index] = { ...(segments[index] as PrimeFigureScheduleSegment), ...patch };
+    setField("schedule", { timezone: form.schedule?.timezone ?? "UTC", segments });
+  };
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const result = buildPrimePayload(form, variables, unlockText);
+    if (typeof result === "string") return setError(result);
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await onCreate(result);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Prime Figure 创建失败，请稍后再试。");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
-    <div className="glass-panel grid min-h-[28rem] place-items-center rounded-2xl p-8 text-center">
-      <div className="max-w-md">
-        <div className="mx-auto grid h-14 w-14 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-white">
-          <Brain size={26} weight="duotone" />
+    <form className="glass-panel rounded-2xl p-6 md:p-8" onSubmit={submit}>
+      <FormHeader icon={Brain} title="Prime Figure" description="持续状态、记忆、日程与自主沉默由 Prime Figure 专属 Runtime 处理。" />
+
+      <JsonImport value={jsonInput} onChange={setJsonInput} onApply={importJson} placeholder='{"type":"prime-figure","name":"Mira","persona":"...","schedule":{"timezone":"Asia/Shanghai","segments":[]},...}' />
+
+      <FormSection title="展示与关系数据 · 不进入上下文" description="名字、图片、属性、Tag、介绍、序引、链接 ID、解锁条件和公开状态不会发送给模型。">
+        <DisplayFields form={form} unlockText={unlockText} onUnlockTextChange={setUnlockText} onChange={setField} />
+      </FormSection>
+
+      <FormSection title="人格与决策 · 进入上下文" description="这些字段参与 Prime 每一轮结构化决策；带 * 的字段必填。">
+        <TextField label="人设" required multiline value={form.persona} placeholder="Figure 是谁，与 end user 是什么关系" onChange={(value) => setField("persona", value)} />
+        <TextField label="背景" required multiline value={form.background} placeholder="经历、环境、世界观与长期处境" onChange={(value) => setField("background", value)} />
+        <TextField label="性格" required multiline value={form.personality} placeholder="偏好、边界、缺点、矛盾和稳定行为模式" onChange={(value) => setField("personality", value)} />
+        <TextField label="回复风格" required multiline value={form.responseStyle} placeholder="语言长度、语气、动作表达和禁忌" onChange={(value) => setField("responseStyle", value)} />
+        <TextField label="决策风格" multiline value={form.decisionStyle ?? ""} placeholder="如何权衡沉默、回应、记忆和自身边界" onChange={(value) => setField("decisionStyle", value)} />
+        <TextField label="当前处境" multiline value={form.currentSituation ?? ""} placeholder="Figure 此刻正在经历的长期情境" onChange={(value) => setField("currentSituation", value)} />
+        <div className="grid gap-4 md:grid-cols-2">
+          <TextField label="初始情绪" value={form.initialMood ?? ""} placeholder="平静，但有些疲惫" onChange={(value) => setField("initialMood", value)} />
+          <TextField label="初始关系状态" value={form.initialRelationshipStatus ?? ""} placeholder="熟悉但仍保持边界" onChange={(value) => setField("initialRelationshipStatus", value)} />
         </div>
-        <h2 className="mt-5 text-2xl font-semibold text-white">
-          {option?.label ?? "Agent"} creation is not implemented yet.
-        </h2>
-        <p className="mt-3 text-sm leading-6 text-white/48">
-          这个类型已经有独立入口，后续会接入自己的字段、校验和提交方法。
-        </p>
+        <TextField label="行程与长期安排" multiline value={form.itinerary ?? ""} placeholder="使用 Figure 时区下的易读时间" onChange={(value) => setField("itinerary", value)} />
+      </FormSection>
+
+      <FormSection title="日程感知 · 进入上下文" description="Runtime 会将消息所在时段转换成决策 hint。">
+        <TextField label="IANA 时区" required value={form.schedule?.timezone ?? "UTC"} placeholder="Asia/Shanghai" onChange={(value) => setField("schedule", { timezone: value, segments: form.schedule?.segments ?? [] })} />
+        {(form.schedule?.segments ?? []).map((segment, index) => (
+          <div key={index} className="rounded-xl border border-white/10 bg-black/15 p-4">
+            <div className="grid gap-3 md:grid-cols-[1fr_120px_120px_auto]">
+              <input className={inputClass} value={segment.label} placeholder="工作" onChange={(event) => updateSegment(index, { label: event.target.value })} />
+              <input className={inputClass} type="time" value={segment.start} onChange={(event) => updateSegment(index, { start: event.target.value })} />
+              <input className={inputClass} type="time" value={segment.end} onChange={(event) => updateSegment(index, { end: event.target.value })} />
+              <IconButton label="删除日程" onClick={() => setField("schedule", { timezone: form.schedule?.timezone ?? "UTC", segments: (form.schedule?.segments ?? []).filter((_, itemIndex) => itemIndex !== index) })} />
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {weekdays.map(([day, label]) => {
+                const active = segment.days.includes(day);
+                return <button key={day} className={`h-9 min-w-9 rounded-lg border px-2 text-xs ${active ? "border-white bg-white text-black" : "border-white/10 text-white/45"}`} type="button" onClick={() => updateSegment(index, { days: active ? segment.days.filter((item) => item !== day) : [...segment.days, day] })}>{label}</button>;
+              })}
+            </div>
+            <textarea className={`${inputClass} mt-3 min-h-20 py-3`} value={segment.description} placeholder="这个时段 Figure 通常在做什么，是否方便回应" onChange={(event) => updateSegment(index, { description: event.target.value })} />
+          </div>
+        ))}
+        <button className={secondaryButtonClass} type="button" onClick={() => setField("schedule", { timezone: form.schedule?.timezone ?? "UTC", segments: [...(form.schedule?.segments ?? []), { label: "", days: ["mon", "tue", "wed", "thu", "fri"], start: "09:00", end: "18:00", description: "" }] })}>
+          <Plus size={16} />添加日程时段
+        </button>
+      </FormSection>
+
+      <FormSection title="创作者参数 · 进入上下文" description="参数定义进入 strict schema；required 参数每轮必须输出。">
+        {variables.map((variable, index) => (
+          <VariableEditor key={index} variable={variable} onChange={(patch) => setVariables((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item))} onRemove={() => setVariables((current) => current.filter((_, itemIndex) => itemIndex !== index))} />
+        ))}
+        <button className={secondaryButtonClass} type="button" onClick={() => setVariables((current) => [...current, { key: "", label: "", type: "string", description: "", required: false, defaultValueText: "" }])}>
+          <Plus size={16} />添加参数
+        </button>
+      </FormSection>
+
+      <SubmitState error={error} isSubmitting={isSubmitting} label="Create Prime Figure" />
+    </form>
+  );
+}
+
+type DisplayForm = Pick<CreateSliceFigureRequest, "avatar" | "cover" | "name" | "attributes" | "tags" | "introduction" | "prologueHtml" | "linkedAgentIds" | "unlockConditions" | "isPublic">;
+
+function DisplayFields<T extends DisplayForm>({ form, unlockText, onUnlockTextChange, onChange }: {
+  form: T;
+  unlockText: string;
+  onUnlockTextChange: (value: string) => void;
+  onChange: <K extends keyof T>(key: K, value: T[K]) => void;
+}) {
+  const set = (key: keyof T, value: T[keyof T]) => onChange(key, value);
+  const attributes = form.attributes ?? [];
+  const tags = form.tags ?? [];
+  return (
+    <>
+      <div className="grid gap-4 md:grid-cols-2">
+        <ImageInput label="头像" value={form.avatar ?? null} onChange={(value) => set("avatar", value as T[keyof T])} />
+        <ImageInput label="封面" value={form.cover ?? null} onChange={(value) => set("cover", value as T[keyof T])} />
       </div>
+      <TextField label="名字" required value={form.name} placeholder="例如：Mira" onChange={(value) => set("name", value as T[keyof T])} />
+      <AttributeEditor items={attributes} onChange={(items) => set("attributes", items as T[keyof T])} />
+      <TagEditor items={tags} onChange={(items) => set("tags", items as T[keyof T])} />
+      <TextField label="介绍" multiline value={form.introduction ?? ""} placeholder="公开展示或 Figure 卡片上的简介" onChange={(value) => set("introduction", value as T[keyof T])} />
+      <TextField label="序引（HTML）" multiline mono value={form.prologueHtml ?? ""} placeholder="<p>展示在对话最前面的容器中，不发送给模型。</p>" onChange={(value) => set("prologueHtml", value as T[keyof T])} />
+      <TextField label="链接的 Figure ID（逗号分隔）" value={(form.linkedAgentIds ?? []).join(", ")} placeholder="agent_xxx, agent_yyy" onChange={(value) => set("linkedAgentIds", value.split(",").map((item) => item.trim()).filter(Boolean) as T[keyof T])} />
+      <TextField label="解锁条件（JSON，占位）" multiline mono value={unlockText} placeholder='{"minimumLevel": 3}' onChange={onUnlockTextChange} />
+      <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.025] p-4">
+        <span><span className="block text-sm font-medium text-white/78">是否公开</span><span className="mt-1 block text-xs text-white/40">仅用于展示与发现，不进入上下文。</span></span>
+        <input checked={form.isPublic} type="checkbox" onChange={(event) => set("isPublic", event.target.checked as T[keyof T])} />
+      </label>
+    </>
+  );
+}
+
+function AttributeEditor({ items, onChange }: { items: AgentAttribute[]; onChange: (items: AgentAttribute[]) => void }) {
+  return (
+    <ListPanel title="属性" description="仅供展示，不进入上下文。" onAdd={() => onChange([...items, { key: "", value: "" }])}>
+      {items.map((item, index) => (
+        <div key={index} className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+          <input className={inputClass} value={item.key} placeholder="年龄" onChange={(event) => onChange(items.map((value, itemIndex) => itemIndex === index ? { ...value, key: event.target.value } : value))} />
+          <input className={inputClass} value={item.value} placeholder="19" onChange={(event) => onChange(items.map((value, itemIndex) => itemIndex === index ? { ...value, value: event.target.value } : value))} />
+          <IconButton label="删除属性" onClick={() => onChange(items.filter((_, itemIndex) => itemIndex !== index))} />
+        </div>
+      ))}
+    </ListPanel>
+  );
+}
+
+function TagEditor({ items, onChange }: { items: string[]; onChange: (items: string[]) => void }) {
+  return (
+    <ListPanel title="Tag" description="仅供展示，不进入上下文。" onAdd={() => onChange([...items, ""])}>
+      {items.map((item, index) => (
+        <div key={index} className="grid gap-3 md:grid-cols-[1fr_auto]">
+          <input className={inputClass} value={item} placeholder="陪伴" onChange={(event) => onChange(items.map((value, itemIndex) => itemIndex === index ? event.target.value : value))} />
+          <IconButton label="删除 Tag" onClick={() => onChange(items.filter((_, itemIndex) => itemIndex !== index))} />
+        </div>
+      ))}
+    </ListPanel>
+  );
+}
+
+function VariableEditor({ variable, onChange, onRemove }: { variable: PrimeVariableDraft; onChange: (patch: Partial<PrimeVariableDraft>) => void; onRemove: () => void }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/15 p-4">
+      <div className="grid gap-3 md:grid-cols-2">
+        <input className={inputClass} value={variable.key} placeholder="参数 key，例如 trust" onChange={(event) => onChange({ key: event.target.value })} />
+        <input className={inputClass} value={variable.label} placeholder="显示名称，例如 信任程度" onChange={(event) => onChange({ label: event.target.value })} />
+      </div>
+      <textarea className={`${inputClass} mt-3 min-h-20 py-3`} value={variable.description} placeholder="说明模型如何判断该参数" onChange={(event) => onChange({ description: event.target.value })} />
+      <div className="mt-3 grid gap-3 md:grid-cols-[150px_1fr_auto_auto]">
+        <select className={inputClass} value={variable.type} onChange={(event) => onChange({ type: event.target.value as PrimeFigureVariableType, defaultValueText: "" })}>
+          <option value="string">string</option><option value="number">number</option><option value="boolean">boolean</option><option value="json">json</option>
+        </select>
+        <input className={inputClass} value={variable.defaultValueText} placeholder="默认值（可选）" onChange={(event) => onChange({ defaultValueText: event.target.value })} />
+        <label className="flex items-center gap-2 text-xs text-white/55"><input checked={variable.required} type="checkbox" onChange={(event) => onChange({ required: event.target.checked })} />required</label>
+        <IconButton label="删除参数" onClick={onRemove} />
+      </div>
+      {variable.type === "number" ? <div className="mt-3 grid gap-3 md:grid-cols-2"><input className={inputClass} type="number" value={variable.min ?? ""} placeholder="min" onChange={(event) => onChange({ min: event.target.value === "" ? undefined : Number(event.target.value) })} /><input className={inputClass} type="number" value={variable.max ?? ""} placeholder="max" onChange={(event) => onChange({ max: event.target.value === "" ? undefined : Number(event.target.value) })} /></div> : null}
     </div>
   );
 }
 
-function ImageInput({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: AgentResourceUpload | null;
-  onChange: (value: AgentResourceUpload | null) => void;
-}) {
-  return (
-    <label className="block rounded-xl border border-white/10 bg-white/[0.025] p-4">
-      <span className="flex items-center gap-2 text-sm font-medium text-white/78">
-        <UploadSimple size={16} />
-        {label}
-      </span>
-      <input
-        accept="image/png,image/jpeg,image/webp,image/gif"
-        className="mt-3 block w-full text-xs text-white/45 file:mr-3 file:rounded-full file:border-0 file:bg-white file:px-3 file:py-2 file:text-xs file:font-medium file:text-[#09090b]"
-        type="file"
-        onChange={async (event) => {
-          const file = event.target.files?.[0];
-          onChange(file ? await fileToUpload(file) : null);
-        }}
-      />
-      {value ? (
-        <span className="mt-3 block truncate text-xs text-white/40">
-          {value.fileName}
-        </span>
-      ) : null}
-    </label>
-  );
+function FormHeader({ icon: Icon, title, description }: { icon: typeof Brain; title: string; description: string }) {
+  return <div className="flex items-start gap-4 border-b border-white/10 pb-6"><div className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.04]"><Icon size={24} weight="duotone" /></div><div><h2 className="text-2xl font-semibold text-white">{title}</h2><p className="mt-2 text-sm leading-6 text-white/48">{description}</p></div></div>;
 }
 
-function buildCreatePayload(
-  form: SliceFigureForm,
-): CreateSliceFigureRequest | string {
-  const requiredText = {
-    name: form.name.trim(),
-    persona: form.persona.trim(),
-    background: form.background.trim(),
-    personality: form.personality.trim(),
-    responseStyle: form.responseStyle.trim(),
-  };
+function FormSection({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+  return <section className="mt-8 border-t border-white/8 pt-7 first:border-t-0"><h3 className="text-lg font-semibold text-white">{title}</h3><p className="mt-1 text-xs leading-5 text-white/42">{description}</p><div className="mt-5 grid gap-4">{children}</div></section>;
+}
 
-  if (!requiredText.name) return "名字不能为空。";
-  if (!requiredText.persona) return "人设不能为空。";
-  if (!requiredText.background) return "背景不能为空。";
-  if (!requiredText.personality) return "性格不能为空。";
-  if (!requiredText.responseStyle) return "回复风格不能为空。";
+function TextField({ label, value, placeholder, required, multiline, mono, onChange }: { label: string; value: string; placeholder?: string; required?: boolean; multiline?: boolean; mono?: boolean; onChange: (value: string) => void }) {
+  return <label className="block"><span className="text-sm font-medium text-white/78">{label}{required ? " *" : ""}</span>{multiline ? <textarea className={`${inputClass} mt-2 min-h-24 py-3 ${mono ? "font-mono text-xs leading-5" : "leading-6"}`} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /> : <input className={`${inputClass} mt-2`} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />}</label>;
+}
 
-  const attributes = (form.attributes ?? []).map((attribute) => ({
-    key: typeof attribute.key === "string" ? attribute.key.trim() : "",
-    value: typeof attribute.value === "string" ? attribute.value.trim() : "",
-  }));
-  const emptyAttribute = attributes.find(
-    (attribute) => !attribute.key || !attribute.value,
-  );
-  if (emptyAttribute) return "属性不能包含空键或空值，请补全或删除该属性。";
+function ListPanel({ title, description, onAdd, children }: { title: string; description: string; onAdd: () => void; children: React.ReactNode }) {
+  return <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4"><div className="flex items-center justify-between"><div><span className="text-sm font-medium text-white/78">{title}</span><p className="mt-1 text-xs text-white/35">{description}</p></div><button className="text-sm text-white/55 hover:text-white" type="button" onClick={onAdd}>Add</button></div><div className="mt-3 grid gap-3">{children}</div></div>;
+}
 
-  const tags = (form.tags ?? []).map((tag) =>
-    typeof tag === "string" ? tag.trim() : "",
-  );
-  if (tags.some((tag) => !tag)) return "Tag 不能包含空值，请补全或删除该 tag。";
+function JsonImport({ value, placeholder, onChange, onApply }: { value: string; placeholder: string; onChange: (value: string) => void; onApply: () => void }) {
+  return <section className="mt-7 rounded-xl border border-white/10 bg-white/[0.025] p-4"><h3 className="text-sm font-semibold text-white">一键 JSON 导入</h3><p className="mt-1 text-xs text-white/40">JSON 可以覆盖创建表单中的全部字段。</p><textarea className={`${inputClass} mt-3 min-h-32 py-3 font-mono text-xs leading-5`} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /><button className={`${secondaryButtonClass} mt-3`} type="button" onClick={onApply}>Apply JSON</button></section>;
+}
 
-  const linkedAgentIds = (form.linkedAgentIds ?? []).map((agentId) =>
-    typeof agentId === "string" ? agentId.trim() : "",
-  );
-  if (linkedAgentIds.some((agentId) => !agentId))
-    return "链接的 figure ID 不能包含空值。";
+function PromptPreview({ value }: { value: string }) {
+  return <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-black/25 p-4 text-xs leading-5 text-white/70">{value || "（解析结果为空）"}</pre>;
+}
 
-  return {
-    ...form,
-    ...requiredText,
-    introduction: form.introduction?.trim() ?? "",
-    prologueHtml: form.prologueHtml?.trim() ?? "",
-    currentSituation: form.currentSituation?.trim() ?? "",
-    openingLine: form.openingLine?.trim() ?? "",
-    attributes,
-    tags,
-    linkedAgentIds,
-  };
+function SubmitState({ error, isSubmitting, label }: { error: string | null; isSubmitting: boolean; label: string }) {
+  return <>{error ? <p className="mt-6 rounded-xl border border-red-400/15 bg-red-400/[0.04] p-4 text-sm text-red-100/80">{error}</p> : null}<button className="mt-7 flex w-full items-center justify-center rounded-full bg-white px-5 py-3 text-sm font-medium text-[#09090b] transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50" disabled={isSubmitting} type="submit">{isSubmitting ? "Creating..." : label}</button></>;
+}
+
+function IconButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return <button aria-label={label} className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 text-white/45 transition hover:border-white/20 hover:text-white" type="button" onClick={onClick}><Trash size={16} /></button>;
+}
+
+function ImageInput({ label, value, onChange }: { label: string; value: AgentResourceUpload | null; onChange: (value: AgentResourceUpload | null) => void }) {
+  const [error, setError] = useState<string | null>(null);
+  return <label className="block"><span className="text-sm font-medium text-white/78">{label}</span><span className="mt-2 flex min-h-28 cursor-pointer items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/[0.025] p-4 text-center transition hover:border-white/28"><input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; try { onChange(await fileToUpload(file)); setError(null); } catch (caught) { setError(caught instanceof Error ? caught.message : "图片读取失败。"); } }} /><span><UploadSimple className="mx-auto text-white/55" size={24} /><span className="mt-2 block text-xs text-white/45">{value?.fileName ?? "选择图片"}</span></span></span>{value ? <button className="mt-2 text-xs text-white/45 hover:text-white" type="button" onClick={() => onChange(null)}>移除</button> : null}{error ? <span className="mt-2 block text-xs text-red-200/70">{error}</span> : null}</label>;
+}
+
+function buildSlicePayload(form: CreateSliceFigureRequest, unlockText: string): CreateSliceFigureRequest | string {
+  const common = normalizeDisplayFields(form, unlockText);
+  if (typeof common === "string") return common;
+  const required = normalizeRequired({ persona: form.persona, background: form.background, personality: form.personality, responseStyle: form.responseStyle, systemPrompt: form.systemPrompt });
+  if (typeof required === "string") return required;
+  return { ...form, ...common, ...required, type: "slice-figure", currentSituation: form.currentSituation?.trim() ?? "", openingLine: form.openingLine?.trim() ?? "" };
+}
+
+function buildPrimePayload(form: CreatePrimeFigureRequest, drafts: PrimeVariableDraft[], unlockText: string): CreatePrimeFigureRequest | string {
+  const common = normalizeDisplayFields(form, unlockText);
+  if (typeof common === "string") return common;
+  const required = normalizeRequired({ persona: form.persona, background: form.background, personality: form.personality, responseStyle: form.responseStyle });
+  if (typeof required === "string") return required;
+  const timezone = form.schedule?.timezone.trim();
+  if (!timezone) return "日程时区不能为空。";
+  try { new Intl.DateTimeFormat("zh-CN", { timeZone: timezone }).format(); } catch { return "日程时区不是有效的 IANA 时区，例如 Asia/Shanghai。"; }
+  for (const segment of form.schedule?.segments ?? []) if (!segment.label.trim() || !segment.description.trim() || !segment.days.length) return "每个日程时段都需要名称、description 和至少一个星期选项。";
+  const definitions = parseVariableDrafts(drafts);
+  if (typeof definitions === "string") return definitions;
+  return { ...form, ...common, ...required, type: "prime-figure", decisionStyle: form.decisionStyle?.trim() ?? "", currentSituation: form.currentSituation?.trim() ?? "", itinerary: form.itinerary?.trim() ?? "", initialMood: form.initialMood?.trim() ?? "", initialRelationshipStatus: form.initialRelationshipStatus?.trim() ?? "", schedule: { timezone, segments: form.schedule?.segments ?? [] }, variableDefinitions: definitions };
+}
+
+function normalizeDisplayFields(form: DisplayForm, unlockText: string) {
+  const name = form.name.trim();
+  if (!name) return "名字不能为空。";
+  const attributes = (form.attributes ?? []).map((item) => ({ key: item.key.trim(), value: item.value.trim() }));
+  if (attributes.some((item) => !item.key || !item.value)) return "属性不能包含空键或空值。";
+  const tags = (form.tags ?? []).map((item) => item.trim());
+  if (tags.some((item) => !item)) return "Tag 不能包含空值。";
+  let unlockConditions: Record<string, unknown> | null = null;
+  if (unlockText.trim()) { try { const parsed = JSON.parse(unlockText) as unknown; if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") return "解锁条件必须是 JSON object。"; unlockConditions = parsed as Record<string, unknown>; } catch { return "解锁条件不是有效 JSON。"; } }
+  return { name, attributes, tags, introduction: form.introduction?.trim() ?? "", prologueHtml: form.prologueHtml?.trim() ?? "", linkedAgentIds: (form.linkedAgentIds ?? []).map((item) => item.trim()).filter(Boolean), unlockConditions, isPublic: form.isPublic };
+}
+
+function normalizeRequired(values: Record<string, string>) {
+  const labels: Record<string, string> = { persona: "人设", background: "背景", personality: "性格", responseStyle: "回复风格", systemPrompt: "System prompt" };
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(values)) { const trimmed = value.trim(); if (!trimmed) return `${labels[key] ?? key}不能为空。`; result[key] = trimmed; }
+  return result;
+}
+
+function parseVariableDrafts(drafts: PrimeVariableDraft[]): PrimeFigureVariableDefinition[] | string {
+  const keys = new Set<string>();
+  const result: PrimeFigureVariableDefinition[] = [];
+  for (const draft of drafts) {
+    const key = draft.key.trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return "参数 key 必须以字母或下划线开头，并且只包含字母、数字和下划线。";
+    if (keys.has(key)) return `参数 key 重复：${key}`;
+    keys.add(key);
+    if (!draft.label.trim() || !draft.description.trim()) return `参数 ${key} 缺少显示名称或 description。`;
+    if (draft.type === "number" && draft.min !== undefined && draft.max !== undefined && draft.min > draft.max) return `参数 ${key} 的最小值不能大于最大值。`;
+    const parsed = parseDefault(draft);
+    if (typeof parsed === "object" && parsed && "error" in parsed) return parsed.error as string;
+    result.push({ key, label: draft.label.trim(), type: draft.type, description: draft.description.trim(), required: draft.required, ...(parsed !== undefined ? { defaultValue: parsed } : {}), ...(draft.type === "number" && draft.min !== undefined ? { min: draft.min } : {}), ...(draft.type === "number" && draft.max !== undefined ? { max: draft.max } : {}) });
+  }
+  return result;
+}
+
+function parseDefault(draft: PrimeVariableDraft): PrimeFigureVariableDefinition["defaultValue"] | { error: string } | undefined {
+  const value = draft.defaultValueText.trim();
+  if (!value) return undefined;
+  if (draft.type === "string") return value;
+  if (draft.type === "number") { const number = Number(value); return Number.isFinite(number) ? number : { error: `参数 ${draft.key} 的默认值必须是数字。` }; }
+  if (draft.type === "boolean") return value === "true" ? true : value === "false" ? false : { error: `参数 ${draft.key} 的默认值必须是 true 或 false。` };
+  try { return JSON.parse(value) as PrimeFigureVariableDefinition["defaultValue"]; } catch { return { error: `参数 ${draft.key} 的默认值必须是有效 JSON。` }; }
+}
+
+function variableToDraft(variable: PrimeFigureVariableDefinition): PrimeVariableDraft {
+  return { key: variable.key, label: variable.label, type: variable.type, description: variable.description, required: variable.required, ...(variable.min !== undefined ? { min: variable.min } : {}), ...(variable.max !== undefined ? { max: variable.max } : {}), defaultValueText: variable.defaultValue === undefined ? "" : variable.type === "string" ? String(variable.defaultValue) : JSON.stringify(variable.defaultValue) };
 }
 
 function fileToUpload(file: File): Promise<AgentResourceUpload> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("图片读取失败。"));
-    reader.onload = () => {
-      const result = String(reader.result ?? "");
-      resolve({
-        fileName: file.name,
-        mimeType: file.type,
-        dataBase64: result,
-      });
-    };
-    reader.readAsDataURL(file);
-  });
+  return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => { const result = String(reader.result ?? ""); const dataBase64 = result.split(",")[1]; if (!dataBase64) return reject(new Error("图片读取失败。")); resolve({ fileName: file.name, mimeType: file.type, dataBase64 }); }; reader.onerror = () => reject(new Error("图片读取失败。")); reader.readAsDataURL(file); });
 }
+
+function UnavailableCreatePanel() {
+  return <div className="glass-panel rounded-2xl p-8"><Sparkle size={32} weight="duotone" /><h2 className="mt-6 text-3xl font-semibold text-white">Prime World 使用独立流程</h2><p className="mt-3 text-sm leading-6 text-white/48">Prime World 不会复用 Slice 或 Prime Figure Runtime，创建界面将在其数据模型确定后单独实现。</p></div>;
+}
+
+const inputClass = "h-11 w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-white/25";
+const secondaryButtonClass = "flex w-fit items-center gap-2 rounded-xl border border-white/12 px-4 py-2.5 text-sm text-white/65 transition hover:border-white/25 hover:text-white";

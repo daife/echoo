@@ -1,7 +1,5 @@
-import type { UserProfile } from "../types/auth";
-
 export interface FigureSystemPromptInput {
-  name: string;
+  systemPrompt: string;
   persona?: string;
   background?: string;
   personality?: string;
@@ -10,45 +8,41 @@ export interface FigureSystemPromptInput {
 }
 
 export interface FigurePromptContext {
-  user?: Pick<UserProfile, "id" | "email" | "displayName"> | null;
+  user?: { displayName: string } | null;
 }
+
+export const DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT = `你的人设：
+{{figure.persona}}
+
+你的背景：
+{{figure.background}}
+
+你的性格：
+{{figure.personality}}
+
+严格遵守以下回复风格：
+{{figure.responseStyle}}`;
 
 export function buildFigureSystemPrompt(figure: FigureSystemPromptInput, context: FigurePromptContext = {}) {
-  const name = resolvePromptPlaceholders(figure.name, context) || "未命名 Figure";
-  const currentSituation = resolvePromptPlaceholders(figure.currentSituation, context);
-
-  return [
-    `你是“${name}”。`,
-    "",
-    "当前情景：",
-    currentSituation || "未设定。",
-    "",
-    "你的人设：",
-    resolvePromptPlaceholders(figure.persona, context) || "未设定。",
-    "",
-    "你的背景：",
-    resolvePromptPlaceholders(figure.background, context) || "未设定。",
-    "",
-    "你的性格：",
-    resolvePromptPlaceholders(figure.personality, context) || "未设定。",
-    "",
-    "严格遵守以下回复风格：",
-    resolvePromptPlaceholders(figure.responseStyle, context) || "自然、简洁、有情绪感知力。",
-    "",
-    "请始终以这个身份与用户自然对话，不要跳出角色。"
-  ].join("\n");
+  return resolvePromptPlaceholders(figure.systemPrompt, figure, context);
 }
 
-function resolvePromptPlaceholders(value: string | undefined, context: FigurePromptContext) {
+function resolvePromptPlaceholders(
+  value: string | undefined,
+  figure: FigureSystemPromptInput,
+  context: FigurePromptContext,
+) {
   const text = value?.trim() ?? "";
   if (!text) return "";
 
   const user = context.user;
   const replacements: Record<string, string> = {
-    "user.id": user?.id ?? "",
-    "user.email": user?.email ?? "",
-    "user.displayName": user?.displayName ?? "",
-    "user.name": user?.displayName ?? ""
+    "user.name": user?.displayName ?? "",
+    "figure.persona": figure.persona?.trim() ?? "",
+    "figure.background": figure.background?.trim() ?? "",
+    "figure.personality": figure.personality?.trim() ?? "",
+    "figure.responseStyle": figure.responseStyle?.trim() ?? "",
+    "figure.currentSituation": figure.currentSituation?.trim() ?? "",
   };
 
   return text.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (placeholder, key: string) => {

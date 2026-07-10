@@ -35,6 +35,10 @@ interface AgentRow {
   background: string | null;
   personality: string | null;
   response_style: string | null;
+  system_prompt: string | null;
+  prime_prologue_html: string | null;
+  prime_linked_agent_ids_json: string | null;
+  prime_unlock_conditions_json: string | null;
   prime_persona: string | null;
   prime_background: string | null;
   prime_personality: string | null;
@@ -113,6 +117,10 @@ export class AgentRepository {
             slice.background,
             slice.personality,
             slice.response_style,
+            slice.system_prompt,
+            prime.prologue_html AS prime_prologue_html,
+            prime.linked_agent_ids_json AS prime_linked_agent_ids_json,
+            prime.unlock_conditions_json AS prime_unlock_conditions_json,
             prime.persona AS prime_persona,
             prime.background AS prime_background,
             prime.personality AS prime_personality,
@@ -154,6 +162,10 @@ export class AgentRepository {
             slice.background,
             slice.personality,
             slice.response_style,
+            slice.system_prompt,
+            prime.prologue_html AS prime_prologue_html,
+            prime.linked_agent_ids_json AS prime_linked_agent_ids_json,
+            prime.unlock_conditions_json AS prime_unlock_conditions_json,
             prime.persona AS prime_persona,
             prime.background AS prime_background,
             prime.personality AS prime_personality,
@@ -191,6 +203,10 @@ export class AgentRepository {
             slice.background,
             slice.personality,
             slice.response_style,
+            slice.system_prompt,
+            prime.prologue_html AS prime_prologue_html,
+            prime.linked_agent_ids_json AS prime_linked_agent_ids_json,
+            prime.unlock_conditions_json AS prime_unlock_conditions_json,
             prime.persona AS prime_persona,
             prime.background AS prime_background,
             prime.personality AS prime_personality,
@@ -369,11 +385,25 @@ function rowToSliceDetail(row: AgentRow): SliceFigureDetail {
     background: row.background ?? "",
     personality: row.personality ?? "",
     responseStyle: row.response_style ?? "",
+    systemPrompt: row.system_prompt ?? "",
   };
 }
 
 function rowToPrimeDetail(row: AgentRow): PrimeFigureDetail {
   return {
+    prologueHtml: row.prime_prologue_html ?? "",
+    linkedAgentIds: parseJson<string[]>(
+      row.prime_linked_agent_ids_json ?? "[]",
+      [],
+    ),
+    ...(row.prime_unlock_conditions_json
+      ? {
+          unlockConditions: parseJson<Record<string, unknown>>(
+            row.prime_unlock_conditions_json,
+            {},
+          ),
+        }
+      : {}),
     persona: row.prime_persona ?? "",
     background: row.prime_background ?? "",
     personality: row.prime_personality ?? "",

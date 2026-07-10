@@ -22,6 +22,7 @@ export interface SliceFigureDetail {
   background: string;
   personality: string;
   responseStyle: string;
+  systemPrompt: string;
 }
 
 export type PrimeFigureVariableType = "string" | "number" | "boolean" | "json";
@@ -75,6 +76,9 @@ export interface PrimeFigureState {
 }
 
 export interface PrimeFigureDetail {
+  prologueHtml: string;
+  linkedAgentIds: string[];
+  unlockConditions?: Record<string, unknown>;
   persona: string;
   background: string;
   personality: string;
@@ -148,6 +152,7 @@ export interface CreateSliceFigureRequest {
   background: string;
   personality: string;
   responseStyle: string;
+  systemPrompt: string;
 }
 
 export type UpdateSliceFigureRequest = Omit<
@@ -163,6 +168,9 @@ export interface CreatePrimeFigureRequest {
   attributes?: AgentAttribute[];
   tags?: string[];
   introduction?: string;
+  prologueHtml?: string;
+  linkedAgentIds?: string[];
+  unlockConditions?: Record<string, unknown> | null;
   isPublic: boolean;
   persona: string;
   background: string;

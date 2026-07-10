@@ -2,278 +2,189 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-const migrations = [
-  {
-    id: "001_auth_tables",
-    sql: `
-      CREATE TABLE IF NOT EXISTS auth_users (
-        id TEXT PRIMARY KEY,
-        email TEXT NOT NULL UNIQUE,
-        display_name TEXT NOT NULL,
-        password_hash TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        email_verified_at INTEGER
-      );
+const schemaSql = `
+  CREATE TABLE IF NOT EXISTS auth_users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    email_verified_at INTEGER
+  );
 
-      CREATE TABLE IF NOT EXISTS password_reset_tokens (
-        token TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-        expires_at INTEGER NOT NULL,
-        used_at INTEGER,
-        created_at INTEGER NOT NULL
-      );
+  CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    token TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL,
+    used_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
 
-      CREATE TABLE IF NOT EXISTS email_verification_tokens (
-        token TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-        expires_at INTEGER NOT NULL,
-        used_at INTEGER,
-        created_at INTEGER NOT NULL
-      );
+  CREATE TABLE IF NOT EXISTS email_verification_tokens (
+    token TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL,
+    used_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
 
-      CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);
-      CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_user_id ON email_verification_tokens(user_id);
-    `,
-  },
-  {
-    id: "002_agents_and_conversations",
-    sql: `
-      CREATE TABLE IF NOT EXISTS agents (
-        id TEXT PRIMARY KEY,
-        owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-        type TEXT NOT NULL CHECK (type IN ('prime-figure', 'slice-figure', 'prime-world')),
-        avatar_resource_path TEXT,
-        cover_resource_path TEXT,
-        name TEXT NOT NULL,
-        attributes_json TEXT NOT NULL DEFAULT '[]',
-        tags_json TEXT NOT NULL DEFAULT '[]',
-        introduction TEXT NOT NULL DEFAULT '',
-        is_public INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
+  CREATE TABLE IF NOT EXISTS resources (
+    id TEXT PRIMARY KEY,
+    owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    original_file_name TEXT NOT NULL,
+    storage_path TEXT NOT NULL,
+    public_path TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
 
-      CREATE TABLE IF NOT EXISTS agent_slice_figures (
-        agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
-        prologue_html TEXT NOT NULL DEFAULT '',
-        current_situation TEXT NOT NULL DEFAULT '',
-        opening_line TEXT NOT NULL DEFAULT '',
-        linked_agent_ids_json TEXT NOT NULL DEFAULT '[]',
-        unlock_conditions_json TEXT,
-        persona TEXT NOT NULL,
-        background TEXT NOT NULL,
-        personality TEXT NOT NULL,
-        response_style TEXT NOT NULL
-      );
+  CREATE TABLE IF NOT EXISTS agents (
+    id TEXT PRIMARY KEY,
+    owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    type TEXT NOT NULL CHECK (type IN ('prime-figure', 'slice-figure', 'prime-world')),
+    avatar_resource_path TEXT,
+    cover_resource_path TEXT,
+    name TEXT NOT NULL,
+    attributes_json TEXT NOT NULL DEFAULT '[]',
+    tags_json TEXT NOT NULL DEFAULT '[]',
+    introduction TEXT NOT NULL DEFAULT '',
+    is_public INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 
-      CREATE TABLE IF NOT EXISTS agent_prime_figures (
-        agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
-        status TEXT NOT NULL DEFAULT 'placeholder'
-      );
+  CREATE TABLE IF NOT EXISTS agent_slice_figures (
+    agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+    prologue_html TEXT NOT NULL DEFAULT '',
+    current_situation TEXT NOT NULL DEFAULT '',
+    opening_line TEXT NOT NULL DEFAULT '',
+    linked_agent_ids_json TEXT NOT NULL DEFAULT '[]',
+    unlock_conditions_json TEXT,
+    persona TEXT NOT NULL,
+    background TEXT NOT NULL,
+    personality TEXT NOT NULL,
+    response_style TEXT NOT NULL,
+    system_prompt TEXT NOT NULL
+  );
 
-      CREATE TABLE IF NOT EXISTS agent_prime_worlds (
-        agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
-        status TEXT NOT NULL DEFAULT 'placeholder'
-      );
+  CREATE TABLE IF NOT EXISTS agent_prime_figures (
+    agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'active',
+    prologue_html TEXT NOT NULL DEFAULT '',
+    linked_agent_ids_json TEXT NOT NULL DEFAULT '[]',
+    unlock_conditions_json TEXT,
+    persona TEXT NOT NULL,
+    background TEXT NOT NULL,
+    personality TEXT NOT NULL,
+    response_style TEXT NOT NULL,
+    decision_style TEXT NOT NULL DEFAULT '',
+    current_situation TEXT NOT NULL DEFAULT '',
+    schedule_json TEXT NOT NULL DEFAULT '{}',
+    itinerary_json TEXT NOT NULL DEFAULT '""',
+    variable_definitions_json TEXT NOT NULL DEFAULT '[]'
+  );
 
-      CREATE TABLE IF NOT EXISTS conversations (
-        id TEXT PRIMARY KEY,
-        owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-        title TEXT NOT NULL,
-        type TEXT NOT NULL,
-        agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
-        external_binding_id TEXT,
-        last_message_preview TEXT,
-        unread_count INTEGER NOT NULL DEFAULT 0,
-        pinned_at INTEGER,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
+  CREATE TABLE IF NOT EXISTS agent_prime_worlds (
+    agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'placeholder'
+  );
 
-      CREATE INDEX IF NOT EXISTS idx_agents_owner_user_id ON agents(owner_user_id);
-      CREATE INDEX IF NOT EXISTS idx_agent_slice_figures_agent_id ON agent_slice_figures(agent_id);
-      CREATE INDEX IF NOT EXISTS idx_agent_prime_figures_agent_id ON agent_prime_figures(agent_id);
-      CREATE INDEX IF NOT EXISTS idx_agent_prime_worlds_agent_id ON agent_prime_worlds(agent_id);
-      CREATE INDEX IF NOT EXISTS idx_conversations_owner_user_id ON conversations(owner_user_id);
-      CREATE INDEX IF NOT EXISTS idx_conversations_agent_id ON conversations(agent_id);
-    `,
-  },
-  {
-    id: "003_resources",
-    sql: `
-      CREATE TABLE IF NOT EXISTS resources (
-        id TEXT PRIMARY KEY,
-        owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-        kind TEXT NOT NULL,
-        mime_type TEXT NOT NULL,
-        original_file_name TEXT NOT NULL,
-        storage_path TEXT NOT NULL,
-        public_path TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      );
+  CREATE TABLE IF NOT EXISTS conversations (
+    id TEXT PRIMARY KEY,
+    owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('direct', 'group', 'slice-figure', 'prime-figure', 'prime-world')),
+    agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
+    external_binding_id TEXT,
+    last_message_preview TEXT,
+    unread_count INTEGER NOT NULL DEFAULT 0,
+    pinned_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 
-      CREATE INDEX IF NOT EXISTS idx_resources_owner_user_id ON resources(owner_user_id);
-    `,
-  },
-  {
-    id: "004_messages",
-    sql: `
-      CREATE TABLE IF NOT EXISTS messages (
-        id TEXT PRIMARY KEY,
-        owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-        conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-        client_message_id TEXT,
-        role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
-        content_type TEXT NOT NULL CHECK (content_type IN ('text', 'image', 'file', 'voice', 'video', 'system')),
-        content_json TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('pending', 'sent', 'delivered', 'failed', 'read')),
-        provider_id TEXT,
-        model TEXT,
-        metadata_json TEXT,
-        read_at INTEGER,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
+  CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    client_message_id TEXT,
+    role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+    content_type TEXT NOT NULL CHECK (content_type IN ('text', 'image', 'file', 'voice', 'video', 'system')),
+    content_json TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'sent', 'delivered', 'failed', 'read')),
+    provider_id TEXT,
+    model TEXT,
+    metadata_json TEXT,
+    read_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_owner_client_message_id
-        ON messages(owner_user_id, client_message_id)
-        WHERE client_message_id IS NOT NULL;
-      CREATE INDEX IF NOT EXISTS idx_messages_owner_created_at ON messages(owner_user_id, created_at, id);
-      CREATE INDEX IF NOT EXISTS idx_messages_conversation_created_at ON messages(conversation_id, created_at, id);
-      CREATE INDEX IF NOT EXISTS idx_messages_owner_conversation_created_at
-        ON messages(owner_user_id, conversation_id, created_at, id);
-    `,
-  },
-  {
-    id: "005_prime_figure_v1",
-    sql: `
-      ALTER TABLE agent_prime_figures ADD COLUMN persona TEXT NOT NULL DEFAULT '';
-      ALTER TABLE agent_prime_figures ADD COLUMN background TEXT NOT NULL DEFAULT '';
-      ALTER TABLE agent_prime_figures ADD COLUMN personality TEXT NOT NULL DEFAULT '';
-      ALTER TABLE agent_prime_figures ADD COLUMN response_style TEXT NOT NULL DEFAULT '';
-      ALTER TABLE agent_prime_figures ADD COLUMN decision_style TEXT NOT NULL DEFAULT '';
-      ALTER TABLE agent_prime_figures ADD COLUMN current_situation TEXT NOT NULL DEFAULT '';
-      ALTER TABLE agent_prime_figures ADD COLUMN schedule_json TEXT NOT NULL DEFAULT '{}';
-      ALTER TABLE agent_prime_figures ADD COLUMN itinerary_json TEXT NOT NULL DEFAULT '{}';
-      ALTER TABLE agent_prime_figures ADD COLUMN variable_definitions_json TEXT NOT NULL DEFAULT '[]';
+  CREATE TABLE IF NOT EXISTS prime_figure_states (
+    agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+    owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    variables_json TEXT NOT NULL DEFAULT '{}',
+    memories_json TEXT NOT NULL DEFAULT '[]',
+    mood TEXT NOT NULL DEFAULT '',
+    mood_observed_at_ms INTEGER NOT NULL,
+    relationship_status TEXT NOT NULL DEFAULT '',
+    silence_started_at_ms INTEGER,
+    silence_until_ms INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 
-      CREATE TABLE IF NOT EXISTS prime_figure_states (
-        agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
-        owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-        current_schedule_json TEXT NOT NULL DEFAULT '{}',
-        itinerary_json TEXT NOT NULL DEFAULT '{}',
-        variables_json TEXT NOT NULL DEFAULT '{}',
-        memories_json TEXT NOT NULL DEFAULT '[]',
-        mood TEXT NOT NULL DEFAULT '',
-        relationship_status TEXT NOT NULL DEFAULT '',
-        next_wakeup_at_ms INTEGER,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
+  CREATE TABLE IF NOT EXISTS prime_messages (
+    id TEXT PRIMARY KEY,
+    owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    sender TEXT NOT NULL CHECK (sender IN ('prime_figure', 'end_user', 'system')),
+    direction TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing', 'internal')),
+    message_type TEXT NOT NULL CHECK (message_type IN ('text', 'image', 'video', 'voice', 'sticker', 'transfer')),
+    content_json TEXT NOT NULL,
+    occurred_at_ms INTEGER NOT NULL,
+    occurred_at_iso TEXT NOT NULL,
+    timezone TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 
-      CREATE TABLE IF NOT EXISTS prime_messages (
-        id TEXT PRIMARY KEY,
-        owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-        conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-        sender TEXT NOT NULL CHECK (sender IN ('prime_figure', 'end_user', 'system')),
-        direction TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing', 'internal')),
-        message_type TEXT NOT NULL CHECK (message_type IN ('text', 'image', 'video', 'voice', 'sticker', 'transfer')),
-        content_json TEXT NOT NULL,
-        occurred_at_ms INTEGER NOT NULL,
-        occurred_at_iso TEXT NOT NULL,
-        timezone TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
+  CREATE TABLE IF NOT EXISTS prime_action_logs (
+    id TEXT PRIMARY KEY,
+    owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    action_type TEXT NOT NULL,
+    action_json TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('applied', 'failed')),
+    error_message TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 
-      CREATE TABLE IF NOT EXISTS prime_action_logs (
-        id TEXT PRIMARY KEY,
-        owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-        conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-        action_type TEXT NOT NULL,
-        action_json TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('applied', 'failed')),
-        error_message TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_prime_figure_states_owner_user_id ON prime_figure_states(owner_user_id);
-      CREATE INDEX IF NOT EXISTS idx_prime_messages_agent_occurred_at ON prime_messages(agent_id, occurred_at_ms, id);
-      CREATE INDEX IF NOT EXISTS idx_prime_messages_owner_conversation_occurred_at
-        ON prime_messages(owner_user_id, conversation_id, occurred_at_ms, id);
-      CREATE INDEX IF NOT EXISTS idx_prime_action_logs_agent_created_at ON prime_action_logs(agent_id, created_at, id);
-    `,
-  },
-  {
-    id: "006_prime_figure_v2",
-    sql: `
-      ALTER TABLE prime_figure_states ADD COLUMN mood_observed_at_ms INTEGER NOT NULL DEFAULT 0;
-      ALTER TABLE prime_figure_states ADD COLUMN silence_started_at_ms INTEGER;
-      ALTER TABLE prime_figure_states ADD COLUMN silence_until_ms INTEGER;
-
-      CREATE INDEX IF NOT EXISTS idx_prime_figure_states_silence_until
-        ON prime_figure_states(silence_until_ms)
-        WHERE silence_until_ms IS NOT NULL;
-    `,
-  },
-  {
-    id: "007_prime_figure_v2_state_cleanup",
-    sql: `
-      CREATE TABLE prime_figure_states_v2 (
-        agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
-        owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-        variables_json TEXT NOT NULL DEFAULT '{}',
-        memories_json TEXT NOT NULL DEFAULT '[]',
-        mood TEXT NOT NULL DEFAULT '',
-        mood_observed_at_ms INTEGER NOT NULL,
-        relationship_status TEXT NOT NULL DEFAULT '',
-        silence_started_at_ms INTEGER,
-        silence_until_ms INTEGER,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-
-      INSERT INTO prime_figure_states_v2 (
-        agent_id,
-        owner_user_id,
-        variables_json,
-        memories_json,
-        mood,
-        mood_observed_at_ms,
-        relationship_status,
-        silence_started_at_ms,
-        silence_until_ms,
-        created_at,
-        updated_at
-      )
-      SELECT
-        agent_id,
-        owner_user_id,
-        variables_json,
-        memories_json,
-        mood,
-        CASE WHEN mood_observed_at_ms > 0 THEN mood_observed_at_ms ELSE updated_at END,
-        relationship_status,
-        silence_started_at_ms,
-        silence_until_ms,
-        created_at,
-        updated_at
-      FROM prime_figure_states;
-
-      DROP TABLE prime_figure_states;
-      ALTER TABLE prime_figure_states_v2 RENAME TO prime_figure_states;
-
-      CREATE INDEX idx_prime_figure_states_owner_user_id ON prime_figure_states(owner_user_id);
-      CREATE INDEX idx_prime_figure_states_silence_until
-        ON prime_figure_states(silence_until_ms)
-        WHERE silence_until_ms IS NOT NULL;
-    `,
-  },
-] as const;
+  CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);
+  CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_user_id ON email_verification_tokens(user_id);
+  CREATE INDEX IF NOT EXISTS idx_resources_owner_user_id ON resources(owner_user_id);
+  CREATE INDEX IF NOT EXISTS idx_agents_owner_user_id ON agents(owner_user_id);
+  CREATE INDEX IF NOT EXISTS idx_conversations_owner_user_id ON conversations(owner_user_id);
+  CREATE INDEX IF NOT EXISTS idx_conversations_agent_id ON conversations(agent_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_owner_client_message_id
+    ON messages(owner_user_id, client_message_id) WHERE client_message_id IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_messages_owner_created_at ON messages(owner_user_id, created_at, id);
+  CREATE INDEX IF NOT EXISTS idx_messages_conversation_created_at ON messages(conversation_id, created_at, id);
+  CREATE INDEX IF NOT EXISTS idx_messages_owner_conversation_created_at
+    ON messages(owner_user_id, conversation_id, created_at, id);
+  CREATE INDEX IF NOT EXISTS idx_prime_figure_states_owner_user_id ON prime_figure_states(owner_user_id);
+  CREATE INDEX IF NOT EXISTS idx_prime_figure_states_silence_until
+    ON prime_figure_states(silence_until_ms) WHERE silence_until_ms IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_prime_messages_agent_occurred_at ON prime_messages(agent_id, occurred_at_ms, id);
+  CREATE INDEX IF NOT EXISTS idx_prime_messages_owner_conversation_occurred_at
+    ON prime_messages(owner_user_id, conversation_id, occurred_at_ms, id);
+  CREATE INDEX IF NOT EXISTS idx_prime_action_logs_agent_created_at ON prime_action_logs(agent_id, created_at, id);
+`;
 
 let database: DatabaseSync | null = null;
 
@@ -288,7 +199,7 @@ export function getDatabase() {
 
   database = new DatabaseSync(databasePath);
   database.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
-  applyMigrations(database);
+  database.exec(schemaSql);
 
   return database;
 }
@@ -296,32 +207,4 @@ export function getDatabase() {
 export function closeDatabase() {
   database?.close();
   database = null;
-}
-
-function applyMigrations(db: DatabaseSync) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      id TEXT PRIMARY KEY,
-      applied_at INTEGER NOT NULL
-    );
-  `);
-
-  const isApplied = db.prepare("SELECT 1 FROM schema_migrations WHERE id = ?");
-  const recordApplied = db.prepare(
-    "INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)",
-  );
-
-  for (const migration of migrations) {
-    if (isApplied.get(migration.id)) continue;
-
-    db.exec("BEGIN");
-    try {
-      db.exec(migration.sql);
-      recordApplied.run(migration.id, Date.now());
-      db.exec("COMMIT");
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
-  }
 }
