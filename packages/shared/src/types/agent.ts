@@ -26,35 +26,51 @@ export interface SliceFigureDetail {
 
 export type PrimeFigureVariableType = "string" | "number" | "boolean" | "json";
 
-export type PrimeFigureVariableValue = string | number | boolean | null | Record<string, unknown> | unknown[];
+export type PrimeFigureVariableValue =
+  string | number | boolean | null | Record<string, unknown> | unknown[];
 
 export interface PrimeFigureVariableDefinition {
   key: string;
   label: string;
   type: PrimeFigureVariableType;
-  description?: string;
+  description: string;
+  required: boolean;
   defaultValue?: PrimeFigureVariableValue;
   min?: number;
   max?: number;
-  llmWritable: boolean;
 }
 
 export interface PrimeFigureMemory {
   id: string;
   content: string;
-  importance: number;
-  sourceMessageIds: string[];
-  createdAt: number;
+  eventAtMs: number;
+  recordedAtMs: number;
+}
+
+export type PrimeFigureWeekday =
+  "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+export interface PrimeFigureScheduleSegment {
+  label: string;
+  days: PrimeFigureWeekday[];
+  start: string;
+  end: string;
+  description: string;
+}
+
+export interface PrimeFigureSchedule {
+  timezone: string;
+  segments: PrimeFigureScheduleSegment[];
 }
 
 export interface PrimeFigureState {
-  currentSchedule: Record<string, unknown>;
-  itinerary: Record<string, unknown>;
   variables: Record<string, PrimeFigureVariableValue>;
   memories: PrimeFigureMemory[];
   mood: string;
+  moodObservedAtMs: number;
   relationshipStatus: string;
-  nextWakeupAtMs?: number;
+  silenceStartedAtMs?: number;
+  silenceUntilMs?: number;
   updatedAt: number;
 }
 
@@ -65,8 +81,8 @@ export interface PrimeFigureDetail {
   responseStyle: string;
   decisionStyle: string;
   currentSituation: string;
-  schedule: Record<string, unknown>;
-  itinerary: Record<string, unknown>;
+  schedule: PrimeFigureSchedule;
+  itinerary: string;
   variableDefinitions: PrimeFigureVariableDefinition[];
 }
 
@@ -74,7 +90,8 @@ export interface PrimeWorldDetail {
   status: "placeholder";
 }
 
-export type AgentDetail = SliceFigureDetail | PrimeFigureDetail | PrimeWorldDetail;
+export type AgentDetail =
+  SliceFigureDetail | PrimeFigureDetail | PrimeWorldDetail;
 
 export interface AgentBase {
   id: string;
@@ -133,7 +150,10 @@ export interface CreateSliceFigureRequest {
   responseStyle: string;
 }
 
-export type UpdateSliceFigureRequest = Omit<CreateSliceFigureRequest, "type" | "avatar" | "cover">;
+export type UpdateSliceFigureRequest = Omit<
+  CreateSliceFigureRequest,
+  "type" | "avatar" | "cover"
+>;
 
 export interface CreatePrimeFigureRequest {
   type: "prime-figure";
@@ -150,19 +170,22 @@ export interface CreatePrimeFigureRequest {
   responseStyle: string;
   decisionStyle?: string;
   currentSituation?: string;
-  schedule?: Record<string, unknown>;
-  itinerary?: Record<string, unknown>;
+  schedule?: PrimeFigureSchedule;
+  itinerary?: string;
   variableDefinitions?: PrimeFigureVariableDefinition[];
-  initialVariables?: Record<string, PrimeFigureVariableValue>;
   initialMood?: string;
   initialRelationshipStatus?: string;
 }
 
-export type UpdatePrimeFigureRequest = Omit<CreatePrimeFigureRequest, "type" | "avatar" | "cover" | "initialVariables" | "initialMood" | "initialRelationshipStatus">;
+export type UpdatePrimeFigureRequest = Omit<
+  CreatePrimeFigureRequest,
+  "type" | "avatar" | "cover" | "initialMood" | "initialRelationshipStatus"
+>;
 
 export type PrimeMessageSender = "prime_figure" | "end_user" | "system";
 export type PrimeMessageDirection = "incoming" | "outgoing" | "internal";
-export type PrimeMessageContentType = "text" | "image" | "video" | "voice" | "sticker" | "transfer";
+export type PrimeMessageContentType =
+  "text" | "image" | "video" | "voice" | "sticker" | "transfer";
 
 export type PrimeMessageContent =
   | {
@@ -220,61 +243,22 @@ export interface PrimeMessage {
 export type PrimeFigureAction =
   | {
       type: "send_message";
-      message: PrimeMessageContent;
-      delayMinutes?: number;
-      actionRationale: string;
-    }
-  | {
-      type: "schedule_message";
-      message: PrimeMessageContent;
-      sendAtMs: number;
-      actionRationale: string;
-    }
-  | {
-      type: "update_schedule";
-      patch: Record<string, unknown>;
-      actionRationale: string;
-    }
-  | {
-      type: "update_itinerary";
-      patch: Record<string, unknown>;
-      actionRationale: string;
-    }
-  | {
-      type: "mutate_variable";
-      key: string;
-      operation: "set" | "increment" | "decrement";
-      value: PrimeFigureVariableValue;
-      actionRationale: string;
-    }
-  | {
-      type: "upsert_memory";
-      content: string;
-      importance: number;
-      sourceMessageIds: string[];
-      actionRationale: string;
+      message: Extract<PrimeMessageContent, { type: "text" }>;
     }
   | {
       type: "silence";
-      revisitAfterMinutes?: number;
-      actionRationale: string;
+      revisitAfterMinutes: number;
     };
 
 export interface PrimeFigureDecision {
-  decisionSummary: string;
-  stateAssessment: {
-    userIntent: string;
-    figureMood: string;
-    relationshipSignal?: string;
-    riskLevel: "low" | "medium" | "high";
-  };
-  actions: PrimeFigureAction[];
+  rationale: string;
+  figureMood: string;
+  variables: Record<string, PrimeFigureVariableValue>;
   memoryWrites: Array<{
     content: string;
-    importance: number;
-    sourceMessageIds: string[];
+    eventAt: string | null;
   }>;
-  nextWakeupAtMs?: number;
+  action: PrimeFigureAction;
 }
 
 export interface CreateAgentResponse {

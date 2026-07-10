@@ -1,5 +1,18 @@
-import { Bell, ChatCircleText, Compass, GearSix, House, LinkSimple, UserCircle } from "@phosphor-icons/react";
-import type { Agent, CreateSliceFigureRequest, UpdateSliceFigureRequest } from "@echoo/shared";
+import {
+  Bell,
+  ChatCircleText,
+  Compass,
+  GearSix,
+  House,
+  LinkSimple,
+  UserCircle,
+} from "@phosphor-icons/react";
+import type {
+  Agent,
+  CreatePrimeFigureRequest,
+  CreateSliceFigureRequest,
+  UpdateSliceFigureRequest,
+} from "@echoo/shared";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { initApp } from "./bootstrap/initApp";
 import { useAuth } from "./providers/AuthProvider";
@@ -14,13 +27,21 @@ import { MessagesPage } from "../pages/messages/MessagesPage";
 import { ProfilePage } from "../pages/profile/ProfilePage";
 import { SettingsPage } from "../pages/settings/SettingsPage";
 
-type AppView = "home" | "messages" | "bindings" | "settings" | "explore" | "profile" | "create" | "auth";
+type AppView =
+  | "home"
+  | "messages"
+  | "bindings"
+  | "settings"
+  | "explore"
+  | "profile"
+  | "create"
+  | "auth";
 
 const navItems = [
   { id: "home", label: "Home", icon: House },
   { id: "messages", label: "Chat", icon: ChatCircleText },
   { id: "bindings", label: "Bindings", icon: LinkSimple },
-  { id: "settings", label: "Settings", icon: GearSix }
+  { id: "settings", label: "Settings", icon: GearSix },
 ] satisfies { id: AppView; label: string; icon: typeof House }[];
 
 export function App() {
@@ -31,12 +52,24 @@ export function App() {
   const [myAgents, setMyAgents] = useState<Agent[]>([]);
   const [isLoadingAgents, setIsLoadingAgents] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
-  const protectedView = view === "messages" || view === "bindings" || view === "settings" || view === "profile" || view === "create";
+  const protectedView =
+    view === "messages" ||
+    view === "bindings" ||
+    view === "settings" ||
+    view === "profile" ||
+    view === "create";
   const showConversationRail =
-    (view === "home" || view === "messages" || view === "bindings" || view === "settings") && (!protectedView || !!auth.user);
+    (view === "home" ||
+      view === "messages" ||
+      view === "bindings" ||
+      view === "settings") &&
+    (!protectedView || !!auth.user);
 
   useEffect(() => {
-    if (auth.authLinkParams.resetToken || auth.authLinkParams.verificationToken) {
+    if (
+      auth.authLinkParams.resetToken ||
+      auth.authLinkParams.verificationToken
+    ) {
       setView("auth");
     }
   }, [auth.authLinkParams.resetToken, auth.authLinkParams.verificationToken]);
@@ -57,7 +90,10 @@ export function App() {
       })
       .catch(async (error) => {
         if (cancelled) return;
-        if (error instanceof Error && error.message === "Please sign in again.") {
+        if (
+          error instanceof Error &&
+          error.message === "Please sign in again."
+        ) {
           await auth.signOut();
           setView("auth");
         }
@@ -77,15 +113,22 @@ export function App() {
   };
 
   const handleConversationDeleted = useCallback((conversationId: string) => {
-    setMyAgents((current) => current.filter((agent) => agent.conversationId !== conversationId));
-    setSelectedAgent((current) => (current?.conversationId === conversationId ? null : current));
+    setMyAgents((current) =>
+      current.filter((agent) => agent.conversationId !== conversationId),
+    );
+    setSelectedAgent((current) =>
+      current?.conversationId === conversationId ? null : current,
+    );
     setView("home");
   }, []);
 
   const createSliceFigure = async (input: CreateSliceFigureRequest) => {
     try {
       const { agent } = await services.agentService.createSliceFigure(input);
-      setMyAgents((current) => [agent, ...current.filter((item) => item.id !== agent.id)]);
+      setMyAgents((current) => [
+        agent,
+        ...current.filter((item) => item.id !== agent.id),
+      ]);
       openAgent(agent);
       return agent;
     } catch (error) {
@@ -97,11 +140,39 @@ export function App() {
     }
   };
 
-  const updateSliceFigure = async (agentId: string, input: UpdateSliceFigureRequest) => {
+  const createPrimeFigure = async (input: CreatePrimeFigureRequest) => {
     try {
-      const { agent } = await services.agentService.updateSliceFigure(agentId, input);
-      setMyAgents((current) => current.map((item) => (item.id === agent.id ? agent : item)));
-      setSelectedAgent((current) => (current?.id === agent.id ? agent : current));
+      const { agent } = await services.agentService.createPrimeFigure(input);
+      setMyAgents((current) => [
+        agent,
+        ...current.filter((item) => item.id !== agent.id),
+      ]);
+      openAgent(agent);
+      return agent;
+    } catch (error) {
+      if (error instanceof Error && error.message === "Please sign in again.") {
+        await auth.signOut();
+        setView("auth");
+      }
+      throw error;
+    }
+  };
+
+  const updateSliceFigure = async (
+    agentId: string,
+    input: UpdateSliceFigureRequest,
+  ) => {
+    try {
+      const { agent } = await services.agentService.updateSliceFigure(
+        agentId,
+        input,
+      );
+      setMyAgents((current) =>
+        current.map((item) => (item.id === agent.id ? agent : item)),
+      );
+      setSelectedAgent((current) =>
+        current?.id === agent.id ? agent : current,
+      );
       return agent;
     } catch (error) {
       if (error instanceof Error && error.message === "Please sign in again.") {
@@ -116,16 +187,37 @@ export function App() {
     if (auth.isLoading) {
       return (
         <div className="grid min-h-[calc(100dvh-8rem)] place-items-center">
-          <div className="glass-panel rounded-full px-5 py-3 text-sm text-white/70">Checking your session</div>
+          <div className="glass-panel rounded-full px-5 py-3 text-sm text-white/70">
+            Checking your session
+          </div>
         </div>
       );
     }
     if (view === "auth" || (protectedView && !auth.user)) {
-      return <AuthPage onAuthenticated={() => setView(view === "auth" ? "messages" : view)} />;
+      return (
+        <AuthPage
+          onAuthenticated={() => setView(view === "auth" ? "messages" : view)}
+        />
+      );
     }
     if (view === "explore") return <ExplorePage />;
-    if (view === "profile") return <ProfilePage agents={myAgents} isLoadingAgents={isLoadingAgents} onOpenAgent={openAgent} />;
-    if (view === "create") return <CreateAgentPage createHandlers={{ "slice-figure": createSliceFigure }} />;
+    if (view === "profile")
+      return (
+        <ProfilePage
+          agents={myAgents}
+          isLoadingAgents={isLoadingAgents}
+          onOpenAgent={openAgent}
+        />
+      );
+    if (view === "create")
+      return (
+        <CreateAgentPage
+          createHandlers={{
+            "slice-figure": createSliceFigure,
+            "prime-figure": createPrimeFigure,
+          }}
+        />
+      );
     if (view === "messages") {
       return (
         <MessagesPage
@@ -137,8 +229,22 @@ export function App() {
     }
     if (view === "bindings") return <BindingsPanel />;
     if (view === "settings") return <SettingsPage />;
-    return <HomePage onCreateAgent={() => setView("create")} onOpenChat={() => setView("messages")} />;
-  }, [auth.isLoading, auth.user, handleConversationDeleted, isLoadingAgents, myAgents, protectedView, selectedAgent, view]);
+    return (
+      <HomePage
+        onCreateAgent={() => setView("create")}
+        onOpenChat={() => setView("messages")}
+      />
+    );
+  }, [
+    auth.isLoading,
+    auth.user,
+    handleConversationDeleted,
+    isLoadingAgents,
+    myAgents,
+    protectedView,
+    selectedAgent,
+    view,
+  ]);
 
   return (
     <div className="relative min-h-[100dvh] overflow-hidden bg-[#09090b] text-[#e5e2e1]">
@@ -156,7 +262,9 @@ export function App() {
           >
             <Compass size={20} weight="duotone" />
           </button>
-          <div className="text-lg font-semibold tracking-[0.18em] text-white">ECHOO</div>
+          <div className="text-lg font-semibold tracking-[0.18em] text-white">
+            ECHOO
+          </div>
           <div className="flex items-center gap-3">
             <button className="hidden h-10 items-center gap-2 rounded-full border border-white/10 px-4 text-sm text-white/70 transition hover:border-white/20 hover:text-white md:flex">
               <Bell size={16} />
@@ -175,7 +283,9 @@ export function App() {
 
       <div
         className={`relative z-10 mx-auto grid min-h-[100dvh] max-w-[1440px] grid-cols-1 px-5 pb-28 pt-24 md:gap-6 md:px-16 md:pb-8 ${
-          showConversationRail ? "md:grid-cols-[88px_340px_1fr]" : "md:grid-cols-[88px_1fr]"
+          showConversationRail
+            ? "md:grid-cols-[88px_340px_1fr]"
+            : "md:grid-cols-[88px_1fr]"
         }`}
       >
         <aside className="hidden md:block">
@@ -188,7 +298,9 @@ export function App() {
                   key={item.id}
                   aria-label={item.label}
                   className={`flex h-12 w-12 items-center justify-center rounded-full transition active:scale-95 ${
-                    active ? "bg-white text-[#09090b] luminous-ring" : "text-white/50 hover:bg-white/[0.06] hover:text-white"
+                    active
+                      ? "bg-white text-[#09090b] luminous-ring"
+                      : "text-white/50 hover:bg-white/[0.06] hover:text-white"
                   }`}
                   onClick={() => setView(item.id)}
                 >
@@ -199,7 +311,13 @@ export function App() {
           </nav>
         </aside>
 
-        {showConversationRail ? <ConversationRail agents={myAgents} onOpenAgent={openAgent} onOpenChat={() => setView("messages")} /> : null}
+        {showConversationRail ? (
+          <ConversationRail
+            agents={myAgents}
+            onOpenAgent={openAgent}
+            onOpenChat={() => setView("messages")}
+          />
+        ) : null}
 
         <main className="min-w-0">{ActivePage}</main>
       </div>
@@ -213,7 +331,9 @@ export function App() {
               key={item.id}
               aria-label={item.label}
               className={`flex h-11 w-11 items-center justify-center rounded-full transition active:scale-95 ${
-                active ? "bg-white text-[#09090b]" : "text-white/55 hover:text-white"
+                active
+                  ? "bg-white text-[#09090b]"
+                  : "text-white/55 hover:text-white"
               }`}
               onClick={() => setView(item.id)}
             >

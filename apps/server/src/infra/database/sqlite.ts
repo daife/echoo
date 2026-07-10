@@ -34,7 +34,7 @@ const migrations = [
 
       CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);
       CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_user_id ON email_verification_tokens(user_id);
-    `
+    `,
   },
   {
     id: "002_agents_and_conversations",
@@ -97,7 +97,7 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_agent_prime_worlds_agent_id ON agent_prime_worlds(agent_id);
       CREATE INDEX IF NOT EXISTS idx_conversations_owner_user_id ON conversations(owner_user_id);
       CREATE INDEX IF NOT EXISTS idx_conversations_agent_id ON conversations(agent_id);
-    `
+    `,
   },
   {
     id: "003_resources",
@@ -114,7 +114,7 @@ const migrations = [
       );
 
       CREATE INDEX IF NOT EXISTS idx_resources_owner_user_id ON resources(owner_user_id);
-    `
+    `,
   },
   {
     id: "004_messages",
@@ -143,7 +143,7 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_messages_conversation_created_at ON messages(conversation_id, created_at, id);
       CREATE INDEX IF NOT EXISTS idx_messages_owner_conversation_created_at
         ON messages(owner_user_id, conversation_id, created_at, id);
-    `
+    `,
   },
   {
     id: "005_prime_figure_v1",
@@ -206,8 +206,73 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS idx_prime_messages_owner_conversation_occurred_at
         ON prime_messages(owner_user_id, conversation_id, occurred_at_ms, id);
       CREATE INDEX IF NOT EXISTS idx_prime_action_logs_agent_created_at ON prime_action_logs(agent_id, created_at, id);
-    `
-  }
+    `,
+  },
+  {
+    id: "006_prime_figure_v2",
+    sql: `
+      ALTER TABLE prime_figure_states ADD COLUMN mood_observed_at_ms INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE prime_figure_states ADD COLUMN silence_started_at_ms INTEGER;
+      ALTER TABLE prime_figure_states ADD COLUMN silence_until_ms INTEGER;
+
+      CREATE INDEX IF NOT EXISTS idx_prime_figure_states_silence_until
+        ON prime_figure_states(silence_until_ms)
+        WHERE silence_until_ms IS NOT NULL;
+    `,
+  },
+  {
+    id: "007_prime_figure_v2_state_cleanup",
+    sql: `
+      CREATE TABLE prime_figure_states_v2 (
+        agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+        owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+        variables_json TEXT NOT NULL DEFAULT '{}',
+        memories_json TEXT NOT NULL DEFAULT '[]',
+        mood TEXT NOT NULL DEFAULT '',
+        mood_observed_at_ms INTEGER NOT NULL,
+        relationship_status TEXT NOT NULL DEFAULT '',
+        silence_started_at_ms INTEGER,
+        silence_until_ms INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      INSERT INTO prime_figure_states_v2 (
+        agent_id,
+        owner_user_id,
+        variables_json,
+        memories_json,
+        mood,
+        mood_observed_at_ms,
+        relationship_status,
+        silence_started_at_ms,
+        silence_until_ms,
+        created_at,
+        updated_at
+      )
+      SELECT
+        agent_id,
+        owner_user_id,
+        variables_json,
+        memories_json,
+        mood,
+        CASE WHEN mood_observed_at_ms > 0 THEN mood_observed_at_ms ELSE updated_at END,
+        relationship_status,
+        silence_started_at_ms,
+        silence_until_ms,
+        created_at,
+        updated_at
+      FROM prime_figure_states;
+
+      DROP TABLE prime_figure_states;
+      ALTER TABLE prime_figure_states_v2 RENAME TO prime_figure_states;
+
+      CREATE INDEX idx_prime_figure_states_owner_user_id ON prime_figure_states(owner_user_id);
+      CREATE INDEX idx_prime_figure_states_silence_until
+        ON prime_figure_states(silence_until_ms)
+        WHERE silence_until_ms IS NOT NULL;
+    `,
+  },
 ] as const;
 
 let database: DatabaseSync | null = null;
@@ -215,7 +280,10 @@ let database: DatabaseSync | null = null;
 export function getDatabase() {
   if (database) return database;
 
-  const databasePath = resolve(process.cwd(), process.env.AUTH_DATABASE_FILE ?? ".data/auth.sqlite");
+  const databasePath = resolve(
+    process.cwd(),
+    process.env.AUTH_DATABASE_FILE ?? ".data/auth.sqlite",
+  );
   mkdirSync(dirname(databasePath), { recursive: true });
 
   database = new DatabaseSync(databasePath);
@@ -239,7 +307,9 @@ function applyMigrations(db: DatabaseSync) {
   `);
 
   const isApplied = db.prepare("SELECT 1 FROM schema_migrations WHERE id = ?");
-  const recordApplied = db.prepare("INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)");
+  const recordApplied = db.prepare(
+    "INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)",
+  );
 
   for (const migration of migrations) {
     if (isApplied.get(migration.id)) continue;

@@ -4,7 +4,7 @@ import type {
   PrimeMessageContent,
   PrimeMessageContentType,
   PrimeMessageDirection,
-  PrimeMessageSender
+  PrimeMessageSender,
 } from "@echoo/shared";
 import { getDatabase } from "../../../../infra/database/sqlite.js";
 
@@ -54,7 +54,7 @@ export class PrimeMessageRepository {
       occurredAtIso: new Date(occurredAtMs).toISOString(),
       timezone: input.timezone ?? "UTC",
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
     };
 
     this.db
@@ -75,7 +75,7 @@ export class PrimeMessageRepository {
             created_at,
             updated_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `
+        `,
       )
       .run(
         message.id,
@@ -90,13 +90,17 @@ export class PrimeMessageRepository {
         message.occurredAtIso,
         message.timezone,
         message.createdAt,
-        message.updatedAt
+        message.updatedAt,
       );
 
     return message;
   }
 
-  listRecent(ownerUserId: string, agentId: string, limit = 100): PrimeMessage[] {
+  listRecent(
+    ownerUserId: string,
+    agentId: string,
+    limit = 100,
+  ): PrimeMessage[] {
     const rows = this.db
       .prepare(
         `
@@ -105,12 +109,59 @@ export class PrimeMessageRepository {
           WHERE owner_user_id = ? AND agent_id = ?
           ORDER BY occurred_at_ms DESC, id DESC
           LIMIT ?
-        `
+        `,
       )
-      .all(ownerUserId, agentId, Math.min(Math.max(Math.trunc(limit), 1), 500)) as unknown as PrimeMessageRow[];
+      .all(
+        ownerUserId,
+        agentId,
+        Math.min(Math.max(Math.trunc(limit), 1), 500),
+      ) as unknown as PrimeMessageRow[];
 
     return rows.reverse().map(rowToMessage);
   }
+
+  searchByKeywords(
+    ownerUserId: string,
+    agentId: string,
+    keywords: string[],
+    limit = 8,
+  ): PrimeMessage[] {
+    const normalized = keywords
+      .map((keyword) => keyword.trim())
+      .filter(Boolean)
+      .slice(0, 6);
+    if (!normalized.length) return [];
+
+    const conditions = normalized
+      .map(() => "LOWER(content_json) LIKE ? ESCAPE '\\'")
+      .join(" OR ");
+    const patterns = normalized.map(
+      (keyword) => `%${escapeLike(keyword.toLowerCase())}%`,
+    );
+    const rows = this.db
+      .prepare(
+        `
+          SELECT *
+          FROM prime_messages
+          WHERE owner_user_id = ? AND agent_id = ?
+            AND (${conditions})
+          ORDER BY occurred_at_ms DESC, id DESC
+          LIMIT ?
+        `,
+      )
+      .all(
+        ownerUserId,
+        agentId,
+        ...patterns,
+        Math.min(Math.max(Math.trunc(limit), 1), 20),
+      ) as unknown as PrimeMessageRow[];
+
+    return rows.reverse().map(rowToMessage);
+  }
+}
+
+function escapeLike(value: string) {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
 }
 
 function rowToMessage(row: PrimeMessageRow): PrimeMessage {
@@ -122,12 +173,15 @@ function rowToMessage(row: PrimeMessageRow): PrimeMessage {
     sender: row.sender,
     direction: row.direction,
     messageType: row.message_type,
-    content: parseJson<PrimeMessageContent>(row.content_json, { type: "text", text: "" }),
+    content: parseJson<PrimeMessageContent>(row.content_json, {
+      type: "text",
+      text: "",
+    }),
     occurredAtMs: row.occurred_at_ms,
     occurredAtIso: row.occurred_at_iso,
     timezone: row.timezone,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
   };
 }
 

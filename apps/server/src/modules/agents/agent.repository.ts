@@ -1,4 +1,13 @@
-import type { Agent, AgentAttribute, AgentResourceUpload, AgentType, PrimeFigureDetail, SliceFigureDetail } from "@echoo/shared";
+import type {
+  Agent,
+  AgentAttribute,
+  AgentResourceUpload,
+  AgentType,
+  PrimeFigureDetail,
+  PrimeFigureSchedule,
+  PrimeFigureVariableDefinition,
+  SliceFigureDetail,
+} from "@echoo/shared";
 import { randomUUID } from "node:crypto";
 import { getDatabase } from "../../infra/database/sqlite.js";
 import { ResourceRepository } from "../resources/resource.repository.js";
@@ -119,14 +128,17 @@ export class AgentRepository {
           LEFT JOIN agent_prime_figures prime ON prime.agent_id = agents.id
           WHERE agents.owner_user_id = ?
           ORDER BY agents.created_at DESC
-        `
+        `,
       )
       .all(ownerUserId) as unknown as AgentRow[];
 
     return rows.map(rowToAgent);
   }
 
-  findByConversation(ownerUserId: string, conversationId: string): Agent | null {
+  findByConversation(
+    ownerUserId: string,
+    conversationId: string,
+  ): Agent | null {
     const row = this.db
       .prepare(
         `
@@ -156,7 +168,7 @@ export class AgentRepository {
           LEFT JOIN agent_slice_figures slice ON slice.agent_id = agents.id
           LEFT JOIN agent_prime_figures prime ON prime.agent_id = agents.id
           WHERE agents.owner_user_id = ? AND conversations.id = ?
-        `
+        `,
       )
       .get(ownerUserId, conversationId) as AgentRow | undefined;
 
@@ -193,7 +205,7 @@ export class AgentRepository {
           LEFT JOIN agent_slice_figures slice ON slice.agent_id = agents.id
           LEFT JOIN agent_prime_figures prime ON prime.agent_id = agents.id
           WHERE agents.owner_user_id = ? AND agents.id = ?
-        `
+        `,
       )
       .get(ownerUserId, agentId) as AgentRow | undefined;
 
@@ -203,8 +215,12 @@ export class AgentRepository {
   createBase(ownerUserId: string, input: AgentBaseInput): CreatedAgentBase {
     const now = Date.now();
     const agentId = `agent_${randomUUID()}`;
-    const avatar = input.avatar ? this.resources.saveImage(ownerUserId, "agent_avatar", input.avatar) : null;
-    const cover = input.cover ? this.resources.saveImage(ownerUserId, "agent_cover", input.cover) : null;
+    const avatar = input.avatar
+      ? this.resources.saveImage(ownerUserId, "agent_avatar", input.avatar)
+      : null;
+    const cover = input.cover
+      ? this.resources.saveImage(ownerUserId, "agent_cover", input.cover)
+      : null;
     const attributes = input.attributes ?? [];
     const tags = input.tags ?? [];
     const introduction = input.introduction ?? "";
@@ -226,7 +242,7 @@ export class AgentRepository {
             created_at,
             updated_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `
+        `,
       )
       .run(
         agentId,
@@ -240,7 +256,7 @@ export class AgentRepository {
         introduction,
         input.isPublic ? 1 : 0,
         now,
-        now
+        now,
       );
 
     return {
@@ -255,11 +271,16 @@ export class AgentRepository {
       introduction,
       isPublic: input.isPublic,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
     };
   }
 
-  updateBase(ownerUserId: string, agentId: string, input: AgentBaseUpdateInput, updatedAt = Date.now()) {
+  updateBase(
+    ownerUserId: string,
+    agentId: string,
+    input: AgentBaseUpdateInput,
+    updatedAt = Date.now(),
+  ) {
     this.db
       .prepare(
         `
@@ -272,7 +293,7 @@ export class AgentRepository {
             is_public = ?,
             updated_at = ?
           WHERE owner_user_id = ? AND id = ?
-        `
+        `,
       )
       .run(
         input.name,
@@ -282,7 +303,7 @@ export class AgentRepository {
         input.isPublic ? 1 : 0,
         updatedAt,
         ownerUserId,
-        agentId
+        agentId,
       );
   }
 }
@@ -291,8 +312,12 @@ function rowToAgent(row: AgentRow): Agent {
   const base = {
     id: row.id,
     ownerUserId: row.owner_user_id,
-    ...(row.avatar_resource_path ? { avatarResourcePath: row.avatar_resource_path } : {}),
-    ...(row.cover_resource_path ? { coverResourcePath: row.cover_resource_path } : {}),
+    ...(row.avatar_resource_path
+      ? { avatarResourcePath: row.avatar_resource_path }
+      : {}),
+    ...(row.cover_resource_path
+      ? { coverResourcePath: row.cover_resource_path }
+      : {}),
     name: row.name,
     attributes: parseJson<AgentAttribute[]>(row.attributes_json, []),
     tags: parseJson<string[]>(row.tags_json, []),
@@ -300,14 +325,14 @@ function rowToAgent(row: AgentRow): Agent {
     isPublic: row.is_public === 1,
     conversationId: row.conversation_id ?? "",
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
   };
 
   if (row.type === "slice-figure") {
     return {
       ...base,
       type: "slice-figure",
-      detail: rowToSliceDetail(row)
+      detail: rowToSliceDetail(row),
     };
   }
 
@@ -315,14 +340,14 @@ function rowToAgent(row: AgentRow): Agent {
     return {
       ...base,
       type: "prime-world",
-      detail: { status: "placeholder" }
+      detail: { status: "placeholder" },
     };
   }
 
   return {
     ...base,
     type: "prime-figure",
-    detail: rowToPrimeDetail(row)
+    detail: rowToPrimeDetail(row),
   };
 }
 
@@ -332,11 +357,18 @@ function rowToSliceDetail(row: AgentRow): SliceFigureDetail {
     currentSituation: row.current_situation ?? "",
     openingLine: row.opening_line ?? "",
     linkedAgentIds: parseJson<string[]>(row.linked_agent_ids_json ?? "[]", []),
-    ...(row.unlock_conditions_json ? { unlockConditions: parseJson<Record<string, unknown>>(row.unlock_conditions_json, {}) } : {}),
+    ...(row.unlock_conditions_json
+      ? {
+          unlockConditions: parseJson<Record<string, unknown>>(
+            row.unlock_conditions_json,
+            {},
+          ),
+        }
+      : {}),
     persona: row.persona ?? "",
     background: row.background ?? "",
     personality: row.personality ?? "",
-    responseStyle: row.response_style ?? ""
+    responseStyle: row.response_style ?? "",
   };
 }
 
@@ -348,9 +380,11 @@ function rowToPrimeDetail(row: AgentRow): PrimeFigureDetail {
     responseStyle: row.prime_response_style ?? "",
     decisionStyle: row.prime_decision_style ?? "",
     currentSituation: row.prime_current_situation ?? "",
-    schedule: parseJson<Record<string, unknown>>(row.prime_schedule_json ?? "{}", {}),
-    itinerary: parseJson<Record<string, unknown>>(row.prime_itinerary_json ?? "{}", {}),
-    variableDefinitions: parseJson(row.prime_variable_definitions_json ?? "[]", [])
+    schedule: parsePrimeSchedule(row.prime_schedule_json),
+    itinerary: parseStringJson(row.prime_itinerary_json),
+    variableDefinitions: parsePrimeVariableDefinitions(
+      row.prime_variable_definitions_json,
+    ),
   };
 }
 
@@ -360,4 +394,52 @@ function parseJson<T>(value: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function parseStringJson(value: string | null) {
+  if (!value) return "";
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return typeof parsed === "string" ? parsed : "";
+  } catch {
+    return value;
+  }
+}
+
+function parsePrimeSchedule(value: string | null): PrimeFigureSchedule {
+  const parsed = parseJson<Partial<PrimeFigureSchedule>>(value ?? "{}", {});
+  if (typeof parsed.timezone !== "string" || !Array.isArray(parsed.segments))
+    return { timezone: "UTC", segments: [] };
+  return { timezone: parsed.timezone, segments: parsed.segments };
+}
+
+function parsePrimeVariableDefinitions(
+  value: string | null,
+): PrimeFigureVariableDefinition[] {
+  const parsed = parseJson<Array<Partial<PrimeFigureVariableDefinition>>>(
+    value ?? "[]",
+    [],
+  );
+  return parsed
+    .filter(
+      (definition) =>
+        typeof definition.key === "string" &&
+        typeof definition.label === "string" &&
+        typeof definition.type === "string",
+    )
+    .map((definition) => ({
+      key: definition.key as string,
+      label: definition.label as string,
+      type: definition.type as PrimeFigureVariableDefinition["type"],
+      description:
+        typeof definition.description === "string" && definition.description
+          ? definition.description
+          : (definition.label as string),
+      required: definition.required === true,
+      ...(definition.defaultValue !== undefined
+        ? { defaultValue: definition.defaultValue }
+        : {}),
+      ...(typeof definition.min === "number" ? { min: definition.min } : {}),
+      ...(typeof definition.max === "number" ? { max: definition.max } : {}),
+    }));
 }

@@ -1,17 +1,31 @@
 import { randomUUID } from "node:crypto";
-import { primeFigureActionSchema } from "@echoo/shared";
-import type { PrimeFigureAction, PrimeFigureAgent, PrimeFigureDecision, PrimeFigureState, PrimeFigureVariableValue, PrimeMessageContent } from "@echoo/shared";
+import { primeFigureDecisionSchema } from "@echoo/shared";
+import type {
+  Message,
+  PrimeFigureAgent,
+  PrimeFigureDecision,
+  PrimeFigureState,
+  PrimeFigureVariableValue,
+} from "@echoo/shared";
+import { getDatabase } from "../../../../infra/database/sqlite.js";
 import { ConversationRepository } from "../../../conversations/conversation.repository.js";
+import { MessageRepository } from "../../../messaging/message.repository.js";
+import { AppPushService } from "../../../realtime/delivery.service.js";
 import { PrimeActionLogRepository } from "./prime-action-log.repository.js";
 import { PrimeMessageRepository } from "./prime-message.repository.js";
 import { PrimeFigureStateRepository } from "./prime-figure-state.repository.js";
+import { parseReadableMinute } from "./prime-time.js";
 
 export class PrimeActionExecutor {
+  private readonly db = getDatabase();
+
   constructor(
     private readonly states = new PrimeFigureStateRepository(),
-    private readonly messages = new PrimeMessageRepository(),
+    private readonly primeMessages = new PrimeMessageRepository(),
+    private readonly messages = new MessageRepository(),
     private readonly logs = new PrimeActionLogRepository(),
-    private readonly conversations = new ConversationRepository()
+    private readonly conversations = new ConversationRepository(),
+    private readonly appPush = new AppPushService(),
   ) {}
 
   executeDecision(input: {
@@ -20,145 +34,176 @@ export class PrimeActionExecutor {
     agent: PrimeFigureAgent;
     state: PrimeFigureState;
     decision: PrimeFigureDecision;
+    providerId: string;
+    model: string;
   }) {
+    const decision = primeFigureDecisionSchema.parse(input.decision);
     const now = Date.now();
-    const state = { ...input.state, updatedAt: now };
-    const memoryActions: PrimeFigureAction[] = input.decision.memoryWrites.map((memory) => ({
-      type: "upsert_memory",
-      content: memory.content,
-      importance: memory.importance,
-      sourceMessageIds: memory.sourceMessageIds,
-      actionRationale: "Persisted from decision memoryWrites."
-    }));
+    const state: PrimeFigureState = {
+      ...input.state,
+      variables: applyVariableSnapshot(
+        input.agent,
+        input.state.variables,
+        decision.variables,
+      ),
+      memories: appendMemories(
+        input.state,
+        decision,
+        input.agent.detail.schedule.timezone,
+        now,
+      ),
+      mood: decision.figureMood,
+      moodObservedAtMs: now,
+      updatedAt: now,
+    };
+    let createdMessage: Message | undefined;
 
-    for (const action of [...memoryActions, ...input.decision.actions]) {
-      this.executeAction({
-        ownerUserId: input.ownerUserId,
-        conversationId: input.conversationId,
-        agent: input.agent,
-        state,
-        action
-      });
-    }
-
-    if (input.decision.nextWakeupAtMs !== undefined) {
-      state.nextWakeupAtMs = input.decision.nextWakeupAtMs;
-    }
-
-    state.updatedAt = Date.now();
-    this.states.save(input.ownerUserId, input.agent.id, state);
-    return state;
-  }
-
-  private executeAction(input: {
-    ownerUserId: string;
-    conversationId: string;
-    agent: PrimeFigureAgent;
-    state: PrimeFigureState;
-    action: PrimeFigureAction;
-  }) {
-    const parsed = primeFigureActionSchema.parse(input.action);
-
+    this.db.exec("BEGIN IMMEDIATE");
     try {
-      switch (parsed.type) {
-        case "send_message": {
-          const occurredAtMs = Date.now() + Math.round((parsed.delayMinutes ?? 0) * 60_000);
-          const message = this.messages.save({
-            ownerUserId: input.ownerUserId,
-            agentId: input.agent.id,
-            conversationId: input.conversationId,
-            sender: "prime_figure",
-            direction: "outgoing",
-            content: parsed.message,
-            occurredAtMs
-          });
-          this.conversations.updatePreview({
-            ownerUserId: input.ownerUserId,
-            conversationId: input.conversationId,
-            preview: describeContent(parsed.message),
-            updatedAt: message.updatedAt,
-            incrementUnread: true
-          });
-          break;
-        }
-        case "schedule_message":
-          input.state.nextWakeupAtMs = parsed.sendAtMs;
-          break;
-        case "update_schedule":
-          input.state.currentSchedule = { ...input.state.currentSchedule, ...parsed.patch };
-          break;
-        case "update_itinerary":
-          input.state.itinerary = { ...input.state.itinerary, ...parsed.patch };
-          break;
-        case "mutate_variable":
-          input.state.variables[parsed.key] = mutateVariable(input.agent, input.state.variables[parsed.key], parsed);
-          break;
-        case "upsert_memory":
-          input.state.memories = [
-            ...input.state.memories,
-            {
-              id: `pmem_${randomUUID()}`,
-              content: parsed.content,
-              importance: parsed.importance,
-              sourceMessageIds: parsed.sourceMessageIds,
-              createdAt: Date.now()
-            }
-          ].slice(-1000);
-          break;
-        case "silence":
-          if (parsed.revisitAfterMinutes !== undefined) {
-            input.state.nextWakeupAtMs = Date.now() + Math.round(parsed.revisitAfterMinutes * 60_000);
-          }
-          break;
+      if (decision.action.type === "send_message") {
+        delete state.silenceStartedAtMs;
+        delete state.silenceUntilMs;
+
+        const primeMessage = this.primeMessages.save({
+          ownerUserId: input.ownerUserId,
+          agentId: input.agent.id,
+          conversationId: input.conversationId,
+          sender: "prime_figure",
+          direction: "outgoing",
+          content: decision.action.message,
+          occurredAtMs: now,
+          timezone: input.agent.detail.schedule.timezone,
+        });
+        createdMessage = this.messages.save({
+          ownerUserId: input.ownerUserId,
+          id: `msg_${randomUUID()}`,
+          conversationId: input.conversationId,
+          role: "assistant",
+          contentType: "text",
+          content: { text: decision.action.message.text },
+          status: "delivered",
+          providerId: input.providerId,
+          model: input.model,
+          metadata: { kind: "prime_figure", primeMessageId: primeMessage.id },
+          createdAt: now,
+          updatedAt: now,
+        });
+        this.conversations.updatePreview({
+          ownerUserId: input.ownerUserId,
+          conversationId: input.conversationId,
+          preview: decision.action.message.text,
+          updatedAt: now,
+          incrementUnread: true,
+        });
+      } else {
+        state.silenceStartedAtMs = now;
+        state.silenceUntilMs =
+          now + decision.action.revisitAfterMinutes * 60_000;
       }
 
+      this.states.save(input.ownerUserId, input.agent.id, state);
       this.logs.save({
         ownerUserId: input.ownerUserId,
         agentId: input.agent.id,
         conversationId: input.conversationId,
-        action: parsed,
-        status: "applied"
+        action: decision.action,
+        status: "applied",
+        now,
       });
+      this.db.exec("COMMIT");
     } catch (error) {
+      this.db.exec("ROLLBACK");
       this.logs.save({
         ownerUserId: input.ownerUserId,
         agentId: input.agent.id,
         conversationId: input.conversationId,
-        action: parsed,
+        action: decision.action,
         status: "failed",
-        errorMessage: error instanceof Error ? error.message : "Prime action failed."
+        errorMessage:
+          error instanceof Error
+            ? error.message
+            : "Prime decision execution failed.",
       });
+      throw error;
     }
+
+    if (createdMessage)
+      this.appPush.pushToUser(input.ownerUserId, {
+        type: "message.created",
+        message: createdMessage,
+      });
+    return state;
   }
 }
 
-function mutateVariable(
+function appendMemories(
+  state: PrimeFigureState,
+  decision: PrimeFigureDecision,
+  timezone: string,
+  now: number,
+) {
+  const writes = decision.memoryWrites.map((memory) => ({
+    id: `pmem_${randomUUID()}`,
+    content: memory.content,
+    eventAtMs: memory.eventAt
+      ? (parseReadableMinute(memory.eventAt, timezone) ?? now)
+      : now,
+    recordedAtMs: now,
+  }));
+  return [...state.memories, ...writes].slice(-1000);
+}
+
+function applyVariableSnapshot(
   agent: PrimeFigureAgent,
-  currentValue: PrimeFigureVariableValue | undefined,
-  action: Extract<PrimeFigureAction, { type: "mutate_variable" }>
-): PrimeFigureVariableValue {
-  const definition = agent.detail.variableDefinitions.find((item) => item.key === action.key);
-  if (definition && !definition.llmWritable) throw new Error(`Variable is not writable: ${action.key}`);
+  current: Record<string, PrimeFigureVariableValue>,
+  output: Record<string, PrimeFigureVariableValue>,
+) {
+  const next: Record<string, PrimeFigureVariableValue> = {};
 
-  if (action.operation === "set") return clampNumberIfNeeded(action.value, definition?.min, definition?.max);
+  for (const definition of agent.detail.variableDefinitions) {
+    const value = output[definition.key];
+    if (value === undefined || value === null) {
+      if (definition.required)
+        throw new Error(
+          `Required Prime Figure variable is missing: ${definition.key}`,
+        );
+      if (current[definition.key] !== undefined)
+        next[definition.key] = current[definition.key];
+      continue;
+    }
 
-  const current = typeof currentValue === "number" ? currentValue : 0;
-  const delta = typeof action.value === "number" ? action.value : Number(action.value);
-  if (!Number.isFinite(delta)) throw new Error(`Variable delta must be numeric: ${action.key}`);
+    if (definition.type === "string") {
+      if (typeof value !== "string")
+        throw new Error(`Variable ${definition.key} must be a string.`);
+      next[definition.key] = value;
+      continue;
+    }
+    if (definition.type === "number") {
+      if (typeof value !== "number" || !Number.isFinite(value))
+        throw new Error(`Variable ${definition.key} must be a finite number.`);
+      next[definition.key] = Math.min(
+        Math.max(value, definition.min ?? Number.NEGATIVE_INFINITY),
+        definition.max ?? Number.POSITIVE_INFINITY,
+      );
+      continue;
+    }
+    if (definition.type === "boolean") {
+      if (typeof value !== "boolean")
+        throw new Error(`Variable ${definition.key} must be a boolean.`);
+      next[definition.key] = value;
+      continue;
+    }
 
-  return clampNumberIfNeeded(action.operation === "increment" ? current + delta : current - delta, definition?.min, definition?.max);
-}
+    if (typeof value === "string") {
+      try {
+        next[definition.key] = JSON.parse(value) as PrimeFigureVariableValue;
+      } catch {
+        throw new Error(`Variable ${definition.key} must contain valid JSON.`);
+      }
+    } else {
+      next[definition.key] = value;
+    }
+  }
 
-function clampNumberIfNeeded(value: PrimeFigureVariableValue, min?: number, max?: number) {
-  if (typeof value !== "number") return value;
-  return Math.min(Math.max(value, min ?? Number.NEGATIVE_INFINITY), max ?? Number.POSITIVE_INFINITY);
-}
-
-function describeContent(content: PrimeMessageContent) {
-  if (content.type === "text") return content.text;
-  if (content.type === "image") return content.description;
-  if (content.type === "video") return content.description;
-  if (content.type === "voice") return content.transcript;
-  if (content.type === "sticker") return content.description;
-  return `${content.direction === "received" ? "Received" : "Paid"} ${content.currency} ${content.amount}`;
+  return next;
 }
