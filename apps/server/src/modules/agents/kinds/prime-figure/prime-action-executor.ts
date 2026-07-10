@@ -14,6 +14,7 @@ import { AppPushService } from "../../../realtime/delivery.service.js";
 import { PrimeActionLogRepository } from "./prime-action-log.repository.js";
 import { PrimeMessageRepository } from "./prime-message.repository.js";
 import { PrimeFigureStateRepository } from "./prime-figure-state.repository.js";
+import { PrimeFigureRepository } from "./prime-figure.repository.js";
 import { parseReadableMinute } from "./prime-time.js";
 
 export class PrimeActionExecutor {
@@ -21,6 +22,7 @@ export class PrimeActionExecutor {
 
   constructor(
     private readonly states = new PrimeFigureStateRepository(),
+    private readonly figures = new PrimeFigureRepository(),
     private readonly primeMessages = new PrimeMessageRepository(),
     private readonly messages = new MessageRepository(),
     private readonly logs = new PrimeActionLogRepository(),
@@ -37,7 +39,9 @@ export class PrimeActionExecutor {
     providerId: string;
     model: string;
   }) {
-    const decision = primeFigureDecisionSchema.parse(input.decision);
+    const decision = primeFigureDecisionSchema.parse(
+      input.decision,
+    ) as PrimeFigureDecision;
     const now = Date.now();
     const state: PrimeFigureState = {
       ...input.state,
@@ -54,62 +58,88 @@ export class PrimeActionExecutor {
       ),
       mood: decision.figureMood,
       moodObservedAtMs: now,
+      relationshipStatus:
+        decision.stateUpdates?.relationshipStatus ??
+        input.state.relationshipStatus,
       updatedAt: now,
     };
-    let createdMessage: Message | undefined;
+    const createdMessages: Message[] = [];
 
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      if (decision.action.type === "send_message") {
+      const silenceAction = decision.actions.find(
+        (action) => action.type === "silence",
+      );
+      if (!silenceAction) {
         delete state.silenceStartedAtMs;
         delete state.silenceUntilMs;
 
-        const primeMessage = this.primeMessages.save({
-          ownerUserId: input.ownerUserId,
-          agentId: input.agent.id,
-          conversationId: input.conversationId,
-          sender: "prime_figure",
-          direction: "outgoing",
-          content: decision.action.message,
-          occurredAtMs: now,
-          timezone: input.agent.detail.schedule.timezone,
+        decision.actions.forEach((action, index) => {
+          if (action.type !== "send_message") return;
+          const occurredAtMs = now + index;
+          const primeMessage = this.primeMessages.save({
+            ownerUserId: input.ownerUserId,
+            agentId: input.agent.id,
+            conversationId: input.conversationId,
+            sender: "prime_figure",
+            direction: "outgoing",
+            content: action.message,
+            occurredAtMs,
+            timezone: input.agent.detail.schedule.timezone,
+          });
+          createdMessages.push(
+            this.messages.save({
+              ownerUserId: input.ownerUserId,
+              id: `msg_${randomUUID()}`,
+              conversationId: input.conversationId,
+              role: "assistant",
+              contentType: "text",
+              content: { text: action.message.text },
+              status: "delivered",
+              providerId: input.providerId,
+              model: input.model,
+              metadata: {
+                kind: "prime_figure",
+                primeMessageId: primeMessage.id,
+              },
+              createdAt: occurredAtMs,
+              updatedAt: occurredAtMs,
+            }),
+          );
         });
-        createdMessage = this.messages.save({
-          ownerUserId: input.ownerUserId,
-          id: `msg_${randomUUID()}`,
-          conversationId: input.conversationId,
-          role: "assistant",
-          contentType: "text",
-          content: { text: decision.action.message.text },
-          status: "delivered",
-          providerId: input.providerId,
-          model: input.model,
-          metadata: { kind: "prime_figure", primeMessageId: primeMessage.id },
-          createdAt: now,
-          updatedAt: now,
-        });
+        const lastMessage = decision.actions.at(-1);
+        if (lastMessage?.type !== "send_message")
+          throw new Error("Prime Figure send action list is invalid.");
         this.conversations.updatePreview({
           ownerUserId: input.ownerUserId,
           conversationId: input.conversationId,
-          preview: decision.action.message.text,
-          updatedAt: now,
-          incrementUnread: true,
+          preview: lastMessage.message.text,
+          updatedAt: now + decision.actions.length - 1,
+          unreadIncrement: decision.actions.length,
         });
       } else {
         state.silenceStartedAtMs = now;
         state.silenceUntilMs =
-          now + decision.action.revisitAfterMinutes * 60_000;
+          now + silenceAction.revisitAfterMinutes * 60_000;
       }
 
+      this.figures.applyRuntimeUpdates(
+        input.agent.id,
+        input.agent.detail,
+        decision.stateUpdates ?? {},
+      );
       this.states.save(input.ownerUserId, input.agent.id, state);
-      this.logs.save({
-        ownerUserId: input.ownerUserId,
-        agentId: input.agent.id,
-        conversationId: input.conversationId,
-        action: decision.action,
-        status: "applied",
-        now,
-      });
+      decision.actions.forEach((action) =>
+        this.logs.save({
+          ownerUserId: input.ownerUserId,
+          agentId: input.agent.id,
+          conversationId: input.conversationId,
+          action,
+          rationale: decision.rationale,
+          status: "applied",
+          now,
+        }),
+      );
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -117,7 +147,8 @@ export class PrimeActionExecutor {
         ownerUserId: input.ownerUserId,
         agentId: input.agent.id,
         conversationId: input.conversationId,
-        action: decision.action,
+        action: { type: "prime_decision", actions: decision.actions },
+        rationale: decision.rationale,
         status: "failed",
         errorMessage:
           error instanceof Error
@@ -127,7 +158,7 @@ export class PrimeActionExecutor {
       throw error;
     }
 
-    if (createdMessage)
+    for (const createdMessage of createdMessages)
       this.appPush.pushToUser(input.ownerUserId, {
         type: "message.created",
         message: createdMessage,

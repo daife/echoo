@@ -10,6 +10,7 @@ export class PrimeActionLogRepository {
     agentId: string;
     conversationId: string;
     action: PrimeFigureAction | { type: string; [key: string]: unknown };
+    rationale?: string;
     status: "applied" | "failed";
     errorMessage?: string;
     now?: number;
@@ -26,11 +27,12 @@ export class PrimeActionLogRepository {
             conversation_id,
             action_type,
             action_json,
+            rationale,
             status,
             error_message,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       )
       .run(
@@ -40,6 +42,7 @@ export class PrimeActionLogRepository {
         input.conversationId,
         input.action.type,
         JSON.stringify(input.action),
+        input.rationale ?? null,
         input.status,
         input.errorMessage ?? null,
         now,

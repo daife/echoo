@@ -50,8 +50,9 @@ export class ConversationRepository {
     ownerUserId: string;
     conversationId: string;
     preview: string | null;
-    updatedAt: number;
-    incrementUnread?: boolean;
+      updatedAt: number;
+      incrementUnread?: boolean;
+      unreadIncrement?: number;
   }) {
     this.db
       .prepare(
@@ -64,7 +65,13 @@ export class ConversationRepository {
           WHERE owner_user_id = ? AND id = ?
         `
       )
-      .run(input.preview, input.incrementUnread ? 1 : 0, input.updatedAt, input.ownerUserId, input.conversationId);
+        .run(
+          input.preview,
+          input.unreadIncrement ?? (input.incrementUnread ? 1 : 0),
+          input.updatedAt,
+          input.ownerUserId,
+          input.conversationId,
+        );
   }
 
   deleteForOwner(ownerUserId: string, conversationId: string) {

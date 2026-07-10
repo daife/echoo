@@ -23,6 +23,7 @@ import {
   describeAge,
   findScheduleSegment,
   formatReadableMinute,
+  formatWeekdayCode,
 } from "./prime-time.js";
 
 const PRIME_CONTEXT_MESSAGE_LIMIT = 18;
@@ -312,7 +313,7 @@ function buildPrimeChatMessages(
       role: "user",
       content: JSON.stringify({
         now: formatReadableMinute(now, timezone),
-        timezone,
+        weekday: formatWeekdayCode(now, timezone),
         figureNow: {
           mood: state.mood
             ? `Figure当前情绪：“${state.mood}”。该判断形成于${describeAge(state.moodObservedAtMs, now)}。`
@@ -349,7 +350,9 @@ function buildSystemPrompt(agent: PrimeFigureAgent) {
     "Your purpose is not to satisfy, comfort, retain, or please the enduser. Decide what this Figure would genuinely think and do.",
     "First write a concise Figure-centered rationale. Analyze the Figure's own mood, motives, schedule, memories, reluctance, desires, and boundaries.",
     "Do not classify enduser intent. Do not output userIntent, relationshipSignal, riskLevel, hidden chain-of-thought, or per-action rationale.",
-    "The Figure may reply or remain silent. The single action must be exactly one of send_message or silence, never both.",
+    "The Figure may send one or more messages, or remain silent. Recommend 1-3 send_message actions per decision; an emotionally agitated Figure may send more when authentic.",
+    "send_message and silence are mutually exclusive. If silence is selected, it must be the only action. Otherwise every action must be send_message, in delivery order.",
+    "Use the optional stateUpdates object only for genuine changes to currentSituation, schedule, itinerary, or relationshipStatus. Each field may be omitted or null to retain its current value.",
     "A stored mood is historical evidence, not an instruction to keep it forever. Consider how long ago it was observed.",
     "Memory eventAt is when the remembered event belongs in the Figure's timeline. Copy a visible YYYY-MM-DDTHH:mm time when defensible; otherwise use null.",
     "All visible exact times use YYYY-MM-DDTHH:mm in the Figure's timezone. Never invent a more precise or unsupported time.",
@@ -417,7 +420,7 @@ function buildPrimeDecisionResponseFormat(
   return {
     type: "json_schema",
     json_schema: {
-      name: "prime_figure_decision_v2",
+      name: "prime_figure_decision_v3",
       strict: true,
       schema: {
         type: "object",
@@ -479,59 +482,50 @@ function buildPrimeDecisionResponseFormat(
               additionalProperties: false,
             },
           },
-          action: {
+          stateUpdates: {
+            type: "object",
             description:
-              "The Figure's single outward action. Sending and silence are mutually exclusive.",
+              "Optional persistent Figure context changes. Omit this object when nothing changes; omit a field or use null to retain that field.",
+            properties: {
+              currentSituation: nullableStringSchema(
+                "A complete replacement for the Figure's current situation, or null to retain it.",
+                4000,
+              ),
+              schedule: {
+                description:
+                  "A complete replacement schedule in the Figure timezone, or null to retain it.",
+                anyOf: [buildScheduleOutputSchema(), { type: "null" }],
+              },
+              itinerary: nullableStringSchema(
+                "A complete replacement itinerary, or null to retain it.",
+                8000,
+              ),
+              relationshipStatus: nullableStringSchema(
+                "The Figure's updated relationship status with the enduser, or null to retain it.",
+                500,
+              ),
+            },
+            additionalProperties: false,
+          },
+          actions: {
+            description:
+              "Ordered outward actions. Prefer 1-3 messages; emotional agitation may justify more. Silence must appear alone and never with send_message.",
             anyOf: [
               {
-                type: "object",
-                description: "Send one text message now as the Figure.",
-                properties: {
-                  type: {
-                    const: "send_message",
-                    description: "Select immediate Figure message delivery.",
-                  },
-                  message: {
-                    type: "object",
-                    description:
-                      "Text message authored in the Figure's authentic voice.",
-                    properties: {
-                      type: {
-                        const: "text",
-                        description: "Text content type.",
-                      },
-                      text: {
-                        type: "string",
-                        description:
-                          "The exact text the Figure sends to the enduser.",
-                      },
-                    },
-                    required: ["type", "text"],
-                    additionalProperties: false,
-                  },
-                },
-                required: ["type", "message"],
-                additionalProperties: false,
+                type: "array",
+                description:
+                  "One or more text messages sent in this exact order.",
+                minItems: 1,
+                maxItems: 12,
+                items: buildSendMessageActionSchema(),
               },
               {
-                type: "object",
+                type: "array",
                 description:
-                  "Remain silent and suppress new LLM packets until the revisit period ends.",
-                properties: {
-                  type: {
-                    const: "silence",
-                    description: "Select temporary Figure silence.",
-                  },
-                  revisitAfterMinutes: {
-                    type: "integer",
-                    description:
-                      "Minutes before queued enduser messages may trigger one coalesced decision packet.",
-                    minimum: 1,
-                    maximum: 10080,
-                  },
-                },
-                required: ["type", "revisitAfterMinutes"],
-                additionalProperties: false,
+                  "Exactly one silence action, with no message actions.",
+                minItems: 1,
+                maxItems: 1,
+                items: buildSilenceActionSchema(),
               },
             ],
           },
@@ -541,11 +535,126 @@ function buildPrimeDecisionResponseFormat(
           "figureMood",
           "variables",
           "memoryWrites",
-          "action",
+          "actions",
         ],
         additionalProperties: false,
       },
     },
+  } as const;
+}
+
+function nullableStringSchema(description: string, maxLength: number) {
+  return {
+    description,
+    anyOf: [
+      { type: "string", maxLength, description: "Replacement text." },
+      { type: "null", description: "Retain the existing value." },
+    ],
+  } as const;
+}
+
+function buildScheduleOutputSchema() {
+  return {
+    type: "object",
+    description: "The Figure's complete weekly schedule.",
+    properties: {
+      timezone: {
+        type: "string",
+        description: "A valid IANA timezone such as Asia/Shanghai.",
+      },
+      segments: {
+        type: "array",
+        description: "Weekly schedule segments.",
+        maxItems: 100,
+        items: {
+          type: "object",
+          description: "One recurring weekly schedule segment.",
+          properties: {
+            label: { type: "string", description: "Short segment name." },
+            days: {
+              type: "array",
+              description: "Active weekdays.",
+              minItems: 1,
+              maxItems: 7,
+              items: {
+                type: "string",
+                enum: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+                description: "Lowercase weekday code.",
+              },
+            },
+            start: {
+              type: "string",
+              pattern: "^([01]\\d|2[0-3]):[0-5]\\d$",
+              description: "Start time in HH:mm.",
+            },
+            end: {
+              type: "string",
+              pattern: "^([01]\\d|2[0-3]):[0-5]\\d$",
+              description: "End time in HH:mm.",
+            },
+            description: {
+              type: "string",
+              description: "What the Figure normally does in this segment.",
+            },
+          },
+          required: ["label", "days", "start", "end", "description"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["timezone", "segments"],
+    additionalProperties: false,
+  } as const;
+}
+
+function buildSendMessageActionSchema() {
+  return {
+    type: "object",
+    description: "Send one text message now as the Figure.",
+    properties: {
+      type: {
+        const: "send_message",
+        description: "Select immediate Figure message delivery.",
+      },
+      message: {
+        type: "object",
+        description: "Text message authored in the Figure's authentic voice.",
+        properties: {
+          type: { const: "text", description: "Text content type." },
+          text: {
+            type: "string",
+            description: "The exact text the Figure sends to the enduser.",
+          },
+        },
+        required: ["type", "text"],
+        additionalProperties: false,
+      },
+    },
+    required: ["type", "message"],
+    additionalProperties: false,
+  } as const;
+}
+
+function buildSilenceActionSchema() {
+  return {
+    type: "object",
+    description:
+      "Remain silent and suppress new LLM packets until the revisit period ends.",
+    properties: {
+      type: {
+        const: "silence",
+        description: "Select temporary Figure silence.",
+      },
+      revisitAfterMinutes: {
+        type: "integer",
+        description:
+          "Minutes before queued enduser messages may trigger one coalesced decision packet.",
+        minimum: 1,
+        maximum: 10080,
+      },
+    },
+    required: ["type", "revisitAfterMinutes"],
+    additionalProperties: false,
   } as const;
 }
 

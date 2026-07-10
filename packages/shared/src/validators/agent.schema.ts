@@ -310,7 +310,28 @@ export const primeFigureDecisionSchema = z.object({
       }),
     )
     .max(8),
-  action: primeFigureActionSchema,
+  stateUpdates: z
+    .object({
+      currentSituation: z.string().trim().max(4000).nullish(),
+      schedule: primeFigureScheduleSchema.nullish(),
+      itinerary: z.string().trim().max(8000).nullish(),
+      relationshipStatus: z.string().trim().max(500).nullish(),
+    })
+    .optional()
+    .default({}),
+  actions: z
+    .array(primeFigureActionSchema)
+    .min(1)
+    .max(12)
+    .superRefine((actions, context) => {
+      const containsSilence = actions.some((action) => action.type === "silence");
+      if (containsSilence && actions.length !== 1) {
+        context.addIssue({
+          code: "custom",
+          message: "silence must be the only action in a decision.",
+        });
+      }
+    }),
 });
 
 export const updateSliceFigureSchema = createSliceFigureSchema.omit({

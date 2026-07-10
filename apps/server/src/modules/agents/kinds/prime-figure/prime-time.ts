@@ -19,6 +19,11 @@ export function formatReadableMinute(timestampMs: number, timezone: string) {
   return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}`;
 }
 
+export function formatWeekdayCode(timestampMs: number, timezone: string) {
+  const parts = getDateTimeParts(timestampMs, timezone);
+  return WEEKDAYS[parts.weekday] ?? "sun";
+}
+
 export function parseReadableMinute(value: string, timezone: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
   if (!match) return null;

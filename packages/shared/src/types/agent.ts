@@ -258,6 +258,13 @@ export type PrimeFigureAction =
       revisitAfterMinutes: number;
     };
 
+export interface PrimeFigureStateUpdates {
+  currentSituation?: string | null;
+  schedule?: PrimeFigureSchedule | null;
+  itinerary?: string | null;
+  relationshipStatus?: string | null;
+}
+
 export interface PrimeFigureDecision {
   rationale: string;
   figureMood: string;
@@ -266,7 +273,10 @@ export interface PrimeFigureDecision {
     content: string;
     eventAt: string | null;
   }>;
-  action: PrimeFigureAction;
+  stateUpdates?: PrimeFigureStateUpdates;
+  actions:
+    | [Extract<PrimeFigureAction, { type: "send_message" }>, ...Array<Extract<PrimeFigureAction, { type: "send_message" }>>]
+    | [Extract<PrimeFigureAction, { type: "silence" }>];
 }
 
 export interface CreateAgentResponse {

@@ -128,10 +128,33 @@ test("Prime Figure V2 runs strict reply, recall, and persisted silence end to en
       figureMood: "平静但克制",
       variables: { trust: 41 },
       memoryWrites: [],
-      action: {
-        type: "send_message",
-        message: { type: "text", text: "没有，只是刚才不太想说话。" },
+      stateUpdates: {
+        currentSituation: "刚结束一段令人疲惫的对话。",
+        schedule: {
+          timezone: "Asia/Shanghai",
+          segments: [
+            {
+              label: "晚间休息",
+              days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+              start: "21:00",
+              end: "23:59",
+              description: "减少社交，准备休息。",
+            },
+          ],
+        },
+        itinerary: "2026-07-13T10:00 处理个人事务。",
+        relationshipStatus: "熟悉，但暂时需要一点距离",
       },
+      actions: [
+        {
+          type: "send_message",
+          message: { type: "text", text: "没有。" },
+        },
+        {
+          type: "send_message",
+          message: { type: "text", text: "只是刚才不太想说话。" },
+        },
+      ],
     };
     const firstProvider = new FakeProvider([result(firstDecision)]);
     await createRuntime(firstProvider).requestDecision({
@@ -179,7 +202,7 @@ test("Prime Figure V2 runs strict reply, recall, and persisted silence end to en
       new MessageRepository()
         .listByConversation("user_prime_test", agent.conversationId)
         .at(-1)?.content.text,
-      "没有，只是刚才不太想说话。",
+      "只是刚才不太想说话。",
     );
     assert.equal(
       states.findByAgent("user_prime_test", agent.id)?.mood,
@@ -188,6 +211,60 @@ test("Prime Figure V2 runs strict reply, recall, and persisted silence end to en
     assert.equal(
       states.findByAgent("user_prime_test", agent.id)?.variables.trust,
       41,
+    );
+    assert.equal(
+      states.findByAgent("user_prime_test", agent.id)?.relationshipStatus,
+      "熟悉，但暂时需要一点距离",
+    );
+    const updatedAgent = new AgentRepository().findById(
+      "user_prime_test",
+      agent.id,
+    );
+    assert.equal(
+      updatedAgent?.type === "prime-figure"
+        ? updatedAgent.detail.currentSituation
+        : undefined,
+      "刚结束一段令人疲惫的对话。",
+    );
+    assert.equal(
+      updatedAgent?.type === "prime-figure"
+        ? updatedAgent.detail.schedule.segments[0]?.label
+        : undefined,
+      "晚间休息",
+    );
+    assert.equal(
+      updatedAgent?.type === "prime-figure"
+        ? updatedAgent.detail.itinerary
+        : undefined,
+      "2026-07-13T10:00 处理个人事务。",
+    );
+    assert.equal(
+      new MessageRepository().listByConversation(
+        "user_prime_test",
+        agent.conversationId,
+      ).filter((message) => message.role === "assistant").length,
+      2,
+      "one decision may persist multiple ordered send_message actions",
+    );
+    const packet = JSON.parse(
+      firstProvider.inputs[0]?.messages.find((message) => message.role === "user")
+        ?.content ?? "{}",
+    ) as { now?: string; weekday?: string };
+    assert.match(packet.now ?? "", /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    assert.match(packet.weekday ?? "", /^(mon|tue|wed|thu|fri|sat|sun)$/);
+    assert.equal("timezone" in packet, false);
+    assert.equal("currentTime" in packet, false);
+    const rationaleRows = getDatabase()
+      .prepare(
+        "SELECT rationale FROM prime_action_logs WHERE agent_id = ? AND action_type = 'send_message' ORDER BY created_at, id",
+      )
+      .all(agent.id) as Array<{ rationale: string | null }>;
+    assert.equal(rationaleRows.length, 2);
+    assert.ok(
+      rationaleRows.every(
+        (row) => row.rationale === firstDecision.rationale,
+      ),
+      "the decision rationale must be stored with every applied action",
     );
 
     const oldEventAt = now - 90 * 24 * 60 * 60_000;
@@ -222,10 +299,12 @@ test("Prime Figure V2 runs strict reply, recall, and persisted silence end to en
           eventAt: formatReadableMinute(oldEventAt, "Asia/Shanghai"),
         },
       ],
-      action: {
-        type: "send_message",
-        message: { type: "text", text: "白色郁金香。" },
-      },
+      actions: [
+        {
+          type: "send_message",
+          message: { type: "text", text: "白色郁金香。" },
+        },
+      ],
     };
     const recallProvider = new FakeProvider([
       {
@@ -280,7 +359,10 @@ test("Prime Figure V2 runs strict reply, recall, and persisted silence end to en
       figureMood: "烦躁并想保持距离",
       variables: { trust: 39 },
       memoryWrites: [],
-      action: { type: "silence", revisitAfterMinutes: 1 },
+      stateUpdates: {
+        relationshipStatus: "暂时不想交流",
+      },
+      actions: [{ type: "silence", revisitAfterMinutes: 1 }],
     };
     await createRuntime(
       new FakeProvider([result(silenceDecision)]),
@@ -330,10 +412,16 @@ test("Prime Figure V2 runs strict reply, recall, and persisted silence end to en
       figureMood: "冷静下来",
       variables: { trust: 40 },
       memoryWrites: [],
-      action: {
-        type: "send_message",
-        message: { type: "text", text: "现在可以说了。" },
+      stateUpdates: {
+        itinerary: "明早继续原定安排。",
+        relationshipStatus: "恢复交流",
       },
+      actions: [
+        {
+          type: "send_message",
+          message: { type: "text", text: "现在可以说了。" },
+        },
+      ],
     };
     const wakeProvider = new FakeProvider([result(wakeDecision)]);
     await createRuntime(wakeProvider).requestDecision({

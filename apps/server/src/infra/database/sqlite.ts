@@ -159,6 +159,7 @@ const schemaSql = `
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     action_type TEXT NOT NULL,
     action_json TEXT NOT NULL,
+    rationale TEXT,
     status TEXT NOT NULL CHECK (status IN ('applied', 'failed')),
     error_message TEXT,
     created_at INTEGER NOT NULL,

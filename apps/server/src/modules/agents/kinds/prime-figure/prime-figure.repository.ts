@@ -1,4 +1,9 @@
-import type { CreatePrimeFigureRequest, UpdatePrimeFigureRequest } from "@echoo/shared";
+import type {
+  CreatePrimeFigureRequest,
+  PrimeFigureDetail,
+  PrimeFigureStateUpdates,
+  UpdatePrimeFigureRequest,
+} from "@echoo/shared";
 import { getDatabase } from "../../../../infra/database/sqlite.js";
 
 export class PrimeFigureRepository {
@@ -79,6 +84,27 @@ export class PrimeFigureRepository {
         JSON.stringify(input.itinerary ?? {}),
         JSON.stringify(input.variableDefinitions ?? []),
         agentId
+      );
+  }
+
+  applyRuntimeUpdates(
+    agentId: string,
+    current: Pick<PrimeFigureDetail, "currentSituation" | "schedule" | "itinerary">,
+    updates: PrimeFigureStateUpdates = {},
+  ) {
+    this.db
+      .prepare(
+        `
+          UPDATE agent_prime_figures
+          SET current_situation = ?, schedule_json = ?, itinerary_json = ?
+          WHERE agent_id = ?
+        `,
+      )
+      .run(
+        updates.currentSituation ?? current.currentSituation,
+        JSON.stringify(updates.schedule ?? current.schedule),
+        JSON.stringify(updates.itinerary ?? current.itinerary),
+        agentId,
       );
   }
 }
