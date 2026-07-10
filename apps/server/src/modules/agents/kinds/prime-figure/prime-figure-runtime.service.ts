@@ -565,7 +565,8 @@ function buildScheduleOutputSchema() {
       segments: {
         type: "array",
         description: "Weekly schedule segments.",
-        maxItems: 100,
+        // Keep the 100-item limit in Zod only. Gemini rejects this nested
+        // maxItems constraint as an overly complex response schema.
         items: {
           type: "object",
           description: "One recurring weekly schedule segment.",

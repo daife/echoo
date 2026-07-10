@@ -7,6 +7,7 @@ import type {
   CreatePrimeFigureRequest,
   PrimeFigureDecision,
 } from "@echoo/shared";
+import { primeFigureDecisionSchema } from "@echoo/shared";
 import {
   closeDatabase,
   getDatabase,
@@ -180,12 +181,41 @@ test("Prime Figure V2 runs strict reply, recall, and persisted silence end to en
       ).json_schema?.strict,
       true,
     );
-    assertSchemaFieldDescriptions(
-      (
-        firstProvider.inputs[0]?.responseFormat as {
-          json_schema?: { schema?: Record<string, unknown> };
-        }
-      ).json_schema?.schema ?? {},
+    const responseSchema = (
+      firstProvider.inputs[0]?.responseFormat as {
+        json_schema?: { schema?: Record<string, unknown> };
+      }
+    ).json_schema?.schema ?? {};
+    assertSchemaFieldDescriptions(responseSchema);
+    const stateUpdatesSchema = schemaProperty(responseSchema, "stateUpdates");
+    const scheduleSchema = schemaProperty(stateUpdatesSchema, "schedule");
+    const scheduleObjectSchema = (
+      scheduleSchema.anyOf as Array<Record<string, unknown>> | undefined
+    )?.find((schema) => schema.type === "object") ?? {};
+    const segmentsSchema = schemaProperty(scheduleObjectSchema, "segments");
+    assert.equal(
+      segmentsSchema.maxItems,
+      undefined,
+      "Gemini response schema must not carry the nested schedule maxItems limit",
+    );
+    assert.throws(
+      () =>
+        primeFigureDecisionSchema.parse({
+          ...firstDecision,
+          stateUpdates: {
+            schedule: {
+              timezone: "Asia/Shanghai",
+              segments: Array.from({ length: 101 }, (_, index) => ({
+                label: `时段${index}`,
+                days: ["mon"],
+                start: "09:00",
+                end: "10:00",
+                description: "测试日程",
+              })),
+            },
+          },
+        }),
+      "the server must retain the 100-segment validation limit",
     );
     const firstPacket = JSON.stringify(firstProvider.inputs[0]?.messages);
     assert.doesNotMatch(
@@ -488,4 +518,11 @@ function assertSchemaFieldDescriptions(
   variants?.forEach((variant, index) =>
     assertSchemaFieldDescriptions(variant, `${path}.anyOf[${index}]`),
   );
+}
+
+function schemaProperty(schema: Record<string, unknown>, name: string) {
+  const properties = schema.properties as
+    | Record<string, Record<string, unknown>>
+    | undefined;
+  return properties?.[name] ?? {};
 }
