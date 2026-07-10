@@ -209,7 +209,7 @@ export function useConversationMessages({
         return undefined;
       })
       .catch((loadError) => {
-        if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Failed to load messages.");
+        if (!cancelled) setError(loadError instanceof Error ? loadError.message : "加载消息失败。");
       });
 
     return () => {
@@ -278,7 +278,7 @@ export function useConversationMessages({
       });
       setMessages((current) => mergeSentTextMessageResult(current, clientMessageId, result));
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : "Failed to send message.");
+      setError(sendError instanceof Error ? sendError.message : "发送消息失败。");
       await refreshLocalMessages();
     } finally {
       setIsSending(false);
@@ -314,7 +314,7 @@ export function useConversationMessages({
       });
       setMessages((current) => mergeSentTextMessageResult(current, clientMessageId, result));
     } catch (retryError) {
-      setError(retryError instanceof Error ? retryError.message : "Retry failed.");
+      setError(retryError instanceof Error ? retryError.message : "重试失败。");
       await refreshLocalMessages();
     } finally {
       setRetryingMessageId(null);

@@ -2,21 +2,21 @@ import { CheckCircle, LinkSimple, Robot, WarningCircle } from "@phosphor-icons/r
 
 const bindings = [
   {
-    name: "Interface 01",
+    name: "接口 01",
     agent: "Aster",
-    description: "Bound to Aster's figure session. Incoming text is treated as that same session.",
+    description: "已绑定至 Aster 的角色会话，收到的文本会被视为该会话中的消息。",
     status: "active"
   },
   {
-    name: "Interface 02",
-    agent: "Unbound",
-    description: "Ready to bind to one figure session. One interface can only own one binding.",
+    name: "接口 02",
+    agent: "未绑定",
+    description: "可以绑定一个角色会话。每个接口只能拥有一个绑定。",
     status: "empty"
   },
   {
-    name: "Interface 03",
-    agent: "Unbound",
-    description: "Provider details stay in the server connector layer and are not shown in chat.",
+    name: "接口 03",
+    agent: "未绑定",
+    description: "服务商详情保留在服务端连接层，不会显示在聊天中。",
     status: "empty"
   }
 ];
@@ -25,11 +25,10 @@ export function BindingsPanel() {
   return (
     <section className="space-y-6">
       <div>
-        <p className="text-xs uppercase tracking-[0.22em] text-white/38">Bindings</p>
-        <h1 className="mt-2 text-4xl font-semibold text-white">Figure interfaces</h1>
+        <p className="text-xs uppercase tracking-[0.22em] text-white/38">绑定</p>
+        <h1 className="mt-2 text-4xl font-semibold text-white">角色接口</h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-white/52">
-          Each external interface binds to one figure session. Messages and model replies stay attached to that figure session across
-          Web, Android, iOS, Windows, and the bound interface.
+          每个外部接口绑定一个角色会话。消息和模型回复会在网页端、Android、iOS、Windows 以及已绑定接口之间始终归属于同一角色会话。
         </p>
       </div>
 
@@ -46,10 +45,10 @@ export function BindingsPanel() {
                   <div className="flex items-center gap-2">
                     <h2 className="text-lg font-semibold text-white">{binding.name}</h2>
                     <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.12em] text-white/42">
-                      {active ? "bound" : "open"}
+                      {active ? "已绑定" : "可绑定"}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm text-white/42">Figure: {binding.agent}</p>
+                  <p className="mt-1 text-sm text-white/42">角色：{binding.agent}</p>
                 </div>
                 {active ? (
                   <CheckCircle size={22} className="text-white/60" weight="duotone" />

@@ -47,7 +47,7 @@ export class PrimeFigureHandler implements PrimeFigureKindHandler {
     });
 
     const agent = this.agents.findById(ownerUserId, agentId);
-    if (!agent) throw new Error("Created Prime Figure could not be loaded.");
+    if (!agent) throw new Error("无法加载刚创建的本初角色。");
     return agent;
   }
 

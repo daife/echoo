@@ -99,7 +99,6 @@ test("Prime Figure V2 runs strict reply, recall, and persisted silence end to en
           label: "信任",
           type: "number",
           description: "Figure此刻对enduser的信任程度。",
-          required: true,
           defaultValue: 40,
           min: 0,
           max: 100,
@@ -128,7 +127,6 @@ test("Prime Figure V2 runs strict reply, recall, and persisted silence end to en
       rationale: "我已经不再生气，但仍想保持一点距离。",
       figureMood: "平静但克制",
       variables: { trust: 41 },
-      memoryWrites: [],
       stateUpdates: {
         currentSituation: "刚结束一段令人疲惫的对话。",
         schedule: {

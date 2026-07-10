@@ -33,7 +33,7 @@ export class SliceFigureHandler implements SliceFigureKindHandler {
     });
 
     const agent = this.agents.findById(ownerUserId, agentId);
-    if (!agent) throw new Error("Created Slice Figure could not be loaded.");
+    if (!agent) throw new Error("无法加载刚创建的切片角色。");
     return agent;
   }
 
@@ -59,4 +59,3 @@ export class SliceFigureHandler implements SliceFigureKindHandler {
     return this.agents.findById(ownerUserId, agentId);
   }
 }
-

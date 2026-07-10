@@ -43,7 +43,7 @@ export class ResourceRepository {
 
     const buffer = Buffer.from(stripDataUrlPrefix(upload.dataBase64), "base64");
     if (buffer.length === 0) throw new Error("Image is empty.");
-    if (buffer.length > 5 * 1024 * 1024) throw new Error("Image must be 5MB or smaller.");
+    if (buffer.length > 5 * 1024 * 1024) throw new Error("图片大小不能超过 5MB。");
 
     const id = `res_${randomUUID()}`;
     const originalExtension = extname(upload.fileName).toLowerCase();

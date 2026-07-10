@@ -80,7 +80,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     try {
       return await action();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Something went wrong.";
+      const message = error instanceof Error ? error.message : "发生了意外错误。";
       setAuthError(message);
       throw error;
     }

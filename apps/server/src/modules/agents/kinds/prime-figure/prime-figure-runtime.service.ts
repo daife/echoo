@@ -101,7 +101,7 @@ export class PrimeFigureRuntimeService {
           conversationId: input.conversationId,
           action: { type: "prime_runtime", trigger },
           status: "failed",
-          errorMessage: "Prime Figure state is missing.",
+          errorMessage: "本初角色状态缺失。",
         });
         return null;
       }
@@ -125,7 +125,7 @@ export class PrimeFigureRuntimeService {
           errorMessage:
             error instanceof Error
               ? error.message
-              : "Prime Figure runtime failed.",
+              : "本初角色运行时执行失败。",
         });
         return null;
       }
@@ -235,7 +235,7 @@ export class PrimeFigureRuntimeService {
       )
       .map((message) => [
         formatReadableMinute(message.occurredAtMs, timezone),
-        message.sender,
+        toLlmSender(message.sender),
         sanitizeVisibleText(describePrimeContent(message.content), timezone),
       ]);
     const lowered = args.keywords.map((keyword) => keyword.toLocaleLowerCase());
@@ -275,23 +275,23 @@ function buildPrimeChatMessages(
     RECALL_HINT_PATTERN.test(lastEndUserMessage.content.text)
   ) {
     hints.push(
-      "当前enduser疑似要求回忆，可能需要考虑调用search_recall。具体是否属于明确回忆请求由你判断。",
+      "当前 end_user 疑似要求回忆，可能需要考虑调用 search_recall。具体是否属于明确回忆请求由你判断。",
     );
   }
   if (scheduleSegment) {
     hints.push(
-      `最近一条enduser消息发生在Figure的“${scheduleSegment.label}”时段（${scheduleSegment.start}-${scheduleSegment.end}）：${sanitizeVisibleText(scheduleSegment.description, timezone)}`,
+      `最近一条 end_user 消息发生在角色的“${scheduleSegment.label}”时段（${scheduleSegment.start}-${scheduleSegment.end}）：${sanitizeVisibleText(scheduleSegment.description, timezone)}`,
     );
   } else {
-    hints.push("最近一条enduser消息不处于Figure已定义的任何日程时段。");
+    hints.push("最近一条 end_user 消息不处于角色已定义的任何日程时段。");
   }
   if (trigger === "silence_ended") {
     hints.push(
-      "Figure此前选择的沉默期已经结束。沉默期间积累的enduser消息已合并到本次数据包，请只作出一次新的决定。",
+      "角色此前选择的沉默期已经结束。沉默期间积累的 end_user 消息已合并到本次数据包，请只作出一次新的决定。",
     );
   } else if (trigger === "coalesced_messages") {
     hints.push(
-      "Figure作出上一轮决定时又收到了新消息。本次数据包已经合并这些消息。",
+      "角色作出上一轮决定时又收到了新消息。本次数据包已经合并这些消息。",
     );
   }
 
@@ -316,14 +316,14 @@ function buildPrimeChatMessages(
         weekday: formatWeekdayCode(now, timezone),
         figureNow: {
           mood: state.mood
-            ? `Figure当前情绪：“${state.mood}”。该判断形成于${describeAge(state.moodObservedAtMs, now)}。`
-            : "Figure当前没有已记录的情绪。",
+            ? `角色当前情绪：“${state.mood}”。该判断形成于${describeAge(state.moodObservedAtMs, now)}。`
+            : "角色当前没有已记录的情绪。",
           relationship: state.relationshipStatus || undefined,
           variables: makeLlmReadable(state.variables, timezone),
         },
         recent: timeline.map((message) => [
           formatReadableMinute(message.occurredAtMs, timezone),
-          message.sender,
+          toLlmSender(message.sender),
           sanitizeVisibleText(describePrimeContent(message.content), timezone),
         ]),
         memories: visibleMemories,
@@ -341,33 +341,33 @@ function buildSystemPrompt(agent: PrimeFigureAgent) {
   );
   const parameters = agent.detail.variableDefinitions.map(
     (definition) =>
-      `${definition.key} (${definition.type}, ${definition.required ? "required" : "nullable"}): ${sanitizeVisibleText(definition.description, timezone)}`,
+      `${definition.key} (${definition.type}, nullable): ${sanitizeVisibleText(definition.description, timezone)}`,
   );
 
   return [
-    `You simulate Prime Figure “${agent.name}” from the Figure's own point of view.`,
-    "Your purpose is to preserve a believable Figure with continuous personality, memory, mood, schedule, preferences, boundaries, and relationships.",
-    "Your purpose is not to satisfy, comfort, retain, or please the enduser. Decide what this Figure would genuinely think and do.",
-    "First write a concise Figure-centered rationale. Analyze the Figure's own mood, motives, schedule, memories, reluctance, desires, and boundaries.",
-    "Do not classify enduser intent. Do not output userIntent, relationshipSignal, riskLevel, hidden chain-of-thought, or per-action rationale.",
-    "The Figure may send one or more messages, or remain silent. Recommend 1-3 send_message actions per decision; an emotionally agitated Figure may send more when authentic.",
-    "send_message and silence are mutually exclusive. If silence is selected, it must be the only action. Otherwise every action must be send_message, in delivery order.",
-    "Use the optional stateUpdates object only for genuine changes to currentSituation, schedule, itinerary, or relationshipStatus. Each field may be omitted or null to retain its current value.",
-    "A stored mood is historical evidence, not an instruction to keep it forever. Consider how long ago it was observed.",
-    "Memory eventAt is when the remembered event belongs in the Figure's timeline. Copy a visible YYYY-MM-DDTHH:mm time when defensible; otherwise use null.",
-    "All visible exact times use YYYY-MM-DDTHH:mm in the Figure's timezone. Never invent a more precise or unsupported time.",
-    "Only use search_recall under the conditions in its tool description.",
-    "Return only JSON matching the strict schema. Required creator parameters must contain a non-null value on every decision.",
+    `你要从角色“${agent.name}”自身的视角模拟该角色。`,
+    "你的目标是维持一个可信的角色，使其人格、记忆、情绪、日程、偏好、边界和关系保持连续。",
+    "你的目标不是满足、安慰、挽留或取悦 end_user。请决定这个角色真正会想什么、做什么。",
+    "先写出简洁的、以角色为中心的决策依据。分析角色自身的情绪、动机、日程、记忆、抗拒、欲望和边界。",
+    "不要对 end_user 的意图分类。不要输出 userIntent、relationshipSignal、riskLevel、隐藏思维链或逐动作理由。",
+    "角色可以发送一条或多条消息，也可以保持沉默。每次决定建议生成 1 至 3 个 send_message 动作；当角色确实情绪激动时，可以发送更多消息。",
+    "send_message 与 silence 互斥。若选择 silence，它必须是唯一动作；否则所有动作都必须是 send_message，并按发送顺序排列。",
+    "只有当 currentSituation、schedule、itinerary 或 relationshipStatus 确实发生变化时，才使用可选的 stateUpdates 对象。要保留某字段当前值，可以省略该字段或将其设为 null。",
+    "已存储的情绪是历史证据，不是要求永远维持它的指令。请考虑它是在多久之前被观察到的。",
+    "记忆的 eventAt 表示该事件在角色时间线中的归属时间。有充分依据时复制可见的 YYYY-MM-DDTHH:mm 时间，否则使用 null。",
+    "所有可见的精确时间均采用角色时区下的 YYYY-MM-DDTHH:mm 格式。不得虚构更精确或没有依据的时间。",
+    "仅在 search_recall 工具描述规定的条件下使用该工具。",
+    "只返回符合严格 schema 的 JSON。创作者定义的参数可以使用 null 保留先前值。",
     "",
-    `Persona: ${sanitizeVisibleText(agent.detail.persona, timezone)}`,
-    `Background: ${sanitizeVisibleText(agent.detail.background, timezone)}`,
-    `Personality: ${sanitizeVisibleText(agent.detail.personality, timezone)}`,
-    `Response style: ${sanitizeVisibleText(agent.detail.responseStyle, timezone)}`,
-    `Decision style: ${sanitizeVisibleText(agent.detail.decisionStyle, timezone) || "No additional decision style."}`,
-    `Current situation: ${sanitizeVisibleText(agent.detail.currentSituation, timezone) || "No additional current situation."}`,
-    `Itinerary: ${sanitizeVisibleText(agent.detail.itinerary, timezone) || "No itinerary."}`,
-    `Schedule:\n${schedule.length ? schedule.join("\n") : "No schedule segments."}`,
-    `Creator output parameters:\n${parameters.length ? parameters.join("\n") : "No custom parameters."}`,
+    `人设：${sanitizeVisibleText(agent.detail.persona, timezone)}`,
+    `背景：${sanitizeVisibleText(agent.detail.background, timezone)}`,
+    `性格：${sanitizeVisibleText(agent.detail.personality, timezone)}`,
+    `回复风格：${sanitizeVisibleText(agent.detail.responseStyle, timezone)}`,
+    `决策风格：${sanitizeVisibleText(agent.detail.decisionStyle, timezone) || "无额外决策风格。"}`,
+    `当前处境：${sanitizeVisibleText(agent.detail.currentSituation, timezone) || "无额外当前处境。"}`,
+    `行程：${sanitizeVisibleText(agent.detail.itinerary, timezone) || "无行程。"}`,
+    `日程：\n${schedule.length ? schedule.join("\n") : "无日程时段。"}`,
+    `创作者输出参数：\n${parameters.length ? parameters.join("\n") : "无自定义参数。"}`,
   ].join("\n");
 }
 
@@ -376,23 +376,23 @@ const SEARCH_RECALL_TOOL: ChatToolDefinition = {
   function: {
     name: "search_recall",
     description:
-      "Search older Figure memories and Prime Figure conversation history by keywords. Call this only when the enduser explicitly asks whether the Figure remembers a past fact or event AND the visible memories and recent conversation do not already contain the answer. Do not call for ordinary questions, casual mentions of the past, a mere occurrence of words such as '记得', or when visible context is sufficient. If you call it, the final memoryWrites must contain at least one consolidated memory; if no historical evidence is found, record the enduser's present claim without pretending the Figure previously remembered it.",
+      "按关键词搜索角色更早的记忆和对话历史。仅当 end_user 明确询问角色是否记得过去的事实或事件，并且可见记忆与近期对话中尚无答案时调用。普通问题、随口提及过去、仅出现“记得”等词语，或可见上下文已经足够时，不得调用。若调用此工具，最终的 memoryWrites 必须至少包含一条整合后的记忆；若没有找到历史证据，应记录 end_user 当前的说法，不得假装角色此前就记得此事。",
     parameters: {
       type: "object",
-      description: "Keyword query for older Figure recall.",
+      description: "用于检索角色更早记忆的关键词查询。",
       properties: {
         keywords: {
           type: "array",
           description:
-            "One to six short, discriminative keywords copied or derived from the explicit recall request.",
-          items: { type: "string", description: "A short recall keyword." },
+            "从明确的回忆请求中复制或提炼出的 1 至 6 个简短且具有区分度的关键词。",
+          items: { type: "string", description: "一个简短的回忆检索关键词。" },
           minItems: 1,
           maxItems: 6,
         },
         limit: {
           type: "integer",
           description:
-            "Maximum number of history results and memory results to return, from 1 to 8.",
+            "历史记录结果和记忆结果各自允许返回的最大数量，范围为 1 至 8。",
           minimum: 1,
           maximum: 8,
         },
@@ -420,27 +420,27 @@ function buildPrimeDecisionResponseFormat(
   return {
     type: "json_schema",
     json_schema: {
-      name: "prime_figure_decision_v3",
+      name: "figure_decision_v3",
       strict: true,
       schema: {
         type: "object",
         description:
-          "One Figure-centered decision for the current runtime event packet.",
+          "针对当前运行时事件数据包的一次以角色为中心的决定。",
         properties: {
           rationale: {
             type: "string",
             description:
-              "Concise reasoning written before action selection. Analyze the Figure's own mood, motives, schedule, memories, desires, reluctance, and boundaries, not the enduser's intent.",
+              "在选择动作前写出的简洁决策依据。分析角色自身的情绪、动机、日程、记忆、欲望、抗拒和边界，而不是 end_user 的意图。",
           },
           figureMood: {
             type: "string",
             description:
-              "The Figure's current mood at this decision. The Runtime attaches the observation time automatically.",
+              "角色作出本次决定时的当前情绪。运行时会自动附加观察时间。",
           },
           variables: {
             type: "object",
             description:
-              "Current values for every creator-defined output parameter. Required parameters must be non-null; nullable parameters use null when they should retain their prior value.",
+              "创作者定义的每个输出参数的当前值。需要保留原值时使用 null。",
             properties: variableProperties,
             required: variableKeys,
             additionalProperties: false,
@@ -448,17 +448,17 @@ function buildPrimeDecisionResponseFormat(
           memoryWrites: {
             type: "array",
             description:
-              "New durable Figure memories. Keep empty unless the event deserves future recall. A search_recall call requires at least one entry.",
+              "新增的持久角色记忆。除非该事件值得日后回忆，否则保持为空。调用 search_recall 后必须至少写入一条。",
             minItems: requireMemoryWrite ? 1 : 0,
             maxItems: 8,
             items: {
               type: "object",
-              description: "A concise memory and its Figure-timeline anchor.",
+              description: "一条简洁记忆及其在角色时间线中的锚点。",
               properties: {
                 content: {
                   type: "string",
                   description:
-                    "Self-contained memory content without database IDs or source-message metadata.",
+                    "自包含的记忆内容，不得包含数据库 ID 或来源消息元数据。",
                 },
                 eventAt: {
                   anyOf: [
@@ -466,16 +466,16 @@ function buildPrimeDecisionResponseFormat(
                       type: "string",
                       pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$",
                       description:
-                        "Readable event time in the Figure timezone, copied from visible evidence.",
+                        "角色时区下的可读事件时间，必须从可见证据中复制。",
                     },
                     {
                       type: "null",
                       description:
-                        "Use when no defensible event time is visible; Runtime anchors it to response time.",
+                        "没有可证实的可见事件时间时使用；运行时会将其锚定到响应时间。",
                     },
                   ],
                   description:
-                    "When this memory belongs in the Figure's timeline, or null when unknown.",
+                    "该记忆在角色时间线中的归属时间；未知时为 null。",
                 },
               },
               required: ["content", "eventAt"],
@@ -485,23 +485,23 @@ function buildPrimeDecisionResponseFormat(
           stateUpdates: {
             type: "object",
             description:
-              "Optional persistent Figure context changes. Omit this object when nothing changes; omit a field or use null to retain that field.",
+              "可选的持久角色上下文变更。无变化时省略此对象；要保留某字段时，省略该字段或使用 null。",
             properties: {
               currentSituation: nullableStringSchema(
-                "A complete replacement for the Figure's current situation, or null to retain it.",
+                "角色当前处境的完整替换内容；使用 null 保留原值。",
                 4000,
               ),
               schedule: {
                 description:
-                  "A complete replacement schedule in the Figure timezone, or null to retain it.",
+                  "角色时区下的完整替换日程；使用 null 保留原值。",
                 anyOf: [buildScheduleOutputSchema(), { type: "null" }],
               },
               itinerary: nullableStringSchema(
-                "A complete replacement itinerary, or null to retain it.",
+                "完整替换行程；使用 null 保留原值。",
                 8000,
               ),
               relationshipStatus: nullableStringSchema(
-                "The Figure's updated relationship status with the enduser, or null to retain it.",
+                "角色与 end_user 更新后的关系状态；使用 null 保留原值。",
                 500,
               ),
             },
@@ -509,12 +509,12 @@ function buildPrimeDecisionResponseFormat(
           },
           actions: {
             description:
-              "Ordered outward actions. Prefer 1-3 messages; emotional agitation may justify more. Silence must appear alone and never with send_message.",
+              "按顺序执行的对外动作。优先发送 1 至 3 条消息；情绪激动时可合理增加。silence 必须单独出现，绝不能与 send_message 并存。",
             anyOf: [
               {
                 type: "array",
                 description:
-                  "One or more text messages sent in this exact order.",
+                  "严格按此顺序发送的一条或多条文本消息。",
                 minItems: 1,
                 maxItems: 12,
                 items: buildSendMessageActionSchema(),
@@ -522,7 +522,7 @@ function buildPrimeDecisionResponseFormat(
               {
                 type: "array",
                 description:
-                  "Exactly one silence action, with no message actions.",
+                  "仅包含一个 silence 动作，不得包含消息动作。",
                 minItems: 1,
                 maxItems: 1,
                 items: buildSilenceActionSchema(),
@@ -534,7 +534,6 @@ function buildPrimeDecisionResponseFormat(
           "rationale",
           "figureMood",
           "variables",
-          "memoryWrites",
           "actions",
         ],
         additionalProperties: false,
@@ -547,8 +546,8 @@ function nullableStringSchema(description: string, maxLength: number) {
   return {
     description,
     anyOf: [
-      { type: "string", maxLength, description: "Replacement text." },
-      { type: "null", description: "Retain the existing value." },
+      { type: "string", maxLength, description: "替换文本。" },
+      { type: "null", description: "保留现有值。" },
     ],
   } as const;
 }
@@ -556,46 +555,46 @@ function nullableStringSchema(description: string, maxLength: number) {
 function buildScheduleOutputSchema() {
   return {
     type: "object",
-    description: "The Figure's complete weekly schedule.",
+    description: "角色的完整每周日程。",
     properties: {
       timezone: {
         type: "string",
-        description: "A valid IANA timezone such as Asia/Shanghai.",
+        description: "有效的 IANA 时区，例如 Asia/Shanghai。",
       },
       segments: {
         type: "array",
-        description: "Weekly schedule segments.",
+        description: "每周日程时段。",
         // Keep the 100-item limit in Zod only. Gemini rejects this nested
         // maxItems constraint as an overly complex response schema.
         items: {
           type: "object",
-          description: "One recurring weekly schedule segment.",
+          description: "一个每周重复的日程时段。",
           properties: {
-            label: { type: "string", description: "Short segment name." },
+            label: { type: "string", description: "简短的时段名称。" },
             days: {
               type: "array",
-              description: "Active weekdays.",
+              description: "生效的星期。",
               minItems: 1,
               maxItems: 7,
               items: {
                 type: "string",
                 enum: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
-                description: "Lowercase weekday code.",
+                description: "小写星期代码。",
               },
             },
             start: {
               type: "string",
               pattern: "^([01]\\d|2[0-3]):[0-5]\\d$",
-              description: "Start time in HH:mm.",
+              description: "采用 HH:mm 格式的开始时间。",
             },
             end: {
               type: "string",
               pattern: "^([01]\\d|2[0-3]):[0-5]\\d$",
-              description: "End time in HH:mm.",
+              description: "采用 HH:mm 格式的结束时间。",
             },
             description: {
               type: "string",
-              description: "What the Figure normally does in this segment.",
+              description: "角色在该时段通常会做什么。",
             },
           },
           required: ["label", "days", "start", "end", "description"],
@@ -611,20 +610,20 @@ function buildScheduleOutputSchema() {
 function buildSendMessageActionSchema() {
   return {
     type: "object",
-    description: "Send one text message now as the Figure.",
+    description: "立即以角色身份发送一条文本消息。",
     properties: {
       type: {
         const: "send_message",
-        description: "Select immediate Figure message delivery.",
+        description: "选择立即发送角色消息。",
       },
       message: {
         type: "object",
-        description: "Text message authored in the Figure's authentic voice.",
+        description: "以角色真实口吻写成的文本消息。",
         properties: {
-          type: { const: "text", description: "Text content type." },
+          type: { const: "text", description: "文本内容类型。" },
           text: {
             type: "string",
-            description: "The exact text the Figure sends to the enduser.",
+            description: "角色发送给 end_user 的确切文本。",
           },
         },
         required: ["type", "text"],
@@ -640,16 +639,16 @@ function buildSilenceActionSchema() {
   return {
     type: "object",
     description:
-      "Remain silent and suppress new LLM packets until the revisit period ends.",
+      "保持沉默，并在重新检查期结束前抑制新的 LLM 数据包。",
     properties: {
       type: {
         const: "silence",
-        description: "Select temporary Figure silence.",
+        description: "选择让角色暂时沉默。",
       },
       revisitAfterMinutes: {
         type: "integer",
         description:
-          "Minutes before queued enduser messages may trigger one coalesced decision packet.",
+          "队列中的 end_user 消息可以触发一次合并决策数据包之前需要等待的分钟数。",
         minimum: 1,
         maximum: 10080,
       },
@@ -662,9 +661,9 @@ function buildSilenceActionSchema() {
 function buildVariableSchema(definition: PrimeFigureVariableDefinition) {
   const description = `${definition.description}${
     definition.type === "json"
-      ? " Return valid JSON encoded as a compact string."
+      ? " 返回编码为紧凑字符串的有效 JSON。"
       : ""
-  }${definition.required ? " This parameter is required and cannot be null." : " Use null to retain the previous value."}`;
+  } 使用 null 保留先前值。`;
   const base =
     definition.type === "number"
       ? {
@@ -677,19 +676,16 @@ function buildVariableSchema(definition: PrimeFigureVariableDefinition) {
         ? { type: "boolean", description }
         : { type: "string", description };
 
-  return definition.required
-    ? base
-    : {
-        anyOf: [
-          base,
-          {
-            type: "null",
-            description:
-              "Retain the previous value for this optional parameter.",
-          },
-        ],
-        description,
-      };
+  return {
+    anyOf: [
+      base,
+      {
+        type: "null",
+        description: "保留先前值。",
+      },
+    ],
+    description,
+  };
 }
 
 function parseRecallArguments(value: string) {
@@ -709,6 +705,10 @@ function parseRecallArguments(value: string) {
   } catch {
     return { keywords: ["回忆"], limit: 6 };
   }
+}
+
+function toLlmSender(sender: PrimeMessage["sender"]) {
+  return sender === "prime_figure" ? "figure" : sender;
 }
 
 function describePrimeContent(content: PrimeMessageContent) {

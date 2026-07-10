@@ -30,23 +30,23 @@ export type CreateAgentHandlers = {
 const createOptions = [
   {
     type: "prime-figure",
-    label: "Prime Figure",
-    title: "Create a Prime Figure",
+    label: "本初角色",
+    title: "创建本初角色",
     description: "持续人格、带时间的记忆和情绪、日程感知，以及创作者定义的结构化状态。",
     icon: Brain,
   },
   {
     type: "slice-figure",
-    label: "Slice Figure",
-    title: "Create a Slice Figure",
+    label: "切片角色",
+    title: "创建切片角色",
     description: "适合短场景、轻量人格、快速试验和临时任务。",
     icon: CirclesThreePlus,
   },
   {
     type: "prime-world",
-    label: "Prime World",
-    title: "Prime World later",
-    description: "世界状态、规则推进和多主体事件会走完全独立的创建与 Runtime 流程。",
+    label: "本初世界",
+    title: "本初世界（稍后推出）",
+    description: "世界状态、规则推进和多主体事件会走完全独立的创建与运行时流程。",
     icon: Sparkle,
   },
 ] satisfies Array<{
@@ -65,13 +65,13 @@ export function CreateAgentPage({ createHandlers }: { createHandlers: CreateAgen
       <div className="glass-panel overflow-hidden rounded-2xl p-6 md:p-10">
         <div className="mb-5 flex items-center gap-3 text-sm text-white/50 md:mb-8">
           <Sparkle size={18} />
-          Co-create an Agent
+          共创智能体
         </div>
         <h1 className="max-w-3xl text-4xl font-semibold leading-[1.05] text-white md:text-6xl">
-          Create the right kind of living Figure.
+          创造真正适合你的鲜活角色。
         </h1>
         <p className="mt-5 max-w-2xl text-sm leading-6 text-white/52">
-          每种 Agent 都拥有独立的会话类型与 Runtime；共享展示数据，但不共享行为管线。
+          每种智能体都拥有独立的会话类型与运行时；共享展示数据，但不共享行为管线。
         </p>
       </div>
 
@@ -94,7 +94,7 @@ export function CreateAgentPage({ createHandlers }: { createHandlers: CreateAgen
                     <Icon className="h-5 w-5 md:h-7 md:w-7" weight="duotone" />
                   </div>
                   <span className={`rounded-full px-3 py-1 text-xs ${active ? "bg-white font-semibold text-[#09090b]" : "border border-white/10 text-white/45"}`}>
-                    {option.type === "prime-world" ? `${option.label} later` : option.label}
+                    {option.type === "prime-world" ? `${option.label}（稍后推出）` : option.label}
                   </span>
                 </div>
                 <h2 className="mt-4 text-xl font-semibold text-white md:mt-8 md:text-3xl">{option.title}</h2>
@@ -194,7 +194,7 @@ function SliceFigureCreateForm({ onCreate }: { onCreate: (input: CreateSliceFigu
 
   return (
     <form className="glass-panel rounded-2xl p-6 md:p-8" onSubmit={submit}>
-      <FormHeader icon={CirclesThreePlus} title="Slice Figure" description="展示信息不会进入模型上下文；下方人格与对话配置可由 system prompt 模板引用。" />
+      <FormHeader icon={CirclesThreePlus} title="切片角色" description="展示信息不会进入模型上下文；下方人格与对话配置可由系统提示词模板引用。" />
 
       <JsonImport value={jsonInput} onChange={setJsonInput} onApply={importJson} placeholder='{"type":"slice-figure","name":"Mira","systemPrompt":"你的人设：\\n{{figure.persona}}",...}' />
 
@@ -207,24 +207,24 @@ function SliceFigureCreateForm({ onCreate }: { onCreate: (input: CreateSliceFigu
         />
       </FormSection>
 
-      <FormSection title="人格与对话 · 进入上下文" description="带 * 的字段必填。system prompt 决定这些字段如何组织和发送给模型。">
-        <TextField label="人设" required multiline value={form.persona} placeholder="Figure 是谁，与 user 是什么关系" onChange={(value) => setField("persona", value)} />
+      <FormSection title="人格与对话 · 进入上下文" description="带 * 的字段必填。系统提示词决定这些字段如何组织和发送给模型。">
+        <TextField label="人设" required multiline value={form.persona} placeholder="角色是谁，与用户是什么关系" onChange={(value) => setField("persona", value)} />
         <TextField label="背景" required multiline value={form.background} placeholder="经历、环境、世界观与任务背景" onChange={(value) => setField("background", value)} />
         <TextField label="性格" required multiline value={form.personality} placeholder="偏好、边界、缺点和稳定行为模式" onChange={(value) => setField("personality", value)} />
         <TextField label="回复风格" required multiline value={form.responseStyle} placeholder="语言长度、语气、动作表达和禁忌" onChange={(value) => setField("responseStyle", value)} />
         <TextField label="当前情景" multiline value={form.currentSituation ?? ""} placeholder="可在模板中通过 {{figure.currentSituation}} 引用" onChange={(value) => setField("currentSituation", value)} />
-        <TextField label="开场白" multiline value={form.openingLine ?? ""} placeholder="作为首条 assistant 消息写入会话，因此会进入对话历史" onChange={(value) => setField("openingLine", value)} />
-        <TextField label="System prompt 模板" required multiline mono value={form.systemPrompt} placeholder={DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT} onChange={(value) => setField("systemPrompt", value)} />
+        <TextField label="开场白" multiline value={form.openingLine ?? ""} placeholder="作为首条助手消息写入会话，因此会进入对话历史" onChange={(value) => setField("openingLine", value)} />
+        <TextField label="系统提示词模板" required multiline mono value={form.systemPrompt} placeholder={DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT} onChange={(value) => setField("systemPrompt", value)} />
         <p className="text-xs leading-5 text-white/42">
-          可用：{"{{user.name}}"}、{"{{figure.persona}}"}、{"{{figure.background}}"}、{"{{figure.personality}}"}、{"{{figure.responseStyle}}"}、{"{{figure.currentSituation}}"}。不提供 user id、email 等字段。
+          可用：{"{{user.name}}"}、{"{{figure.persona}}"}、{"{{figure.background}}"}、{"{{figure.personality}}"}、{"{{figure.responseStyle}}"}、{"{{figure.currentSituation}}"}。不提供用户 ID、邮箱等字段。
         </p>
         <button className="w-fit rounded-full border border-white/12 px-4 py-2 text-sm text-white/65 transition hover:border-white/25 hover:text-white" type="button" onClick={() => setPromptPreview(buildFigureSystemPrompt(form, { user }))}>
-          预览解析后的完整 system prompt
+          预览解析后的完整系统提示词
         </button>
         {promptPreview !== null ? <PromptPreview value={promptPreview} /> : null}
       </FormSection>
 
-      <SubmitState error={error} isSubmitting={isSubmitting} label="Create Slice Figure" />
+      <SubmitState error={error} isSubmitting={isSubmitting} label="创建切片角色" />
     </form>
   );
 }
@@ -316,7 +316,7 @@ function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigu
     try {
       await onCreate(result);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Prime Figure 创建失败，请稍后再试。");
+      setError(caught instanceof Error ? caught.message : "本初角色创建失败，请稍后再试。");
     } finally {
       setIsSubmitting(false);
     }
@@ -324,29 +324,29 @@ function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigu
 
   return (
     <form className="glass-panel rounded-2xl p-6 md:p-8" onSubmit={submit}>
-      <FormHeader icon={Brain} title="Prime Figure" description="持续状态、记忆、日程与自主沉默由 Prime Figure 专属 Runtime 处理。" />
+      <FormHeader icon={Brain} title="本初角色" description="持续状态、记忆、日程与自主沉默由本初角色专属运行时处理。" />
 
       <JsonImport value={jsonInput} onChange={setJsonInput} onApply={importJson} placeholder='{"type":"prime-figure","name":"Mira","persona":"...","schedule":{"timezone":"Asia/Shanghai","segments":[]},...}' />
 
-      <FormSection title="展示与关系数据 · 不进入上下文" description="名字、图片、属性、Tag、介绍、序引、链接 ID、解锁条件和公开状态不会发送给模型。">
+      <FormSection title="展示与关系数据 · 不进入上下文" description="名字、图片、属性、标签、介绍、序引、链接 ID、解锁条件和公开状态不会发送给模型。">
         <DisplayFields form={form} unlockText={unlockText} onUnlockTextChange={setUnlockText} onChange={setField} />
       </FormSection>
 
-      <FormSection title="人格与决策 · 进入上下文" description="这些字段参与 Prime 每一轮结构化决策；带 * 的字段必填。">
-        <TextField label="人设" required multiline value={form.persona} placeholder="Figure 是谁，与 end user 是什么关系" onChange={(value) => setField("persona", value)} />
+      <FormSection title="人格与决策 · 进入上下文" description="这些字段参与本初角色的每一轮结构化决策；带 * 的字段必填。">
+        <TextField label="人设" required multiline value={form.persona} placeholder="角色是谁，与最终用户是什么关系" onChange={(value) => setField("persona", value)} />
         <TextField label="背景" required multiline value={form.background} placeholder="经历、环境、世界观与长期处境" onChange={(value) => setField("background", value)} />
         <TextField label="性格" required multiline value={form.personality} placeholder="偏好、边界、缺点、矛盾和稳定行为模式" onChange={(value) => setField("personality", value)} />
         <TextField label="回复风格" required multiline value={form.responseStyle} placeholder="语言长度、语气、动作表达和禁忌" onChange={(value) => setField("responseStyle", value)} />
         <TextField label="决策风格" multiline value={form.decisionStyle ?? ""} placeholder="如何权衡沉默、回应、记忆和自身边界" onChange={(value) => setField("decisionStyle", value)} />
-        <TextField label="当前处境" multiline value={form.currentSituation ?? ""} placeholder="Figure 此刻正在经历的长期情境" onChange={(value) => setField("currentSituation", value)} />
+        <TextField label="当前处境" multiline value={form.currentSituation ?? ""} placeholder="角色此刻正在经历的长期情境" onChange={(value) => setField("currentSituation", value)} />
         <div className="grid gap-4 md:grid-cols-2">
           <TextField label="初始情绪" value={form.initialMood ?? ""} placeholder="平静，但有些疲惫" onChange={(value) => setField("initialMood", value)} />
           <TextField label="初始关系状态" value={form.initialRelationshipStatus ?? ""} placeholder="熟悉但仍保持边界" onChange={(value) => setField("initialRelationshipStatus", value)} />
         </div>
-        <TextField label="行程与长期安排" multiline value={form.itinerary ?? ""} placeholder="使用 Figure 时区下的易读时间" onChange={(value) => setField("itinerary", value)} />
+        <TextField label="行程与长期安排" multiline value={form.itinerary ?? ""} placeholder="使用角色时区下的易读时间" onChange={(value) => setField("itinerary", value)} />
       </FormSection>
 
-      <FormSection title="日程感知 · 进入上下文" description="Runtime 会将消息所在时段转换成决策 hint。">
+      <FormSection title="日程感知 · 进入上下文" description="运行时会将消息所在时段转换成决策提示。">
         <TextField label="IANA 时区" required value={form.schedule?.timezone ?? "UTC"} placeholder="Asia/Shanghai" onChange={(value) => setField("schedule", { timezone: value, segments: form.schedule?.segments ?? [] })} />
         {(form.schedule?.segments ?? []).map((segment, index) => (
           <div key={index} className="rounded-xl border border-white/10 bg-black/15 p-4">
@@ -362,7 +362,7 @@ function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigu
                 return <button key={day} className={`h-9 min-w-9 rounded-lg border px-2 text-xs ${active ? "border-white bg-white text-black" : "border-white/10 text-white/45"}`} type="button" onClick={() => updateSegment(index, { days: active ? segment.days.filter((item) => item !== day) : [...segment.days, day] })}>{label}</button>;
               })}
             </div>
-            <textarea className={`${inputClass} mt-3 min-h-20 py-3`} value={segment.description} placeholder="这个时段 Figure 通常在做什么，是否方便回应" onChange={(event) => updateSegment(index, { description: event.target.value })} />
+            <textarea className={`${inputClass} mt-3 min-h-20 py-3`} value={segment.description} placeholder="这个时段角色通常在做什么，是否方便回应" onChange={(event) => updateSegment(index, { description: event.target.value })} />
           </div>
         ))}
         <button className={secondaryButtonClass} type="button" onClick={() => setField("schedule", { timezone: form.schedule?.timezone ?? "UTC", segments: [...(form.schedule?.segments ?? []), { label: "", days: ["mon", "tue", "wed", "thu", "fri"], start: "09:00", end: "18:00", description: "" }] })}>
@@ -370,16 +370,16 @@ function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigu
         </button>
       </FormSection>
 
-      <FormSection title="创作者参数 · 进入上下文" description="参数定义进入 strict schema；required 参数每轮必须输出。">
+      <FormSection title="创作者参数 · 进入上下文" description="参数定义会进入严格结构；每个参数都可以用 null 保留旧值。">
         {variables.map((variable, index) => (
           <VariableEditor key={index} variable={variable} onChange={(patch) => setVariables((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item))} onRemove={() => setVariables((current) => current.filter((_, itemIndex) => itemIndex !== index))} />
         ))}
-        <button className={secondaryButtonClass} type="button" onClick={() => setVariables((current) => [...current, { key: "", label: "", type: "string", description: "", required: false, defaultValueText: "" }])}>
+        <button className={secondaryButtonClass} type="button" onClick={() => setVariables((current) => [...current, { key: "", label: "", type: "string", description: "", defaultValueText: "" }])}>
           <Plus size={16} />添加参数
         </button>
       </FormSection>
 
-      <SubmitState error={error} isSubmitting={isSubmitting} label="Create Prime Figure" />
+      <SubmitState error={error} isSubmitting={isSubmitting} label="创建本初角色" />
     </form>
   );
 }
@@ -404,9 +404,9 @@ function DisplayFields<T extends DisplayForm>({ form, unlockText, onUnlockTextCh
       <TextField label="名字" required value={form.name} placeholder="例如：Mira" onChange={(value) => set("name", value as T[keyof T])} />
       <AttributeEditor items={attributes} onChange={(items) => set("attributes", items as T[keyof T])} />
       <TagEditor items={tags} onChange={(items) => set("tags", items as T[keyof T])} />
-      <TextField label="介绍" multiline value={form.introduction ?? ""} placeholder="公开展示或 Figure 卡片上的简介" onChange={(value) => set("introduction", value as T[keyof T])} />
+      <TextField label="介绍" multiline value={form.introduction ?? ""} placeholder="公开展示或角色卡片上的简介" onChange={(value) => set("introduction", value as T[keyof T])} />
       <TextField label="序引（HTML）" multiline mono value={form.prologueHtml ?? ""} placeholder="<p>展示在对话最前面的容器中，不发送给模型。</p>" onChange={(value) => set("prologueHtml", value as T[keyof T])} />
-      <TextField label="链接的 Figure ID（逗号分隔）" value={(form.linkedAgentIds ?? []).join(", ")} placeholder="agent_xxx, agent_yyy" onChange={(value) => set("linkedAgentIds", value.split(",").map((item) => item.trim()).filter(Boolean) as T[keyof T])} />
+      <TextField label="链接的角色 ID（逗号分隔）" value={(form.linkedAgentIds ?? []).join(", ")} placeholder="agent_xxx, agent_yyy" onChange={(value) => set("linkedAgentIds", value.split(",").map((item) => item.trim()).filter(Boolean) as T[keyof T])} />
       <TextField label="解锁条件（JSON，占位）" multiline mono value={unlockText} placeholder='{"minimumLevel": 3}' onChange={onUnlockTextChange} />
       <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.025] p-4">
         <span><span className="block text-sm font-medium text-white/78">是否公开</span><span className="mt-1 block text-xs text-white/40">仅用于展示与发现，不进入上下文。</span></span>
@@ -432,11 +432,11 @@ function AttributeEditor({ items, onChange }: { items: AgentAttribute[]; onChang
 
 function TagEditor({ items, onChange }: { items: string[]; onChange: (items: string[]) => void }) {
   return (
-    <ListPanel title="Tag" description="仅供展示，不进入上下文。" onAdd={() => onChange([...items, ""])}>
+    <ListPanel title="标签" description="仅供展示，不进入上下文。" onAdd={() => onChange([...items, ""])}>
       {items.map((item, index) => (
         <div key={index} className="grid gap-3 md:grid-cols-[1fr_auto]">
           <input className={inputClass} value={item} placeholder="陪伴" onChange={(event) => onChange(items.map((value, itemIndex) => itemIndex === index ? event.target.value : value))} />
-          <IconButton label="删除 Tag" onClick={() => onChange(items.filter((_, itemIndex) => itemIndex !== index))} />
+          <IconButton label="删除标签" onClick={() => onChange(items.filter((_, itemIndex) => itemIndex !== index))} />
         </div>
       ))}
     </ListPanel>
@@ -447,19 +447,18 @@ function VariableEditor({ variable, onChange, onRemove }: { variable: PrimeVaria
   return (
     <div className="rounded-xl border border-white/10 bg-black/15 p-4">
       <div className="grid gap-3 md:grid-cols-2">
-        <input className={inputClass} value={variable.key} placeholder="参数 key，例如 trust" onChange={(event) => onChange({ key: event.target.value })} />
+        <input className={inputClass} value={variable.key} placeholder="参数键，例如 trust" onChange={(event) => onChange({ key: event.target.value })} />
         <input className={inputClass} value={variable.label} placeholder="显示名称，例如 信任程度" onChange={(event) => onChange({ label: event.target.value })} />
       </div>
       <textarea className={`${inputClass} mt-3 min-h-20 py-3`} value={variable.description} placeholder="说明模型如何判断该参数" onChange={(event) => onChange({ description: event.target.value })} />
-      <div className="mt-3 grid gap-3 md:grid-cols-[150px_1fr_auto_auto]">
+      <div className="mt-3 grid gap-3 md:grid-cols-[150px_1fr_auto]">
         <select className={inputClass} value={variable.type} onChange={(event) => onChange({ type: event.target.value as PrimeFigureVariableType, defaultValueText: "" })}>
-          <option value="string">string</option><option value="number">number</option><option value="boolean">boolean</option><option value="json">json</option>
+          <option value="string">字符串</option><option value="number">数字</option><option value="boolean">布尔值</option><option value="json">JSON</option>
         </select>
         <input className={inputClass} value={variable.defaultValueText} placeholder="默认值（可选）" onChange={(event) => onChange({ defaultValueText: event.target.value })} />
-        <label className="flex items-center gap-2 text-xs text-white/55"><input checked={variable.required} type="checkbox" onChange={(event) => onChange({ required: event.target.checked })} />required</label>
         <IconButton label="删除参数" onClick={onRemove} />
       </div>
-      {variable.type === "number" ? <div className="mt-3 grid gap-3 md:grid-cols-2"><input className={inputClass} type="number" value={variable.min ?? ""} placeholder="min" onChange={(event) => onChange({ min: event.target.value === "" ? undefined : Number(event.target.value) })} /><input className={inputClass} type="number" value={variable.max ?? ""} placeholder="max" onChange={(event) => onChange({ max: event.target.value === "" ? undefined : Number(event.target.value) })} /></div> : null}
+      {variable.type === "number" ? <div className="mt-3 grid gap-3 md:grid-cols-2"><input className={inputClass} type="number" value={variable.min ?? ""} placeholder="最小值" onChange={(event) => onChange({ min: event.target.value === "" ? undefined : Number(event.target.value) })} /><input className={inputClass} type="number" value={variable.max ?? ""} placeholder="最大值" onChange={(event) => onChange({ max: event.target.value === "" ? undefined : Number(event.target.value) })} /></div> : null}
     </div>
   );
 }
@@ -477,11 +476,11 @@ function TextField({ label, value, placeholder, required, multiline, mono, onCha
 }
 
 function ListPanel({ title, description, onAdd, children }: { title: string; description: string; onAdd: () => void; children: React.ReactNode }) {
-  return <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4"><div className="flex items-center justify-between"><div><span className="text-sm font-medium text-white/78">{title}</span><p className="mt-1 text-xs text-white/35">{description}</p></div><button className="text-sm text-white/55 hover:text-white" type="button" onClick={onAdd}>Add</button></div><div className="mt-3 grid gap-3">{children}</div></div>;
+  return <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4"><div className="flex items-center justify-between"><div><span className="text-sm font-medium text-white/78">{title}</span><p className="mt-1 text-xs text-white/35">{description}</p></div><button className="text-sm text-white/55 hover:text-white" type="button" onClick={onAdd}>添加</button></div><div className="mt-3 grid gap-3">{children}</div></div>;
 }
 
 function JsonImport({ value, placeholder, onChange, onApply }: { value: string; placeholder: string; onChange: (value: string) => void; onApply: () => void }) {
-  return <section className="mt-7 rounded-xl border border-white/10 bg-white/[0.025] p-4"><h3 className="text-sm font-semibold text-white">一键 JSON 导入</h3><p className="mt-1 text-xs text-white/40">JSON 可以覆盖创建表单中的全部字段。</p><textarea className={`${inputClass} mt-3 min-h-32 py-3 font-mono text-xs leading-5`} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /><button className={`${secondaryButtonClass} mt-3`} type="button" onClick={onApply}>Apply JSON</button></section>;
+  return <section className="mt-7 rounded-xl border border-white/10 bg-white/[0.025] p-4"><h3 className="text-sm font-semibold text-white">一键 JSON 导入</h3><p className="mt-1 text-xs text-white/40">JSON 可以覆盖创建表单中的全部字段。</p><textarea className={`${inputClass} mt-3 min-h-32 py-3 font-mono text-xs leading-5`} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /><button className={`${secondaryButtonClass} mt-3`} type="button" onClick={onApply}>应用 JSON</button></section>;
 }
 
 function PromptPreview({ value }: { value: string }) {
@@ -489,7 +488,7 @@ function PromptPreview({ value }: { value: string }) {
 }
 
 function SubmitState({ error, isSubmitting, label }: { error: string | null; isSubmitting: boolean; label: string }) {
-  return <>{error ? <p className="mt-6 rounded-xl border border-red-400/15 bg-red-400/[0.04] p-4 text-sm text-red-100/80">{error}</p> : null}<button className="mt-7 flex w-full items-center justify-center rounded-full bg-white px-5 py-3 text-sm font-medium text-[#09090b] transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50" disabled={isSubmitting} type="submit">{isSubmitting ? "Creating..." : label}</button></>;
+  return <>{error ? <p className="mt-6 rounded-xl border border-red-400/15 bg-red-400/[0.04] p-4 text-sm text-red-100/80">{error}</p> : null}<button className="mt-7 flex w-full items-center justify-center rounded-full bg-white px-5 py-3 text-sm font-medium text-[#09090b] transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50" disabled={isSubmitting} type="submit">{isSubmitting ? "创建中……" : label}</button></>;
 }
 
 function IconButton({ label, onClick }: { label: string; onClick: () => void }) {
@@ -517,7 +516,7 @@ function buildPrimePayload(form: CreatePrimeFigureRequest, drafts: PrimeVariable
   const timezone = form.schedule?.timezone.trim();
   if (!timezone) return "日程时区不能为空。";
   try { new Intl.DateTimeFormat("zh-CN", { timeZone: timezone }).format(); } catch { return "日程时区不是有效的 IANA 时区，例如 Asia/Shanghai。"; }
-  for (const segment of form.schedule?.segments ?? []) if (!segment.label.trim() || !segment.description.trim() || !segment.days.length) return "每个日程时段都需要名称、description 和至少一个星期选项。";
+  for (const segment of form.schedule?.segments ?? []) if (!segment.label.trim() || !segment.description.trim() || !segment.days.length) return "每个日程时段都需要名称、描述和至少一个星期选项。";
   const definitions = parseVariableDrafts(drafts);
   if (typeof definitions === "string") return definitions;
   return { ...form, ...common, ...required, type: "prime-figure", decisionStyle: form.decisionStyle?.trim() ?? "", currentSituation: form.currentSituation?.trim() ?? "", itinerary: form.itinerary?.trim() ?? "", initialMood: form.initialMood?.trim() ?? "", initialRelationshipStatus: form.initialRelationshipStatus?.trim() ?? "", schedule: { timezone, segments: form.schedule?.segments ?? [] }, variableDefinitions: definitions };
@@ -529,14 +528,14 @@ function normalizeDisplayFields(form: DisplayForm, unlockText: string) {
   const attributes = (form.attributes ?? []).map((item) => ({ key: item.key.trim(), value: item.value.trim() }));
   if (attributes.some((item) => !item.key || !item.value)) return "属性不能包含空键或空值。";
   const tags = (form.tags ?? []).map((item) => item.trim());
-  if (tags.some((item) => !item)) return "Tag 不能包含空值。";
+  if (tags.some((item) => !item)) return "标签不能包含空值。";
   let unlockConditions: Record<string, unknown> | null = null;
-  if (unlockText.trim()) { try { const parsed = JSON.parse(unlockText) as unknown; if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") return "解锁条件必须是 JSON object。"; unlockConditions = parsed as Record<string, unknown>; } catch { return "解锁条件不是有效 JSON。"; } }
+  if (unlockText.trim()) { try { const parsed = JSON.parse(unlockText) as unknown; if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") return "解锁条件必须是 JSON 对象。"; unlockConditions = parsed as Record<string, unknown>; } catch { return "解锁条件不是有效 JSON。"; } }
   return { name, attributes, tags, introduction: form.introduction?.trim() ?? "", prologueHtml: form.prologueHtml?.trim() ?? "", linkedAgentIds: (form.linkedAgentIds ?? []).map((item) => item.trim()).filter(Boolean), unlockConditions, isPublic: form.isPublic };
 }
 
 function normalizeRequired(values: Record<string, string>) {
-  const labels: Record<string, string> = { persona: "人设", background: "背景", personality: "性格", responseStyle: "回复风格", systemPrompt: "System prompt" };
+  const labels: Record<string, string> = { persona: "人设", background: "背景", personality: "性格", responseStyle: "回复风格", systemPrompt: "系统提示词" };
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(values)) { const trimmed = value.trim(); if (!trimmed) return `${labels[key] ?? key}不能为空。`; result[key] = trimmed; }
   return result;
@@ -547,14 +546,14 @@ function parseVariableDrafts(drafts: PrimeVariableDraft[]): PrimeFigureVariableD
   const result: PrimeFigureVariableDefinition[] = [];
   for (const draft of drafts) {
     const key = draft.key.trim();
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return "参数 key 必须以字母或下划线开头，并且只包含字母、数字和下划线。";
-    if (keys.has(key)) return `参数 key 重复：${key}`;
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return "参数键必须以字母或下划线开头，并且只包含字母、数字和下划线。";
+    if (keys.has(key)) return `参数键重复：${key}`;
     keys.add(key);
-    if (!draft.label.trim() || !draft.description.trim()) return `参数 ${key} 缺少显示名称或 description。`;
+    if (!draft.label.trim() || !draft.description.trim()) return `参数 ${key} 缺少显示名称或描述。`;
     if (draft.type === "number" && draft.min !== undefined && draft.max !== undefined && draft.min > draft.max) return `参数 ${key} 的最小值不能大于最大值。`;
     const parsed = parseDefault(draft);
     if (typeof parsed === "object" && parsed && "error" in parsed) return parsed.error as string;
-    result.push({ key, label: draft.label.trim(), type: draft.type, description: draft.description.trim(), required: draft.required, ...(parsed !== undefined ? { defaultValue: parsed } : {}), ...(draft.type === "number" && draft.min !== undefined ? { min: draft.min } : {}), ...(draft.type === "number" && draft.max !== undefined ? { max: draft.max } : {}) });
+    result.push({ key, label: draft.label.trim(), type: draft.type, description: draft.description.trim(), ...(parsed !== undefined ? { defaultValue: parsed } : {}), ...(draft.type === "number" && draft.min !== undefined ? { min: draft.min } : {}), ...(draft.type === "number" && draft.max !== undefined ? { max: draft.max } : {}) });
   }
   return result;
 }
@@ -569,7 +568,7 @@ function parseDefault(draft: PrimeVariableDraft): PrimeFigureVariableDefinition[
 }
 
 function variableToDraft(variable: PrimeFigureVariableDefinition): PrimeVariableDraft {
-  return { key: variable.key, label: variable.label, type: variable.type, description: variable.description, required: variable.required, ...(variable.min !== undefined ? { min: variable.min } : {}), ...(variable.max !== undefined ? { max: variable.max } : {}), defaultValueText: variable.defaultValue === undefined ? "" : variable.type === "string" ? String(variable.defaultValue) : JSON.stringify(variable.defaultValue) };
+  return { key: variable.key, label: variable.label, type: variable.type, description: variable.description, ...(variable.min !== undefined ? { min: variable.min } : {}), ...(variable.max !== undefined ? { max: variable.max } : {}), defaultValueText: variable.defaultValue === undefined ? "" : variable.type === "string" ? String(variable.defaultValue) : JSON.stringify(variable.defaultValue) };
 }
 
 function fileToUpload(file: File): Promise<AgentResourceUpload> {
@@ -577,7 +576,7 @@ function fileToUpload(file: File): Promise<AgentResourceUpload> {
 }
 
 function UnavailableCreatePanel() {
-  return <div className="glass-panel rounded-2xl p-8"><Sparkle size={32} weight="duotone" /><h2 className="mt-6 text-3xl font-semibold text-white">Prime World 使用独立流程</h2><p className="mt-3 text-sm leading-6 text-white/48">Prime World 不会复用 Slice 或 Prime Figure Runtime，创建界面将在其数据模型确定后单独实现。</p></div>;
+  return <div className="glass-panel rounded-2xl p-8"><Sparkle size={32} weight="duotone" /><h2 className="mt-6 text-3xl font-semibold text-white">本初世界使用独立流程</h2><p className="mt-3 text-sm leading-6 text-white/48">本初世界不会复用切片角色或本初角色的运行时，创建界面将在其数据模型确定后单独实现。</p></div>;
 }
 
 const inputClass = "h-11 w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-white/25";

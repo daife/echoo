@@ -29,7 +29,7 @@ export class AuthService {
     const body = registerSchema.parse(input);
     const existingUser = this.users.findByEmail(body.email);
     if (existingUser?.emailVerifiedAt) {
-      throw new AuthError("EMAIL_TAKEN", "This email is already registered.", 409);
+      throw new AuthError("EMAIL_TAKEN", "该邮箱已注册。", 409);
     }
 
     const user =
@@ -55,11 +55,11 @@ export class AuthService {
     const body = loginSchema.parse(input);
     const user = this.users.findByEmail(body.email);
     if (!user || !(await this.passwordService.verify(body.password, user.passwordHash))) {
-      throw new AuthError("INVALID_CREDENTIALS", "Email or password is incorrect.", 401);
+      throw new AuthError("INVALID_CREDENTIALS", "邮箱或密码不正确。", 401);
     }
 
     if (!user.emailVerifiedAt) {
-      throw new AuthError("EMAIL_NOT_VERIFIED", "Please verify your email before signing in.", 403);
+      throw new AuthError("EMAIL_NOT_VERIFIED", "请先验证邮箱再登录。", 403);
     }
 
     return this.createSession(user.id);
@@ -68,7 +68,7 @@ export class AuthService {
   async me(userId: string) {
     const user = this.users.findById(userId);
     if (!user) {
-      throw new AuthError("USER_NOT_FOUND", "User does not exist.", 404);
+      throw new AuthError("USER_NOT_FOUND", "用户不存在。", 404);
     }
     return toUserProfile(user);
   }
@@ -93,7 +93,7 @@ export class AuthService {
     const body = resetPasswordSchema.parse(input);
     const resetToken = this.users.findPasswordResetToken(body.token);
     if (!resetToken || resetToken.usedAt || resetToken.expiresAt <= Date.now()) {
-      throw new AuthError("RESET_TOKEN_INVALID", "This reset link is invalid or expired.", 400);
+      throw new AuthError("RESET_TOKEN_INVALID", "该重置链接无效或已过期。", 400);
     }
 
     const passwordHash = await this.passwordService.hash(body.password);
@@ -106,7 +106,7 @@ export class AuthService {
     const body = verifyEmailSchema.parse(input);
     const verificationToken = this.users.findEmailVerificationToken(body.token);
     if (!verificationToken || verificationToken.usedAt || verificationToken.expiresAt <= Date.now()) {
-      throw new AuthError("VERIFICATION_TOKEN_INVALID", "This verification link is invalid or expired.", 400);
+      throw new AuthError("VERIFICATION_TOKEN_INVALID", "该验证链接无效或已过期。", 400);
     }
 
     this.users.markEmailVerified(verificationToken.userId);
@@ -116,7 +116,7 @@ export class AuthService {
 
   private createSession(userId: string): AuthSession {
     const user = this.users.findById(userId);
-    if (!user) throw new AuthError("USER_NOT_FOUND", "User does not exist.", 404);
+    if (!user) throw new AuthError("USER_NOT_FOUND", "用户不存在。", 404);
 
     return {
       user: toUserProfile(user),

@@ -88,7 +88,7 @@ export class SliceFigureRuntimeService {
     const agent = this.agents.findByConversation(input.ownerUserId, input.conversationId);
     if (!agent) return null;
     if (agent.type !== "slice-figure")
-      throw new Error(`Slice Figure runtime received ${agent.type}.`);
+      throw new Error(`切片角色运行时收到了错误的角色类型：${agent.type}。`);
 
     const user = this.users.findById(input.ownerUserId);
     return {

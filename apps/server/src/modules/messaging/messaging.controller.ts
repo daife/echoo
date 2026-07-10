@@ -30,7 +30,7 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.code(400).send({
         error: "VALIDATION_ERROR",
-        message: parsed.error.issues[0]?.message ?? "Invalid message query."
+        message: parsed.error.issues[0]?.message ?? "消息查询无效。"
       });
     }
 
@@ -49,7 +49,7 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.code(400).send({
         error: "VALIDATION_ERROR",
-        message: parsed.error.issues[0]?.message ?? "Invalid message query."
+        message: parsed.error.issues[0]?.message ?? "消息查询无效。"
       });
     }
 
@@ -67,7 +67,7 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.code(400).send({
         error: "VALIDATION_ERROR",
-        message: parsed.error.issues[0]?.message ?? "Invalid message."
+        message: parsed.error.issues[0]?.message ?? "消息无效。"
       });
     }
 
@@ -91,7 +91,7 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.code(400).send({
         error: "VALIDATION_ERROR",
-        message: parsed.error.issues[0]?.message ?? "Invalid rollback request."
+        message: parsed.error.issues[0]?.message ?? "回溯请求无效。"
       });
     }
 
@@ -101,7 +101,7 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
     if (result.kind === "unsupported_type") {
       return reply.code(409).send({
         error: "ROLLBACK_UNSUPPORTED",
-        message: "Rollback is only available for slice-figure conversations."
+        message: "只有切片角色会话支持回溯。"
       });
     }
 

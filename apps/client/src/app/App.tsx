@@ -38,10 +38,10 @@ type AppView =
   | "auth";
 
 const navItems = [
-  { id: "home", label: "Home", icon: House },
-  { id: "messages", label: "Chat", icon: ChatCircleText },
-  { id: "bindings", label: "Bindings", icon: LinkSimple },
-  { id: "settings", label: "Settings", icon: GearSix },
+  { id: "home", label: "首页", icon: House },
+  { id: "messages", label: "聊天", icon: ChatCircleText },
+  { id: "bindings", label: "绑定", icon: LinkSimple },
+  { id: "settings", label: "设置", icon: GearSix },
 ] satisfies { id: AppView; label: string; icon: typeof House }[];
 
 export function App() {
@@ -92,7 +92,7 @@ export function App() {
         if (cancelled) return;
         if (
           error instanceof Error &&
-          error.message === "Please sign in again."
+          error.message === "请重新登录。"
         ) {
           await auth.signOut();
           setView("auth");
@@ -132,7 +132,7 @@ export function App() {
       openAgent(agent);
       return agent;
     } catch (error) {
-      if (error instanceof Error && error.message === "Please sign in again.") {
+      if (error instanceof Error && error.message === "请重新登录。") {
         await auth.signOut();
         setView("auth");
       }
@@ -150,7 +150,7 @@ export function App() {
       openAgent(agent);
       return agent;
     } catch (error) {
-      if (error instanceof Error && error.message === "Please sign in again.") {
+      if (error instanceof Error && error.message === "请重新登录。") {
         await auth.signOut();
         setView("auth");
       }
@@ -175,7 +175,7 @@ export function App() {
       );
       return agent;
     } catch (error) {
-      if (error instanceof Error && error.message === "Please sign in again.") {
+      if (error instanceof Error && error.message === "请重新登录。") {
         await auth.signOut();
         setView("auth");
       }
@@ -188,7 +188,7 @@ export function App() {
       return (
         <div className="grid min-h-[calc(100dvh-8rem)] place-items-center">
           <div className="glass-panel rounded-full px-5 py-3 text-sm text-white/70">
-            Checking your session
+            正在检查登录状态
           </div>
         </div>
       );
@@ -256,7 +256,7 @@ export function App() {
       <header className="fixed inset-x-0 top-0 z-40 border-b border-white/10 bg-[#09090b]/70 backdrop-blur-2xl">
         <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between px-5 md:px-16">
           <button
-            aria-label="Explore"
+            aria-label="探索"
             className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-white transition hover:border-white/20 active:scale-95"
             onClick={() => setView("explore")}
           >
@@ -271,7 +271,7 @@ export function App() {
               12
             </button>
             <button
-              aria-label="Profile"
+              aria-label="个人资料"
               className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/[0.04] text-white transition hover:border-white/20"
               onClick={() => setView(auth.user ? "profile" : "auth")}
             >

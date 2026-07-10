@@ -60,7 +60,7 @@ export class ApiClient {
       } catch {
         // Keep the status text when the response body is not JSON.
       }
-      throw new Error(detail || `API request failed: ${response.status}`);
+      throw new Error(detail || `接口请求失败：${response.status}`);
     }
 
     return (await response.json()) as T;

@@ -11,7 +11,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [notice, setNotice] = useState<string | null>(
-    verificationToken ? "Verification link detected. Confirm your account to continue." : resetToken ? "Reset link detected. Choose a new password." : null
+    verificationToken ? "检测到验证链接，请确认账户后继续。" : resetToken ? "检测到重置链接，请设置新密码。" : null
   );
   const [devResetToken, setDevResetToken] = useState<string | null>(null);
   const [devVerificationToken, setDevVerificationToken] = useState<string | null>(null);
@@ -20,41 +20,41 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
   const copy = useMemo(() => {
     if (auth.authMode === "register") {
       return {
-        eyebrow: "Create access",
-        title: "Start your Echoo space.",
-        detail: "Create the account first, then verify your email before your private runtime can open.",
-        action: "Create account"
+        eyebrow: "创建访问权限",
+        title: "开启你的 Echoo 空间。",
+        detail: "先创建账户并验证邮箱，之后即可开启你的私人运行空间。",
+        action: "创建账户"
       };
     }
     if (auth.authMode === "verify") {
       return {
-        eyebrow: "Email check",
-        title: "Verify your account.",
-        detail: "Email verification activates sign-in and protects private conversations from unconfirmed addresses.",
-        action: "Verify email"
+        eyebrow: "邮箱验证",
+        title: "验证你的账户。",
+        detail: "验证邮箱后即可登录，同时避免未确认的邮箱地址访问私人会话。",
+        action: "验证邮箱"
       };
     }
     if (auth.authMode === "forgot") {
       return {
-        eyebrow: "Recovery",
-        title: "Find your way back in.",
-        detail: "We will send a password reset link to the email on your Echoo account.",
-        action: "Send reset link"
+        eyebrow: "账户恢复",
+        title: "重新进入你的空间。",
+        detail: "我们会向 Echoo 账户绑定的邮箱发送密码重置链接。",
+        action: "发送重置链接"
       };
     }
     if (auth.authMode === "reset") {
       return {
-        eyebrow: "New password",
-        title: "Set a fresh key.",
-        detail: "Pick a new password and your old reset link will be retired.",
-        action: "Reset password"
+        eyebrow: "新密码",
+        title: "设置一把新钥匙。",
+        detail: "设置新密码后，旧的重置链接将立即失效。",
+        action: "重置密码"
       };
     }
     return {
-      eyebrow: "Protected runtime",
-      title: "Sign in to continue.",
-      detail: "This surface touches private conversations, external bindings, or account settings.",
-      action: "Enter Echoo"
+      eyebrow: "受保护空间",
+      title: "登录后继续。",
+      detail: "此页面涉及私人会话、外部绑定或账户设置。",
+      action: "进入 Echoo"
     };
   }, [auth.authMode]);
 
@@ -71,18 +71,18 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
         setDevVerificationToken(response.verificationToken ?? null);
         setPassword("");
         auth.setAuthMode("login");
-        setNotice("Account created. Verify your email before signing in.");
+        setNotice("账户已创建，请先验证邮箱再登录。");
       } else if (auth.authMode === "forgot") {
         const response = await auth.forgotPassword({ email });
         setDevResetToken(response.resetToken ?? null);
-        setNotice("If that email exists, a reset link is on its way.");
+        setNotice("如果该邮箱已注册，重置链接正在发送。");
       } else if (auth.authMode === "reset") {
         await auth.resetPassword({ token: resetToken || devResetToken || "", password });
         setPassword("");
-        setNotice("Password reset complete. You can sign in now.");
+        setNotice("密码重置完成，现在可以登录。");
       } else if (auth.authMode === "verify") {
         await auth.verifyEmail({ token: verificationToken || devVerificationToken || "" });
-        setNotice("Email verified. You can sign in now.");
+        setNotice("邮箱验证完成，现在可以登录。");
       } else {
         await auth.login({ email, password });
         onAuthenticated();
@@ -109,7 +109,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
               <p className="mt-5 max-w-md text-base leading-7 text-white/52">{copy.detail}</p>
             </div>
             <div className="grid gap-3">
-              {["Private message sync", "External interface bindings", "Native realtime keepalive"].map((item) => (
+              {["私人消息同步", "外部界面绑定", "原生实时保活"].map((item) => (
                 <div key={item} className="flex items-center gap-3 text-sm text-white/60">
                   <SealCheck size={18} weight="duotone" className="text-white" />
                   {item}
@@ -127,7 +127,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
 
           {auth.authMode === "register" ? (
             <label className="block">
-              <span className="mb-2 block text-sm text-white/55">Display name</span>
+              <span className="mb-2 block text-sm text-white/55">显示名称</span>
               <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4">
                 <UserCircle size={18} className="text-white/35" />
                 <input
@@ -142,7 +142,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
 
           {auth.authMode !== "reset" && auth.authMode !== "verify" ? (
             <label className="block">
-              <span className="mb-2 block text-sm text-white/55">Email</span>
+              <span className="mb-2 block text-sm text-white/55">邮箱</span>
               <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4">
                 <Key size={18} className="text-white/35" />
                 <input
@@ -159,12 +159,12 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
 
           {auth.authMode !== "forgot" && auth.authMode !== "verify" ? (
             <label className="block">
-              <span className="mb-2 block text-sm text-white/55">Password</span>
+              <span className="mb-2 block text-sm text-white/55">密码</span>
               <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4">
                 <LockKey size={18} className="text-white/35" />
                 <input
                   className="h-12 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30"
-                  placeholder={auth.authMode === "reset" ? "New password" : "At least 8 characters"}
+                  placeholder={auth.authMode === "reset" ? "新密码" : "至少 8 个字符"}
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
@@ -190,10 +190,10 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
                   type="button"
                   onClick={() => {
                     auth.setAuthMode("verify");
-                    setNotice("Development verification token loaded. Confirm your account.");
+                    setNotice("已加载开发环境验证令牌，请确认账户。");
                   }}
                 >
-                  Use local verification link
+                  使用本地验证链接
                 </button>
               ) : null}
               {devResetToken ? (
@@ -202,10 +202,10 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
                   type="button"
                   onClick={() => {
                     auth.setAuthMode("reset");
-                    setNotice("Development reset token loaded. Choose a new password.");
+                    setNotice("已加载开发环境重置令牌，请设置新密码。");
                   }}
                 >
-                  Use local reset link
+                  使用本地重置链接
                 </button>
               ) : null}
             </div>
@@ -215,24 +215,24 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
             className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-white px-5 text-sm font-semibold text-[#09090b] transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-55"
             disabled={isSubmitting}
           >
-            {isSubmitting ? "Working..." : copy.action}
+            {isSubmitting ? "处理中……" : copy.action}
             <ArrowRight size={17} weight="bold" />
           </button>
 
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm text-white/45">
             {auth.authMode !== "login" ? (
               <button type="button" className="hover:text-white" onClick={() => auth.setAuthMode("login")}>
-                Sign in
+                登录
               </button>
             ) : null}
             {auth.authMode !== "register" ? (
               <button type="button" className="hover:text-white" onClick={() => auth.setAuthMode("register")}>
-                Create account
+                创建账户
               </button>
             ) : null}
             {auth.authMode !== "forgot" ? (
               <button type="button" className="hover:text-white" onClick={() => auth.setAuthMode("forgot")}>
-                Forgot password
+                忘记密码
               </button>
             ) : null}
           </div>

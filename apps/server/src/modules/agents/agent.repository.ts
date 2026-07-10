@@ -465,7 +465,6 @@ function parsePrimeVariableDefinitions(
         typeof definition.description === "string" && definition.description
           ? definition.description
           : (definition.label as string),
-      required: definition.required === true,
       ...(definition.defaultValue !== undefined
         ? { defaultValue: definition.defaultValue }
         : {}),

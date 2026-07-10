@@ -5,27 +5,27 @@ import { CharacterCard } from "../../features/conversations/components/Character
 const creations = [
   {
     name: "Aster",
-    kind: "Prime Figure",
-    description: "推进型 figure，擅长长期关系、数值变化、行为和日程推进。",
+    kind: "本初角色",
+    description: "推进型角色，擅长长期关系、数值变化、行为和日程推进。",
     gradient: "from-white/22 via-white/7 to-transparent"
   },
   {
     name: "Mira",
-    kind: "Slice Figure",
-    description: "轻量 figure，适合短对话、片段场景、灵感速记和睡前复盘。",
+    kind: "切片角色",
+    description: "轻量角色，适合短对话、片段场景、灵感速记和睡前复盘。",
     gradient: "from-white/16 via-white/5 to-transparent"
   }
 ];
 
 const posts = [
   {
-    title: "关于 Prime Figure 记忆的三条边界",
+    title: "关于本初角色记忆的三条边界",
     body: "长期记忆应该服务于关系，而不是复制聊天记录。",
     likes: "812",
     replies: "34"
   },
   {
-    title: "我为什么喜欢 Slice Figure",
+    title: "我为什么喜欢切片角色",
     body: "它像一段短促但准确的共鸣，不需要承担完整人格。",
     likes: "509",
     replies: "21"
@@ -64,13 +64,13 @@ export function ProfilePage({
           </div>
           <h1 className="mt-6 text-4xl font-semibold text-white md:text-5xl">Aether</h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-white/52">
-            一个正在共创 figure 的人。偏好安静、连续、带长期记忆的会话体验。
+            一个正在共创角色的人。偏好安静、连续、带长期记忆的会话体验。
           </p>
           <div className="mt-7 grid w-full max-w-2xl grid-cols-3 border-y border-white/10 py-5">
             {[
-              [String(agents.length), "Figures"],
-              [String(agents.filter((agent) => agent.type === "prime-figure").length), "Prime"],
-              [String(agents.filter((agent) => agent.type === "slice-figure").length), "Slice"]
+              [String(agents.length), "角色"],
+              [String(agents.filter((agent) => agent.type === "prime-figure").length), "本初角色"],
+              [String(agents.filter((agent) => agent.type === "slice-figure").length), "切片角色"]
             ].map(([value, label]) => (
               <div key={label}>
                 <div className="text-2xl font-semibold text-white">{value}</div>
@@ -81,11 +81,11 @@ export function ProfilePage({
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <button className="flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-medium text-[#09090b] active:scale-95">
               <PencilSimple size={17} />
-              Edit profile
+              编辑资料
             </button>
             <button className="flex items-center gap-2 rounded-full border border-white/15 px-5 py-3 text-sm text-white/70 transition hover:border-white/25 hover:text-white active:scale-95">
               <GearSix size={17} />
-              Preferences
+              偏好设置
             </button>
           </div>
         </div>
@@ -93,19 +93,19 @@ export function ProfilePage({
 
       <div className="glass-panel rounded-full p-1.5">
         <div className="grid grid-cols-2 gap-2">
-          <button className="rounded-full bg-white py-3 text-sm font-medium text-[#09090b]">Creations</button>
-          <button className="rounded-full py-3 text-sm font-medium text-white/55 transition hover:text-white">Posts</button>
+          <button className="rounded-full bg-white py-3 text-sm font-medium text-[#09090b]">创作</button>
+          <button className="rounded-full py-3 text-sm font-medium text-white/55 transition hover:text-white">动态</button>
         </div>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
         <div>
           <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-2xl font-semibold text-white">My figures</h2>
-            <span className="text-sm text-white/40">Prime Figure and Slice Figure</span>
+            <h2 className="text-2xl font-semibold text-white">我的角色</h2>
+            <span className="text-sm text-white/40">本初角色与切片角色</span>
           </div>
           {isLoadingAgents ? (
-            <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-6 text-sm text-white/45">Loading your figures...</div>
+            <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-6 text-sm text-white/45">正在加载角色……</div>
           ) : cards.length > 0 ? (
             <div className="grid gap-5 md:grid-cols-2">
               {cards.map((agent) => (
@@ -114,7 +114,7 @@ export function ProfilePage({
             </div>
           ) : (
             <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-6 text-sm leading-6 text-white/50">
-              You have not created any figures yet. Create a Slice Figure to start a new conversation.
+              你还没有创建任何角色。创建一个切片角色即可开始新的会话。
             </div>
           )}
         </div>
@@ -124,8 +124,8 @@ export function ProfilePage({
               <NotePencil size={21} weight="duotone" />
             </div>
             <div>
-              <h2 className="font-semibold text-white">Recent posts</h2>
-              <p className="text-xs text-white/40">Creation notes and reflections</p>
+              <h2 className="font-semibold text-white">近期动态</h2>
+              <p className="text-xs text-white/40">创作笔记与思考</p>
             </div>
           </div>
           <div className="mt-5 space-y-4">
@@ -153,9 +153,9 @@ export function ProfilePage({
 }
 
 function formatAgentType(agent: Agent) {
-  if (agent.type === "slice-figure") return "Slice Figure";
-  if (agent.type === "prime-world") return "Prime World";
-  return "Prime Figure";
+  if (agent.type === "slice-figure") return "切片角色";
+  if (agent.type === "prime-world") return "本初世界";
+  return "本初角色";
 }
 
 function getAgentFallbackDescription(agent: Agent) {

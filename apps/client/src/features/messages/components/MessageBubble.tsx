@@ -151,9 +151,16 @@ export function MessageBubble({
             message.text
           )}
         </div>
-        {message.status ? <span className="mr-1 text-[10px] text-white/30">{message.status}</span> : null}
+        {message.status ? <span className="mr-1 text-[10px] text-white/30">{formatMessageStatus(message.status)}</span> : null}
       </div>
       {mine ? <div className="h-8 w-8 flex-shrink-0 rounded-full border border-white/10 bg-white/[0.04]" /> : null}
     </div>
   );
+}
+
+function formatMessageStatus(status: string) {
+  if (status === "sending") return "发送中";
+  if (status === "typing") return "输入中";
+  if (status === "failed") return "失败";
+  return status;
 }

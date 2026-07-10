@@ -59,7 +59,7 @@ function sendAuthError(reply: FastifyReply, error: unknown) {
   }
 
   if (error instanceof ZodError) {
-    return reply.code(400).send({ error: "VALIDATION_ERROR", message: error.issues[0]?.message ?? "Invalid input." });
+    return reply.code(400).send({ error: "VALIDATION_ERROR", message: error.issues[0]?.message ?? "输入无效。" });
   }
 
   throw error;

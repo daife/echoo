@@ -15,7 +15,7 @@ export function RuntimeProvider({ children }: PropsWithChildren) {
   if (!runtime) {
     return (
       <div className="grid min-h-[100dvh] place-items-center bg-[#09090b] text-white">
-        <div className="glass-panel rounded-full px-5 py-3 text-sm text-white/70">Echoo is waking up</div>
+        <div className="glass-panel rounded-full px-5 py-3 text-sm text-white/70">Echoo 正在启动</div>
       </div>
     );
   }

@@ -109,7 +109,7 @@ export class PrimeActionExecutor {
         });
         const lastMessage = decision.actions.at(-1);
         if (lastMessage?.type !== "send_message")
-          throw new Error("Prime Figure send action list is invalid.");
+          throw new Error("本初角色的发送动作列表无效。");
         this.conversations.updatePreview({
           ownerUserId: input.ownerUserId,
           conversationId: input.conversationId,
@@ -153,7 +153,7 @@ export class PrimeActionExecutor {
         errorMessage:
           error instanceof Error
             ? error.message
-            : "Prime decision execution failed.",
+            : "本初角色决定执行失败。",
       });
       throw error;
     }
@@ -173,7 +173,7 @@ function appendMemories(
   timezone: string,
   now: number,
 ) {
-  const writes = decision.memoryWrites.map((memory) => ({
+  const writes = (decision.memoryWrites ?? []).map((memory) => ({
     id: `pmem_${randomUUID()}`,
     content: memory.content,
     eventAtMs: memory.eventAt
@@ -194,10 +194,6 @@ function applyVariableSnapshot(
   for (const definition of agent.detail.variableDefinitions) {
     const value = output[definition.key];
     if (value === undefined || value === null) {
-      if (definition.required)
-        throw new Error(
-          `Required Prime Figure variable is missing: ${definition.key}`,
-        );
       if (current[definition.key] !== undefined)
         next[definition.key] = current[definition.key];
       continue;
@@ -205,13 +201,13 @@ function applyVariableSnapshot(
 
     if (definition.type === "string") {
       if (typeof value !== "string")
-        throw new Error(`Variable ${definition.key} must be a string.`);
+        throw new Error(`变量 ${definition.key} 必须是字符串。`);
       next[definition.key] = value;
       continue;
     }
     if (definition.type === "number") {
       if (typeof value !== "number" || !Number.isFinite(value))
-        throw new Error(`Variable ${definition.key} must be a finite number.`);
+        throw new Error(`变量 ${definition.key} 必须是有限数字。`);
       next[definition.key] = Math.min(
         Math.max(value, definition.min ?? Number.NEGATIVE_INFINITY),
         definition.max ?? Number.POSITIVE_INFINITY,
@@ -220,7 +216,7 @@ function applyVariableSnapshot(
     }
     if (definition.type === "boolean") {
       if (typeof value !== "boolean")
-        throw new Error(`Variable ${definition.key} must be a boolean.`);
+        throw new Error(`变量 ${definition.key} 必须是布尔值。`);
       next[definition.key] = value;
       continue;
     }
@@ -229,7 +225,7 @@ function applyVariableSnapshot(
       try {
         next[definition.key] = JSON.parse(value) as PrimeFigureVariableValue;
       } catch {
-        throw new Error(`Variable ${definition.key} must contain valid JSON.`);
+        throw new Error(`变量 ${definition.key} 必须包含有效 JSON。`);
       }
     } else {
       next[definition.key] = value;

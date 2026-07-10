@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const requiredText = (label: string, max = 2000) =>
-  z.string().trim().min(1, `${label} is required.`).max(max);
+  z.string().trim().min(1, `${label}不能为空。`).max(max);
 const optionalText = (max = 2000) =>
   z.string().trim().max(max).optional().default("");
 
@@ -12,14 +12,14 @@ const imageUploadSchema = z.object({
 });
 
 export const agentAttributeSchema = z.object({
-  key: requiredText("Attribute key", 80),
-  value: requiredText("Attribute value", 240),
+  key: requiredText("属性键", 80),
+  value: requiredText("属性值", 240),
 });
 
 const createAgentBaseSchema = z.object({
   avatar: imageUploadSchema.nullish(),
   cover: imageUploadSchema.nullish(),
-  name: requiredText("Agent name", 80),
+  name: requiredText("角色名称", 80),
   attributes: z.array(agentAttributeSchema).max(50).optional().default([]),
   tags: z
     .array(z.string().trim().min(1).max(40))
@@ -41,11 +41,11 @@ export const createSliceFigureSchema = createAgentBaseSchema.extend({
     .optional()
     .default([]),
   unlockConditions: z.record(z.string(), z.unknown()).nullish(),
-  persona: requiredText("Persona"),
-  background: requiredText("Background"),
-  personality: requiredText("Personality"),
-  responseStyle: requiredText("Response style"),
-  systemPrompt: requiredText("System prompt", 12000),
+  persona: requiredText("人设"),
+  background: requiredText("背景"),
+  personality: requiredText("性格"),
+  responseStyle: requiredText("回复风格"),
+  systemPrompt: requiredText("系统提示词", 12000),
 });
 
 const primeVariableValueSchema = z.union([
@@ -59,14 +59,13 @@ const primeVariableValueSchema = z.union([
 
 export const primeFigureVariableDefinitionSchema = z
   .object({
-    key: requiredText("Variable key", 80).regex(
+    key: requiredText("变量键", 80).regex(
       /^[A-Za-z_][A-Za-z0-9_]*$/,
-      "Variable key must be JSON-schema safe.",
+      "变量键必须符合 JSON Schema 的安全命名规则。",
     ),
-    label: requiredText("Variable label", 120),
+    label: requiredText("变量标签", 120),
     type: z.enum(["string", "number", "boolean", "json"]),
-    description: requiredText("Variable description", 1000),
-    required: z.boolean(),
+    description: requiredText("变量描述", 1000),
     defaultValue: primeVariableValueSchema.optional(),
     min: z.number().optional(),
     max: z.number().optional(),
@@ -78,7 +77,7 @@ export const primeFigureVariableDefinitionSchema = z
     ) {
       context.addIssue({
         code: "custom",
-        message: "Only number variables may define min or max.",
+        message: "只有数字变量可以定义最小值或最大值。",
       });
     }
     if (
@@ -88,17 +87,10 @@ export const primeFigureVariableDefinitionSchema = z
     ) {
       context.addIssue({
         code: "custom",
-        message: "Variable min cannot be greater than max.",
+        message: "变量最小值不能大于最大值。",
       });
     }
     if (definition.defaultValue === undefined) return;
-    if (definition.required && definition.defaultValue === null) {
-      context.addIssue({
-        code: "custom",
-        message: "A required variable cannot have a null default value.",
-      });
-      return;
-    }
     const matches =
       (definition.type === "string" &&
         typeof definition.defaultValue === "string") ||
@@ -112,41 +104,41 @@ export const primeFigureVariableDefinitionSchema = z
     if (!matches)
       context.addIssue({
         code: "custom",
-        message: `Default value does not match ${definition.type}.`,
+        message: `默认值与 ${definition.type} 类型不匹配。`,
       });
   });
 
 export const primeFigureMemorySchema = z.object({
   id: z.string().trim().min(1).max(120),
-  content: requiredText("Memory", 4000),
+  content: requiredText("记忆", 4000),
   eventAtMs: z.number().nonnegative(),
   recordedAtMs: z.number().nonnegative(),
 });
 
 const clockTimeSchema = z
   .string()
-  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Time must use HH:mm.");
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "时间必须采用 HH:mm 格式。");
 
 export const primeFigureScheduleSchema = z.object({
-  timezone: requiredText("Schedule timezone", 80).refine((timezone) => {
+  timezone: requiredText("日程时区", 80).refine((timezone) => {
     try {
       new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
       return true;
     } catch {
       return false;
     }
-  }, "Schedule timezone must be a valid IANA timezone."),
+  }, "日程时区必须是有效的 IANA 时区。"),
   segments: z
     .array(
       z.object({
-        label: requiredText("Schedule segment label", 120),
+        label: requiredText("日程时段名称", 120),
         days: z
           .array(z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]))
           .min(1)
           .max(7),
         start: clockTimeSchema,
         end: clockTimeSchema,
-        description: requiredText("Schedule segment description", 1000),
+        description: requiredText("日程时段描述", 1000),
       }),
     )
     .max(100),
@@ -175,10 +167,10 @@ export const createPrimeFigureSchema = createAgentBaseSchema.extend({
     .optional()
     .default([]),
   unlockConditions: z.record(z.string(), z.unknown()).nullish(),
-  persona: requiredText("Persona"),
-  background: requiredText("Background"),
-  personality: requiredText("Personality"),
-  responseStyle: requiredText("Response style"),
+  persona: requiredText("人设"),
+  background: requiredText("背景"),
+  personality: requiredText("性格"),
+  responseStyle: requiredText("回复风格"),
   decisionStyle: optionalText(4000),
   currentSituation: optionalText(4000),
   schedule: primeFigureScheduleSchema
@@ -195,7 +187,7 @@ export const createPrimeFigureSchema = createAgentBaseSchema.extend({
           context.addIssue({
             code: "custom",
             path: [index, "key"],
-            message: "Variable keys must be unique.",
+            message: "变量键不能重复。",
           });
         keys.add(definition.key);
       });
@@ -219,11 +211,11 @@ const urlLikeSchema = z.string().trim().min(1).max(2048);
 export const primeMessageContentSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("text"),
-    text: requiredText("Text", 12000),
+    text: requiredText("文本", 12000),
   }),
   z.object({
     type: z.literal("image"),
-    description: requiredText("Image description", 4000),
+    description: requiredText("图片描述", 4000),
     generationPrompt: optionalText(4000),
     referenceResourceUrls: z
       .array(urlLikeSchema)
@@ -234,19 +226,19 @@ export const primeMessageContentSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("video"),
-    description: requiredText("Video description", 4000),
+    description: requiredText("视频描述", 4000),
     resourceUrl: urlLikeSchema,
   }),
   z.object({
     type: z.literal("voice"),
-    description: requiredText("Voice description", 4000),
-    transcript: requiredText("Voice transcript", 12000),
+    description: requiredText("语音描述", 4000),
+    transcript: requiredText("语音转写", 12000),
     resourceUrl: urlLikeSchema.optional(),
   }),
   z.object({
     type: z.literal("sticker"),
-    stickerId: requiredText("Sticker id", 120),
-    description: requiredText("Sticker description", 1000),
+    stickerId: requiredText("贴纸 ID", 120),
+    description: requiredText("贴纸描述", 1000),
     resourceUrl: urlLikeSchema.optional(),
   }),
   z.object({
@@ -286,7 +278,7 @@ export const primeFigureActionSchema = z.discriminatedUnion("type", [
     type: z.literal("send_message"),
     message: z.object({
       type: z.literal("text"),
-      text: requiredText("Text", 12000),
+      text: requiredText("文本", 12000),
     }),
   }),
   z.object({
@@ -296,20 +288,22 @@ export const primeFigureActionSchema = z.discriminatedUnion("type", [
 ]);
 
 export const primeFigureDecisionSchema = z.object({
-  rationale: requiredText("Figure rationale", 2000),
-  figureMood: requiredText("Figure mood", 500),
+  rationale: requiredText("角色决策依据", 2000),
+  figureMood: requiredText("角色情绪", 500),
   variables: z.record(z.string(), primeVariableValueSchema),
   memoryWrites: z
     .array(
       z.object({
-        content: requiredText("Memory", 4000),
+        content: requiredText("记忆", 4000),
         eventAt: z
           .string()
           .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
           .nullable(),
       }),
     )
-    .max(8),
+    .max(8)
+    .optional()
+    .default([]),
   stateUpdates: z
     .object({
       currentSituation: z.string().trim().max(4000).nullish(),
@@ -328,7 +322,7 @@ export const primeFigureDecisionSchema = z.object({
       if (containsSilence && actions.length !== 1) {
         context.addIssue({
           code: "custom",
-          message: "silence must be the only action in a decision.",
+          message: "silence 必须是一次决定中的唯一动作。",
         });
       }
     }),

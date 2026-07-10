@@ -41,10 +41,10 @@ export function MessagesPage({
     rollbackConversation
   } = useConversationMessages({ agent, onConversationDeleted });
   const mainRef = useRef<HTMLElement | null>(null);
-  const title = agent?.name ?? "Choose a figure";
+  const title = agent?.name ?? "选择一个角色";
   const subtitle = agent
-    ? `${formatAgentType(agent)}, online now`
-    : "Open or create a figure to start chatting";
+    ? `${formatAgentType(agent)}，当前在线`
+    : "打开或创建一个角色以开始聊天";
   const prologueHtml =
     agent?.type === "slice-figure" || agent?.type === "prime-figure"
       ? agent.detail.prologueHtml
@@ -96,7 +96,7 @@ export function MessagesPage({
           </div>
         </div>
         <button
-          aria-label="Conversation settings"
+          aria-label="会话设置"
           className="grid h-10 w-10 place-items-center rounded-full border border-white/10 text-white/65 transition hover:border-white/20 hover:text-white active:scale-95"
           onClick={() => setIsSettingsOpen((open) => !open)}
         >
@@ -107,7 +107,7 @@ export function MessagesPage({
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-white">会话设置</h2>
               <button
-                aria-label="Close conversation settings"
+                aria-label="关闭会话设置"
                 className="grid h-8 w-8 place-items-center rounded-full text-white/45 transition hover:bg-white/[0.06] hover:text-white"
                 onClick={() => setIsSettingsOpen(false)}
               >
@@ -170,12 +170,12 @@ export function MessagesPage({
             className="h-[420px] w-full rounded-2xl border border-white/8 bg-transparent"
             sandbox="allow-scripts"
             srcDoc={buildPrologueDocument(prologueHtml)}
-            title={`${title} prologue`}
+            title={`${title} 的序引`}
           />
         ) : null}
         <div className="flex justify-center">
           <span className="rounded-full border border-white/8 bg-white/[0.025] px-4 py-1 text-xs uppercase tracking-[0.16em] text-white/30">
-            Conversation
+            会话
           </span>
         </div>
         {visibleMessages.map((message) => (
@@ -275,8 +275,8 @@ function getAgentEditor(agent: Agent, updateHandlers: UpdateAgentHandlers): Agen
   if (agent.type !== "slice-figure") return null;
 
   return {
-    actionLabel: "修改 Slice Figure",
-    actionDescription: "修改姓名、人设、情景、属性和 tag。",
+    actionLabel: "修改切片角色",
+    actionDescription: "修改姓名、人设、情景、属性和标签。",
     update: (payload) => updateHandlers["slice-figure"](agent.id, payload),
     renderDialog: (props) => <EditSliceFigureDialog agent={agent} {...props} />
   };
@@ -358,8 +358,8 @@ function EditSliceFigureDialog({
       <form className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/10 bg-[#101014] p-5 shadow-[0_24px_100px_rgba(0,0,0,0.55)] md:p-7" onSubmit={submit}>
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-semibold text-white">修改 Slice Figure</h2>
-            <p className="mt-1 text-sm text-white/42">沿用创建 Figure 的字段逻辑，属性和 tag 只用于展示。</p>
+            <h2 className="text-xl font-semibold text-white">修改切片角色</h2>
+            <p className="mt-1 text-sm text-white/42">沿用创建角色的字段逻辑，属性和标签只用于展示。</p>
           </div>
           <button className="grid h-9 w-9 place-items-center rounded-full text-white/50 transition hover:bg-white/[0.06] hover:text-white" type="button" onClick={onClose}>
             <X size={17} />
@@ -372,12 +372,12 @@ function EditSliceFigureDialog({
           <TextField label="背景" required multiline value={form.background} onChange={(value) => updateField("background", value)} />
           <TextField label="性格" required multiline value={form.personality} onChange={(value) => updateField("personality", value)} />
           <TextField label="回复风格" required multiline value={form.responseStyle} onChange={(value) => updateField("responseStyle", value)} />
-          <TextField label="System prompt 模板" required multiline mono value={form.systemPrompt} onChange={(value) => updateField("systemPrompt", value)} />
+          <TextField label="系统提示词模板" required multiline mono value={form.systemPrompt} onChange={(value) => updateField("systemPrompt", value)} />
           <TextField label="介绍" multiline value={form.introduction ?? ""} onChange={(value) => updateField("introduction", value)} />
           <TextField label="叙引（HTML，可选）" multiline mono value={form.prologueHtml ?? ""} onChange={(value) => updateField("prologueHtml", value)} />
           <TextField label="当前情景（可选）" multiline value={form.currentSituation ?? ""} onChange={(value) => updateField("currentSituation", value)} />
           <TextField label="开场白（可选）" multiline value={form.openingLine ?? ""} onChange={(value) => updateField("openingLine", value)} />
-          <TextField label="链接的 figure ID（逗号分隔）" value={(form.linkedAgentIds ?? []).join(", ")} onChange={(value) => updateList("linkedAgentIds", value)} />
+          <TextField label="链接的角色 ID（逗号分隔）" value={(form.linkedAgentIds ?? []).join(", ")} onChange={(value) => updateList("linkedAgentIds", value)} />
 
           <EditablePairs
             items={form.attributes ?? []}
@@ -404,7 +404,7 @@ function EditSliceFigureDialog({
 
         <div className="mt-5">
           <p className="mb-3 text-xs leading-5 text-white/38">
-            可用：{"{{user.name}}"}、{"{{figure.persona}}"}、{"{{figure.background}}"}、{"{{figure.personality}}"}、{"{{figure.responseStyle}}"}、{"{{figure.currentSituation}}"}。不提供 user id、email 等字段。
+            可用：{"{{user.name}}"}、{"{{figure.persona}}"}、{"{{figure.background}}"}、{"{{figure.personality}}"}、{"{{figure.responseStyle}}"}、{"{{figure.currentSituation}}"}。不提供用户 ID、邮箱等字段。
           </p>
           <button className="rounded-full border border-white/12 px-4 py-2 text-sm text-white/65 transition hover:border-white/25 hover:text-white" type="button" onClick={() => setPromptPreview(buildFigureSystemPrompt(form, { user }))}>
             预览提示词
@@ -415,7 +415,7 @@ function EditSliceFigureDialog({
         {localError || error ? <p className="mt-5 rounded-xl border border-white/10 bg-white/[0.035] p-4 text-sm text-white/70">{localError ?? error}</p> : null}
 
         <button className="mt-6 w-full rounded-full bg-white px-5 py-3 text-sm font-medium text-[#09090b] transition disabled:cursor-not-allowed disabled:opacity-50 active:scale-95" disabled={isSubmitting} type="submit">
-          {isSubmitting ? "Saving..." : "保存修改"}
+          {isSubmitting ? "保存中……" : "保存修改"}
         </button>
       </form>
     </div>
@@ -476,10 +476,10 @@ function EditablePairs({
       <div className="flex items-center justify-between gap-4">
         <div>
           <span className="text-sm font-medium text-white/78">属性</span>
-          <p className="mt-1 text-xs text-white/35">用于卡片内部右上角标注，不进入 system prompt。</p>
+          <p className="mt-1 text-xs text-white/35">用于卡片内部右上角标注，不进入系统提示词。</p>
         </div>
         <button className="text-sm text-white/55 hover:text-white" type="button" onClick={onAdd}>
-          Add
+          添加
         </button>
       </div>
       <div className="mt-3 grid gap-3">
@@ -517,11 +517,11 @@ function EditableTags({
     <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <span className="text-sm font-medium text-white/78">Tag</span>
-          <p className="mt-1 text-xs text-white/35">用于卡片底部标注，不进入 system prompt。</p>
+          <span className="text-sm font-medium text-white/78">标签</span>
+          <p className="mt-1 text-xs text-white/35">用于卡片底部标注，不进入系统提示词。</p>
         </div>
         <button className="text-sm text-white/55 hover:text-white" type="button" onClick={onAdd}>
-          Add
+          添加
         </button>
       </div>
       <div className="mt-3 grid gap-3">
@@ -529,7 +529,7 @@ function EditableTags({
           <div key={index} className="grid gap-3 md:grid-cols-[1fr_auto]">
             <input className="h-11 rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none" value={tag} placeholder="陪伴" onChange={(event) => onUpdate(index, event.target.value)} />
             <button
-              aria-label="删除 tag"
+              aria-label="删除标签"
               className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 text-white/45 transition hover:border-white/20 hover:text-white"
               type="button"
               onClick={() => onRemove(index)}
@@ -564,9 +564,9 @@ function agentToUpdateForm(agent: SliceFigureAgent): UpdateSliceFigureRequest {
 }
 
 function formatAgentType(agent: Agent) {
-  if (agent.type === "slice-figure") return "Slice Figure";
-  if (agent.type === "prime-world") return "Prime World";
-  return "Prime Figure";
+  if (agent.type === "slice-figure") return "切片角色";
+  if (agent.type === "prime-world") return "本初世界";
+  return "本初角色";
 }
 
 function buildUpdatePayload(form: UpdateSliceFigureRequest): UpdateSliceFigureRequest | string {
@@ -584,7 +584,7 @@ function buildUpdatePayload(form: UpdateSliceFigureRequest): UpdateSliceFigureRe
   if (!requiredText.background) return "背景不能为空。";
   if (!requiredText.personality) return "性格不能为空。";
   if (!requiredText.responseStyle) return "回复风格不能为空。";
-  if (!requiredText.systemPrompt) return "System prompt 不能为空。";
+  if (!requiredText.systemPrompt) return "系统提示词不能为空。";
 
   const attributes = (form.attributes ?? []).map((attribute) => ({
     key: typeof attribute.key === "string" ? attribute.key.trim() : "",
@@ -593,10 +593,10 @@ function buildUpdatePayload(form: UpdateSliceFigureRequest): UpdateSliceFigureRe
   if (attributes.some((attribute) => !attribute.key || !attribute.value)) return "属性不能包含空键或空值，请补全或删除该属性。";
 
   const tags = (form.tags ?? []).map((tag) => (typeof tag === "string" ? tag.trim() : ""));
-  if (tags.some((tag) => !tag)) return "Tag 不能包含空值，请补全或删除该 tag。";
+  if (tags.some((tag) => !tag)) return "标签不能包含空值，请补全或删除该标签。";
 
   const linkedAgentIds = (form.linkedAgentIds ?? []).map((agentId) => (typeof agentId === "string" ? agentId.trim() : ""));
-  if (linkedAgentIds.some((agentId) => !agentId)) return "链接的 figure ID 不能包含空值。";
+  if (linkedAgentIds.some((agentId) => !agentId)) return "链接的角色 ID 不能包含空值。";
 
   return {
     ...form,

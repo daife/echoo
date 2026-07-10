@@ -35,7 +35,6 @@ export interface PrimeFigureVariableDefinition {
   label: string;
   type: PrimeFigureVariableType;
   description: string;
-  required: boolean;
   defaultValue?: PrimeFigureVariableValue;
   min?: number;
   max?: number;
@@ -269,7 +268,7 @@ export interface PrimeFigureDecision {
   rationale: string;
   figureMood: string;
   variables: Record<string, PrimeFigureVariableValue>;
-  memoryWrites: Array<{
+  memoryWrites?: Array<{
     content: string;
     eventAt: string | null;
   }>;

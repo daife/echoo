@@ -27,12 +27,12 @@ export function ConversationRail({
       <div className="glass-panel sticky top-24 overflow-hidden rounded-2xl">
         <div className="border-b border-white/8 p-5">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-white">Sessions</h2>
+            <h2 className="text-xl font-semibold text-white">会话</h2>
             <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[#09090b]">{visibleConversations.length}</span>
           </div>
           <div className="mt-5 flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.025] px-4 py-3 text-white/45">
             <MagnifyingGlass size={17} />
-            <span className="text-sm">Search figures and memories</span>
+            <span className="text-sm">搜索角色与记忆</span>
           </div>
         </div>
         <div className="max-h-[calc(100dvh-220px)] overflow-y-auto p-2 no-scrollbar">

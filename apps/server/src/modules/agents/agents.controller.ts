@@ -21,7 +21,7 @@ export async function registerAgentRoutes(app: FastifyInstance) {
       return reply.code(201).send({ agent });
     } catch (error) {
       if (error instanceof ZodError) {
-        return reply.code(400).send({ error: "VALIDATION_ERROR", message: error.issues[0]?.message ?? "Invalid agent." });
+        return reply.code(400).send({ error: "VALIDATION_ERROR", message: error.issues[0]?.message ?? "角色数据无效。" });
       }
       throw error;
     }
@@ -33,11 +33,11 @@ export async function registerAgentRoutes(app: FastifyInstance) {
 
     try {
       const agent = agents.updatePrimeFigure(userId, request.params.agentId, request.body);
-      if (!agent) return reply.code(404).send({ error: "NOT_FOUND", message: "Prime Figure not found." });
+      if (!agent) return reply.code(404).send({ error: "NOT_FOUND", message: "未找到本初角色。" });
       return { agent };
     } catch (error) {
       if (error instanceof ZodError) {
-        return reply.code(400).send({ error: "VALIDATION_ERROR", message: error.issues[0]?.message ?? "Invalid agent." });
+        return reply.code(400).send({ error: "VALIDATION_ERROR", message: error.issues[0]?.message ?? "角色数据无效。" });
       }
       throw error;
     }
@@ -49,11 +49,11 @@ export async function registerAgentRoutes(app: FastifyInstance) {
 
     try {
       const agent = agents.updateSliceFigure(userId, request.params.agentId, request.body);
-      if (!agent) return reply.code(404).send({ error: "NOT_FOUND", message: "Figure not found." });
+      if (!agent) return reply.code(404).send({ error: "NOT_FOUND", message: "未找到角色。" });
       return { agent };
     } catch (error) {
       if (error instanceof ZodError) {
-        return reply.code(400).send({ error: "VALIDATION_ERROR", message: error.issues[0]?.message ?? "Invalid agent." });
+        return reply.code(400).send({ error: "VALIDATION_ERROR", message: error.issues[0]?.message ?? "角色数据无效。" });
       }
       throw error;
     }

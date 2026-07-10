@@ -14,13 +14,13 @@ export class AgentsService {
 
   createSliceFigure(userId: string, input: CreateSliceFigureRequest) {
     const handler = this.kinds.get("slice-figure");
-    if (!handler) throw new Error("Slice Figure handler is not registered.");
+    if (!handler) throw new Error("切片角色处理器未注册。");
     return handler.create(userId, input);
   }
 
   createPrimeFigure(userId: string, input: CreatePrimeFigureRequest) {
     const handler = this.kinds.get("prime-figure");
-    if (!handler) throw new Error("Prime Figure handler is not registered.");
+    if (!handler) throw new Error("本初角色处理器未注册。");
     return handler.create(userId, input);
   }
 
@@ -31,13 +31,13 @@ export class AgentsService {
 
   updateSliceFigure(userId: string, agentId: string, input: UpdateSliceFigureRequest) {
     const handler = this.kinds.get("slice-figure");
-    if (!handler) throw new Error("Slice Figure handler is not registered.");
+    if (!handler) throw new Error("切片角色处理器未注册。");
     return handler.update(userId, agentId, input);
   }
 
   updatePrimeFigure(userId: string, agentId: string, input: UpdatePrimeFigureRequest) {
     const handler = this.kinds.get("prime-figure");
-    if (!handler) throw new Error("Prime Figure handler is not registered.");
+    if (!handler) throw new Error("本初角色处理器未注册。");
     return handler.update(userId, agentId, input);
   }
 }

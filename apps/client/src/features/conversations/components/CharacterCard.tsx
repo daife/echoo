@@ -50,7 +50,7 @@ export function CharacterCard({
             <button
               className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-white/60 transition group-hover:border-white/20 group-hover:text-white active:scale-95"
               onClick={() => onOpenChat(agent)}
-              aria-label={`Open ${agent.name}`}
+              aria-label={`打开 ${agent.name}`}
             >
               <ArrowUpRight size={18} />
             </button>
