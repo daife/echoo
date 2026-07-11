@@ -16,6 +16,12 @@ const allowedMimeTypes = new Map([
   ["image/gif", ".gif"],
 ]);
 
+const generatedMimeTypes = new Map([
+  ["audio/mpeg", ".mp3"],
+  ["audio/wav", ".wav"],
+  ["audio/ogg", ".ogg"],
+]);
+
 export interface ResourceRecord {
   id: string;
   ownerUserId: string;
@@ -106,6 +112,53 @@ export class ResourceRepository {
       kind,
       mimeType: upload.mimeType,
       originalFileName: upload.fileName,
+      storagePath,
+      publicPath,
+      createdAt: now,
+    };
+  }
+
+  saveGeneratedMedia(
+    ownerUserId: string,
+    kind: "prime_figure_voice",
+    mimeType: string,
+    data: Buffer,
+  ): ResourceRecord {
+    const extension = generatedMimeTypes.get(mimeType);
+    if (!extension)
+      throw new Error(`Unsupported generated media type: ${mimeType}.`);
+    if (!data.length) throw new Error("Generated media is empty.");
+
+    const id = `res_${randomUUID()}`;
+    const fileName = `${id}${extension}`;
+    const storagePath = join(this.rootDir, ownerUserId, fileName);
+    const publicPath = `/api/resources/${id}/file`;
+    const now = Date.now();
+    mkdirSync(dirname(storagePath), { recursive: true });
+    writeFileSync(storagePath, data);
+    this.db
+      .prepare(
+        `INSERT INTO resources (
+          id, owner_user_id, kind, mime_type, original_file_name,
+          storage_path, public_path, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        ownerUserId,
+        kind,
+        mimeType,
+        fileName,
+        storagePath,
+        publicPath,
+        now,
+      );
+    return {
+      id,
+      ownerUserId,
+      kind,
+      mimeType,
+      originalFileName: fileName,
       storagePath,
       publicPath,
       createdAt: now,

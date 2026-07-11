@@ -1,5 +1,8 @@
 import { ArrowCounterClockwise, Waveform } from "@phosphor-icons/react";
-import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import type {
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import { useEffect, useRef, useState } from "react";
 
 export interface MessageBubbleModel {
@@ -8,13 +11,14 @@ export interface MessageBubbleModel {
   text: string;
   status?: string;
   kind?: string;
+  mediaUrl?: string;
   canRollback?: boolean;
 }
 
 export function MessageBubble({
   message,
   onRetry,
-  onRollback
+  onRollback,
 }: {
   message: MessageBubbleModel;
   onRetry?: (messageId: string) => void;
@@ -71,45 +75,67 @@ export function MessageBubble({
         onPointerUp: clearPressTimer,
         onPointerCancel: clearPressTimer,
         onPointerLeave: clearPressTimer,
-        onContextMenu: handleContextMenu
+        onContextMenu: handleContextMenu,
       }
     : {};
 
-  const actionMenu = canRollback && isActionOpen ? (
-    <div
-      ref={menuRef}
-      className={`absolute -top-11 z-20 rounded-xl border border-white/10 bg-[#17171b] p-1.5 shadow-[0_18px_50px_rgba(0,0,0,0.38)] ${
-        mine ? "right-10" : "left-10"
-      }`}
-      onPointerDown={(event) => event.stopPropagation()}
-    >
-      <button
-        className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-white/80 transition hover:bg-white/[0.06] hover:text-white active:scale-95"
-        type="button"
-        onClick={() => {
-          setIsActionOpen(false);
-          onRollback?.(message.id);
-        }}
+  const actionMenu =
+    canRollback && isActionOpen ? (
+      <div
+        ref={menuRef}
+        className={`absolute -top-11 z-20 rounded-xl border border-white/10 bg-[#17171b] p-1.5 shadow-[0_18px_50px_rgba(0,0,0,0.38)] ${
+          mine ? "right-10" : "left-10"
+        }`}
+        onPointerDown={(event) => event.stopPropagation()}
       >
-        <ArrowCounterClockwise size={14} />
-        回溯
-      </button>
-    </div>
-  ) : null;
+        <button
+          className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-white/80 transition hover:bg-white/[0.06] hover:text-white active:scale-95"
+          type="button"
+          onClick={() => {
+            setIsActionOpen(false);
+            onRollback?.(message.id);
+          }}
+        >
+          <ArrowCounterClockwise size={14} />
+          回溯
+        </button>
+      </div>
+    ) : null;
 
   if (message.kind === "voice") {
+    const mediaUrl = resolveMediaUrl(message.mediaUrl);
     return (
-      <div className="relative flex max-w-[85%] items-center gap-3 self-start md:max-w-[70%]" {...longPressProps}>
+      <div
+        className="relative flex max-w-[85%] items-center gap-3 self-start md:max-w-[70%]"
+        {...longPressProps}
+      >
         {actionMenu}
         <div className="h-8 w-8 rounded-full border border-white/10 bg-white/[0.04]" />
-        <div className="flex items-center gap-3 py-2 text-white">
-          <Waveform size={23} weight="duotone" />
-          <div className="flex items-center gap-1">
-            {[16, 24, 12, 20, 8].map((height, index) => (
-              <span key={index} className="w-1 rounded-full bg-white/70" style={{ height }} />
-            ))}
+        <div className="flex min-w-0 flex-col gap-2 py-2 text-white">
+          <div className="flex items-center gap-3">
+            <Waveform size={23} weight="duotone" />
+            <div className="flex items-center gap-1">
+              {[16, 24, 12, 20, 8].map((height, index) => (
+                <span
+                  key={index}
+                  className="w-1 rounded-full bg-white/70"
+                  style={{ height }}
+                />
+              ))}
+            </div>
+            <span className="text-xs leading-5 text-white/55">
+              {message.text ||
+                (message.status === "typing" ? "正在生成语音…" : "语音")}
+            </span>
           </div>
-          <span className="text-xs text-white/45">{message.text}</span>
+          {mediaUrl ? (
+            <audio
+              className="h-8 w-[260px] max-w-full"
+              controls
+              preload="metadata"
+              src={mediaUrl}
+            />
+          ) : null}
         </div>
       </div>
     );
@@ -121,7 +147,9 @@ export function MessageBubble({
       {...longPressProps}
     >
       {actionMenu}
-      {!mine ? <div className="h-8 w-8 flex-shrink-0 rounded-full border border-white/10 bg-white/[0.04]" /> : null}
+      {!mine ? (
+        <div className="h-8 w-8 flex-shrink-0 rounded-full border border-white/10 bg-white/[0.04]" />
+      ) : null}
       {canRetry ? (
         <button
           className="mt-1 rounded-full border border-red-300/25 px-3 py-1.5 text-[11px] font-medium text-red-100/80 transition hover:border-red-200/45 hover:text-red-50 active:scale-95"
@@ -131,7 +159,9 @@ export function MessageBubble({
           重试
         </button>
       ) : null}
-      <div className={`flex flex-col gap-1 ${mine ? "items-end" : "items-start"}`}>
+      <div
+        className={`flex flex-col gap-1 ${mine ? "items-end" : "items-start"}`}
+      >
         <div
           className={`rounded-2xl px-4 py-3 text-sm leading-6 ${
             mine
@@ -151,11 +181,25 @@ export function MessageBubble({
             message.text
           )}
         </div>
-        {message.status ? <span className="mr-1 text-[10px] text-white/30">{formatMessageStatus(message.status)}</span> : null}
+        {message.status ? (
+          <span className="mr-1 text-[10px] text-white/30">
+            {formatMessageStatus(message.status)}
+          </span>
+        ) : null}
       </div>
-      {mine ? <div className="h-8 w-8 flex-shrink-0 rounded-full border border-white/10 bg-white/[0.04]" /> : null}
+      {mine ? (
+        <div className="h-8 w-8 flex-shrink-0 rounded-full border border-white/10 bg-white/[0.04]" />
+      ) : null}
     </div>
   );
+}
+
+function resolveMediaUrl(mediaUrl?: string) {
+  if (!mediaUrl) return undefined;
+  if (/^https?:\/\//.test(mediaUrl)) return mediaUrl;
+  const apiBase =
+    import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787/api";
+  return new URL(mediaUrl, new URL(apiBase).origin).toString();
 }
 
 function formatMessageStatus(status: string) {

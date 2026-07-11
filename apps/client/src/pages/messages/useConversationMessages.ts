@@ -3,12 +3,13 @@ import type { FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { initApp } from "../../app/bootstrap/initApp";
 import { useRuntime } from "../../app/providers/RuntimeProvider";
+import { StreamingAudioPlayer } from "../../features/messages/streamingAudioPlayer";
 import {
   appendMessageDelta,
   createPendingTextMessage,
   mergeIncomingMessage,
   mergeLocalMessage,
-  mergeSentTextMessageResult
+  mergeSentTextMessageResult,
 } from "../../services/localMessageState";
 
 interface StreamDisplayBuffer {
@@ -25,12 +26,12 @@ export interface ConversationSettings {
 }
 
 export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
-  streamEnabled: true
+  streamEnabled: true,
 };
 
 export function useConversationMessages({
   agent,
-  onConversationDeleted
+  onConversationDeleted,
 }: {
   agent?: Agent;
   onConversationDeleted?: (conversationId: string) => void;
@@ -40,14 +41,20 @@ export function useConversationMessages({
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const [retryingMessageId, setRetryingMessageId] = useState<string | null>(null);
-  const [rollingBackMessageId, setRollingBackMessageId] = useState<string | null>(null);
+  const [retryingMessageId, setRetryingMessageId] = useState<string | null>(
+    null,
+  );
+  const [rollingBackMessageId, setRollingBackMessageId] = useState<
+    string | null
+  >(null);
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [conversationSettings, setConversationSettings] = useState<ConversationSettings>(DEFAULT_CONVERSATION_SETTINGS);
+  const [conversationSettings, setConversationSettings] =
+    useState<ConversationSettings>(DEFAULT_CONVERSATION_SETTINGS);
   const [error, setError] = useState<string | null>(null);
   const messagesRef = useRef<LocalMessage[]>([]);
   const streamBuffersRef = useRef(new Map<string, StreamDisplayBuffer>());
+  const streamingAudioRef = useRef(new StreamingAudioPlayer());
   const conversationId = agent?.conversationId;
   const canRollback = agent?.type === "slice-figure";
 
@@ -67,7 +74,9 @@ export function useConversationMessages({
       setMessages([]);
       return;
     }
-    setMessages(await services.messageService.listLocalMessages(conversationId));
+    setMessages(
+      await services.messageService.listLocalMessages(conversationId),
+    );
   }, [conversationId, services.messageService]);
 
   useEffect(() => {
@@ -78,10 +87,17 @@ export function useConversationMessages({
     }
 
     let cancelled = false;
-    void runtime.storage.getSetting<ConversationSettings>(getConversationSettingsKey(conversationId)).then((settings) => {
-      if (cancelled) return;
-      setConversationSettings({ ...DEFAULT_CONVERSATION_SETTINGS, ...(settings ?? {}) });
-    });
+    void runtime.storage
+      .getSetting<ConversationSettings>(
+        getConversationSettingsKey(conversationId),
+      )
+      .then((settings) => {
+        if (cancelled) return;
+        setConversationSettings({
+          ...DEFAULT_CONVERSATION_SETTINGS,
+          ...(settings ?? {}),
+        });
+      });
 
     return () => {
       cancelled = true;
@@ -92,9 +108,12 @@ export function useConversationMessages({
     async (settings: ConversationSettings) => {
       if (!conversationId) return;
       setConversationSettings(settings);
-      await runtime.storage.setSetting(getConversationSettingsKey(conversationId), settings);
+      await runtime.storage.setSetting(
+        getConversationSettingsKey(conversationId),
+        settings,
+      );
     },
-    [conversationId, runtime.storage]
+    [conversationId, runtime.storage],
   );
 
   const scheduleStreamDrain = useCallback((messageId: string) => {
@@ -108,7 +127,9 @@ export function useConversationMessages({
       const nextChar = currentBuffer.chars[currentBuffer.cursor];
       if (nextChar) {
         currentBuffer.cursor += 1;
-        setMessages((current) => appendMessageDelta(current, messageId, nextChar, Date.now()));
+        setMessages((current) =>
+          appendMessageDelta(current, messageId, nextChar, Date.now()),
+        );
       }
 
       if (currentBuffer.cursor > 256) {
@@ -119,13 +140,21 @@ export function useConversationMessages({
       if (currentBuffer.cursor >= currentBuffer.chars.length) {
         currentBuffer.timerId = null;
         if (currentBuffer.completedMessage) {
-          setMessages((current) => mergeLocalMessage(current, currentBuffer.completedMessage as LocalMessage));
+          setMessages((current) =>
+            mergeLocalMessage(
+              current,
+              currentBuffer.completedMessage as LocalMessage,
+            ),
+          );
           streamBuffersRef.current.delete(messageId);
         }
         return;
       }
 
-      currentBuffer.timerId = window.setTimeout(drain, getStreamDrainDelay(currentBuffer));
+      currentBuffer.timerId = window.setTimeout(
+        drain,
+        getStreamDrainDelay(currentBuffer),
+      );
     };
 
     buffer.timerId = window.setTimeout(drain, getStreamDrainDelay(buffer));
@@ -134,41 +163,43 @@ export function useConversationMessages({
   const enqueueDisplayDelta = useCallback(
     (messageId: string, delta: string) => {
       const now = performance.now();
-      const buffer =
-        streamBuffersRef.current.get(messageId) ??
-        {
-          chars: [],
-          cursor: 0,
-          timerId: null,
-          charsPerSecond: 28,
-          lastDeltaAt: now
-        };
+      const buffer = streamBuffersRef.current.get(messageId) ?? {
+        chars: [],
+        cursor: 0,
+        timerId: null,
+        charsPerSecond: 28,
+        lastDeltaAt: now,
+      };
       const chars = Array.from(delta);
       const elapsedSeconds = Math.max((now - buffer.lastDeltaAt) / 1000, 0.08);
       const observedCharsPerSecond = chars.length / elapsedSeconds;
 
       buffer.chars.push(...chars);
-      buffer.charsPerSecond = clamp(buffer.charsPerSecond * 0.7 + observedCharsPerSecond * 0.3, 14, 90);
+      buffer.charsPerSecond = clamp(
+        buffer.charsPerSecond * 0.7 + observedCharsPerSecond * 0.3,
+        14,
+        90,
+      );
       buffer.lastDeltaAt = now;
       streamBuffersRef.current.set(messageId, buffer);
       scheduleStreamDrain(messageId);
     },
-    [scheduleStreamDrain]
+    [scheduleStreamDrain],
   );
 
   const completeStreamedMessage = useCallback(
     (message: LocalMessage) => {
-      const displayed = messagesRef.current.find((item) => item.id === message.id)?.content.text ?? "";
+      const displayed =
+        messagesRef.current.find((item) => item.id === message.id)?.content
+          .text ?? "";
       const finalText = message.content.text ?? "";
-      const buffer =
-        streamBuffersRef.current.get(message.id) ??
-        {
-          chars: [],
-          cursor: 0,
-          timerId: null,
-          charsPerSecond: 32,
-          lastDeltaAt: performance.now()
-        };
+      const buffer = streamBuffersRef.current.get(message.id) ?? {
+        chars: [],
+        cursor: 0,
+        timerId: null,
+        charsPerSecond: 32,
+        lastDeltaAt: performance.now(),
+      };
       const queuedText = buffer.chars.slice(buffer.cursor).join("");
       const displayedAndQueued = `${displayed}${queuedText}`;
 
@@ -193,7 +224,7 @@ export function useConversationMessages({
       setMessages((current) => mergeLocalMessage(current, message));
       streamBuffersRef.current.delete(message.id);
     },
-    [scheduleStreamDrain]
+    [scheduleStreamDrain],
   );
 
   useEffect(() => {
@@ -203,13 +234,18 @@ export function useConversationMessages({
     setError(null);
 
     void refreshLocalMessages()
-      .then(() => services.messageService.syncConversationMessages(conversationId))
+      .then(() =>
+        services.messageService.syncConversationMessages(conversationId),
+      )
       .then(() => {
         if (!cancelled) return refreshLocalMessages();
         return undefined;
       })
       .catch((loadError) => {
-        if (!cancelled) setError(loadError instanceof Error ? loadError.message : "加载消息失败。");
+        if (!cancelled)
+          setError(
+            loadError instanceof Error ? loadError.message : "加载消息失败。",
+          );
       });
 
     return () => {
@@ -220,6 +256,7 @@ export function useConversationMessages({
   useEffect(() => {
     return () => {
       clearStreamBuffers();
+      streamingAudioRef.current.stopAll();
     };
   }, [clearStreamBuffers, conversationId]);
 
@@ -230,24 +267,62 @@ export function useConversationMessages({
     const unsubscribeCreated = runtime.message.onMessageCreated((message) => {
       if (message.conversationId !== conversationId) return;
       void services.messageService.ingestRealtimeMessage(message);
-      setMessages((current) => mergeIncomingMessage(current, { ...message, syncStatus: "synced" }));
+      setMessages((current) =>
+        mergeIncomingMessage(current, { ...message, syncStatus: "synced" }),
+      );
     });
     const unsubscribeDelta = runtime.message.onMessageDelta((event) => {
       if (event.conversationId !== conversationId) return;
       enqueueDisplayDelta(event.messageId, event.delta);
     });
-    const unsubscribeCompleted = runtime.message.onMessageCompleted((message) => {
-      if (message.conversationId !== conversationId) return;
-      void services.messageService.ingestRealtimeCompleted(message);
-      completeStreamedMessage({ ...message, syncStatus: "synced" });
-    });
+    const unsubscribeCompleted = runtime.message.onMessageCompleted(
+      (message) => {
+        if (message.conversationId !== conversationId) return;
+        void services.messageService.ingestRealtimeCompleted(message);
+        completeStreamedMessage({ ...message, syncStatus: "synced" });
+      },
+    );
+    const unsubscribeAudioStarted = runtime.message.onMessageAudioStarted(
+      (event) => {
+        if (event.conversationId !== conversationId) return;
+        streamingAudioRef.current.start(event.messageId, event.mimeType);
+      },
+    );
+    const unsubscribeAudioChunk = runtime.message.onMessageAudioChunk(
+      (event) => {
+        if (event.conversationId !== conversationId) return;
+        streamingAudioRef.current.append(event.messageId, event.dataBase64);
+      },
+    );
+    const unsubscribeAudioCompleted = runtime.message.onMessageAudioCompleted(
+      (event) => {
+        if (event.conversationId !== conversationId) return;
+        streamingAudioRef.current.complete(event.messageId);
+      },
+    );
+    const unsubscribeAudioFailed = runtime.message.onMessageAudioFailed(
+      (event) => {
+        if (event.conversationId !== conversationId) return;
+        streamingAudioRef.current.stop(event.messageId);
+      },
+    );
 
     return () => {
       unsubscribeCreated();
       unsubscribeDelta();
       unsubscribeCompleted();
+      unsubscribeAudioStarted();
+      unsubscribeAudioChunk();
+      unsubscribeAudioCompleted();
+      unsubscribeAudioFailed();
     };
-  }, [completeStreamedMessage, conversationId, enqueueDisplayDelta, runtime.message, services.messageService]);
+  }, [
+    completeStreamedMessage,
+    conversationId,
+    enqueueDisplayDelta,
+    runtime.message,
+    services.messageService,
+  ]);
 
   const sendMessage = async (event: FormEvent) => {
     event.preventDefault();
@@ -255,7 +330,11 @@ export function useConversationMessages({
     if (!text || !conversationId || isSending) return;
 
     const failedOutgoingMessages = messagesRef.current.filter(
-      (message) => message.conversationId === conversationId && message.role === "user" && message.status === "failed" && message.syncStatus === "failed"
+      (message) =>
+        message.conversationId === conversationId &&
+        message.role === "user" &&
+        message.status === "failed" &&
+        message.syncStatus === "failed",
     );
     const pending = createPendingTextMessage({ conversationId, text });
     const clientMessageId = pending.clientMessageId ?? pending.id;
@@ -263,10 +342,18 @@ export function useConversationMessages({
     setDraft("");
     setError(null);
     setIsSending(true);
-    await Promise.all(failedOutgoingMessages.map((message) => runtime.storage.deleteMessage(message.id)));
+    await Promise.all(
+      failedOutgoingMessages.map((message) =>
+        runtime.storage.deleteMessage(message.id),
+      ),
+    );
     setMessages((current) => [
-      ...current.filter((message) => message.id !== clientMessageId && !failedOutgoingMessages.some((failed) => failed.id === message.id)),
-      pending
+      ...current.filter(
+        (message) =>
+          message.id !== clientMessageId &&
+          !failedOutgoingMessages.some((failed) => failed.id === message.id),
+      ),
+      pending,
     ]);
 
     try {
@@ -274,11 +361,15 @@ export function useConversationMessages({
         conversationId,
         text,
         clientMessageId,
-        stream: conversationSettings.streamEnabled
+        stream: conversationSettings.streamEnabled,
       });
-      setMessages((current) => mergeSentTextMessageResult(current, clientMessageId, result));
+      setMessages((current) =>
+        mergeSentTextMessageResult(current, clientMessageId, result),
+      );
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : "发送消息失败。");
+      setError(
+        sendError instanceof Error ? sendError.message : "发送消息失败。",
+      );
       await refreshLocalMessages();
     } finally {
       setIsSending(false);
@@ -287,9 +378,17 @@ export function useConversationMessages({
 
   const retryFailedMessage = async (messageId: string) => {
     if (!conversationId || isSending || retryingMessageId) return;
-    const failedMessage = messagesRef.current.find((message) => message.id === messageId);
+    const failedMessage = messagesRef.current.find(
+      (message) => message.id === messageId,
+    );
     const text = failedMessage?.content.text?.trim();
-    if (!failedMessage || failedMessage.status !== "failed" || failedMessage.role !== "user" || !text) return;
+    if (
+      !failedMessage ||
+      failedMessage.status !== "failed" ||
+      failedMessage.role !== "user" ||
+      !text
+    )
+      return;
 
     const clientMessageId = failedMessage.clientMessageId ?? failedMessage.id;
     const pending: LocalMessage = {
@@ -298,21 +397,28 @@ export function useConversationMessages({
       clientMessageId,
       status: "pending",
       syncStatus: "pending",
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     };
 
     setError(null);
     setRetryingMessageId(messageId);
-    setMessages((current) => mergeLocalMessage(current.filter((message) => message.id !== messageId), pending));
+    setMessages((current) =>
+      mergeLocalMessage(
+        current.filter((message) => message.id !== messageId),
+        pending,
+      ),
+    );
 
     try {
       const result = await services.messageService.sendTextMessage({
         conversationId,
         text,
         clientMessageId,
-        stream: conversationSettings.streamEnabled
+        stream: conversationSettings.streamEnabled,
       });
-      setMessages((current) => mergeSentTextMessageResult(current, clientMessageId, result));
+      setMessages((current) =>
+        mergeSentTextMessageResult(current, clientMessageId, result),
+      );
     } catch (retryError) {
       setError(retryError instanceof Error ? retryError.message : "重试失败。");
       await refreshLocalMessages();
@@ -323,7 +429,9 @@ export function useConversationMessages({
 
   const deleteConversation = async () => {
     if (!conversationId || isDeletingConversation) return;
-    const confirmed = window.confirm("确定要删除这个会话吗？本地和远程数据库中的会话消息都会被删除。");
+    const confirmed = window.confirm(
+      "确定要删除这个会话吗？本地和远程数据库中的会话消息都会被删除。",
+    );
     if (!confirmed) return;
 
     setError(null);
@@ -331,12 +439,16 @@ export function useConversationMessages({
     try {
       clearStreamBuffers();
       await services.messageService.deleteConversation(conversationId);
-      await runtime.storage.removeSetting(getConversationSettingsKey(conversationId));
+      await runtime.storage.removeSetting(
+        getConversationSettingsKey(conversationId),
+      );
       setMessages([]);
       setIsSettingsOpen(false);
       onConversationDeleted?.(conversationId);
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "删除会话失败。");
+      setError(
+        deleteError instanceof Error ? deleteError.message : "删除会话失败。",
+      );
     } finally {
       setIsDeletingConversation(false);
     }
@@ -349,10 +461,15 @@ export function useConversationMessages({
     setRollingBackMessageId(messageId);
     try {
       clearStreamBuffers();
-      await services.messageService.rollbackConversation(conversationId, messageId);
+      await services.messageService.rollbackConversation(
+        conversationId,
+        messageId,
+      );
       await refreshLocalMessages();
     } catch (rollbackError) {
-      setError(rollbackError instanceof Error ? rollbackError.message : "回溯失败。");
+      setError(
+        rollbackError instanceof Error ? rollbackError.message : "回溯失败。",
+      );
     } finally {
       setRollingBackMessageId(null);
     }
@@ -374,14 +491,25 @@ export function useConversationMessages({
     sendMessage,
     retryFailedMessage,
     deleteConversation,
-    rollbackConversation
+    rollbackConversation,
   };
 }
 
 function getStreamDrainDelay(buffer: StreamDisplayBuffer) {
   const remainingChars = buffer.chars.length - buffer.cursor;
-  const backlogBoost = remainingChars > 120 ? 2.1 : remainingChars > 60 ? 1.65 : remainingChars > 24 ? 1.3 : 1;
-  const charactersPerSecond = clamp(buffer.charsPerSecond * backlogBoost, 12, 120);
+  const backlogBoost =
+    remainingChars > 120
+      ? 2.1
+      : remainingChars > 60
+        ? 1.65
+        : remainingChars > 24
+          ? 1.3
+          : 1;
+  const charactersPerSecond = clamp(
+    buffer.charsPerSecond * backlogBoost,
+    12,
+    120,
+  );
   return clamp(Math.round(1000 / charactersPerSecond), 8, 90);
 }
 

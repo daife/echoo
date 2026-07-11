@@ -20,6 +20,7 @@ import { PrimeMessageRepository } from "./prime-message.repository.js";
 import { PrimeFigureStateRepository } from "./prime-figure-state.repository.js";
 import { PrimeFigureRepository } from "./prime-figure.repository.js";
 import { parseReadableMinute } from "./prime-time.js";
+import type { ResolvedPrimeVoiceMedia } from "./prime-decision-stream-session.js";
 
 export class PrimeActionExecutor {
   private readonly db = getDatabase();
@@ -42,6 +43,9 @@ export class PrimeActionExecutor {
     decision: PrimeFigureDecision;
     providerId: string;
     model: string;
+    streamedMessageIds?: Map<number, string>;
+    voiceMedia?: Map<number, ResolvedPrimeVoiceMedia>;
+    ttsErrors?: Map<number, string>;
   }) {
     const decision = primeFigureDecisionSchema.parse(
       input.decision,
@@ -67,7 +71,7 @@ export class PrimeActionExecutor {
         input.state.relationshipStatus,
       updatedAt: now,
     };
-    const createdMessages: Message[] = [];
+    const createdMessages: Array<{ message: Message; streamed: boolean }> = [];
 
     this.db.exec("BEGIN IMMEDIATE");
     try {
@@ -81,7 +85,11 @@ export class PrimeActionExecutor {
         decision.actions.forEach((action, index) => {
           if (action.type !== "send_message") return;
           const occurredAtMs = now + index;
-          const primeContent = toPrimeMessageContent(action.message);
+          const voiceMedia = input.voiceMedia?.get(index);
+          const primeContent = toPrimeMessageContent(
+            action.message,
+            voiceMedia,
+          );
           const primeMessage = this.primeMessages.save({
             ownerUserId: input.ownerUserId,
             agentId: input.agent.id,
@@ -91,26 +99,32 @@ export class PrimeActionExecutor {
             occurredAtMs,
             timezone: input.agent.detail.schedule.timezone,
           });
-          createdMessages.push(
-            this.messages.save({
+          const streamedMessageId = input.streamedMessageIds?.get(index);
+          createdMessages.push({
+            streamed: Boolean(streamedMessageId),
+            message: this.messages.save({
               ownerUserId: input.ownerUserId,
-              id: `msg_${randomUUID()}`,
+              id: streamedMessageId ?? `msg_${randomUUID()}`,
               conversationId: input.conversationId,
               role: "assistant",
               contentType: toMessageContentType(action.message),
-              content: toMessageContent(action.message),
+              content: toMessageContent(action.message, voiceMedia),
               status: "delivered",
               providerId: input.providerId,
               model: input.model,
               metadata: {
                 kind: "prime_figure",
                 primeMessageId: primeMessage.id,
-                ...toMediaIntentMetadata(action.message),
+                ...toMediaIntentMetadata(
+                  action.message,
+                  voiceMedia,
+                  input.ttsErrors?.get(index),
+                ),
               },
               createdAt: occurredAtMs,
               updatedAt: occurredAtMs,
             }),
-          );
+          });
         });
         const lastMessage = decision.actions.at(-1);
         if (lastMessage?.type !== "send_message")
@@ -160,10 +174,10 @@ export class PrimeActionExecutor {
       throw error;
     }
 
-    for (const createdMessage of createdMessages)
+    for (const created of createdMessages)
       this.appPush.pushToUser(input.ownerUserId, {
-        type: "message.created",
-        message: createdMessage,
+        type: created.streamed ? "message.completed" : "message.created",
+        message: created.message,
       });
     return state;
   }
@@ -171,11 +185,23 @@ export class PrimeActionExecutor {
 
 function toPrimeMessageContent(
   message: PrimeFigureOutgoingMessage,
+  voiceMedia?: ResolvedPrimeVoiceMedia,
 ): PrimeMessageContent {
   if (message.type === "image") {
     return {
       ...message,
       referenceResourceUrls: [],
+    };
+  }
+  if (message.type === "voice") {
+    return {
+      ...message,
+      ...(voiceMedia
+        ? {
+            resourceId: voiceMedia.resourceId,
+            resourceUrl: voiceMedia.mediaUrl,
+          }
+        : {}),
     };
   }
   return message;
@@ -187,13 +213,23 @@ function toMessageContentType(
   return message.type;
 }
 
-function toMessageContent(message: PrimeFigureOutgoingMessage): MessageContent {
+function toMessageContent(
+  message: PrimeFigureOutgoingMessage,
+  voiceMedia?: ResolvedPrimeVoiceMedia,
+): MessageContent {
   if (message.type === "text") return { text: message.text };
   if (message.type === "image") return { text: message.description };
-  return { text: message.transcript };
+  return {
+    text: message.transcript,
+    ...(voiceMedia ? { mediaUrl: voiceMedia.mediaUrl } : {}),
+  };
 }
 
-function toMediaIntentMetadata(message: PrimeFigureOutgoingMessage) {
+function toMediaIntentMetadata(
+  message: PrimeFigureOutgoingMessage,
+  voiceMedia?: ResolvedPrimeVoiceMedia,
+  ttsError?: string,
+) {
   if (message.type === "image") {
     return {
       mediaIntent: {
@@ -205,7 +241,8 @@ function toMediaIntentMetadata(message: PrimeFigureOutgoingMessage) {
   if (message.type === "voice") {
     return {
       mediaIntent: {
-        status: "pending_tts",
+        status: voiceMedia ? "ready" : "tts_failed",
+        ...(ttsError ? { error: ttsError } : {}),
       },
     };
   }

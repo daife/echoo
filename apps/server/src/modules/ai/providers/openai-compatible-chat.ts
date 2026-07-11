@@ -1,6 +1,14 @@
-import type { AiProviderId, ChatCompletionInput, ChatCompletionMessage, ChatCompletionResult, ChatDelta, ChatToolCall } from "../ai-provider.interface.js";
+import type {
+  AiProviderId,
+  ChatCompletionInput,
+  ChatCompletionMessage,
+  ChatCompletionResult,
+  ChatDelta,
+  ChatToolCall,
+} from "../ai-provider.interface.js";
 
-type OpenAiCompatibleContent = string | Array<{ type?: string; text?: string }> | undefined;
+type OpenAiCompatibleContent =
+  string | Array<{ type?: string; text?: string }> | undefined;
 
 interface OpenAiCompatibleChoice {
   message?: {
@@ -16,6 +24,12 @@ interface OpenAiCompatibleResponse {
 interface OpenAiCompatibleStreamChoice {
   delta?: {
     content?: OpenAiCompatibleContent;
+    tool_calls?: Array<{
+      index: number;
+      id?: string;
+      type?: "function";
+      function?: { name?: string; arguments?: string };
+    }>;
   };
 }
 
@@ -41,18 +55,23 @@ export async function createOpenAiCompatibleChatCompletion(input: {
   extraBody?: Record<string, unknown>;
 }): Promise<ChatCompletionResult> {
   if (!input.apiKey) {
-    throw new Error(`${input.providerId.toUpperCase()}_API_KEY is not configured.`);
+    throw new Error(
+      `${input.providerId.toUpperCase()}_API_KEY is not configured.`,
+    );
   }
 
-  const response = await fetch(`${input.baseUrl.replace(/\/+$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${input.apiKey}`,
-      ...input.headers
+  const response = await fetch(
+    `${input.baseUrl.replace(/\/+$/, "")}/chat/completions`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${input.apiKey}`,
+        ...input.headers,
+      },
+      body: JSON.stringify(buildRequestBody(input)),
     },
-    body: JSON.stringify(buildRequestBody(input))
-  });
+  );
 
   if (!response.ok) {
     const detail = await readErrorDetail(response);
@@ -62,21 +81,28 @@ export async function createOpenAiCompatibleChatCompletion(input: {
   const payload = (await response.json()) as OpenAiCompatibleResponse;
   const text = normalizeContent(payload.choices?.[0]?.message?.content);
   const toolCalls = payload.choices?.[0]?.message?.tool_calls;
-  if (!text && !toolCalls?.length) throw new Error(`${input.providerId} chat completion returned an empty response.`);
+  if (!text && !toolCalls?.length)
+    throw new Error(
+      `${input.providerId} chat completion returned an empty response.`,
+    );
 
   return {
     providerId: input.providerId,
     model: input.completion.model,
     text,
-    ...(toolCalls?.length ? { toolCalls } : {})
+    ...(toolCalls?.length ? { toolCalls } : {}),
   };
 }
 
-export async function* streamOpenAiCompatibleChatCompletion(input: OpenAiCompatibleRequestInput): AsyncIterable<ChatDelta> {
+export async function* streamOpenAiCompatibleChatCompletion(
+  input: OpenAiCompatibleRequestInput,
+): AsyncIterable<ChatDelta> {
   const response = await requestChatCompletion(input, { stream: true });
 
   if (!response.body) {
-    throw new Error(`${input.providerId} chat completion returned an empty stream.`);
+    throw new Error(
+      `${input.providerId} chat completion returned an empty stream.`,
+    );
   }
 
   const decoder = new TextDecoder();
@@ -97,8 +123,13 @@ export async function* streamOpenAiCompatibleChatCompletion(input: OpenAiCompati
       if (event === "[DONE]") return;
 
       const payload = parseStreamChunk(event);
-      const text = normalizeDeltaContent(payload?.choices?.[0]?.delta?.content);
-      if (text) yield { text };
+      const delta = payload?.choices?.[0]?.delta;
+      const text = normalizeDeltaContent(delta?.content);
+      if (text || delta?.tool_calls?.length)
+        yield {
+          ...(text ? { text } : {}),
+          ...(delta?.tool_calls?.length ? { toolCalls: delta.tool_calls } : {}),
+        };
     }
   }
 
@@ -106,28 +137,41 @@ export async function* streamOpenAiCompatibleChatCompletion(input: OpenAiCompati
   const event = parseSseLine(buffer);
   if (event && event !== "[DONE]") {
     const payload = parseStreamChunk(event);
-    const text = normalizeDeltaContent(payload?.choices?.[0]?.delta?.content);
-    if (text) yield { text };
+    const delta = payload?.choices?.[0]?.delta;
+    const text = normalizeDeltaContent(delta?.content);
+    if (text || delta?.tool_calls?.length)
+      yield {
+        ...(text ? { text } : {}),
+        ...(delta?.tool_calls?.length ? { toolCalls: delta.tool_calls } : {}),
+      };
   }
 }
 
-async function requestChatCompletion(input: OpenAiCompatibleRequestInput, extraBody?: Record<string, unknown>) {
+async function requestChatCompletion(
+  input: OpenAiCompatibleRequestInput,
+  extraBody?: Record<string, unknown>,
+) {
   if (!input.apiKey) {
-    throw new Error(`${input.providerId.toUpperCase()}_API_KEY is not configured.`);
+    throw new Error(
+      `${input.providerId.toUpperCase()}_API_KEY is not configured.`,
+    );
   }
 
-  const response = await fetch(`${input.baseUrl.replace(/\/+$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${input.apiKey}`,
-      ...input.headers
+  const response = await fetch(
+    `${input.baseUrl.replace(/\/+$/, "")}/chat/completions`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${input.apiKey}`,
+        ...input.headers,
+      },
+      body: JSON.stringify({
+        ...buildRequestBody(input),
+        ...extraBody,
+      }),
     },
-    body: JSON.stringify({
-      ...buildRequestBody(input),
-      ...extraBody
-    })
-  });
+  );
 
   if (!response.ok) {
     const detail = await readErrorDetail(response);
@@ -151,9 +195,9 @@ function buildRequestBody(input: OpenAiCompatibleRequestInput) {
     ...(input.completion.reasoningMode === "disabled"
       ? {
           reasoning: { enabled: false, exclude: true },
-          reasoning_effort: "none"
+          reasoning_effort: "none",
         }
-      : {})
+      : {}),
   };
 }
 
@@ -163,13 +207,16 @@ function toOpenAiMessage(message: ChatCompletionMessage) {
     content: message.content,
     ...(message.name ? { name: message.name } : {}),
     ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
-    ...(message.toolCalls?.length ? { tool_calls: message.toolCalls } : {})
+    ...(message.toolCalls?.length ? { tool_calls: message.toolCalls } : {}),
   };
 }
 
 async function readErrorDetail(response: Response) {
   try {
-    const payload = (await response.json()) as { error?: { message?: string }; message?: string };
+    const payload = (await response.json()) as {
+      error?: { message?: string };
+      message?: string;
+    };
     return payload.error?.message ?? payload.message ?? response.statusText;
   } catch {
     return response.statusText;
@@ -181,7 +228,9 @@ function normalizeContent(content: OpenAiCompatibleContent) {
   if (!Array.isArray(content)) return "";
 
   return content
-    .map((part) => (part.type === "text" || !part.type ? part.text ?? "" : ""))
+    .map((part) =>
+      part.type === "text" || !part.type ? (part.text ?? "") : "",
+    )
     .join("")
     .trim();
 }
@@ -190,7 +239,11 @@ function normalizeDeltaContent(content: OpenAiCompatibleContent) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
 
-  return content.map((part) => (part.type === "text" || !part.type ? part.text ?? "" : "")).join("");
+  return content
+    .map((part) =>
+      part.type === "text" || !part.type ? (part.text ?? "") : "",
+    )
+    .join("");
 }
 
 function parseSseLine(line: string) {

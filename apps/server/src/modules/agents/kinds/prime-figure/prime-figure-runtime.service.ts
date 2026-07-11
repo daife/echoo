@@ -14,8 +14,11 @@ import type {
 } from "@echoo/shared";
 import { AiProviderRegistry } from "../../../ai/ai-provider.registry.js";
 import type {
+  AiTextProvider,
+  ChatCompletionInput,
   ChatCompletionContentPart,
   ChatCompletionMessage,
+  ChatCompletionResult,
   ChatToolCall,
   ChatToolDefinition,
 } from "../../../ai/ai-provider.interface.js";
@@ -25,6 +28,8 @@ import { PrimeActionLogRepository } from "./prime-action-log.repository.js";
 import { PrimeActionExecutor } from "./prime-action-executor.js";
 import { PrimeMessageRepository } from "./prime-message.repository.js";
 import { PrimeFigureStateRepository } from "./prime-figure-state.repository.js";
+import { PrimeDecisionStreamParser } from "./prime-decision-stream-parser.js";
+import { PrimeDecisionStreamSession } from "./prime-decision-stream-session.js";
 import {
   describeAge,
   findScheduleSegment,
@@ -171,77 +176,103 @@ export class PrimeFigureRuntimeService {
     );
     const chatMessages = packet.messages;
 
-    const firstResponse = await provider.createChatCompletion({
+    const streamSession = new PrimeDecisionStreamSession({
+      ownerUserId: input.ownerUserId,
+      conversationId: input.conversationId,
+    });
+    const completionBase = {
       model,
       sessionId: input.conversationId,
-      messages: chatMessages,
-      tools: [SEARCH_RECALL_TOOL],
-      toolChoice: "auto",
-      responseFormat: buildPrimeDecisionResponseFormat(
-        input.agent,
-        false,
-        packet.pendingMedia,
-      ),
       temperature: Number(process.env.DEFAULT_PRIME_TEMPERATURE ?? 0.4),
       maxTokens: process.env.DEFAULT_PRIME_MAX_TOKENS
         ? Number(process.env.DEFAULT_PRIME_MAX_TOKENS)
         : undefined,
-      reasoningMode: "disabled",
-    });
+      reasoningMode: "disabled" as const,
+    };
 
-    let finalResponse = firstResponse;
-    const recallCall = firstResponse.toolCalls?.find(
-      (call) => call.function.name === "search_recall",
-    );
-    if (recallCall) {
-      chatMessages.push({
-        role: "assistant",
-        content: firstResponse.text,
-        toolCalls: firstResponse.toolCalls,
+    try {
+      const firstResponse = await streamPrimeChatCompletion(
+        provider,
+        {
+          ...completionBase,
+          messages: chatMessages,
+          tools: [SEARCH_RECALL_TOOL],
+          toolChoice: "auto",
+          responseFormat: buildPrimeDecisionResponseFormat(
+            input.agent,
+            false,
+            packet.pendingMedia,
+          ),
+        },
+        streamSession,
+      );
+
+      let finalResponse = firstResponse;
+      const recallCall = firstResponse.toolCalls?.find(
+        (call) => call.function.name === "search_recall",
+      );
+      if (recallCall) {
+        chatMessages.push({
+          role: "assistant",
+          content: firstResponse.text,
+          toolCalls: firstResponse.toolCalls,
+        });
+        chatMessages.push({
+          role: "tool",
+          toolCallId: recallCall.id,
+          name: recallCall.function.name,
+          content: this.executeRecallTool(recallCall, input),
+        });
+        finalResponse = await streamPrimeChatCompletion(
+          provider,
+          {
+            ...completionBase,
+            messages: chatMessages,
+            responseFormat: buildPrimeDecisionResponseFormat(
+              input.agent,
+              true,
+              packet.pendingMedia,
+            ),
+            toolChoice: "none",
+          },
+          streamSession,
+        );
+      }
+
+      const rawOutput = JSON.parse(finalResponse.text) as Record<
+        string,
+        unknown
+      >;
+      const decision = primeFigureDecisionSchema.parse(
+        rawOutput,
+      ) as PrimeFigureDecision;
+      const mediaAnnotations = normalizeMediaAnnotations(
+        rawOutput.mediaAnnotations,
+        packet.pendingMedia,
+      );
+      const streamed = await streamSession.finalize(decision);
+      this.executor.executeDecision({
+        ownerUserId: input.ownerUserId,
+        conversationId: input.conversationId,
+        agent: input.agent,
+        state: input.state,
+        decision,
+        providerId: finalResponse.providerId,
+        model: finalResponse.model,
+        streamedMessageIds: streamed.messageIds,
+        voiceMedia: streamed.voiceMedia,
+        ttsErrors: streamed.ttsErrors,
       });
-      chatMessages.push({
-        role: "tool",
-        toolCallId: recallCall.id,
-        name: recallCall.function.name,
-        content: this.executeRecallTool(recallCall, input),
-      });
-      finalResponse = await provider.createChatCompletion({
-        model,
-        sessionId: input.conversationId,
-        messages: chatMessages,
-        responseFormat: buildPrimeDecisionResponseFormat(
-          input.agent,
-          true,
-          packet.pendingMedia,
-        ),
-        toolChoice: "none",
-        temperature: Number(process.env.DEFAULT_PRIME_TEMPERATURE ?? 0.4),
-        maxTokens: process.env.DEFAULT_PRIME_MAX_TOKENS
-          ? Number(process.env.DEFAULT_PRIME_MAX_TOKENS)
-          : undefined,
-        reasoningMode: "disabled",
-      });
+      this.persistMediaAnnotations(
+        input,
+        packet.pendingMedia,
+        mediaAnnotations,
+      );
+      return decision;
+    } catch (error) {
+      streamSession.fail(error);
+      throw error;
     }
-
-    const rawOutput = JSON.parse(finalResponse.text) as Record<string, unknown>;
-    const decision = primeFigureDecisionSchema.parse(
-      rawOutput,
-    ) as PrimeFigureDecision;
-    const mediaAnnotations = normalizeMediaAnnotations(
-      rawOutput.mediaAnnotations,
-      packet.pendingMedia,
-    );
-    this.executor.executeDecision({
-      ownerUserId: input.ownerUserId,
-      conversationId: input.conversationId,
-      agent: input.agent,
-      state: input.state,
-      decision,
-      providerId: finalResponse.providerId,
-      model: finalResponse.model,
-    });
-    this.persistMediaAnnotations(input, packet.pendingMedia, mediaAnnotations);
-    return decision;
   }
 
   private persistMediaAnnotations(
@@ -320,6 +351,59 @@ export class PrimeFigureRuntimeService {
 
     return JSON.stringify({ history, memories });
   }
+}
+
+async function streamPrimeChatCompletion(
+  provider: AiTextProvider,
+  completion: ChatCompletionInput,
+  session: PrimeDecisionStreamSession,
+): Promise<ChatCompletionResult> {
+  if (!provider.streamChatCompletion) {
+    const result = await provider.createChatCompletion(completion);
+    const parser = new PrimeDecisionStreamParser((event) =>
+      session.handleField(event),
+    );
+    parser.push(result.text);
+    return result;
+  }
+
+  const parser = new PrimeDecisionStreamParser((event) =>
+    session.handleField(event),
+  );
+  const toolCalls = new Map<number, ChatToolCall>();
+  let text = "";
+  for await (const delta of provider.streamChatCompletion(completion)) {
+    if (delta.text) {
+      text += delta.text;
+      parser.push(delta.text);
+    }
+    for (const toolDelta of delta.toolCalls ?? []) {
+      const current = toolCalls.get(toolDelta.index) ?? {
+        id: "",
+        type: "function" as const,
+        function: { name: "", arguments: "" },
+      };
+      if (toolDelta.id) current.id += toolDelta.id;
+      if (toolDelta.function?.name)
+        current.function.name += toolDelta.function.name;
+      if (toolDelta.function?.arguments)
+        current.function.arguments += toolDelta.function.arguments;
+      toolCalls.set(toolDelta.index, current);
+    }
+  }
+  const completedToolCalls = [...toolCalls.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([, call]) => call);
+  if (!text.trim() && !completedToolCalls.length)
+    throw new Error(
+      `${provider.id} chat completion returned an empty streamed response.`,
+    );
+  return {
+    providerId: provider.id,
+    model: completion.model,
+    text,
+    ...(completedToolCalls.length ? { toolCalls: completedToolCalls } : {}),
+  };
 }
 
 function buildPrimeChatMessages(
@@ -641,6 +725,8 @@ function buildSystemPrompt(agent: PrimeFigureAgent) {
     "不要对 end_user 的意图分类。不要输出 userIntent、relationshipSignal、riskLevel、隐藏思维链或逐动作理由。",
     "角色可以发送一条或多条文本、图片或语音消息，也可以保持沉默。每次决定建议生成 1 至 3 个 send_message 动作；当角色确实情绪激动时，可以发送更多消息。",
     "发送图片时必须同时提供面向对话的客观 description 和用于后续生图的 generationPrompt。发送语音时 transcript 是角色实际说出的内容，并将用于后续 TTS。暂时不得发送 video 或 sticker。",
+    "语音 transcript 可以在自然位置使用 Fish Audio 表演标签：[angry] [sad] [embarrassed] [emphasis] [whispering] [soft] [breathy] [excited] [laughing] [chuckling] [moaning] [clear throat] [sobbing] [crying loudly] [sighing] [panting] [groaning] [crowd laughing] [background laughter] [audience laughing] [pause] [long pause]。标签只用于确有对应语气或声音的地方，不要机械添加。",
+    "为了让消息能够实时显示和合成，send_message.message 中必须先输出 type，再输出 text、description/generationPrompt 或 transcript；各消息必须严格按实际发送顺序输出。",
     "send_message 与 silence 互斥。若选择 silence，它必须是唯一动作；否则所有动作都必须是 send_message，并按发送顺序排列。",
     "只有当 currentSituation、schedule、itinerary 或 relationshipStatus 确实发生变化时，才使用可选的 stateUpdates 对象。要保留某字段当前值，可以省略该字段或将其设为 null。",
     "已存储的情绪是历史证据，不是要求永远维持它的指令。请考虑它是在多久之前被观察到的。",
@@ -993,7 +1079,8 @@ function buildSendMessageActionSchema() {
               type: { const: "voice", description: "语音内容类型。" },
               transcript: {
                 type: "string",
-                description: "角色实际说出的内容，也是后续 TTS 的输入文本。",
+                description:
+                  "角色实际说出的内容，也是实时 TTS 的输入文本。可按系统提示在自然位置插入受支持的情绪或特殊表演标签。",
               },
             },
             required: ["type", "transcript"],

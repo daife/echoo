@@ -17,6 +17,31 @@ export type AppWsServerEvent =
       message: Message;
     }
   | {
+      type: "message.audio.started";
+      messageId: string;
+      conversationId: string;
+      mimeType: string;
+    }
+  | {
+      type: "message.audio.chunk";
+      messageId: string;
+      conversationId: string;
+      sequence: number;
+      dataBase64: string;
+    }
+  | {
+      type: "message.audio.completed";
+      messageId: string;
+      conversationId: string;
+      mediaUrl?: string;
+    }
+  | {
+      type: "message.audio.failed";
+      messageId: string;
+      conversationId: string;
+      error: string;
+    }
+  | {
       type: "message.status_changed";
       messageId: string;
       status: "sent" | "delivered" | "failed" | "read";

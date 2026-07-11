@@ -76,6 +76,12 @@ export interface ChatCompletionResult {
 
 export interface ChatDelta {
   text?: string;
+  toolCalls?: Array<{
+    index: number;
+    id?: string;
+    type?: "function";
+    function?: { name?: string; arguments?: string };
+  }>;
 }
 
 export interface AiTextProvider {

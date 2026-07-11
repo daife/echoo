@@ -41,6 +41,24 @@ class FakeProvider implements AiTextProvider {
     if (!response) throw new Error("Unexpected model call.");
     return response;
   }
+
+  async *streamChatCompletion(input: ChatCompletionInput) {
+    this.inputs.push(input);
+    const response = this.responses.shift();
+    if (!response) throw new Error("Unexpected model call.");
+    for (let index = 0; index < response.text.length; index += 11)
+      yield { text: response.text.slice(index, index + 11) };
+    if (response.toolCalls?.length) {
+      yield {
+        toolCalls: response.toolCalls.map((call, index) => ({
+          index,
+          id: call.id,
+          type: call.type,
+          function: call.function,
+        })),
+      };
+    }
+  }
 }
 
 class FakeRegistry {
@@ -853,7 +871,7 @@ test("Prime Figure sends raw unannotated media once and persists model annotatio
         ? (deliveredMessages[2].metadata.mediaIntent as { status?: string })
             .status
         : undefined,
-      "pending_tts",
+      "tts_failed",
     );
     const outboundResponseSchema = JSON.stringify(
       outboundProvider.inputs[0]?.responseFormat,
