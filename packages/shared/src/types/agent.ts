@@ -203,6 +203,7 @@ export type PrimeMessageContent =
       description?: string;
       generationPrompt?: string;
       referenceResourceUrls: string[];
+      referenceMediaIds?: string[];
       resourceId?: string;
       resourceUrl?: string;
     }
@@ -266,6 +267,7 @@ export type PrimeFigureOutgoingMessage =
       type: "image";
       description: string;
       generationPrompt: string;
+      referenceMediaIds: string[];
     }
   | {
       type: "voice";

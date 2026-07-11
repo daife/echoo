@@ -844,7 +844,12 @@ function toBubbleMessage(
           : message.status === "failed"
             ? "failed"
             : undefined,
-    kind: message.contentType === "voice" ? "voice" : undefined,
+    kind:
+      message.contentType === "voice"
+        ? "voice"
+        : message.contentType === "image"
+          ? "image"
+          : undefined,
     mediaUrl: message.content.mediaUrl,
     canRollback,
   };

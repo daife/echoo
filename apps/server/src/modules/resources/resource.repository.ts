@@ -17,6 +17,9 @@ const allowedMimeTypes = new Map([
 ]);
 
 const generatedMimeTypes = new Map([
+  ["image/png", ".png"],
+  ["image/jpeg", ".jpg"],
+  ["image/webp", ".webp"],
   ["audio/mpeg", ".mp3"],
   ["audio/wav", ".wav"],
   ["audio/ogg", ".ogg"],
@@ -120,7 +123,7 @@ export class ResourceRepository {
 
   saveGeneratedMedia(
     ownerUserId: string,
-    kind: "prime_figure_voice",
+    kind: "prime_figure_voice" | "prime_figure_image",
     mimeType: string,
     data: Buffer,
   ): ResourceRecord {
@@ -169,6 +172,15 @@ export class ResourceRepository {
     const row = this.db
       .prepare("SELECT * FROM resources WHERE id = ?")
       .get(id) as unknown as ResourceRow | undefined;
+    return row ? rowToResource(row) : null;
+  }
+
+  findByPublicPath(ownerUserId: string, publicPath: string) {
+    const row = this.db
+      .prepare(
+        "SELECT * FROM resources WHERE owner_user_id = ? AND public_path = ?",
+      )
+      .get(ownerUserId, publicPath) as ResourceRow | undefined;
     return row ? rowToResource(row) : null;
   }
 

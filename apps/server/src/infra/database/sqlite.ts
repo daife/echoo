@@ -151,6 +151,22 @@ const schemaSql = `
     updated_at INTEGER NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS prime_conversation_media (
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    media_index INTEGER NOT NULL,
+    media_id TEXT NOT NULL,
+    media_type TEXT NOT NULL CHECK (media_type IN ('image', 'video', 'voice')),
+    resource_id TEXT NOT NULL REFERENCES resources(id) ON DELETE CASCADE,
+    description TEXT,
+    source TEXT NOT NULL CHECK (source IN ('message', 'figure_cover', 'generated')),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (conversation_id, media_id),
+    UNIQUE (conversation_id, media_index),
+    UNIQUE (conversation_id, resource_id)
+  );
+
   CREATE TABLE IF NOT EXISTS prime_action_logs (
     id TEXT PRIMARY KEY,
     owner_user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
@@ -183,6 +199,8 @@ const schemaSql = `
   CREATE INDEX IF NOT EXISTS idx_prime_messages_agent_occurred_at ON prime_messages(agent_id, occurred_at_ms, id);
   CREATE INDEX IF NOT EXISTS idx_prime_messages_owner_conversation_occurred_at
     ON prime_messages(owner_user_id, conversation_id, occurred_at_ms, id);
+  CREATE INDEX IF NOT EXISTS idx_prime_conversation_media_owner_conversation
+    ON prime_conversation_media(owner_user_id, conversation_id, media_index);
   CREATE INDEX IF NOT EXISTS idx_prime_action_logs_agent_created_at ON prime_action_logs(agent_id, created_at, id);
 `;
 

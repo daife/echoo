@@ -20,7 +20,10 @@ import { PrimeMessageRepository } from "./prime-message.repository.js";
 import { PrimeFigureStateRepository } from "./prime-figure-state.repository.js";
 import { PrimeFigureRepository } from "./prime-figure.repository.js";
 import { parseReadableMinute } from "./prime-time.js";
-import type { ResolvedPrimeVoiceMedia } from "./prime-decision-stream-session.js";
+import type {
+  ResolvedPrimeImageMedia,
+  ResolvedPrimeVoiceMedia,
+} from "./prime-decision-stream-session.js";
 
 export class PrimeActionExecutor {
   private readonly db = getDatabase();
@@ -46,6 +49,8 @@ export class PrimeActionExecutor {
     streamedMessageIds?: Map<number, string>;
     voiceMedia?: Map<number, ResolvedPrimeVoiceMedia>;
     ttsErrors?: Map<number, string>;
+    imageMedia?: Map<number, ResolvedPrimeImageMedia>;
+    imageGenerationErrors?: Map<number, string>;
   }) {
     const decision = primeFigureDecisionSchema.parse(
       input.decision,
@@ -86,9 +91,11 @@ export class PrimeActionExecutor {
           if (action.type !== "send_message") return;
           const occurredAtMs = now + index;
           const voiceMedia = input.voiceMedia?.get(index);
+          const imageMedia = input.imageMedia?.get(index);
           const primeContent = toPrimeMessageContent(
             action.message,
             voiceMedia,
+            imageMedia,
           );
           const primeMessage = this.primeMessages.save({
             ownerUserId: input.ownerUserId,
@@ -108,7 +115,7 @@ export class PrimeActionExecutor {
               conversationId: input.conversationId,
               role: "assistant",
               contentType: toMessageContentType(action.message),
-              content: toMessageContent(action.message, voiceMedia),
+              content: toMessageContent(action.message, voiceMedia, imageMedia),
               status: "delivered",
               providerId: input.providerId,
               model: input.model,
@@ -119,6 +126,8 @@ export class PrimeActionExecutor {
                   action.message,
                   voiceMedia,
                   input.ttsErrors?.get(index),
+                  imageMedia,
+                  input.imageGenerationErrors?.get(index),
                 ),
               },
               createdAt: occurredAtMs,
@@ -186,11 +195,18 @@ export class PrimeActionExecutor {
 function toPrimeMessageContent(
   message: PrimeFigureOutgoingMessage,
   voiceMedia?: ResolvedPrimeVoiceMedia,
+  imageMedia?: ResolvedPrimeImageMedia,
 ): PrimeMessageContent {
   if (message.type === "image") {
     return {
       ...message,
       referenceResourceUrls: [],
+      ...(imageMedia
+        ? {
+            resourceId: imageMedia.resourceId,
+            resourceUrl: imageMedia.mediaUrl,
+          }
+        : {}),
     };
   }
   if (message.type === "voice") {
@@ -216,9 +232,14 @@ function toMessageContentType(
 function toMessageContent(
   message: PrimeFigureOutgoingMessage,
   voiceMedia?: ResolvedPrimeVoiceMedia,
+  imageMedia?: ResolvedPrimeImageMedia,
 ): MessageContent {
   if (message.type === "text") return { text: message.text };
-  if (message.type === "image") return { text: message.description };
+  if (message.type === "image")
+    return {
+      text: message.description,
+      ...(imageMedia ? { mediaUrl: imageMedia.mediaUrl } : {}),
+    };
   return {
     text: message.transcript,
     ...(voiceMedia ? { mediaUrl: voiceMedia.mediaUrl } : {}),
@@ -229,12 +250,22 @@ function toMediaIntentMetadata(
   message: PrimeFigureOutgoingMessage,
   voiceMedia?: ResolvedPrimeVoiceMedia,
   ttsError?: string,
+  imageMedia?: ResolvedPrimeImageMedia,
+  imageGenerationError?: string,
 ) {
   if (message.type === "image") {
     return {
       mediaIntent: {
-        status: "pending_generation",
+        status: imageMedia ? "ready" : "generation_failed",
         generationPrompt: message.generationPrompt,
+        referenceMediaIds: message.referenceMediaIds,
+        ...(imageMedia
+          ? {
+              generatedMediaId: imageMedia.mediaId,
+              generationModel: imageMedia.model,
+            }
+          : {}),
+        ...(imageGenerationError ? { error: imageGenerationError } : {}),
       },
     };
   }

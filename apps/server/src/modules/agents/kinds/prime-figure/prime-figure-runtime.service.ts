@@ -30,6 +30,7 @@ import { PrimeMessageRepository } from "./prime-message.repository.js";
 import { PrimeFigureStateRepository } from "./prime-figure-state.repository.js";
 import { PrimeDecisionStreamParser } from "./prime-decision-stream-parser.js";
 import { PrimeDecisionStreamSession } from "./prime-decision-stream-session.js";
+import { PrimeConversationMediaRepository } from "./prime-conversation-media.repository.js";
 import {
   describeAge,
   findScheduleSegment,
@@ -48,6 +49,7 @@ interface PendingMediaAnnotation {
   id: string;
   messageId: string;
   type: "image" | "video" | "voice";
+  resourceId: string;
 }
 
 export class PrimeFigureRuntimeService {
@@ -68,6 +70,7 @@ export class PrimeFigureRuntimeService {
     private readonly executor = new PrimeActionExecutor(),
     private readonly logs = new PrimeActionLogRepository(),
     private readonly resources = new ResourceRepository(),
+    private readonly conversationMedia = new PrimeConversationMediaRepository(),
   ) {}
 
   requestDecision(input: {
@@ -173,6 +176,7 @@ export class PrimeFigureRuntimeService {
       input.trigger,
       input.ownerUserId,
       this.resources,
+      this.conversationMedia,
     );
     const chatMessages = packet.messages;
 
@@ -202,6 +206,7 @@ export class PrimeFigureRuntimeService {
             input.agent,
             false,
             packet.pendingMedia,
+            packet.availableReferenceImages.map((media) => media.id),
           ),
         },
         streamSession,
@@ -232,6 +237,7 @@ export class PrimeFigureRuntimeService {
               input.agent,
               true,
               packet.pendingMedia,
+              packet.availableReferenceImages.map((media) => media.id),
             ),
             toolChoice: "none",
           },
@@ -251,6 +257,19 @@ export class PrimeFigureRuntimeService {
         packet.pendingMedia,
       );
       const streamed = await streamSession.finalize(decision);
+      for (const [
+        actionIndex,
+        errorMessage,
+      ] of streamed.imageGenerationErrors) {
+        this.logs.save({
+          ownerUserId: input.ownerUserId,
+          agentId: input.agent.id,
+          conversationId: input.conversationId,
+          action: { type: "image_generation", actionIndex },
+          status: "failed",
+          errorMessage,
+        });
+      }
       this.executor.executeDecision({
         ownerUserId: input.ownerUserId,
         conversationId: input.conversationId,
@@ -262,6 +281,8 @@ export class PrimeFigureRuntimeService {
         streamedMessageIds: streamed.messageIds,
         voiceMedia: streamed.voiceMedia,
         ttsErrors: streamed.ttsErrors,
+        imageMedia: streamed.imageMedia,
+        imageGenerationErrors: streamed.imageGenerationErrors,
       });
       this.persistMediaAnnotations(
         input,
@@ -300,6 +321,13 @@ export class PrimeFigureRuntimeService {
           value,
         });
         if (!updated) throw new Error("待标注媒体消息不存在或类型已改变。");
+        this.conversationMedia.ensure({
+          ownerUserId: input.ownerUserId,
+          conversationId: input.conversationId,
+          resourceId: target.resourceId,
+          mediaType: target.type,
+          description: value,
+        });
       } catch (error) {
         this.logs.save({
           ownerUserId: input.ownerUserId,
@@ -413,9 +441,11 @@ function buildPrimeChatMessages(
   trigger: PrimeDecisionTrigger,
   ownerUserId: string,
   resources: ResourceRepository,
+  conversationMedia: PrimeConversationMediaRepository,
 ): {
   messages: ChatCompletionMessage[];
   pendingMedia: PendingMediaAnnotation[];
+  availableReferenceImages: Array<{ id: string; description: string }>;
 } {
   const timezone = agent.detail.schedule.timezone;
   const now = Date.now();
@@ -462,6 +492,21 @@ function buildPrimeChatMessages(
 
   const content: ChatCompletionContentPart[] = [];
   const pendingMedia: PendingMediaAnnotation[] = [];
+  if (agent.coverResourcePath) {
+    const cover = resources.findByPublicPath(
+      ownerUserId,
+      agent.coverResourcePath,
+    );
+    if (!cover) throw new Error("figure 封面资源不存在或不属于当前用户。");
+    conversationMedia.ensure({
+      ownerUserId,
+      conversationId: agent.conversationId,
+      resourceId: cover.id,
+      mediaType: "image",
+      description: "figure角色立绘",
+      source: "figure_cover",
+    });
+  }
   for (const message of timeline) {
     const at = formatReadableMinute(message.occurredAtMs, timezone);
     const sender = toLlmSender(message.sender);
@@ -482,6 +527,15 @@ function buildPrimeChatMessages(
 
     if (messageContent.type === "image" || messageContent.type === "video") {
       const description = messageContent.description?.trim();
+      const registeredMedia = messageContent.resourceId
+        ? conversationMedia.ensure({
+            ownerUserId,
+            conversationId: message.conversationId,
+            resourceId: messageContent.resourceId,
+            mediaType: messageContent.type,
+            ...(description ? { description } : {}),
+          })
+        : null;
       if (description) {
         content.push({
           type: "text",
@@ -496,9 +550,16 @@ function buildPrimeChatMessages(
       }
 
       const target: PendingMediaAnnotation = {
-        id: `media_${pendingMedia.length + 1}`,
+        id:
+          registeredMedia?.mediaId ??
+          (() => {
+            throw new Error(
+              `未描述的 ${messageContent.type} 消息缺少资源 ID。`,
+            );
+          })(),
         messageId: message.id,
         type: messageContent.type,
+        resourceId: messageContent.resourceId as string,
       };
       pendingMedia.push(target);
       content.push({
@@ -524,6 +585,15 @@ function buildPrimeChatMessages(
 
     if (messageContent.type === "voice") {
       const transcript = messageContent.transcript?.trim();
+      const registeredMedia = messageContent.resourceId
+        ? conversationMedia.ensure({
+            ownerUserId,
+            conversationId: message.conversationId,
+            resourceId: messageContent.resourceId,
+            mediaType: "voice",
+            ...(transcript ? { description: transcript } : {}),
+          })
+        : null;
       if (transcript) {
         content.push({
           type: "text",
@@ -538,9 +608,14 @@ function buildPrimeChatMessages(
       }
 
       const target: PendingMediaAnnotation = {
-        id: `media_${pendingMedia.length + 1}`,
+        id:
+          registeredMedia?.mediaId ??
+          (() => {
+            throw new Error("未描述的 voice 消息缺少资源 ID。");
+          })(),
         messageId: message.id,
         type: "voice",
+        resourceId: messageContent.resourceId as string,
       };
       pendingMedia.push(target);
       content.push({
@@ -602,6 +677,13 @@ function buildPrimeChatMessages(
     );
   }
 
+  const availableReferenceImages = conversationMedia
+    .listAvailableImages(ownerUserId, agent.conversationId)
+    .map((media) => ({
+      id: media.mediaId,
+      description: sanitizeVisibleText(media.description ?? "", timezone),
+    }));
+
   content.push({
     type: "text",
     text: JSON.stringify({
@@ -615,6 +697,7 @@ function buildPrimeChatMessages(
         variables: makeLlmReadable(state.variables, timezone),
       },
       memories: visibleMemories,
+      availableReferenceImages,
       hints,
     }),
   });
@@ -631,6 +714,7 @@ function buildPrimeChatMessages(
       },
     ],
     pendingMedia,
+    availableReferenceImages,
   };
 }
 
@@ -725,6 +809,8 @@ function buildSystemPrompt(agent: PrimeFigureAgent) {
     "不要对 end_user 的意图分类。不要输出 userIntent、relationshipSignal、riskLevel、隐藏思维链或逐动作理由。",
     "角色可以发送一条或多条文本、图片或语音消息，也可以保持沉默。每次决定建议生成 1 至 3 个 send_message 动作；当角色确实情绪激动时，可以发送更多消息。",
     "发送图片时必须同时提供面向对话的客观 description 和用于后续生图的 generationPrompt。发送语音时 transcript 是角色实际说出的内容，并将用于后续 TTS。暂时不得发送 video 或 sticker。",
+    "图片消息的 referenceMediaIds 只能从 user 数据包 availableReferenceImages 中选择；需要维持角色外观时优先参考描述为“figure角色立绘”的资源，不需要参考图时必须返回空数组。media_n 只在当前会话内长期有效，不得猜测或编造列表外 ID。",
+    IMAGE_GENERATION_PROMPT_RULES,
     "语音 transcript 可以在自然位置使用 Fish Audio 表演标签：[angry] [sad] [embarrassed] [emphasis] [whispering] [soft] [breathy] [excited] [laughing] [chuckling] [moaning] [clear throat] [sobbing] [crying loudly] [sighing] [panting] [groaning] [crowd laughing] [background laughter] [audience laughing] [pause] [long pause]。标签只用于确有对应语气或声音的地方，不要机械添加。",
     "为了让消息能够实时显示和合成，send_message.message 中必须先输出 type，再输出 text、description/generationPrompt 或 transcript；各消息必须严格按实际发送顺序输出。",
     "send_message 与 silence 互斥。若选择 silence，它必须是唯一动作；否则所有动作都必须是 send_message，并按发送顺序排列。",
@@ -746,6 +832,15 @@ function buildSystemPrompt(agent: PrimeFigureAgent) {
     `创作者输出参数：\n${parameters.length ? parameters.join("\n") : "无自定义参数。"}`,
   ].join("\n");
 }
+
+const IMAGE_GENERATION_PROMPT_RULES = `图片 action 的 generationPrompt 规范：
+核心目标是生成“手机相册里的最终照片”，绝不能生成第三个人正在拍摄角色拍照的场景。提示词必须生活化、物理逻辑清楚，避免专业摄影、摆拍、机位穿帮、手机穿帮、反射错误、手指/手臂/身体畸形。
+先判断照片类型并明确：普通自拍（前置摄像头，手机不入镜）；对镜自拍（手机背面和拿手机的手仅出现在镜中）；第一视角生活/风景（拍摄者通常不出现，最多边缘袖口、鞋尖或手指）；一只手拍另一只手拿物品（拿手机的手不出现，另一只手从下方合理伸入）；拍朋友（被拍者在前方，拍摄者本人不出现）。
+【正向提示词】必须是一整段可直接生图的自然语言，详细包含地点、时间、普通生活环境细节、手机前/后摄、第一人称机位高度与角度、拍摄距离、近大远小透视、允许与禁止出现的身体部位、人物身份/发型/真实皮肤/普通穿着/自然表情姿态手势、光线，以及随手一拍、轻微手抖或运动模糊、自动曝光、高光轻溢、暗部噪点、白平衡略偏、边缘畸变、背景轻乱、未经精修、像聊天中发出的手机原图等真实缺陷。不得写成明星、模特、网红大片或电影级调色。
+【负向提示词】必须覆盖与场景相关的：第三人称/别人帮拍/摄影师视角、专业写真、电影感构图、摄影棚灯光、过度摆拍美颜、塑料皮肤、完美构图、超现实光影、多余手指手臂、身体扭曲、不合理反射/错误镜像；除对镜自拍外不得出现正在拍摄的手机；普通自拍不得露出手机；第一视角拿物不得出现拿手机的手；风景不得变专业相机大片。
+【机位与身体逻辑检查】用简短条目回答谁在拍、手机是否入镜、拍摄者哪些部位可出现、哪些绝不能出现、机位为何符合现实。
+【推荐比例】只给一个最合适比例：自拍优先 2:3/3:4/9:16，对镜自拍或第一视角拿物优先 3:4/9:16，生活场景优先 3:4/4:3/9:16，风景优先 4:3/3:2/16:9；未指定时优先手机竖图 3:4。
+generationPrompt 必须严格依次包含【正向提示词】【负向提示词】【机位与身体逻辑检查】【推荐比例】四段。输入简略时主动补全合理生活细节，但不得改变核心需求。`;
 
 const SEARCH_RECALL_TOOL: ChatToolDefinition = {
   type: "function",
@@ -783,6 +878,7 @@ function buildPrimeDecisionResponseFormat(
   agent: PrimeFigureAgent,
   requireMemoryWrite: boolean,
   pendingMedia: PendingMediaAnnotation[],
+  availableReferenceImageIds: string[],
 ) {
   const variableProperties = Object.fromEntries(
     agent.detail.variableDefinitions.map((definition) => [
@@ -892,7 +988,7 @@ function buildPrimeDecisionResponseFormat(
                   "严格按此顺序发送的一条或多条文本、图片或语音消息。",
                 minItems: 1,
                 maxItems: 12,
-                items: buildSendMessageActionSchema(),
+                items: buildSendMessageActionSchema(availableReferenceImageIds),
               },
               {
                 type: "array",
@@ -1029,7 +1125,7 @@ function buildScheduleOutputSchema() {
   } as const;
 }
 
-function buildSendMessageActionSchema() {
+function buildSendMessageActionSchema(availableReferenceImageIds: string[]) {
   return {
     type: "object",
     description: "立即以角色身份发送一条文本、图片或语音消息。",
@@ -1066,10 +1162,30 @@ function buildSendMessageActionSchema() {
               },
               generationPrompt: {
                 type: "string",
-                description: "供后续图像生成服务使用的完整生图提示词。",
+                description:
+                  "严格按系统提示的四段格式编写，供实际图像生成服务直接使用的完整提示词。",
+              },
+              referenceMediaIds: {
+                type: "array",
+                description:
+                  "从 user 数据包 availableReferenceImages 中选择的参考图片 media_n ID；不需要参考图时返回空数组。",
+                minItems: 0,
+                maxItems: Math.min(availableReferenceImageIds.length, 10),
+                uniqueItems: true,
+                items: availableReferenceImageIds.length
+                  ? {
+                      type: "string",
+                      enum: availableReferenceImageIds,
+                    }
+                  : { type: "string" },
               },
             },
-            required: ["type", "description", "generationPrompt"],
+            required: [
+              "type",
+              "description",
+              "generationPrompt",
+              "referenceMediaIds",
+            ],
             additionalProperties: false,
           },
           {

@@ -102,6 +102,37 @@ export function MessageBubble({
       </div>
     ) : null;
 
+  if (message.kind === "image") {
+    const mediaUrl = resolveMediaUrl(message.mediaUrl);
+    return (
+      <div
+        className="relative flex max-w-[85%] items-start gap-3 self-start md:max-w-[70%]"
+        {...longPressProps}
+      >
+        {actionMenu}
+        <div className="h-8 w-8 flex-shrink-0 rounded-full border border-white/10 bg-white/[0.04]" />
+        <div className="flex max-w-[360px] flex-col gap-2 overflow-hidden rounded-2xl rounded-tl-sm border border-white/8 bg-white/[0.03] p-2 text-white/82">
+          {mediaUrl ? (
+            <img
+              className="max-h-[480px] w-full rounded-xl object-cover"
+              src={mediaUrl}
+              alt={message.text || "角色发送的图片"}
+            />
+          ) : (
+            <div className="flex aspect-[3/4] w-[240px] max-w-full items-center justify-center rounded-xl bg-white/[0.04] text-xs text-white/35">
+              {message.status === "typing" ? "正在生成图片…" : "图片生成失败"}
+            </div>
+          )}
+          {message.text ? (
+            <p className="px-1 pb-1 text-xs leading-5 text-white/55">
+              {message.text}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   if (message.kind === "voice") {
     const mediaUrl = resolveMediaUrl(message.mediaUrl);
     return (

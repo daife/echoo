@@ -21,12 +21,18 @@ import type {
 import { AiProviderRegistry } from "../../../ai/ai-provider.registry.js";
 import { AgentRepository } from "../../agent.repository.js";
 import { MessageRepository } from "../../../messaging/message.repository.js";
+import { ResourceRepository } from "../../../resources/resource.repository.js";
+import { AppPushService } from "../../../realtime/delivery.service.js";
+import { FishAudioTtsService } from "../../../tts/fish-audio-tts.service.js";
+import { OpenRouterImageGenerationService } from "../../../image-generation/openrouter-image-generation.service.js";
 import { PrimeActionLogRepository } from "./prime-action-log.repository.js";
 import { PrimeActionExecutor } from "./prime-action-executor.js";
 import { PrimeFigureHandler } from "./prime-figure.handler.js";
 import { PrimeMessageRepository } from "./prime-message.repository.js";
 import { PrimeFigureRuntimeService } from "./prime-figure-runtime.service.js";
 import { PrimeFigureStateRepository } from "./prime-figure-state.repository.js";
+import { PrimeConversationMediaRepository } from "./prime-conversation-media.repository.js";
+import { PrimeDecisionStreamSession } from "./prime-decision-stream-session.js";
 import { formatReadableMinute, parseReadableMinute } from "./prime-time.js";
 
 class FakeProvider implements AiTextProvider {
@@ -495,6 +501,7 @@ test("Prime Figure V2 runs strict reply, recall, and persisted silence end to en
 test("Prime Figure sends raw unannotated media once and persists model annotations", async () => {
   const directory = mkdtempSync(join(tmpdir(), "echoo-prime-media-"));
   process.env.AUTH_DATABASE_FILE = join(directory, "test.sqlite");
+  process.env.RESOURCE_STORAGE_DIR = join(directory, "resources");
 
   try {
     const db = getDatabase();
@@ -643,8 +650,10 @@ test("Prime Figure sends raw unannotated media once and persists model annotatio
     const context = JSON.parse(getTextPart(parts.at(-1))) as {
       hints: string[];
       recent?: unknown;
+      availableReferenceImages?: Array<{ id: string; description: string }>;
     };
     assert.equal(context.recent, undefined);
+    assert.deepEqual(context.availableReferenceImages, []);
     assert.match(context.hints.join("\n"), /mediaAnnotations/);
 
     const responseSchema =
@@ -694,6 +703,28 @@ test("Prime Figure sends raw unannotated media once and persists model annotatio
     const secondParts = getUserContentParts(secondProvider.inputs[0]!);
     assert.ok(secondParts.every((part) => part.type === "text"));
     assert.doesNotMatch(JSON.stringify(secondParts), /base64|mediaAnnotations/);
+    const secondContext = JSON.parse(getTextPart(secondParts.at(-1))) as {
+      availableReferenceImages: Array<{ id: string; description: string }>;
+    };
+    assert.deepEqual(secondContext.availableReferenceImages, [
+      { id: "media_1", description: "窗边的女孩" },
+    ]);
+    const persistentMedia = getDatabase()
+      .prepare(
+        "SELECT media_id, media_type FROM prime_conversation_media WHERE conversation_id = ? ORDER BY media_index",
+      )
+      .all(agent.conversationId) as Array<{
+      media_id: string;
+      media_type: string;
+    }>;
+    assert.deepEqual(
+      persistentMedia.map((row) => ({ ...row })),
+      [
+        { media_id: "media_1", media_type: "image" },
+        { media_id: "media_2", media_type: "video" },
+        { media_id: "media_3", media_type: "voice" },
+      ],
+    );
     const secondSchema =
       (
         secondProvider.inputs[0]?.responseFormat as {
@@ -804,7 +835,8 @@ test("Prime Figure sends raw unannotated media once and persists model annotatio
             type: "image",
             description: "一只趴在窗边晒太阳的橘猫",
             generationPrompt:
-              "一只橘猫趴在木质窗台晒太阳，午后暖光，生活摄影风格",
+              "【正向提示词】一只橘猫趴在木质窗台晒太阳，午后暖光，手机随手拍。\n【负向提示词】不要专业摄影。\n【机位与身体逻辑检查】- 手机持有者在拍猫。\n【推荐比例】3:4",
+            referenceMediaIds: [],
           },
         },
         {
@@ -827,11 +859,11 @@ test("Prime Figure sends raw unannotated media once and persists model annotatio
       ["text", "image", "voice"],
     );
     const outboundImage = outboundPrimeMessages[1]?.content;
-    assert.equal(
+    assert.match(
       outboundImage?.type === "image"
-        ? outboundImage.generationPrompt
-        : undefined,
-      "一只橘猫趴在木质窗台晒太阳，午后暖光，生活摄影风格",
+        ? (outboundImage.generationPrompt ?? "")
+        : "",
+      /橘猫趴在木质窗台/,
     );
     assert.deepEqual(
       outboundImage?.type === "image"
@@ -863,7 +895,7 @@ test("Prime Figure sends raw unannotated media once and persists model annotatio
         ? (deliveredMessages[1].metadata.mediaIntent as { status?: string })
             .status
         : undefined,
-      "pending_generation",
+      "generation_failed",
     );
     assert.equal(
       deliveredMessages[2]?.metadata?.mediaIntent &&
@@ -879,6 +911,123 @@ test("Prime Figure sends raw unannotated media once and persists model annotatio
     assert.match(outboundResponseSchema, /generationPrompt/);
     assert.match(outboundResponseSchema, /transcript/);
     assert.doesNotMatch(outboundResponseSchema, /等待后续生成资源的视频消息/);
+
+    let generationReferences: Array<{ mimeType: string; data: Buffer }> = [];
+    const generatedDecision: PrimeFigureDecision = {
+      rationale: "我想发一张以刚才图片为人物参考的生活照。",
+      figureMood: "放松",
+      variables: {},
+      actions: [
+        {
+          type: "send_message",
+          message: {
+            type: "image",
+            description: "角色在窗边随手拍下的生活自拍",
+            generationPrompt:
+              "【正向提示词】前置手机自拍。\n【负向提示词】不要第三人称。\n【机位与身体逻辑检查】- 角色本人手持手机。\n【推荐比例】3:4",
+            referenceMediaIds: ["media_1"],
+          },
+        },
+      ],
+    };
+    const fakeImageGeneration = {
+      async generate(input: {
+        prompt: string;
+        references: Array<{ mimeType: string; data: Buffer }>;
+      }) {
+        generationReferences = input.references;
+        return {
+          mimeType: "image/png" as const,
+          data: Buffer.from("generated-png"),
+          model: "test/image-model",
+        };
+      },
+    };
+    const generatedStream = await new PrimeDecisionStreamSession(
+      { ownerUserId: "media_user", conversationId: agent.conversationId },
+      new AppPushService(),
+      new FishAudioTtsService(),
+      new ResourceRepository(),
+      fakeImageGeneration as unknown as OpenRouterImageGenerationService,
+      new PrimeConversationMediaRepository(),
+    ).finalize(generatedDecision);
+    assert.deepEqual(generationReferences, [
+      { mimeType: "image/jpeg", data: Buffer.from("image-bytes") },
+    ]);
+    const currentState = new PrimeFigureStateRepository().findByAgent(
+      "media_user",
+      agent.id,
+    );
+    assert.ok(currentState);
+    new PrimeActionExecutor().executeDecision({
+      ownerUserId: "media_user",
+      conversationId: agent.conversationId,
+      agent,
+      state: currentState,
+      decision: generatedDecision,
+      providerId: "openrouter",
+      model: "test/prime-figure",
+      streamedMessageIds: generatedStream.messageIds,
+      imageMedia: generatedStream.imageMedia,
+      imageGenerationErrors: generatedStream.imageGenerationErrors,
+    });
+    const generatedMessage = new MessageRepository()
+      .listByConversation("media_user", agent.conversationId)
+      .at(-1);
+    assert.equal(generatedMessage?.contentType, "image");
+    assert.match(
+      generatedMessage?.content.mediaUrl ?? "",
+      /\/api\/resources\/res_/,
+    );
+    const generatedPrimeMessage = messages
+      .listRecent("media_user", agent.id, 30)
+      .at(-1)?.content;
+    assert.equal(generatedPrimeMessage?.type, "image");
+    assert.ok(
+      generatedPrimeMessage?.type === "image" &&
+        generatedPrimeMessage.resourceId?.startsWith("res_"),
+    );
+    assert.deepEqual(
+      generatedPrimeMessage?.type === "image"
+        ? generatedPrimeMessage.referenceMediaIds
+        : undefined,
+      ["media_1"],
+    );
+
+    const coverPath = join(directory, "cover.png");
+    writeFileSync(coverPath, Buffer.from("cover-image"));
+    insertResource.run(
+      "res_cover",
+      "media_user",
+      "image/png",
+      "cover.png",
+      coverPath,
+      "/api/resources/res_cover/file",
+      now,
+    );
+    db.prepare("UPDATE agents SET cover_resource_path = ? WHERE id = ?").run(
+      "/api/resources/res_cover/file",
+      agent.id,
+    );
+    const coverProvider = new FakeProvider([result(decision)]);
+    await createRuntime(coverProvider).requestDecision({
+      ownerUserId: "media_user",
+      conversationId: agent.conversationId,
+    });
+    const coverContext = JSON.parse(
+      getTextPart(getUserContentParts(coverProvider.inputs[0]!).at(-1)),
+    ) as {
+      availableReferenceImages: Array<{ id: string; description: string }>;
+    };
+    const coverReference = coverContext.availableReferenceImages.find(
+      (reference) => reference.description === "figure角色立绘",
+    );
+    assert.ok(coverReference);
+    assert.match(coverReference.id, /^media_[1-9]\d*$/);
+    assert.match(
+      JSON.stringify(coverProvider.inputs[0]?.responseFormat),
+      new RegExp(coverReference.id),
+    );
 
     const invalidPath = join(directory, "invalid.txt");
     writeFileSync(invalidPath, "not an image");
@@ -917,6 +1066,7 @@ test("Prime Figure sends raw unannotated media once and persists model annotatio
     closeDatabase();
     rmSync(directory, { recursive: true, force: true });
     delete process.env.AUTH_DATABASE_FILE;
+    delete process.env.RESOURCE_STORAGE_DIR;
   }
 });
 

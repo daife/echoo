@@ -6,15 +6,22 @@ import type {
 } from "@echoo/shared";
 import { AppPushService } from "../../../realtime/delivery.service.js";
 import { ResourceRepository } from "../../../resources/resource.repository.js";
+import { OpenRouterImageGenerationService } from "../../../image-generation/openrouter-image-generation.service.js";
 import {
   FishAudioTtsService,
   type FishAudioTtsStream,
 } from "../../../tts/fish-audio-tts.service.js";
 import type { PrimeDecisionStreamFieldDelta } from "./prime-decision-stream-parser.js";
+import { PrimeConversationMediaRepository } from "./prime-conversation-media.repository.js";
 
 export interface ResolvedPrimeVoiceMedia {
   resourceId: string;
   mediaUrl: string;
+}
+
+export interface ResolvedPrimeImageMedia extends ResolvedPrimeVoiceMedia {
+  mediaId: string;
+  model: string;
 }
 
 interface StreamedActionState {
@@ -40,6 +47,8 @@ export class PrimeDecisionStreamSession {
     private readonly appPush = new AppPushService(),
     private readonly tts = new FishAudioTtsService(),
     private readonly resources = new ResourceRepository(),
+    private readonly imageGeneration = new OpenRouterImageGenerationService(),
+    private readonly conversationMedia = new PrimeConversationMediaRepository(),
   ) {}
 
   handleField(event: PrimeDecisionStreamFieldDelta) {
@@ -65,6 +74,8 @@ export class PrimeDecisionStreamSession {
 
   async finalize(decision: PrimeFigureDecision) {
     const voiceMedia = new Map<number, ResolvedPrimeVoiceMedia>();
+    const imageMedia = new Map<number, ResolvedPrimeImageMedia>();
+    const imageGenerationErrors = new Map<number, string>();
 
     for (const [index, action] of decision.actions.entries()) {
       if (action.type !== "send_message") continue;
@@ -86,8 +97,55 @@ export class PrimeDecisionStreamSession {
 
     await Promise.all(
       decision.actions.map(async (action, index) => {
-        if (action.type !== "send_message" || action.message.type !== "voice")
+        if (action.type !== "send_message") return;
+        if (action.message.type === "image") {
+          try {
+            const references = this.conversationMedia.resolveImageReferences(
+              this.input.ownerUserId,
+              this.input.conversationId,
+              action.message.referenceMediaIds,
+            );
+            const generated = await this.imageGeneration.generate({
+              prompt: action.message.generationPrompt,
+              references: references.map((reference) => {
+                const resource = this.resources.readForOwner(
+                  this.input.ownerUserId,
+                  reference.resourceId,
+                );
+                if (!resource)
+                  throw new Error(`参考图片资源不可读：${reference.mediaId}。`);
+                return {
+                  mimeType: resource.record.mimeType,
+                  data: resource.data,
+                };
+              }),
+            });
+            const resource = this.resources.saveGeneratedMedia(
+              this.input.ownerUserId,
+              "prime_figure_image",
+              generated.mimeType,
+              generated.data,
+            );
+            const registered = this.conversationMedia.ensure({
+              ownerUserId: this.input.ownerUserId,
+              conversationId: this.input.conversationId,
+              resourceId: resource.id,
+              mediaType: "image",
+              description: action.message.description,
+              source: "generated",
+            });
+            imageMedia.set(index, {
+              resourceId: resource.id,
+              mediaUrl: resource.publicPath,
+              mediaId: registered.mediaId,
+              model: generated.model,
+            });
+          } catch (error) {
+            imageGenerationErrors.set(index, toErrorMessage(error));
+          }
           return;
+        }
+        if (action.message.type !== "voice") return;
         const state = this.getAction(index);
         if (!state.tts) return;
         try {
@@ -98,6 +156,14 @@ export class PrimeDecisionStreamSession {
             result.mimeType,
             result.audio,
           );
+          this.conversationMedia.ensure({
+            ownerUserId: this.input.ownerUserId,
+            conversationId: this.input.conversationId,
+            resourceId: resource.id,
+            mediaType: "voice",
+            description: action.message.transcript,
+            source: "generated",
+          });
           voiceMedia.set(index, {
             resourceId: resource.id,
             mediaUrl: resource.publicPath,
@@ -127,6 +193,8 @@ export class PrimeDecisionStreamSession {
           .map(([index, state]) => [index, state.id]),
       ),
       voiceMedia,
+      imageMedia,
+      imageGenerationErrors,
       ttsErrors: new Map(
         [...this.actions]
           .filter(([, state]) => state.ttsError)
