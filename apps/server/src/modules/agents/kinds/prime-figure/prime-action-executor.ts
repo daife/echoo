@@ -82,7 +82,6 @@ export class PrimeActionExecutor {
             agentId: input.agent.id,
             conversationId: input.conversationId,
             sender: "prime_figure",
-            direction: "outgoing",
             content: action.message,
             occurredAtMs,
             timezone: input.agent.detail.schedule.timezone,

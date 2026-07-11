@@ -142,7 +142,6 @@ const schemaSql = `
     agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     sender TEXT NOT NULL CHECK (sender IN ('prime_figure', 'end_user', 'system')),
-    direction TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing', 'internal')),
     message_type TEXT NOT NULL CHECK (message_type IN ('text', 'image', 'video', 'voice', 'sticker', 'transfer')),
     content_json TEXT NOT NULL,
     occurred_at_ms INTEGER NOT NULL,

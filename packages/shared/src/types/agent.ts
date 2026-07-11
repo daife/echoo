@@ -190,7 +190,6 @@ export type UpdatePrimeFigureRequest = Omit<
 >;
 
 export type PrimeMessageSender = "prime_figure" | "end_user" | "system";
-export type PrimeMessageDirection = "incoming" | "outgoing" | "internal";
 export type PrimeMessageContentType =
   "text" | "image" | "video" | "voice" | "sticker" | "transfer";
 
@@ -237,7 +236,6 @@ export interface PrimeMessage {
   agentId: string;
   conversationId: string;
   sender: PrimeMessageSender;
-  direction: PrimeMessageDirection;
   messageType: PrimeMessageContentType;
   content: PrimeMessageContent;
   occurredAtMs: number;

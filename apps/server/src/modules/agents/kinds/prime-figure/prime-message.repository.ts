@@ -3,7 +3,6 @@ import type {
   PrimeMessage,
   PrimeMessageContent,
   PrimeMessageContentType,
-  PrimeMessageDirection,
   PrimeMessageSender,
 } from "@echoo/shared";
 import { getDatabase } from "../../../../infra/database/sqlite.js";
@@ -14,7 +13,6 @@ interface PrimeMessageRow {
   agent_id: string;
   conversation_id: string;
   sender: PrimeMessageSender;
-  direction: PrimeMessageDirection;
   message_type: PrimeMessageContentType;
   content_json: string;
   occurred_at_ms: number;
@@ -29,7 +27,6 @@ export interface SavePrimeMessageInput {
   agentId: string;
   conversationId: string;
   sender: PrimeMessageSender;
-  direction: PrimeMessageDirection;
   content: PrimeMessageContent;
   occurredAtMs?: number;
   timezone?: string;
@@ -47,7 +44,6 @@ export class PrimeMessageRepository {
       agentId: input.agentId,
       conversationId: input.conversationId,
       sender: input.sender,
-      direction: input.direction,
       messageType: input.content.type,
       content: input.content,
       occurredAtMs,
@@ -66,7 +62,6 @@ export class PrimeMessageRepository {
             agent_id,
             conversation_id,
             sender,
-            direction,
             message_type,
             content_json,
             occurred_at_ms,
@@ -74,7 +69,7 @@ export class PrimeMessageRepository {
             timezone,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -83,7 +78,6 @@ export class PrimeMessageRepository {
         message.agentId,
         message.conversationId,
         message.sender,
-        message.direction,
         message.messageType,
         JSON.stringify(message.content),
         message.occurredAtMs,
@@ -171,7 +165,6 @@ function rowToMessage(row: PrimeMessageRow): PrimeMessage {
     agentId: row.agent_id,
     conversationId: row.conversation_id,
     sender: row.sender,
-    direction: row.direction,
     messageType: row.message_type,
     content: parseJson<PrimeMessageContent>(row.content_json, {
       type: "text",

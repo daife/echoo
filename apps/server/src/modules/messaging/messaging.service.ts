@@ -103,7 +103,6 @@ export class MessagingService {
         agentId: conversation.agentId,
         conversationId: input.conversationId,
         sender: "end_user",
-        direction: "incoming",
         content: { type: "text", text: input.text },
         occurredAtMs: now,
         timezone: process.env.TZ ?? "UTC",

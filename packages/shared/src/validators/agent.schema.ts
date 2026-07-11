@@ -256,7 +256,6 @@ export const primeMessageSchema = z.object({
   agentId: z.string().trim().min(1).max(120),
   conversationId: z.string().trim().min(1).max(120),
   sender: z.enum(["prime_figure", "end_user", "system"]),
-  direction: z.enum(["incoming", "outgoing", "internal"]),
   messageType: z.enum([
     "text",
     "image",
