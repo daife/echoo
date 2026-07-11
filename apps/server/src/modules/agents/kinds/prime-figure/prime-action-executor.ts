@@ -2,10 +2,14 @@ import { randomUUID } from "node:crypto";
 import { primeFigureDecisionSchema } from "@echoo/shared";
 import type {
   Message,
+  MessageContent,
+  MessageContentType,
   PrimeFigureAgent,
   PrimeFigureDecision,
+  PrimeFigureOutgoingMessage,
   PrimeFigureState,
   PrimeFigureVariableValue,
+  PrimeMessageContent,
 } from "@echoo/shared";
 import { getDatabase } from "../../../../infra/database/sqlite.js";
 import { ConversationRepository } from "../../../conversations/conversation.repository.js";
@@ -77,12 +81,13 @@ export class PrimeActionExecutor {
         decision.actions.forEach((action, index) => {
           if (action.type !== "send_message") return;
           const occurredAtMs = now + index;
+          const primeContent = toPrimeMessageContent(action.message);
           const primeMessage = this.primeMessages.save({
             ownerUserId: input.ownerUserId,
             agentId: input.agent.id,
             conversationId: input.conversationId,
             sender: "prime_figure",
-            content: action.message,
+            content: primeContent,
             occurredAtMs,
             timezone: input.agent.detail.schedule.timezone,
           });
@@ -92,14 +97,15 @@ export class PrimeActionExecutor {
               id: `msg_${randomUUID()}`,
               conversationId: input.conversationId,
               role: "assistant",
-              contentType: "text",
-              content: { text: action.message.text },
+              contentType: toMessageContentType(action.message),
+              content: toMessageContent(action.message),
               status: "delivered",
               providerId: input.providerId,
               model: input.model,
               metadata: {
                 kind: "prime_figure",
                 primeMessageId: primeMessage.id,
+                ...toMediaIntentMetadata(action.message),
               },
               createdAt: occurredAtMs,
               updatedAt: occurredAtMs,
@@ -112,14 +118,13 @@ export class PrimeActionExecutor {
         this.conversations.updatePreview({
           ownerUserId: input.ownerUserId,
           conversationId: input.conversationId,
-          preview: lastMessage.message.text,
+          preview: toConversationPreview(lastMessage.message),
           updatedAt: now + decision.actions.length - 1,
           unreadIncrement: decision.actions.length,
         });
       } else {
         state.silenceStartedAtMs = now;
-        state.silenceUntilMs =
-          now + silenceAction.revisitAfterMinutes * 60_000;
+        state.silenceUntilMs = now + silenceAction.revisitAfterMinutes * 60_000;
       }
 
       this.figures.applyRuntimeUpdates(
@@ -150,9 +155,7 @@ export class PrimeActionExecutor {
         rationale: decision.rationale,
         status: "failed",
         errorMessage:
-          error instanceof Error
-            ? error.message
-            : "本初角色决定执行失败。",
+          error instanceof Error ? error.message : "本初角色决定执行失败。",
       });
       throw error;
     }
@@ -164,6 +167,55 @@ export class PrimeActionExecutor {
       });
     return state;
   }
+}
+
+function toPrimeMessageContent(
+  message: PrimeFigureOutgoingMessage,
+): PrimeMessageContent {
+  if (message.type === "image") {
+    return {
+      ...message,
+      referenceResourceUrls: [],
+    };
+  }
+  return message;
+}
+
+function toMessageContentType(
+  message: PrimeFigureOutgoingMessage,
+): MessageContentType {
+  return message.type;
+}
+
+function toMessageContent(message: PrimeFigureOutgoingMessage): MessageContent {
+  if (message.type === "text") return { text: message.text };
+  if (message.type === "image") return { text: message.description };
+  return { text: message.transcript };
+}
+
+function toMediaIntentMetadata(message: PrimeFigureOutgoingMessage) {
+  if (message.type === "image") {
+    return {
+      mediaIntent: {
+        status: "pending_generation",
+        generationPrompt: message.generationPrompt,
+      },
+    };
+  }
+  if (message.type === "voice") {
+    return {
+      mediaIntent: {
+        status: "pending_tts",
+      },
+    };
+  }
+  return {};
+}
+
+function toConversationPreview(message: PrimeFigureOutgoingMessage) {
+  if (message.type === "text") return message.text;
+  if (message.type === "image") return `[图片] ${message.description}`;
+  return `[语音] ${message.transcript}`;
 }
 
 function appendMemories(

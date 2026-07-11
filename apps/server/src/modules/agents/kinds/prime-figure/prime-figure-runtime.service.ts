@@ -1,20 +1,26 @@
-import { primeFigureDecisionSchema } from "@echoo/shared";
+import {
+  primeFigureDecisionSchema,
+  primeMediaAnnotationSchema,
+} from "@echoo/shared";
 import type {
   PrimeFigureAgent,
   PrimeFigureDecision,
   PrimeFigureState,
   PrimeFigureVariableDefinition,
   PrimeFigureVariableValue,
+  PrimeMediaAnnotation,
   PrimeMessage,
   PrimeMessageContent,
 } from "@echoo/shared";
 import { AiProviderRegistry } from "../../../ai/ai-provider.registry.js";
 import type {
+  ChatCompletionContentPart,
   ChatCompletionMessage,
   ChatToolCall,
   ChatToolDefinition,
 } from "../../../ai/ai-provider.interface.js";
 import { AgentRepository } from "../../agent.repository.js";
+import { ResourceRepository } from "../../../resources/resource.repository.js";
 import { PrimeActionLogRepository } from "./prime-action-log.repository.js";
 import { PrimeActionExecutor } from "./prime-action-executor.js";
 import { PrimeMessageRepository } from "./prime-message.repository.js";
@@ -33,6 +39,12 @@ const RECALL_HINT_PATTERN = /记得|不记得|忘了|还记得|remember|forgot|r
 export type PrimeDecisionTrigger =
   "end_user_message" | "silence_ended" | "coalesced_messages";
 
+interface PendingMediaAnnotation {
+  id: string;
+  messageId: string;
+  type: "image" | "video" | "voice";
+}
+
 export class PrimeFigureRuntimeService {
   private static readonly activeRuns = new Map<
     string,
@@ -50,6 +62,7 @@ export class PrimeFigureRuntimeService {
     private readonly providers = new AiProviderRegistry(),
     private readonly executor = new PrimeActionExecutor(),
     private readonly logs = new PrimeActionLogRepository(),
+    private readonly resources = new ResourceRepository(),
   ) {}
 
   requestDecision(input: {
@@ -123,9 +136,7 @@ export class PrimeFigureRuntimeService {
           action: { type: "prime_runtime", trigger },
           status: "failed",
           errorMessage:
-            error instanceof Error
-              ? error.message
-              : "本初角色运行时执行失败。",
+            error instanceof Error ? error.message : "本初角色运行时执行失败。",
         });
         return null;
       }
@@ -150,12 +161,15 @@ export class PrimeFigureRuntimeService {
     );
     const provider = this.providers.getDefaultProvider();
     const model = this.providers.getDefaultModel();
-    const chatMessages = buildPrimeChatMessages(
+    const packet = buildPrimeChatMessages(
       input.agent,
       input.state,
       timeline,
       input.trigger,
+      input.ownerUserId,
+      this.resources,
     );
+    const chatMessages = packet.messages;
 
     const firstResponse = await provider.createChatCompletion({
       model,
@@ -163,7 +177,11 @@ export class PrimeFigureRuntimeService {
       messages: chatMessages,
       tools: [SEARCH_RECALL_TOOL],
       toolChoice: "auto",
-      responseFormat: buildPrimeDecisionResponseFormat(input.agent, false),
+      responseFormat: buildPrimeDecisionResponseFormat(
+        input.agent,
+        false,
+        packet.pendingMedia,
+      ),
       temperature: Number(process.env.DEFAULT_PRIME_TEMPERATURE ?? 0.4),
       maxTokens: process.env.DEFAULT_PRIME_MAX_TOKENS
         ? Number(process.env.DEFAULT_PRIME_MAX_TOKENS)
@@ -191,7 +209,11 @@ export class PrimeFigureRuntimeService {
         model,
         sessionId: input.conversationId,
         messages: chatMessages,
-        responseFormat: buildPrimeDecisionResponseFormat(input.agent, true),
+        responseFormat: buildPrimeDecisionResponseFormat(
+          input.agent,
+          true,
+          packet.pendingMedia,
+        ),
         toolChoice: "none",
         temperature: Number(process.env.DEFAULT_PRIME_TEMPERATURE ?? 0.4),
         maxTokens: process.env.DEFAULT_PRIME_MAX_TOKENS
@@ -201,9 +223,14 @@ export class PrimeFigureRuntimeService {
       });
     }
 
+    const rawOutput = JSON.parse(finalResponse.text) as Record<string, unknown>;
     const decision = primeFigureDecisionSchema.parse(
-      JSON.parse(finalResponse.text),
+      rawOutput,
     ) as PrimeFigureDecision;
+    const mediaAnnotations = normalizeMediaAnnotations(
+      rawOutput.mediaAnnotations,
+      packet.pendingMedia,
+    );
     this.executor.executeDecision({
       ownerUserId: input.ownerUserId,
       conversationId: input.conversationId,
@@ -213,7 +240,47 @@ export class PrimeFigureRuntimeService {
       providerId: finalResponse.providerId,
       model: finalResponse.model,
     });
+    this.persistMediaAnnotations(input, packet.pendingMedia, mediaAnnotations);
     return decision;
+  }
+
+  private persistMediaAnnotations(
+    input: {
+      ownerUserId: string;
+      conversationId: string;
+      agent: PrimeFigureAgent;
+    },
+    pending: PendingMediaAnnotation[],
+    annotations: PrimeMediaAnnotation[],
+  ) {
+    const targetById = new Map(pending.map((target) => [target.id, target]));
+    for (const annotation of annotations) {
+      const target = targetById.get(annotation.id);
+      if (!target) continue;
+      try {
+        const value =
+          annotation.type === "voice"
+            ? annotation.transcript
+            : annotation.description;
+        const updated = this.messages.applyMediaAnnotation({
+          ownerUserId: input.ownerUserId,
+          messageId: target.messageId,
+          expectedType: target.type,
+          value,
+        });
+        if (!updated) throw new Error("待标注媒体消息不存在或类型已改变。");
+      } catch (error) {
+        this.logs.save({
+          ownerUserId: input.ownerUserId,
+          agentId: input.agent.id,
+          conversationId: input.conversationId,
+          action: { type: "media_annotation", annotationId: annotation.id },
+          status: "failed",
+          errorMessage:
+            error instanceof Error ? error.message : "媒体标注写入失败。",
+        });
+      }
+    }
   }
 
   private executeRecallTool(
@@ -260,7 +327,12 @@ function buildPrimeChatMessages(
   state: PrimeFigureState,
   timeline: PrimeMessage[],
   trigger: PrimeDecisionTrigger,
-): ChatCompletionMessage[] {
+  ownerUserId: string,
+  resources: ResourceRepository,
+): {
+  messages: ChatCompletionMessage[];
+  pendingMedia: PendingMediaAnnotation[];
+} {
   const timezone = agent.detail.schedule.timezone;
   const now = Date.now();
   const lastEndUserMessage = [...timeline]
@@ -304,33 +376,250 @@ function buildPrimeChatMessages(
       sanitizeVisibleText(memory.content, timezone),
     ]);
 
-  return [
-    {
-      role: "system",
-      content: buildSystemPrompt(agent),
-    },
-    {
-      role: "user",
-      content: JSON.stringify({
-        now: formatReadableMinute(now, timezone),
-        weekday: formatWeekdayCode(now, timezone),
-        figureNow: {
-          mood: state.mood
-            ? `角色当前情绪：“${state.mood}”。该判断形成于${describeAge(state.moodObservedAtMs, now)}。`
-            : "角色当前没有已记录的情绪。",
-          relationship: state.relationshipStatus || undefined,
-          variables: makeLlmReadable(state.variables, timezone),
-        },
-        recent: timeline.map((message) => [
-          formatReadableMinute(message.occurredAtMs, timezone),
-          toLlmSender(message.sender),
-          sanitizeVisibleText(describePrimeContent(message.content), timezone),
-        ]),
-        memories: visibleMemories,
-        hints,
+  const content: ChatCompletionContentPart[] = [];
+  const pendingMedia: PendingMediaAnnotation[] = [];
+  for (const message of timeline) {
+    const at = formatReadableMinute(message.occurredAtMs, timezone);
+    const sender = toLlmSender(message.sender);
+    const messageContent = message.content;
+
+    if (messageContent.type === "text") {
+      content.push({
+        type: "text",
+        text: JSON.stringify({
+          at,
+          sender,
+          type: "text",
+          text: sanitizeVisibleText(messageContent.text, timezone),
+        }),
+      });
+      continue;
+    }
+
+    if (messageContent.type === "image" || messageContent.type === "video") {
+      const description = messageContent.description?.trim();
+      if (description) {
+        content.push({
+          type: "text",
+          text: JSON.stringify({
+            at,
+            sender,
+            type: messageContent.type,
+            description: sanitizeVisibleText(description, timezone),
+          }),
+        });
+        continue;
+      }
+
+      const target: PendingMediaAnnotation = {
+        id: `media_${pendingMedia.length + 1}`,
+        messageId: message.id,
+        type: messageContent.type,
+      };
+      pendingMedia.push(target);
+      content.push({
+        type: "text",
+        text: JSON.stringify({
+          at,
+          sender,
+          type: messageContent.type,
+          annotationId: target.id,
+          description: null,
+        }),
+      });
+      content.push(
+        buildRawMediaPart(
+          ownerUserId,
+          messageContent.resourceId,
+          messageContent.type,
+          resources,
+        ),
+      );
+      continue;
+    }
+
+    if (messageContent.type === "voice") {
+      const transcript = messageContent.transcript?.trim();
+      if (transcript) {
+        content.push({
+          type: "text",
+          text: JSON.stringify({
+            at,
+            sender,
+            type: "voice",
+            transcript: sanitizeVisibleText(transcript, timezone),
+          }),
+        });
+        continue;
+      }
+
+      const target: PendingMediaAnnotation = {
+        id: `media_${pendingMedia.length + 1}`,
+        messageId: message.id,
+        type: "voice",
+      };
+      pendingMedia.push(target);
+      content.push({
+        type: "text",
+        text: JSON.stringify({
+          at,
+          sender,
+          type: "voice",
+          annotationId: target.id,
+          transcript: null,
+        }),
+      });
+      content.push(
+        buildRawMediaPart(
+          ownerUserId,
+          messageContent.resourceId,
+          "voice",
+          resources,
+        ),
+      );
+      continue;
+    }
+
+    if (messageContent.type === "sticker") {
+      content.push({
+        type: "text",
+        text: JSON.stringify({
+          at,
+          sender,
+          type: "sticker",
+          description: sanitizeVisibleText(
+            messageContent.description,
+            timezone,
+          ),
+        }),
+      });
+      continue;
+    }
+
+    content.push({
+      type: "text",
+      text: JSON.stringify({
+        at,
+        sender,
+        type: "transfer",
+        direction: messageContent.direction,
+        currency: messageContent.currency,
+        amount: messageContent.amount,
+        ...(messageContent.note
+          ? { note: sanitizeVisibleText(messageContent.note, timezone) }
+          : {}),
       }),
-    },
-  ];
+    });
+  }
+
+  if (pendingMedia.length) {
+    hints.push(
+      `以下媒体尚未标注：${pendingMedia.map((item) => `${item.id}(${item.type})`).join(", ")}。必须在 mediaAnnotations 中为 image/video 返回 description，为 voice 返回 transcript。`,
+    );
+  }
+
+  content.push({
+    type: "text",
+    text: JSON.stringify({
+      now: formatReadableMinute(now, timezone),
+      weekday: formatWeekdayCode(now, timezone),
+      figureNow: {
+        mood: state.mood
+          ? `角色当前情绪：“${state.mood}”。该判断形成于${describeAge(state.moodObservedAtMs, now)}。`
+          : "角色当前没有已记录的情绪。",
+        relationship: state.relationshipStatus || undefined,
+        variables: makeLlmReadable(state.variables, timezone),
+      },
+      memories: visibleMemories,
+      hints,
+    }),
+  });
+
+  return {
+    messages: [
+      {
+        role: "system",
+        content: buildSystemPrompt(agent),
+      },
+      {
+        role: "user",
+        content,
+      },
+    ],
+    pendingMedia,
+  };
+}
+
+const IMAGE_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+]);
+const VIDEO_MIME_TYPES = new Set([
+  "video/mp4",
+  "video/mpeg",
+  "video/mov",
+  "video/quicktime",
+  "video/webm",
+]);
+const AUDIO_FORMAT_BY_MIME_TYPE = new Map([
+  ["audio/wav", "wav"],
+  ["audio/x-wav", "wav"],
+  ["audio/mpeg", "mp3"],
+  ["audio/aiff", "aiff"],
+  ["audio/x-aiff", "aiff"],
+  ["audio/aac", "aac"],
+  ["audio/ogg", "ogg"],
+  ["audio/flac", "flac"],
+  ["audio/mp4", "m4a"],
+]);
+
+function buildRawMediaPart(
+  ownerUserId: string,
+  resourceId: string | undefined,
+  type: PendingMediaAnnotation["type"],
+  resources: ResourceRepository,
+): ChatCompletionContentPart {
+  if (!resourceId) throw new Error(`未描述的 ${type} 消息缺少资源 ID。`);
+  const resource = resources.readForOwner(ownerUserId, resourceId);
+  if (!resource) throw new Error(`媒体资源不存在或不属于当前用户：${type}。`);
+  const base64 = resource.data.toString("base64");
+
+  if (type === "image") {
+    if (!IMAGE_MIME_TYPES.has(resource.record.mimeType))
+      throw new Error(
+        `图片资源 MIME 类型不受支持：${resource.record.mimeType}。`,
+      );
+    return {
+      type: "image_url",
+      image_url: {
+        url: `data:${resource.record.mimeType};base64,${base64}`,
+      },
+    };
+  }
+  if (type === "video") {
+    if (!VIDEO_MIME_TYPES.has(resource.record.mimeType))
+      throw new Error(
+        `视频资源 MIME 类型不受支持：${resource.record.mimeType}。`,
+      );
+    return {
+      type: "video_url",
+      video_url: {
+        url: `data:${resource.record.mimeType};base64,${base64}`,
+      },
+    };
+  }
+
+  const format = AUDIO_FORMAT_BY_MIME_TYPE.get(resource.record.mimeType);
+  if (!format)
+    throw new Error(
+      `语音资源 MIME 类型不受支持：${resource.record.mimeType}。`,
+    );
+  return {
+    type: "input_audio",
+    input_audio: { data: base64, format },
+  };
 }
 
 function buildSystemPrompt(agent: PrimeFigureAgent) {
@@ -350,7 +639,8 @@ function buildSystemPrompt(agent: PrimeFigureAgent) {
     "你的目标不是满足、安慰、挽留或取悦 end_user。请决定这个角色真正会想什么、做什么。",
     "先写出简洁的、以角色为中心的决策依据。分析角色自身的情绪、动机、日程、记忆、抗拒、欲望和边界。",
     "不要对 end_user 的意图分类。不要输出 userIntent、relationshipSignal、riskLevel、隐藏思维链或逐动作理由。",
-    "角色可以发送一条或多条消息，也可以保持沉默。每次决定建议生成 1 至 3 个 send_message 动作；当角色确实情绪激动时，可以发送更多消息。",
+    "角色可以发送一条或多条文本、图片或语音消息，也可以保持沉默。每次决定建议生成 1 至 3 个 send_message 动作；当角色确实情绪激动时，可以发送更多消息。",
+    "发送图片时必须同时提供面向对话的客观 description 和用于后续生图的 generationPrompt。发送语音时 transcript 是角色实际说出的内容，并将用于后续 TTS。暂时不得发送 video 或 sticker。",
     "send_message 与 silence 互斥。若选择 silence，它必须是唯一动作；否则所有动作都必须是 send_message，并按发送顺序排列。",
     "只有当 currentSituation、schedule、itinerary 或 relationshipStatus 确实发生变化时，才使用可选的 stateUpdates 对象。要保留某字段当前值，可以省略该字段或将其设为 null。",
     "已存储的情绪是历史证据，不是要求永远维持它的指令。请考虑它是在多久之前被观察到的。",
@@ -406,6 +696,7 @@ const SEARCH_RECALL_TOOL: ChatToolDefinition = {
 function buildPrimeDecisionResponseFormat(
   agent: PrimeFigureAgent,
   requireMemoryWrite: boolean,
+  pendingMedia: PendingMediaAnnotation[],
 ) {
   const variableProperties = Object.fromEntries(
     agent.detail.variableDefinitions.map((definition) => [
@@ -424,8 +715,7 @@ function buildPrimeDecisionResponseFormat(
       strict: true,
       schema: {
         type: "object",
-        description:
-          "针对当前运行时事件数据包的一次以角色为中心的决定。",
+        description: "针对当前运行时事件数据包的一次以角色为中心的决定。",
         properties: {
           rationale: {
             type: "string",
@@ -492,8 +782,7 @@ function buildPrimeDecisionResponseFormat(
                 4000,
               ),
               schedule: {
-                description:
-                  "角色时区下的完整替换日程；使用 null 保留原值。",
+                description: "角色时区下的完整替换日程；使用 null 保留原值。",
                 anyOf: [buildScheduleOutputSchema(), { type: "null" }],
               },
               itinerary: nullableStringSchema(
@@ -514,31 +803,78 @@ function buildPrimeDecisionResponseFormat(
               {
                 type: "array",
                 description:
-                  "严格按此顺序发送的一条或多条文本消息。",
+                  "严格按此顺序发送的一条或多条文本、图片或语音消息。",
                 minItems: 1,
                 maxItems: 12,
                 items: buildSendMessageActionSchema(),
               },
               {
                 type: "array",
-                description:
-                  "仅包含一个 silence 动作，不得包含消息动作。",
+                description: "仅包含一个 silence 动作，不得包含消息动作。",
                 minItems: 1,
                 maxItems: 1,
                 items: buildSilenceActionSchema(),
               },
             ],
           },
+          ...(pendingMedia.length
+            ? {
+                mediaAnnotations: {
+                  type: "array",
+                  description:
+                    "为本轮数据包中所有尚未标注的媒体补充描述或语音转写。",
+                  minItems: pendingMedia.length,
+                  maxItems: pendingMedia.length,
+                  items: {
+                    anyOf: pendingMedia.map(buildMediaAnnotationOutputSchema),
+                  },
+                },
+              }
+            : {}),
         },
         required: [
           "rationale",
           "figureMood",
           "variables",
           "actions",
+          ...(pendingMedia.length ? ["mediaAnnotations"] : []),
         ],
         additionalProperties: false,
       },
     },
+  } as const;
+}
+
+function buildMediaAnnotationOutputSchema(target: PendingMediaAnnotation) {
+  if (target.type === "voice") {
+    return {
+      type: "object",
+      description: `语音 ${target.id} 的转写。`,
+      properties: {
+        id: { const: target.id, description: "数据包中的临时媒体 ID。" },
+        type: { const: "voice", description: "媒体类型。" },
+        transcript: {
+          type: "string",
+          description: "忠实转写语音中可以听到的内容。",
+        },
+      },
+      required: ["id", "type", "transcript"],
+      additionalProperties: false,
+    } as const;
+  }
+  return {
+    type: "object",
+    description: `${target.type === "image" ? "图片" : "视频"} ${target.id} 的客观描述。`,
+    properties: {
+      id: { const: target.id, description: "数据包中的临时媒体 ID。" },
+      type: { const: target.type, description: "媒体类型。" },
+      description: {
+        type: "string",
+        description: "足以在后续对话中替代原始媒体的客观内容描述。",
+      },
+    },
+    required: ["id", "type", "description"],
+    additionalProperties: false,
   } as const;
 }
 
@@ -610,24 +946,60 @@ function buildScheduleOutputSchema() {
 function buildSendMessageActionSchema() {
   return {
     type: "object",
-    description: "立即以角色身份发送一条文本消息。",
+    description: "立即以角色身份发送一条文本、图片或语音消息。",
     properties: {
       type: {
         const: "send_message",
         description: "选择立即发送角色消息。",
       },
       message: {
-        type: "object",
-        description: "以角色真实口吻写成的文本消息。",
-        properties: {
-          type: { const: "text", description: "文本内容类型。" },
-          text: {
-            type: "string",
-            description: "角色发送给 end_user 的确切文本。",
+        description: "角色发送给 end_user 的确切消息内容。",
+        anyOf: [
+          {
+            type: "object",
+            description: "普通文本消息。",
+            properties: {
+              type: { const: "text", description: "文本内容类型。" },
+              text: {
+                type: "string",
+                description: "角色发送给 end_user 的确切文本。",
+              },
+            },
+            required: ["type", "text"],
+            additionalProperties: false,
           },
-        },
-        required: ["type", "text"],
-        additionalProperties: false,
+          {
+            type: "object",
+            description: "等待后续生成资源的图片消息。",
+            properties: {
+              type: { const: "image", description: "图片内容类型。" },
+              description: {
+                type: "string",
+                description:
+                  "图片在对话中的客观内容描述；后续上下文用它替代原图。",
+              },
+              generationPrompt: {
+                type: "string",
+                description: "供后续图像生成服务使用的完整生图提示词。",
+              },
+            },
+            required: ["type", "description", "generationPrompt"],
+            additionalProperties: false,
+          },
+          {
+            type: "object",
+            description: "等待后续 TTS 生成资源的语音消息。",
+            properties: {
+              type: { const: "voice", description: "语音内容类型。" },
+              transcript: {
+                type: "string",
+                description: "角色实际说出的内容，也是后续 TTS 的输入文本。",
+              },
+            },
+            required: ["type", "transcript"],
+            additionalProperties: false,
+          },
+        ],
       },
     },
     required: ["type", "message"],
@@ -638,8 +1010,7 @@ function buildSendMessageActionSchema() {
 function buildSilenceActionSchema() {
   return {
     type: "object",
-    description:
-      "保持沉默，并在重新检查期结束前抑制新的 LLM 数据包。",
+    description: "保持沉默，并在重新检查期结束前抑制新的 LLM 数据包。",
     properties: {
       type: {
         const: "silence",
@@ -660,9 +1031,7 @@ function buildSilenceActionSchema() {
 
 function buildVariableSchema(definition: PrimeFigureVariableDefinition) {
   const description = `${definition.description}${
-    definition.type === "json"
-      ? " 返回编码为紧凑字符串的有效 JSON。"
-      : ""
+    definition.type === "json" ? " 返回编码为紧凑字符串的有效 JSON。" : ""
   } 使用 null 保留先前值。`;
   const base =
     definition.type === "number"
@@ -707,15 +1076,43 @@ function parseRecallArguments(value: string) {
   }
 }
 
+function normalizeMediaAnnotations(
+  value: unknown,
+  pending: PendingMediaAnnotation[],
+): PrimeMediaAnnotation[] {
+  if (!Array.isArray(value) || !pending.length) return [];
+  const idCounts = new Map<string, number>();
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const id = (item as { id?: unknown }).id;
+    if (typeof id !== "string") continue;
+    idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
+  }
+
+  const pendingById = new Map(pending.map((target) => [target.id, target]));
+  const result: PrimeMediaAnnotation[] = [];
+  for (const item of value) {
+    const parsed = primeMediaAnnotationSchema.safeParse(item);
+    if (!parsed.success || idCounts.get(parsed.data.id) !== 1) continue;
+    const target = pendingById.get(parsed.data.id);
+    if (!target || target.type !== parsed.data.type) continue;
+    result.push(parsed.data as PrimeMediaAnnotation);
+  }
+  return result;
+}
+
 function toLlmSender(sender: PrimeMessage["sender"]) {
   return sender === "prime_figure" ? "figure" : sender;
 }
 
 function describePrimeContent(content: PrimeMessageContent) {
   if (content.type === "text") return content.text;
-  if (content.type === "image") return `[图片] ${content.description}`;
-  if (content.type === "video") return `[视频] ${content.description}`;
-  if (content.type === "voice") return `[语音] ${content.transcript}`;
+  if (content.type === "image")
+    return `[图片] ${content.description ?? "尚未描述"}`;
+  if (content.type === "video")
+    return `[视频] ${content.description ?? "尚未描述"}`;
+  if (content.type === "voice")
+    return `[语音] ${content.transcript ?? "尚未转写"}`;
   if (content.type === "sticker") return `[贴纸] ${content.description}`;
   return `[转账] ${content.direction === "received" ? "收到" : "支付"} ${content.currency} ${content.amount}${content.note ? `，${content.note}` : ""}`;
 }

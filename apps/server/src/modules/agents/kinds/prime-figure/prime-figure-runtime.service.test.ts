@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -13,6 +13,7 @@ import {
   getDatabase,
 } from "../../../../infra/database/sqlite.js";
 import type {
+  ChatCompletionContentPart,
   ChatCompletionInput,
   ChatCompletionResult,
   AiTextProvider,
@@ -178,17 +179,19 @@ test("Prime Figure V2 runs strict reply, recall, and persisted silence end to en
       ).json_schema?.strict,
       true,
     );
-    const responseSchema = (
-      firstProvider.inputs[0]?.responseFormat as {
-        json_schema?: { schema?: Record<string, unknown> };
-      }
-    ).json_schema?.schema ?? {};
+    const responseSchema =
+      (
+        firstProvider.inputs[0]?.responseFormat as {
+          json_schema?: { schema?: Record<string, unknown> };
+        }
+      ).json_schema?.schema ?? {};
     assertSchemaFieldDescriptions(responseSchema);
     const stateUpdatesSchema = schemaProperty(responseSchema, "stateUpdates");
     const scheduleSchema = schemaProperty(stateUpdatesSchema, "schedule");
-    const scheduleObjectSchema = (
-      scheduleSchema.anyOf as Array<Record<string, unknown>> | undefined
-    )?.find((schema) => schema.type === "object") ?? {};
+    const scheduleObjectSchema =
+      (
+        scheduleSchema.anyOf as Array<Record<string, unknown>> | undefined
+      )?.find((schema) => schema.type === "object") ?? {};
     const segmentsSchema = schemaProperty(scheduleObjectSchema, "segments");
     assert.equal(
       segmentsSchema.maxItems,
@@ -266,17 +269,17 @@ test("Prime Figure V2 runs strict reply, recall, and persisted silence end to en
       "2026-07-13T10:00 处理个人事务。",
     );
     assert.equal(
-      new MessageRepository().listByConversation(
-        "user_prime_test",
-        agent.conversationId,
-      ).filter((message) => message.role === "assistant").length,
+      new MessageRepository()
+        .listByConversation("user_prime_test", agent.conversationId)
+        .filter((message) => message.role === "assistant").length,
       2,
       "one decision may persist multiple ordered send_message actions",
     );
-    const packet = JSON.parse(
-      firstProvider.inputs[0]?.messages.find((message) => message.role === "user")
-        ?.content ?? "{}",
-    ) as { now?: string; weekday?: string };
+    const userParts = getUserContentParts(firstProvider.inputs[0]!);
+    const packet = JSON.parse(getTextPart(userParts.at(-1))) as {
+      now?: string;
+      weekday?: string;
+    };
     assert.match(packet.now ?? "", /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
     assert.match(packet.weekday ?? "", /^(mon|tue|wed|thu|fri|sat|sun)$/);
     assert.equal("timezone" in packet, false);
@@ -288,9 +291,7 @@ test("Prime Figure V2 runs strict reply, recall, and persisted silence end to en
       .all(agent.id) as Array<{ rationale: string | null }>;
     assert.equal(rationaleRows.length, 2);
     assert.ok(
-      rationaleRows.every(
-        (row) => row.rationale === firstDecision.rationale,
-      ),
+      rationaleRows.every((row) => row.rationale === firstDecision.rationale),
       "the decision rationale must be stored with every applied action",
     );
 
@@ -354,10 +355,12 @@ test("Prime Figure V2 runs strict reply, recall, and persisted silence end to en
       conversationId: agent.conversationId,
     });
     assert.equal(recallProvider.inputs.length, 2);
-    const recallToolResult =
+    const recallToolContent =
       recallProvider.inputs[1]?.messages.find(
         (message) => message.role === "tool",
       )?.content ?? "";
+    assert.ok(typeof recallToolContent === "string");
+    const recallToolResult = recallToolContent;
     assert.match(recallToolResult, /^\{"history":/);
     assert.doesNotMatch(recallToolResult, /pmsg_|\b1\d{12}\b/);
     assert.equal(
@@ -454,15 +457,444 @@ test("Prime Figure V2 runs strict reply, recall, and persisted silence end to en
     });
     assert.equal(wakeProvider.inputs.length, 1);
     assert.match(
-      wakeProvider.inputs[0]?.messages.find(
-        (message) => message.role === "user",
-      )?.content ?? "",
+      getUserContentParts(wakeProvider.inputs[0]!)
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join("\n"),
       /沉默期已经结束/,
     );
     assert.equal(
       states.findByAgent("user_prime_test", agent.id)?.silenceUntilMs,
       undefined,
     );
+  } finally {
+    closeDatabase();
+    rmSync(directory, { recursive: true, force: true });
+    delete process.env.AUTH_DATABASE_FILE;
+  }
+});
+
+test("Prime Figure sends raw unannotated media once and persists model annotations", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "echoo-prime-media-"));
+  process.env.AUTH_DATABASE_FILE = join(directory, "test.sqlite");
+
+  try {
+    const db = getDatabase();
+    const now = Date.now();
+    db.prepare(
+      "INSERT INTO auth_users (id, email, display_name, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run("media_user", "media@example.test", "Media", "test", now, now);
+    const agent = new PrimeFigureHandler().create(
+      "media_user",
+      createMediaPrimeRequest(),
+    );
+    assert.equal(agent.type, "prime-figure");
+
+    const imagePath = join(directory, "image.jpg");
+    const videoPath = join(directory, "video.mp4");
+    const audioPath = join(directory, "audio.wav");
+    writeFileSync(imagePath, Buffer.from("image-bytes"));
+    writeFileSync(videoPath, Buffer.from("video-bytes"));
+    writeFileSync(audioPath, Buffer.from("audio-bytes"));
+    const insertResource = db.prepare(
+      `INSERT INTO resources (id, owner_user_id, kind, mime_type, original_file_name, storage_path, public_path, created_at)
+       VALUES (?, ?, 'message_media', ?, ?, ?, ?, ?)`,
+    );
+    insertResource.run(
+      "res_image",
+      "media_user",
+      "image/jpeg",
+      "image.jpg",
+      imagePath,
+      "/api/resources/res_image/file",
+      now,
+    );
+    insertResource.run(
+      "res_video",
+      "media_user",
+      "video/mp4",
+      "video.mp4",
+      videoPath,
+      "/api/resources/res_video/file",
+      now,
+    );
+    insertResource.run(
+      "res_audio",
+      "media_user",
+      "audio/wav",
+      "audio.wav",
+      audioPath,
+      "/api/resources/res_audio/file",
+      now,
+    );
+
+    const messages = new PrimeMessageRepository();
+    messages.save({
+      ownerUserId: "media_user",
+      agentId: agent.id,
+      conversationId: agent.conversationId,
+      sender: "end_user",
+      content: {
+        type: "image",
+        resourceId: "res_image",
+        referenceResourceUrls: [],
+      },
+      occurredAtMs: now,
+      timezone: "Asia/Shanghai",
+    });
+    messages.save({
+      ownerUserId: "media_user",
+      agentId: agent.id,
+      conversationId: agent.conversationId,
+      sender: "end_user",
+      content: { type: "video", resourceId: "res_video" },
+      occurredAtMs: now + 1,
+      timezone: "Asia/Shanghai",
+    });
+    messages.save({
+      ownerUserId: "media_user",
+      agentId: agent.id,
+      conversationId: agent.conversationId,
+      sender: "end_user",
+      content: { type: "voice", resourceId: "res_audio" },
+      occurredAtMs: now + 2,
+      timezone: "Asia/Shanghai",
+    });
+    messages.save({
+      ownerUserId: "media_user",
+      agentId: agent.id,
+      conversationId: agent.conversationId,
+      sender: "prime_figure",
+      content: {
+        type: "sticker",
+        stickerId: "sticker_wave",
+        description: "挥手的贴纸",
+      },
+      occurredAtMs: now + 3,
+      timezone: "Asia/Shanghai",
+    });
+
+    const decision: PrimeFigureDecision = {
+      rationale: "我看到了对方发来的媒体。",
+      figureMood: "好奇",
+      variables: {},
+      actions: [
+        {
+          type: "send_message",
+          message: { type: "text", text: "都看到了。" },
+        },
+      ],
+    };
+    const provider = new FakeProvider([
+      {
+        providerId: "openrouter",
+        model: "test/prime-figure",
+        text: JSON.stringify({
+          ...decision,
+          mediaAnnotations: [
+            { id: "media_1", type: "image", description: "窗边的女孩" },
+            { id: "media_2", type: "video", description: "女孩向镜头挥手" },
+            { id: "media_3", type: "voice", transcript: "你觉得怎么样" },
+          ],
+        }),
+      },
+    ]);
+    await createRuntime(provider).requestDecision({
+      ownerUserId: "media_user",
+      conversationId: agent.conversationId,
+    });
+
+    const parts = getUserContentParts(provider.inputs[0]!);
+    assert.deepEqual(
+      parts.map((part) => part.type),
+      [
+        "text",
+        "image_url",
+        "text",
+        "video_url",
+        "text",
+        "input_audio",
+        "text",
+        "text",
+      ],
+    );
+    assert.match(JSON.stringify(parts), /data:image\/jpeg;base64/);
+    assert.match(JSON.stringify(parts), /data:video\/mp4;base64/);
+    assert.match(JSON.stringify(parts), /media_1/);
+    assert.doesNotMatch(JSON.stringify(parts), /res_image|pmsg_/);
+    const context = JSON.parse(getTextPart(parts.at(-1))) as {
+      hints: string[];
+      recent?: unknown;
+    };
+    assert.equal(context.recent, undefined);
+    assert.match(context.hints.join("\n"), /mediaAnnotations/);
+
+    const responseSchema =
+      (
+        provider.inputs[0]?.responseFormat as {
+          json_schema?: { schema?: Record<string, unknown> };
+        }
+      ).json_schema?.schema ?? {};
+    const annotationSchema = schemaProperty(responseSchema, "mediaAnnotations");
+    assert.equal(annotationSchema.minItems, 3);
+    assert.equal(annotationSchema.maxItems, 3);
+
+    const history = messages.listRecent("media_user", agent.id, 20);
+    const imageMessage = history.find(
+      (message) => message.content.type === "image",
+    );
+    const videoMessage = history.find(
+      (message) => message.content.type === "video",
+    );
+    const voiceMessage = history.find(
+      (message) => message.content.type === "voice",
+    );
+    assert.equal(
+      imageMessage?.content.type === "image"
+        ? imageMessage.content.description
+        : undefined,
+      "窗边的女孩",
+    );
+    assert.equal(
+      videoMessage?.content.type === "video"
+        ? videoMessage.content.description
+        : undefined,
+      "女孩向镜头挥手",
+    );
+    assert.equal(
+      voiceMessage?.content.type === "voice"
+        ? voiceMessage.content.transcript
+        : undefined,
+      "你觉得怎么样",
+    );
+
+    const secondProvider = new FakeProvider([result(decision)]);
+    await createRuntime(secondProvider).requestDecision({
+      ownerUserId: "media_user",
+      conversationId: agent.conversationId,
+    });
+    const secondParts = getUserContentParts(secondProvider.inputs[0]!);
+    assert.ok(secondParts.every((part) => part.type === "text"));
+    assert.doesNotMatch(JSON.stringify(secondParts), /base64|mediaAnnotations/);
+    const secondSchema =
+      (
+        secondProvider.inputs[0]?.responseFormat as {
+          json_schema?: { schema?: Record<string, unknown> };
+        }
+      ).json_schema?.schema ?? {};
+    assert.deepEqual(schemaProperty(secondSchema, "mediaAnnotations"), {});
+
+    const retryMessage = messages.save({
+      ownerUserId: "media_user",
+      agentId: agent.id,
+      conversationId: agent.conversationId,
+      sender: "end_user",
+      content: {
+        type: "image",
+        resourceId: "res_image",
+        referenceResourceUrls: [],
+      },
+      occurredAtMs: now + 10,
+      timezone: "Asia/Shanghai",
+    });
+    const duplicateProvider = new FakeProvider([
+      {
+        providerId: "openrouter",
+        model: "test/prime-figure",
+        text: JSON.stringify({
+          ...decision,
+          actions: [
+            {
+              type: "send_message",
+              message: { type: "text", text: "这张也收到了。" },
+            },
+          ],
+          mediaAnnotations: [
+            { id: "media_1", type: "image", description: "描述一" },
+            { id: "media_1", type: "image", description: "描述二" },
+            { id: "unknown", type: "image", description: "未知媒体" },
+          ],
+        }),
+      },
+    ]);
+    await createRuntime(duplicateProvider).requestDecision({
+      ownerUserId: "media_user",
+      conversationId: agent.conversationId,
+    });
+    const afterDuplicate = messages
+      .listRecent("media_user", agent.id, 30)
+      .find((message) => message.id === retryMessage.id);
+    assert.equal(
+      afterDuplicate?.content.type === "image"
+        ? afterDuplicate.content.description
+        : undefined,
+      undefined,
+      "duplicate annotations must not be persisted",
+    );
+    assert.equal(
+      new MessageRepository()
+        .listByConversation("media_user", agent.conversationId)
+        .at(-1)?.content.text,
+      "这张也收到了。",
+      "invalid media annotations must not block the core decision",
+    );
+
+    const retryProvider = new FakeProvider([
+      {
+        providerId: "openrouter",
+        model: "test/prime-figure",
+        text: JSON.stringify({
+          ...decision,
+          mediaAnnotations: [
+            { id: "media_1", type: "image", description: "重试后的有效描述" },
+          ],
+        }),
+      },
+    ]);
+    await createRuntime(retryProvider).requestDecision({
+      ownerUserId: "media_user",
+      conversationId: agent.conversationId,
+    });
+    assert.ok(
+      getUserContentParts(retryProvider.inputs[0]!).some(
+        (part) => part.type === "image_url",
+      ),
+      "unannotated media must be retried with its raw content",
+    );
+    const afterRetry = messages
+      .listRecent("media_user", agent.id, 30)
+      .find((message) => message.id === retryMessage.id);
+    assert.equal(
+      afterRetry?.content.type === "image"
+        ? afterRetry.content.description
+        : undefined,
+      "重试后的有效描述",
+    );
+
+    const outboundDecision: PrimeFigureDecision = {
+      rationale: "我想用不同形式回应。",
+      figureMood: "轻松",
+      variables: {},
+      actions: [
+        {
+          type: "send_message",
+          message: { type: "text", text: "先听我说。" },
+        },
+        {
+          type: "send_message",
+          message: {
+            type: "image",
+            description: "一只趴在窗边晒太阳的橘猫",
+            generationPrompt:
+              "一只橘猫趴在木质窗台晒太阳，午后暖光，生活摄影风格",
+          },
+        },
+        {
+          type: "send_message",
+          message: { type: "voice", transcript: "今天的阳光真的很好。" },
+        },
+      ],
+    };
+    const outboundProvider = new FakeProvider([result(outboundDecision)]);
+    await createRuntime(outboundProvider).requestDecision({
+      ownerUserId: "media_user",
+      conversationId: agent.conversationId,
+    });
+
+    const outboundPrimeMessages = messages
+      .listRecent("media_user", agent.id, 30)
+      .slice(-3);
+    assert.deepEqual(
+      outboundPrimeMessages.map((message) => message.content.type),
+      ["text", "image", "voice"],
+    );
+    const outboundImage = outboundPrimeMessages[1]?.content;
+    assert.equal(
+      outboundImage?.type === "image"
+        ? outboundImage.generationPrompt
+        : undefined,
+      "一只橘猫趴在木质窗台晒太阳，午后暖光，生活摄影风格",
+    );
+    assert.deepEqual(
+      outboundImage?.type === "image"
+        ? outboundImage.referenceResourceUrls
+        : undefined,
+      [],
+    );
+    const outboundVoice = outboundPrimeMessages[2]?.content;
+    assert.equal(
+      outboundVoice?.type === "voice" ? outboundVoice.transcript : undefined,
+      "今天的阳光真的很好。",
+    );
+
+    const deliveredMessages = new MessageRepository()
+      .listByConversation("media_user", agent.conversationId)
+      .filter((message) => message.role === "assistant")
+      .slice(-3);
+    assert.deepEqual(
+      deliveredMessages.map((message) => message.contentType),
+      ["text", "image", "voice"],
+    );
+    assert.equal(
+      deliveredMessages[1]?.content.text,
+      "一只趴在窗边晒太阳的橘猫",
+    );
+    assert.equal(
+      deliveredMessages[1]?.metadata?.mediaIntent &&
+        typeof deliveredMessages[1].metadata.mediaIntent === "object"
+        ? (deliveredMessages[1].metadata.mediaIntent as { status?: string })
+            .status
+        : undefined,
+      "pending_generation",
+    );
+    assert.equal(
+      deliveredMessages[2]?.metadata?.mediaIntent &&
+        typeof deliveredMessages[2].metadata.mediaIntent === "object"
+        ? (deliveredMessages[2].metadata.mediaIntent as { status?: string })
+            .status
+        : undefined,
+      "pending_tts",
+    );
+    const outboundResponseSchema = JSON.stringify(
+      outboundProvider.inputs[0]?.responseFormat,
+    );
+    assert.match(outboundResponseSchema, /generationPrompt/);
+    assert.match(outboundResponseSchema, /transcript/);
+    assert.doesNotMatch(outboundResponseSchema, /等待后续生成资源的视频消息/);
+
+    const invalidPath = join(directory, "invalid.txt");
+    writeFileSync(invalidPath, "not an image");
+    insertResource.run(
+      "res_invalid",
+      "media_user",
+      "text/plain",
+      "invalid.txt",
+      invalidPath,
+      "/api/resources/res_invalid/file",
+      now,
+    );
+    messages.save({
+      ownerUserId: "media_user",
+      agentId: agent.id,
+      conversationId: agent.conversationId,
+      sender: "end_user",
+      content: {
+        type: "image",
+        resourceId: "res_invalid",
+        referenceResourceUrls: [],
+      },
+      occurredAtMs: now + 20,
+      timezone: "Asia/Shanghai",
+    });
+    const invalidResourceProvider = new FakeProvider([]);
+    const invalidResourceDecision = await createRuntime(
+      invalidResourceProvider,
+    ).requestDecision({
+      ownerUserId: "media_user",
+      conversationId: agent.conversationId,
+    });
+    assert.equal(invalidResourceDecision, null);
+    assert.equal(invalidResourceProvider.inputs.length, 0);
   } finally {
     closeDatabase();
     rmSync(directory, { recursive: true, force: true });
@@ -481,11 +913,43 @@ function createRuntime(provider: FakeProvider) {
   );
 }
 
+function getUserContentParts(input: ChatCompletionInput) {
+  const content = input.messages.find(
+    (message) => message.role === "user",
+  )?.content;
+  assert.ok(Array.isArray(content), "prime figure user content must be parts");
+  return content as ChatCompletionContentPart[];
+}
+
+function getTextPart(part: ChatCompletionContentPart | undefined) {
+  assert.equal(part?.type, "text");
+  return (part as Extract<ChatCompletionContentPart, { type: "text" }>).text;
+}
+
 function result(decision: PrimeFigureDecision): ChatCompletionResult {
   return {
     providerId: "openrouter",
     model: "test/prime-figure",
     text: JSON.stringify(decision),
+  };
+}
+
+function createMediaPrimeRequest(): CreatePrimeFigureRequest {
+  return {
+    type: "prime-figure",
+    name: "Media Figure",
+    isPublic: false,
+    persona: "A self-directed companion.",
+    background: "Lives an ordinary life.",
+    personality: "Observant.",
+    responseStyle: "Short messages.",
+    decisionStyle: "Respond naturally.",
+    currentSituation: "At home.",
+    schedule: { timezone: "Asia/Shanghai", segments: [] },
+    itinerary: "",
+    variableDefinitions: [],
+    initialMood: "平静",
+    initialRelationshipStatus: "熟悉",
   };
 }
 
@@ -515,7 +979,6 @@ function assertSchemaFieldDescriptions(
 
 function schemaProperty(schema: Record<string, unknown>, name: string) {
   const properties = schema.properties as
-    | Record<string, Record<string, unknown>>
-    | undefined;
+    Record<string, Record<string, unknown>> | undefined;
   return properties?.[name] ?? {};
 }

@@ -152,6 +152,55 @@ export class PrimeMessageRepository {
 
     return rows.reverse().map(rowToMessage);
   }
+
+  applyMediaAnnotation(input: {
+    ownerUserId: string;
+    messageId: string;
+    expectedType: "image" | "video" | "voice";
+    value: string;
+  }) {
+    const row = this.db
+      .prepare(
+        `
+          SELECT *
+          FROM prime_messages
+          WHERE owner_user_id = ? AND id = ? AND message_type = ?
+        `,
+      )
+      .get(
+        input.ownerUserId,
+        input.messageId,
+        input.expectedType,
+      ) as unknown as PrimeMessageRow | undefined;
+    if (!row) return false;
+
+    const content = parseJson<PrimeMessageContent | null>(
+      row.content_json,
+      null,
+    );
+    if (!content || content.type !== input.expectedType) return false;
+    const nextContent: PrimeMessageContent =
+      content.type === "voice"
+        ? { ...content, transcript: input.value }
+        : { ...content, description: input.value };
+    const now = Date.now();
+    const result = this.db
+      .prepare(
+        `
+          UPDATE prime_messages
+          SET content_json = ?, updated_at = ?
+          WHERE owner_user_id = ? AND id = ? AND message_type = ?
+        `,
+      )
+      .run(
+        JSON.stringify(nextContent),
+        now,
+        input.ownerUserId,
+        input.messageId,
+        input.expectedType,
+      );
+    return result.changes === 1;
+  }
 }
 
 function escapeLike(value: string) {

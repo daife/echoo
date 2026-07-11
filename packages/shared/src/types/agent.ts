@@ -189,7 +189,7 @@ export type UpdatePrimeFigureRequest = Omit<
   "type" | "avatar" | "cover" | "initialMood" | "initialRelationshipStatus"
 >;
 
-export type PrimeMessageSender = "prime_figure" | "end_user" | "system";
+export type PrimeMessageSender = "prime_figure" | "end_user";
 export type PrimeMessageContentType =
   "text" | "image" | "video" | "voice" | "sticker" | "transfer";
 
@@ -200,20 +200,23 @@ export type PrimeMessageContent =
     }
   | {
       type: "image";
-      description: string;
+      description?: string;
       generationPrompt?: string;
       referenceResourceUrls: string[];
+      resourceId?: string;
       resourceUrl?: string;
     }
   | {
       type: "video";
-      description: string;
-      resourceUrl: string;
+      description?: string;
+      resourceId?: string;
+      resourceUrl?: string;
     }
   | {
       type: "voice";
-      description: string;
-      transcript: string;
+      description?: string;
+      transcript?: string;
+      resourceId?: string;
       resourceUrl?: string;
     }
   | {
@@ -245,10 +248,34 @@ export interface PrimeMessage {
   updatedAt: number;
 }
 
+export type PrimeMediaAnnotation =
+  | {
+      id: string;
+      type: "image" | "video";
+      description: string;
+    }
+  | {
+      id: string;
+      type: "voice";
+      transcript: string;
+    };
+
+export type PrimeFigureOutgoingMessage =
+  | Extract<PrimeMessageContent, { type: "text" }>
+  | {
+      type: "image";
+      description: string;
+      generationPrompt: string;
+    }
+  | {
+      type: "voice";
+      transcript: string;
+    };
+
 export type PrimeFigureAction =
   | {
       type: "send_message";
-      message: Extract<PrimeMessageContent, { type: "text" }>;
+      message: PrimeFigureOutgoingMessage;
     }
   | {
       type: "silence";
@@ -272,7 +299,10 @@ export interface PrimeFigureDecision {
   }>;
   stateUpdates?: PrimeFigureStateUpdates;
   actions:
-    | [Extract<PrimeFigureAction, { type: "send_message" }>, ...Array<Extract<PrimeFigureAction, { type: "send_message" }>>]
+    | [
+        Extract<PrimeFigureAction, { type: "send_message" }>,
+        ...Array<Extract<PrimeFigureAction, { type: "send_message" }>>,
+      ]
     | [Extract<PrimeFigureAction, { type: "silence" }>];
 }
 

@@ -208,33 +208,54 @@ export const updatePrimeFigureSchema = createPrimeFigureSchema.omit({
 
 const urlLikeSchema = z.string().trim().min(1).max(2048);
 
-export const primeMessageContentSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("text"),
-    text: requiredText("文本", 12000),
-  }),
-  z.object({
+const primeImageContentSchema = z
+  .object({
     type: z.literal("image"),
-    description: requiredText("图片描述", 4000),
+    description: z.string().trim().min(1).max(4000).optional(),
     generationPrompt: optionalText(4000),
     referenceResourceUrls: z
       .array(urlLikeSchema)
       .max(20)
       .optional()
       .default([]),
+    resourceId: z.string().trim().min(1).max(120).optional(),
     resourceUrl: urlLikeSchema.optional(),
-  }),
-  z.object({
+  })
+  .refine((content) => Boolean(content.description || content.resourceId), {
+    message: "图片必须包含描述或资源 ID。",
+  });
+
+const primeVideoContentSchema = z
+  .object({
     type: z.literal("video"),
-    description: requiredText("视频描述", 4000),
-    resourceUrl: urlLikeSchema,
-  }),
-  z.object({
-    type: z.literal("voice"),
-    description: requiredText("语音描述", 4000),
-    transcript: requiredText("语音转写", 12000),
+    description: z.string().trim().min(1).max(4000).optional(),
+    resourceId: z.string().trim().min(1).max(120).optional(),
     resourceUrl: urlLikeSchema.optional(),
+  })
+  .refine((content) => Boolean(content.description || content.resourceId), {
+    message: "视频必须包含描述或资源 ID。",
+  });
+
+const primeVoiceContentSchema = z
+  .object({
+    type: z.literal("voice"),
+    description: z.string().trim().min(1).max(4000).optional(),
+    transcript: z.string().trim().min(1).max(12000).optional(),
+    resourceId: z.string().trim().min(1).max(120).optional(),
+    resourceUrl: urlLikeSchema.optional(),
+  })
+  .refine((content) => Boolean(content.transcript || content.resourceId), {
+    message: "语音必须包含转写或资源 ID。",
+  });
+
+export const primeMessageContentSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("text"),
+    text: requiredText("文本", 12000),
   }),
+  primeImageContentSchema,
+  primeVideoContentSchema,
+  primeVoiceContentSchema,
   z.object({
     type: z.literal("sticker"),
     stickerId: requiredText("贴纸 ID", 120),
@@ -250,12 +271,25 @@ export const primeMessageContentSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
+export const primeMediaAnnotationSchema = z.discriminatedUnion("type", [
+  z.object({
+    id: z.string().trim().min(1).max(120),
+    type: z.enum(["image", "video"]),
+    description: requiredText("媒体描述", 4000),
+  }),
+  z.object({
+    id: z.string().trim().min(1).max(120),
+    type: z.literal("voice"),
+    transcript: requiredText("语音转写", 12000),
+  }),
+]);
+
 export const primeMessageSchema = z.object({
   id: z.string().trim().min(1).max(120),
   ownerUserId: z.string().trim().min(1).max(120),
   agentId: z.string().trim().min(1).max(120),
   conversationId: z.string().trim().min(1).max(120),
-  sender: z.enum(["prime_figure", "end_user", "system"]),
+  sender: z.enum(["prime_figure", "end_user"]),
   messageType: z.enum([
     "text",
     "image",
@@ -275,10 +309,21 @@ export const primeMessageSchema = z.object({
 export const primeFigureActionSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("send_message"),
-    message: z.object({
-      type: z.literal("text"),
-      text: requiredText("文本", 12000),
-    }),
+    message: z.discriminatedUnion("type", [
+      z.object({
+        type: z.literal("text"),
+        text: requiredText("文本", 12000),
+      }),
+      z.object({
+        type: z.literal("image"),
+        description: requiredText("图片描述", 4000),
+        generationPrompt: requiredText("生图提示词", 4000),
+      }),
+      z.object({
+        type: z.literal("voice"),
+        transcript: requiredText("语音文本", 12000),
+      }),
+    ]),
   }),
   z.object({
     type: z.literal("silence"),
@@ -317,7 +362,9 @@ export const primeFigureDecisionSchema = z.object({
     .min(1)
     .max(12)
     .superRefine((actions, context) => {
-      const containsSilence = actions.some((action) => action.type === "silence");
+      const containsSilence = actions.some(
+        (action) => action.type === "silence",
+      );
       if (containsSilence && actions.length !== 1) {
         context.addIssue({
           code: "custom",

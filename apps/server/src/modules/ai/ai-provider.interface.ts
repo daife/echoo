@@ -1,8 +1,34 @@
 export type AiProviderId = "openrouter";
 
+export interface TextContentPart {
+  type: "text";
+  text: string;
+}
+
+export interface ImageUrlContentPart {
+  type: "image_url";
+  image_url: { url: string };
+}
+
+export interface VideoUrlContentPart {
+  type: "video_url";
+  video_url: { url: string };
+}
+
+export interface InputAudioContentPart {
+  type: "input_audio";
+  input_audio: { data: string; format: string };
+}
+
+export type ChatCompletionContentPart =
+  | TextContentPart
+  | ImageUrlContentPart
+  | VideoUrlContentPart
+  | InputAudioContentPart;
+
 export interface ChatCompletionMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string;
+  content: string | ChatCompletionContentPart[];
   name?: string;
   toolCallId?: string;
   toolCalls?: ChatToolCall[];
@@ -54,6 +80,8 @@ export interface ChatDelta {
 
 export interface AiTextProvider {
   id: AiProviderId;
-  createChatCompletion(input: ChatCompletionInput): Promise<ChatCompletionResult>;
+  createChatCompletion(
+    input: ChatCompletionInput,
+  ): Promise<ChatCompletionResult>;
   streamChatCompletion?(input: ChatCompletionInput): AsyncIterable<ChatDelta>;
 }

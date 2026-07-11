@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { createReadStream, mkdirSync, writeFileSync } from "node:fs";
+import {
+  createReadStream,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 import type { AgentResourceUpload } from "@echoo/shared";
 import { getDatabase } from "../../infra/database/sqlite.js";
@@ -8,7 +13,7 @@ const allowedMimeTypes = new Map([
   ["image/jpeg", ".jpg"],
   ["image/png", ".png"],
   ["image/webp", ".webp"],
-  ["image/gif", ".gif"]
+  ["image/gif", ".gif"],
 ]);
 
 export interface ResourceRecord {
@@ -35,20 +40,34 @@ interface ResourceRow {
 
 export class ResourceRepository {
   private readonly db = getDatabase();
-  private readonly rootDir = resolve(process.cwd(), process.env.RESOURCE_STORAGE_DIR ?? ".data/resources");
+  private readonly rootDir = resolve(
+    process.cwd(),
+    process.env.RESOURCE_STORAGE_DIR ?? ".data/resources",
+  );
 
-  saveImage(ownerUserId: string, kind: "agent_avatar" | "agent_cover", upload: AgentResourceUpload): ResourceRecord {
+  saveImage(
+    ownerUserId: string,
+    kind: "agent_avatar" | "agent_cover",
+    upload: AgentResourceUpload,
+  ): ResourceRecord {
     const extension = allowedMimeTypes.get(upload.mimeType);
     if (!extension) throw new Error("Unsupported image type.");
 
     const buffer = Buffer.from(stripDataUrlPrefix(upload.dataBase64), "base64");
     if (buffer.length === 0) throw new Error("Image is empty.");
-    if (buffer.length > 5 * 1024 * 1024) throw new Error("图片大小不能超过 5MB。");
+    if (buffer.length > 5 * 1024 * 1024)
+      throw new Error("图片大小不能超过 5MB。");
 
     const id = `res_${randomUUID()}`;
     const originalExtension = extname(upload.fileName).toLowerCase();
-    const finalExtension = allowedMimeTypes.has(upload.mimeType) ? extension : originalExtension;
-    const storagePath = join(this.rootDir, ownerUserId, `${id}${finalExtension}`);
+    const finalExtension = allowedMimeTypes.has(upload.mimeType)
+      ? extension
+      : originalExtension;
+    const storagePath = join(
+      this.rootDir,
+      ownerUserId,
+      `${id}${finalExtension}`,
+    );
     const publicPath = `/api/resources/${id}/file`;
     const now = Date.now();
 
@@ -68,9 +87,18 @@ export class ResourceRepository {
             public_path,
             created_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `
+        `,
       )
-      .run(id, ownerUserId, kind, upload.mimeType, upload.fileName, storagePath, publicPath, now);
+      .run(
+        id,
+        ownerUserId,
+        kind,
+        upload.mimeType,
+        upload.fileName,
+        storagePath,
+        publicPath,
+        now,
+      );
 
     return {
       id,
@@ -80,13 +108,24 @@ export class ResourceRepository {
       originalFileName: upload.fileName,
       storagePath,
       publicPath,
-      createdAt: now
+      createdAt: now,
     };
   }
 
   findById(id: string): ResourceRecord | null {
-    const row = this.db.prepare("SELECT * FROM resources WHERE id = ?").get(id) as unknown as ResourceRow | undefined;
+    const row = this.db
+      .prepare("SELECT * FROM resources WHERE id = ?")
+      .get(id) as unknown as ResourceRow | undefined;
     return row ? rowToResource(row) : null;
+  }
+
+  readForOwner(ownerUserId: string, id: string) {
+    const record = this.findById(id);
+    if (!record || record.ownerUserId !== ownerUserId) return null;
+    return {
+      record,
+      data: readFileSync(record.storagePath),
+    };
   }
 
   createReadStream(record: ResourceRecord) {
@@ -96,7 +135,9 @@ export class ResourceRepository {
 
 function stripDataUrlPrefix(value: string) {
   const commaIndex = value.indexOf(",");
-  return value.startsWith("data:") && commaIndex >= 0 ? value.slice(commaIndex + 1) : value;
+  return value.startsWith("data:") && commaIndex >= 0
+    ? value.slice(commaIndex + 1)
+    : value;
 }
 
 function rowToResource(row: ResourceRow): ResourceRecord {
@@ -108,6 +149,6 @@ function rowToResource(row: ResourceRow): ResourceRecord {
     originalFileName: row.original_file_name,
     storagePath: row.storage_path,
     publicPath: row.public_path,
-    createdAt: row.created_at
+    createdAt: row.created_at,
   };
 }
