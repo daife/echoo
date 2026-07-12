@@ -4,6 +4,10 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { useEffect, useRef, useState } from "react";
+import {
+  streamingAudioPlayer,
+  type StreamingAudioState,
+} from "../streamingAudioPlayer";
 
 export interface MessageBubbleModel {
   id: string;
@@ -30,6 +34,9 @@ export function MessageBubble({
   const [isActionOpen, setIsActionOpen] = useState(false);
   const pressTimerRef = useRef<number | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const [streamingAudio, setStreamingAudio] = useState<StreamingAudioState>(
+    () => streamingAudioPlayer.getState(message.id),
+  );
 
   const clearPressTimer = () => {
     if (pressTimerRef.current !== null) {
@@ -39,6 +46,13 @@ export function MessageBubble({
   };
 
   useEffect(() => clearPressTimer, []);
+
+  useEffect(() => {
+    setStreamingAudio(streamingAudioPlayer.getState(message.id));
+    return streamingAudioPlayer.subscribe(() =>
+      setStreamingAudio(streamingAudioPlayer.getState(message.id)),
+    );
+  }, [message.id]);
 
   useEffect(() => {
     if (!isActionOpen) return;
@@ -143,7 +157,13 @@ export function MessageBubble({
         {actionMenu}
         <div className="h-7 w-1 rounded-full bg-white/25" />
         <div className="flex min-w-0 flex-col gap-2 py-2 text-white">
-          <div className="flex items-center gap-3">
+          <button
+            className="flex items-center gap-3 text-left disabled:cursor-default"
+            type="button"
+            disabled={!streamingAudio.playable || Boolean(mediaUrl)}
+            onClick={() => streamingAudioPlayer.toggle(message.id)}
+            aria-label={streamingAudio.playing ? "暂停语音" : "播放语音"}
+          >
             <Waveform size={23} weight="duotone" />
             <div className="flex items-center gap-1">
               {[16, 24, 12, 20, 8].map((height, index) => (
@@ -156,9 +176,15 @@ export function MessageBubble({
             </div>
             <span className="text-xs leading-5 text-white/55">
               {message.text ||
-                (message.status === "typing" ? "正在生成语音…" : "语音")}
+                (streamingAudio.playing
+                  ? "正在播放…"
+                  : streamingAudio.playable
+                    ? "点击播放（接收中）"
+                    : message.status === "typing"
+                      ? "正在生成语音…"
+                      : "语音")}
             </span>
-          </div>
+          </button>
           {mediaUrl ? (
             <audio
               className="h-8 w-[260px] max-w-full"

@@ -5,10 +5,19 @@ interface AudioStreamState {
   queue: Uint8Array[];
   completed: boolean;
   objectUrl: string;
+  playable: boolean;
+}
+
+export interface StreamingAudioState {
+  available: boolean;
+  playable: boolean;
+  playing: boolean;
+  completed: boolean;
 }
 
 export class StreamingAudioPlayer {
   private readonly streams = new Map<string, AudioStreamState>();
+  private readonly listeners = new Set<() => void>();
 
   start(messageId: string, mimeType: string) {
     this.stop(messageId);
@@ -23,6 +32,7 @@ export class StreamingAudioPlayer {
       queue: [],
       completed: false,
       objectUrl,
+      playable: false,
     };
     this.streams.set(messageId, state);
     mediaSource.addEventListener(
@@ -34,10 +44,12 @@ export class StreamingAudioPlayer {
           this.drain(messageId, state),
         );
         this.drain(messageId, state);
-        void audio.play().catch(() => undefined);
       },
       { once: true },
     );
+    audio.addEventListener("play", () => this.notify());
+    audio.addEventListener("pause", () => this.notify());
+    this.notify();
   }
 
   append(messageId: string, dataBase64: string) {
@@ -48,6 +60,8 @@ export class StreamingAudioPlayer {
     for (let index = 0; index < binary.length; index += 1)
       bytes[index] = binary.charCodeAt(index);
     state.queue.push(bytes);
+    state.playable = true;
+    this.notify();
     this.drain(messageId, state);
   }
 
@@ -55,6 +69,7 @@ export class StreamingAudioPlayer {
     const state = this.streams.get(messageId);
     if (!state) return;
     state.completed = true;
+    this.notify();
     this.drain(messageId, state);
   }
 
@@ -64,10 +79,37 @@ export class StreamingAudioPlayer {
     state.audio.pause();
     URL.revokeObjectURL(state.objectUrl);
     this.streams.delete(messageId);
+    this.notify();
   }
 
   stopAll() {
     for (const id of [...this.streams.keys()]) this.stop(id);
+  }
+
+  subscribe(listener: () => void) {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  getState(messageId: string): StreamingAudioState {
+    const state = this.streams.get(messageId);
+    return state
+      ? {
+          available: true,
+          playable: state.playable,
+          playing: !state.audio.paused,
+          completed: state.completed,
+        }
+      : { available: false, playable: false, playing: false, completed: false };
+  }
+
+  toggle(messageId: string) {
+    const state = this.streams.get(messageId);
+    if (!state?.playable) return;
+    if (state.audio.paused) void state.audio.play().catch(() => undefined);
+    else state.audio.pause();
   }
 
   private drain(messageId: string, state: AudioStreamState) {
@@ -84,13 +126,16 @@ export class StreamingAudioPlayer {
       const copy = new Uint8Array(next.byteLength);
       copy.set(next);
       sourceBuffer.appendBuffer(copy.buffer);
-      void state.audio.play().catch(() => undefined);
       return;
     }
     if (state.completed) {
       state.mediaSource.endOfStream();
-      const cleanup = () => this.stop(messageId);
-      state.audio.addEventListener("ended", cleanup, { once: true });
     }
   }
+
+  private notify() {
+    for (const listener of this.listeners) listener();
+  }
 }
+
+export const streamingAudioPlayer = new StreamingAudioPlayer();

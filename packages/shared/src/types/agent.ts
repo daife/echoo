@@ -235,6 +235,8 @@ export type PrimeMessageContent =
 
 export interface PrimeMessage {
   id: string;
+  /** Canonical per-database timeline order. */
+  sequence?: number;
   ownerUserId: string;
   agentId: string;
   conversationId: string;

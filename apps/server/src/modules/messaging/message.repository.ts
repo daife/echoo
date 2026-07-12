@@ -1,6 +1,7 @@
 import type { Message, MessageContent, MessageContentType, MessageRole, MessageStatus } from "@echoo/shared";
 import type { RowDataPacket } from "mysql2";
 import { execute, queryOne, queryRows } from "../../infra/database/mysql.js";
+import { MessageCache } from "../../infra/redis/message-cache.js";
 
 interface MessageRow extends RowDataPacket {
   seq: number;
@@ -21,6 +22,8 @@ interface MessageRow extends RowDataPacket {
 export type SaveMessageInput = Message & { ownerUserId: string };
 
 export class MessageRepository {
+  constructor(private readonly cache = new MessageCache()) {}
+
   async listAfter(ownerUserId: string, after?: string | null, conversationId?: string | null, limit = 500) {
     const rows = await queryRows<MessageRow>(
       `SELECT messages.* FROM messages
@@ -38,6 +41,13 @@ export class MessageRepository {
   async listByConversation(ownerUserId: string, conversationId: string,
     options?: { after?: string | null; before?: string | null; limit?: number }) {
     const limit = clampLimit(options?.limit, 100);
+    if (!options?.after && !options?.before) {
+      const cached = await this.readCached(ownerUserId, conversationId, limit);
+      if (cached)
+        return cached
+          .map((item) => item.message)
+          .filter((message) => message.status !== "failed");
+    }
     const cursor = options?.after ?? options?.before;
     const direction = options?.before ? "<" : ">";
     const order = options?.before || !options?.after ? "DESC" : "ASC";
@@ -51,16 +61,23 @@ export class MessageRepository {
       [cursor ?? null, conversationId, ownerUserId, conversationId, cursor ?? null, limit],
     );
     if (order === "DESC") rows.reverse();
-    return rows.map(rowToMessage);
+    const messages = rows.map(rowToMessage);
+    if (!options?.after && !options?.before)
+      await this.replaceCache(ownerUserId, conversationId, rows, limit);
+    return messages;
   }
 
   async listRecentForContext(ownerUserId: string, conversationId: string, limit = 500) {
+    const cached = await this.readCached(ownerUserId, conversationId, limit);
+    if (cached) return cached.map((item) => item.message);
     const rows = await queryRows<MessageRow>(
       `SELECT * FROM messages WHERE owner_user_id = ? AND conversation_id = ?
        ORDER BY seq DESC LIMIT ?`,
       [ownerUserId, conversationId, clampLimit(limit, 500)],
     );
-    return rows.reverse().map(rowToMessage);
+    rows.reverse();
+    await this.replaceCache(ownerUserId, conversationId, rows, limit);
+    return rows.map(rowToMessage);
   }
 
   async findByClientMessageId(ownerUserId: string, clientMessageId?: string | null) {
@@ -105,6 +122,7 @@ export class MessageRepository {
        WHERE messages.owner_user_id = ? AND messages.conversation_id = ? AND messages.seq > cursor_message.seq`,
       [retainedThrough.id, ownerUserId, conversationId],
     );
+    await this.invalidateCache(ownerUserId, conversationId);
     return result.affectedRows;
   }
 
@@ -114,12 +132,12 @@ export class MessageRepository {
       ...(input.providerId ? { providerId: input.providerId } : {}),
       ...(input.model ? { model: input.model } : {}),
     };
-    await execute(
+    const result = await execute(
       `INSERT INTO messages
        (id, owner_user_id, conversation_id, client_message_id, role, content_type,
         content, status, run_metadata, read_at, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE content = VALUES(content), status = VALUES(status),
+       ON DUPLICATE KEY UPDATE seq = LAST_INSERT_ID(seq), content = VALUES(content), status = VALUES(status),
         run_metadata = VALUES(run_metadata), read_at = VALUES(read_at), updated_at = VALUES(updated_at)`,
       [input.id, input.ownerUserId, input.conversationId, input.clientMessageId ?? null,
         input.role, input.contentType, JSON.stringify(input.content), input.status,
@@ -127,6 +145,10 @@ export class MessageRepository {
         input.readAt ?? null, input.createdAt, input.updatedAt],
     );
     const { ownerUserId: _ownerUserId, ...message } = input;
+    await this.upsertCache(input.ownerUserId, input.conversationId, {
+      sequence: result.insertId,
+      message,
+    });
     return message;
   }
 
@@ -138,7 +160,68 @@ export class MessageRepository {
     if (!result.affectedRows) return null;
     const row = await queryOne<MessageRow>(
       "SELECT * FROM messages WHERE owner_user_id = ? AND id = ?", [ownerUserId, messageId]);
-    return row ? rowToMessage(row) : null;
+    if (!row) return null;
+    const message = rowToMessage(row);
+    await this.upsertCache(ownerUserId, row.conversation_id, {
+      sequence: row.seq,
+      message,
+    });
+    return message;
+  }
+
+  async updateCachedLive(ownerUserId: string, message: Message) {
+    try {
+      await this.cache.updateLive(ownerUserId, message.conversationId, message);
+    } catch (error) {
+      console.warn("Live message cache update failed.", error);
+    }
+  }
+
+  private async readCached(ownerUserId: string, conversationId: string, limit: number) {
+    try {
+      return await this.cache.getRecent(ownerUserId, conversationId, limit);
+    } catch (error) {
+      console.warn("Message cache read failed; falling back to MySQL.", error);
+      return null;
+    }
+  }
+
+  private async replaceCache(
+    ownerUserId: string,
+    conversationId: string,
+    rows: MessageRow[],
+    requestedLimit: number,
+  ) {
+    try {
+      await this.cache.replaceRecent(
+        ownerUserId,
+        conversationId,
+        rows.map((row) => ({ sequence: row.seq, message: rowToMessage(row) })),
+        requestedLimit,
+      );
+    } catch (error) {
+      console.warn("Message cache fill failed.", error);
+    }
+  }
+
+  private async upsertCache(
+    ownerUserId: string,
+    conversationId: string,
+    item: { sequence: number; message: Message },
+  ) {
+    try {
+      await this.cache.upsert(ownerUserId, conversationId, item);
+    } catch (error) {
+      console.warn("Message cache write-through failed.", error);
+    }
+  }
+
+  private async invalidateCache(ownerUserId: string, conversationId: string) {
+    try {
+      await this.cache.invalidate(ownerUserId, conversationId);
+    } catch (error) {
+      console.warn("Message cache invalidation failed.", error);
+    }
   }
 }
 

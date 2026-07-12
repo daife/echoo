@@ -2,10 +2,12 @@ import type { PrimeMessage, PrimeMessageContent, PrimeMessageSender } from "@ech
 import type { RowDataPacket } from "mysql2";
 import { execute, queryRows } from "../../../../infra/database/mysql.js";
 import { createId } from "../../../../shared/utils/id.js";
+import { MessageCache, type CachedMessage } from "../../../../infra/redis/message-cache.js";
 
 interface PrimeRow extends RowDataPacket {
-  id: string; owner_user_id: string; conversation_id: string; agent_id: string;
+  seq: number; id: string; owner_user_id: string; conversation_id: string; agent_id: string;
   role: "user" | "assistant"; content: unknown; content_type: string;
+  status: "pending" | "sent" | "delivered" | "failed" | "read";
   run_metadata: unknown; created_at: number; updated_at: number;
 }
 export interface SavePrimeMessageInput {
@@ -14,6 +16,7 @@ export interface SavePrimeMessageInput {
 }
 
 export class PrimeMessageRepository {
+  constructor(private readonly cache = new MessageCache()) {}
   /** Compatibility constructor for the unchanged decision executor; canonical persistence is messages. */
   async save(input: SavePrimeMessageInput): Promise<PrimeMessage> {
     const now = Date.now();
@@ -25,12 +28,67 @@ export class PrimeMessageRepository {
       createdAt: now, updatedAt: now };
   }
 
-  async listRecent(ownerUserId: string, agentId: string, limit = 100) {
+  async listRecent(ownerUserId: string, agentId: string, limit = 100, conversationId?: string) {
+    if (conversationId) {
+      try {
+        const cached = await this.cache.getRecent(ownerUserId, conversationId, limit);
+        if (cached)
+          return cached.map((item) => cachedToPrime(item, ownerUserId, agentId));
+      } catch (error) {
+        console.warn("Prime message cache read failed; falling back to MySQL.", error);
+      }
+    }
     const rows = await queryRows<PrimeRow>(
       `${SELECT_PRIME} WHERE messages.role IN ('user', 'assistant') AND messages.owner_user_id = ? AND conversations.agent_id = ?
        ORDER BY messages.seq DESC LIMIT ?`,
       [ownerUserId, agentId, Math.min(Math.max(Math.trunc(limit), 1), 500)]);
-    return rows.reverse().map(rowToMessage);
+    rows.reverse();
+    if (conversationId) {
+      try {
+        await this.cache.replaceRecent(
+          ownerUserId,
+          conversationId,
+          rows.map((row) => ({ sequence: row.seq, message: rowToCanonicalMessage(row) })),
+          limit,
+        );
+      } catch (error) {
+        console.warn("Prime message cache fill failed.", error);
+      }
+    }
+    return rows.map(rowToMessage);
+  }
+
+  async findLatestEndUserCreatedAt(ownerUserId: string, conversationId: string) {
+    const row = await queryRows<PrimeRow>(
+      `${SELECT_PRIME} WHERE messages.owner_user_id = ? AND messages.conversation_id = ?
+       AND messages.role = 'user' ORDER BY messages.seq DESC LIMIT 1`,
+      [ownerUserId, conversationId],
+    );
+    return row[0]?.created_at ?? null;
+  }
+
+  async findLatestAssistantSequence(ownerUserId: string, conversationId: string) {
+    const row = await queryRows<PrimeRow>(
+      `${SELECT_PRIME} WHERE messages.owner_user_id = ? AND messages.conversation_id = ?
+       AND messages.role = 'assistant' ORDER BY messages.seq DESC LIMIT 1`,
+      [ownerUserId, conversationId],
+    );
+    return row[0]?.seq ?? 0;
+  }
+
+  async listEndUserAfterSequence(
+    ownerUserId: string,
+    agentId: string,
+    sequence: number,
+    limit = 500,
+  ) {
+    const rows = await queryRows<PrimeRow>(
+      `${SELECT_PRIME} WHERE messages.owner_user_id = ? AND conversations.agent_id = ?
+       AND messages.role = 'user' AND messages.seq > ?
+       ORDER BY messages.seq ASC LIMIT ?`,
+      [ownerUserId, agentId, sequence, Math.min(Math.max(Math.trunc(limit), 1), 500)],
+    );
+    return rows.map(rowToMessage);
   }
 
   async searchByKeywords(ownerUserId: string, agentId: string, keywords: string[], limit = 8) {
@@ -46,13 +104,20 @@ export class PrimeMessageRepository {
   }
 
   async applyMediaAnnotation(input: { ownerUserId: string; messageId: string;
-    expectedType: "image" | "video" | "voice"; value: string }) {
+    conversationId: string; expectedType: "image" | "video" | "voice"; value: string }) {
     const path = input.expectedType === "voice" ? "transcript" : "description";
     const result = await execute(
       `UPDATE messages SET run_metadata = JSON_SET(COALESCE(run_metadata, JSON_OBJECT()),
        CONCAT('$.primeContent.', ?), ?), updated_at = ?
        WHERE owner_user_id = ? AND id = ? AND content_type = ?`,
       [path, input.value, Date.now(), input.ownerUserId, input.messageId, input.expectedType]);
+    if (result.affectedRows === 1) {
+      try {
+        await this.cache.invalidate(input.ownerUserId, input.conversationId);
+      } catch (error) {
+        console.warn("Annotated media cache invalidation failed.", error);
+      }
+    }
     return result.affectedRows === 1;
   }
 }
@@ -67,10 +132,59 @@ function rowToMessage(row: PrimeRow): PrimeMessage {
     ? run.primeContent : toPrimeContent(row.content_type, content)) as PrimeMessageContent;
   const sender = row.role === "user" ? "end_user" : "prime_figure";
   return { id: row.id, ownerUserId: row.owner_user_id, agentId: row.agent_id,
+    sequence: row.seq,
     conversationId: row.conversation_id, sender, messageType: primeContent.type,
     content: primeContent, occurredAtMs: row.created_at,
     occurredAtIso: new Date(row.created_at).toISOString(),
     createdAt: row.created_at, updatedAt: row.updated_at };
+}
+
+function rowToCanonicalMessage(row: PrimeRow) {
+  const run = parseJson<Record<string, unknown>>(row.run_metadata, {});
+  const { providerId, model, ...metadata } = run;
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    role: row.role,
+    contentType: row.content_type as "text" | "image" | "voice" | "video" | "file" | "system",
+    content: parseJson<Record<string, unknown>>(row.content, {}),
+    status: row.status,
+    ...(typeof providerId === "string" ? { providerId } : {}),
+    ...(typeof model === "string" ? { model } : {}),
+    ...(Object.keys(metadata).length ? { metadata } : {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function cachedToPrime(
+  cached: CachedMessage,
+  ownerUserId: string,
+  agentId: string,
+): PrimeMessage {
+  const message = cached.message;
+  const metadata = message.metadata ?? {};
+  const primeContent =
+    metadata.primeContent && typeof metadata.primeContent === "object"
+      ? (metadata.primeContent as PrimeMessageContent)
+      : toPrimeContent(
+          message.contentType,
+          message.content as unknown as Record<string, unknown>,
+        );
+  return {
+    id: message.id,
+    sequence: cached.sequence,
+    ownerUserId,
+    agentId,
+    conversationId: message.conversationId,
+    sender: message.role === "user" ? "end_user" : "prime_figure",
+    messageType: primeContent.type,
+    content: primeContent,
+    occurredAtMs: message.createdAt,
+    occurredAtIso: new Date(message.createdAt).toISOString(),
+    createdAt: message.createdAt,
+    updatedAt: message.updatedAt,
+  };
 }
 
 function toPrimeContent(type: string, content: Record<string, unknown>): PrimeMessageContent {

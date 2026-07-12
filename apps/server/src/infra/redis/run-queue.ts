@@ -18,6 +18,7 @@ export interface AgentRunJob {
 export class AgentRunQueue {
   private running = false;
   private readonly consumer = `${hostname()}:${process.pid}:${createId("msg")}`;
+  private readonly inFlight = new Set<Promise<void>>();
 
   async enqueue(job: AgentRunJob) {
     const redis = await getRedis();
@@ -38,9 +39,20 @@ export class AgentRunQueue {
     try { await redis.xGroupCreate(STREAM, GROUP, "0", { MKSTREAM: true }); }
     catch (error) { if (!String(error).includes("BUSYGROUP")) throw error; }
 
+    const concurrency = Math.max(
+      1,
+      Math.trunc(Number(process.env.AGENT_RUN_CONCURRENCY ?? 8)),
+    );
     while (this.running) {
+      if (this.inFlight.size >= concurrency) {
+        await Promise.race(this.inFlight);
+        continue;
+      }
       const batches = await redis.xReadGroup(GROUP, this.consumer,
-        [{ key: STREAM, id: ">" }], { COUNT: 8, BLOCK: 5_000 });
+        [{ key: STREAM, id: ">" }], {
+          COUNT: concurrency - this.inFlight.size,
+          BLOCK: 5_000,
+        });
       for (const batch of batches ?? []) {
         for (const entry of batch.messages) {
           const job = { id: entry.id, ownerUserId: entry.message.ownerUserId,
@@ -49,25 +61,38 @@ export class AgentRunQueue {
             attempts: Number(entry.message.attempts || 0),
             trigger: entry.message.trigger as AgentRunJob["trigger"],
             ...(entry.message.assistantMessageId ? { assistantMessageId: entry.message.assistantMessageId } : {}) };
-          try {
-            await this.process(redis, job, handler);
-          } catch (error) {
-            if ((job.attempts ?? 0) < 3) {
-              await this.enqueue({ ...job, attempts: (job.attempts ?? 0) + 1 });
-            } else {
-              await redis.xAdd("echoo:agent-runs:failed", "*", {
-                job: JSON.stringify(job),
-                error: error instanceof Error ? error.message : "Unknown run error",
-              });
-            }
-          }
-          await redis.xAck(STREAM, GROUP, entry.id);
+          const task = this.handleEntry(job, entry.id, handler).finally(() => {
+            this.inFlight.delete(task);
+          });
+          this.inFlight.add(task);
         }
       }
     }
+    await Promise.allSettled(this.inFlight);
   }
 
   stop() { this.running = false; }
+
+  private async handleEntry(
+    job: AgentRunJob,
+    entryId: string,
+    handler: (job: AgentRunJob) => Promise<void>,
+  ) {
+    const redis = await getRedis();
+    try {
+      await this.process(redis, job, handler);
+    } catch (error) {
+      if ((job.attempts ?? 0) < 3) {
+        await this.enqueue({ ...job, attempts: (job.attempts ?? 0) + 1 });
+      } else {
+        await redis.xAdd("echoo:agent-runs:failed", "*", {
+          job: JSON.stringify(job),
+          error: error instanceof Error ? error.message : "Unknown run error",
+        });
+      }
+    }
+    await redis.xAck(STREAM, GROUP, entryId);
+  }
 
   private async process(redis: Awaited<ReturnType<typeof getRedis>>, job: AgentRunJob,
     handler: (job: AgentRunJob) => Promise<void>) {
@@ -75,14 +100,41 @@ export class AgentRunQueue {
     const dirtyKey = `echoo:run-dirty:${job.conversationId}`;
     const token = createId("msg");
     const acquired = await redis.set(lockKey, token, { NX: true, PX: 10 * 60_000 });
-    if (!acquired) { await redis.set(dirtyKey, "1", { EX: 10 * 60 }); return; }
+    if (!acquired) {
+      if (job.kind === "prime-figure") {
+        await redis.set(dirtyKey, "1", { EX: 10 * 60 });
+      } else {
+        await delay(100);
+        await this.enqueue(job);
+      }
+      return;
+    }
+    const heartbeat = setInterval(() => {
+      void renewLock(redis, lockKey, token);
+    }, 30_000);
+    heartbeat.unref();
     try {
+      let currentJob = job;
       do {
         await redis.del(dirtyKey);
-        await handler(job);
-      } while (await redis.getDel(dirtyKey));
+        await handler(currentJob);
+        currentJob = { ...job, trigger: "coalesced_messages" };
+      } while (job.kind === "prime-figure" && await redis.getDel(dirtyKey));
     } finally {
+      clearInterval(heartbeat);
       if ((await redis.get(lockKey)) === token) await redis.del(lockKey);
     }
   }
+}
+
+async function renewLock(
+  redis: Awaited<ReturnType<typeof getRedis>>,
+  key: string,
+  token: string,
+) {
+  if ((await redis.get(key)) === token) await redis.pExpire(key, 10 * 60_000);
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }

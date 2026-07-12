@@ -1,5 +1,11 @@
 export type PrimeStreamedMessageField =
-  "type" | "text" | "description" | "generationPrompt" | "transcript";
+  | "type"
+  | "text"
+  | "description"
+  | "generationPrompt"
+  | "transcript"
+  | "referenceMediaId"
+  | "referenceMediaIds";
 
 export interface PrimeDecisionStreamFieldDelta {
   actionIndex: number;
@@ -107,7 +113,8 @@ export class PrimeDecisionStreamParser {
 
       if (frame.phase === "value_or_end") {
         if (char === "]") {
-          this.stack.pop();
+          const completed = this.stack.pop();
+          if (completed?.type === "array") this.emitArrayComplete(completed.path);
           this.completeValue();
         } else {
           this.startValue(char, [...frame.path, frame.index]);
@@ -118,7 +125,8 @@ export class PrimeDecisionStreamParser {
         frame.index += 1;
         frame.phase = "value_or_end";
       } else if (char === "]") {
-        this.stack.pop();
+        const completed = this.stack.pop();
+        if (completed?.type === "array") this.emitArrayComplete(completed.path);
         this.completeValue();
       }
     }
@@ -215,7 +223,22 @@ export class PrimeDecisionStreamParser {
   }
 
   private emitField(delta: string, complete: boolean) {
-    const [actions, actionIndex, message, field] = this.stringPath;
+    const [actions, actionIndex, message, field, itemIndex] = this.stringPath;
+    if (
+      actions === "actions" &&
+      typeof actionIndex === "number" &&
+      message === "message" &&
+      field === "referenceMediaIds" &&
+      typeof itemIndex === "number"
+    ) {
+      this.onFieldDelta({
+        actionIndex,
+        field: "referenceMediaId",
+        delta,
+        complete,
+      });
+      return;
+    }
     if (
       actions !== "actions" ||
       typeof actionIndex !== "number" ||
@@ -224,6 +247,22 @@ export class PrimeDecisionStreamParser {
     )
       return;
     this.onFieldDelta({ actionIndex, field, delta, complete });
+  }
+
+  private emitArrayComplete(path: PathPart[]) {
+    const [actions, actionIndex, message, field] = path;
+    if (
+      actions === "actions" &&
+      typeof actionIndex === "number" &&
+      message === "message" &&
+      field === "referenceMediaIds"
+    )
+      this.onFieldDelta({
+        actionIndex,
+        field: "referenceMediaIds",
+        delta: "",
+        complete: true,
+      });
   }
 
   private completeValue() {

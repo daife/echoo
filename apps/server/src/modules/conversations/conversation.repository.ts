@@ -34,6 +34,33 @@ export class ConversationRepository {
       "DELETE FROM conversations WHERE owner_user_id = ? AND id = ?", [ownerUserId, conversationId]);
     return result.affectedRows > 0;
   }
+
+  async getPrimeHandledEndUserSequence(ownerUserId: string, conversationId: string) {
+    const row = await queryOne<RowDataPacket & { handled_seq: number | null }>(
+      `SELECT CAST(JSON_EXTRACT(runtime_state,
+       '$.primeDispatch.lastHandledEndUserSeq') AS UNSIGNED) AS handled_seq
+       FROM conversations WHERE owner_user_id = ? AND id = ?`,
+      [ownerUserId, conversationId],
+    );
+    return row?.handled_seq ?? null;
+  }
+
+  async advancePrimeHandledEndUserSequence(
+    ownerUserId: string,
+    conversationId: string,
+    sequence: number,
+  ) {
+    await execute(
+      `UPDATE conversations SET runtime_state = JSON_SET(
+       JSON_SET(runtime_state, '$.primeDispatch', COALESCE(
+         JSON_EXTRACT(runtime_state, '$.primeDispatch'), JSON_OBJECT())),
+       '$.primeDispatch.lastHandledEndUserSeq', CAST(GREATEST(COALESCE(CAST(
+         JSON_EXTRACT(runtime_state, '$.primeDispatch.lastHandledEndUserSeq') AS UNSIGNED), 0), ?)
+         AS UNSIGNED))
+       WHERE owner_user_id = ? AND id = ?`,
+      [sequence, ownerUserId, conversationId],
+    );
+  }
 }
 
 function rowToConversation(row: ConversationRow): Conversation {

@@ -1,4 +1,4 @@
-import type { Message } from "../types/message";
+import type { Message } from "../types/message.js";
 
 export type AppWsServerEvent =
   | {

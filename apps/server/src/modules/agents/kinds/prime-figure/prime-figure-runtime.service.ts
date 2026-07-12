@@ -25,6 +25,7 @@ import type {
 } from "../../../ai/ai-provider.interface.js";
 import { AgentRepository } from "../../agent.repository.js";
 import { ResourceRepository } from "../../../resources/resource.repository.js";
+import { ConversationRepository } from "../../../conversations/conversation.repository.js";
 import { PrimeActionLogRepository } from "./prime-action-log.repository.js";
 import { PrimeActionExecutor } from "./prime-action-executor.js";
 import { PrimeMessageRepository } from "./prime-message.repository.js";
@@ -54,15 +55,6 @@ interface PendingMediaAnnotation {
 }
 
 export class PrimeFigureRuntimeService {
-  private static readonly activeRuns = new Map<
-    string,
-    Promise<PrimeFigureDecision | null>
-  >();
-  private static readonly pendingTriggers = new Map<
-    string,
-    PrimeDecisionTrigger
-  >();
-
   constructor(
     private readonly agents = new AgentRepository(),
     private readonly states = new PrimeFigureStateRepository(),
@@ -72,87 +64,65 @@ export class PrimeFigureRuntimeService {
     private readonly logs = new PrimeActionLogRepository(),
     private readonly resources = new ResourceRepository(),
     private readonly conversationMedia = new PrimeConversationMediaRepository(),
+    private readonly conversations = new ConversationRepository(),
   ) {}
 
-  requestDecision(input: {
+  async requestDecision(input: {
     ownerUserId: string;
     conversationId: string;
     trigger?: PrimeDecisionTrigger;
   }): Promise<PrimeFigureDecision | null> {
-    const key = `${input.ownerUserId}:${input.conversationId}`;
-    const active = PrimeFigureRuntimeService.activeRuns.get(key);
-    if (active) {
-      PrimeFigureRuntimeService.pendingTriggers.set(key, "coalesced_messages");
-      return active;
+    const trigger = input.trigger ?? "end_user_message";
+    const agent = await this.agents.findByConversation(
+      input.ownerUserId,
+      input.conversationId,
+    );
+    if (!agent || agent.type !== "prime-figure") return null;
+    const state = await this.states.findByAgent(input.ownerUserId, agent.id);
+    if (!state) {
+      await this.logs.save({
+        ownerUserId: input.ownerUserId,
+        agentId: agent.id,
+        conversationId: input.conversationId,
+        action: { type: "prime_runtime", trigger },
+        status: "failed",
+        errorMessage: "本初角色状态缺失。",
+      });
+      return null;
     }
+    if (state.silenceUntilMs && state.silenceUntilMs > Date.now()) return null;
 
-    const task = this.drainDecisions(
-      { ...input, trigger: input.trigger ?? "end_user_message" },
-      key,
-    ).finally(() => {
-      PrimeFigureRuntimeService.activeRuns.delete(key);
-      PrimeFigureRuntimeService.pendingTriggers.delete(key);
-    });
-    PrimeFigureRuntimeService.activeRuns.set(key, task);
-    return task;
+    await this.waitForEndUserQuiet(input.ownerUserId, input.conversationId);
+    try {
+      return await this.createDecisionOnce({ ...input, trigger, agent, state });
+    } catch (error) {
+      await this.logs.save({
+        ownerUserId: input.ownerUserId,
+        agentId: agent.id,
+        conversationId: input.conversationId,
+        action: { type: "prime_runtime", trigger },
+        status: "failed",
+        errorMessage:
+          error instanceof Error ? error.message : "本初角色运行时执行失败。",
+      });
+      return null;
+    }
   }
 
-  private async drainDecisions(
-    input: {
-      ownerUserId: string;
-      conversationId: string;
-      trigger: PrimeDecisionTrigger;
-    },
-    key: string,
-  ): Promise<PrimeFigureDecision | null> {
-    let trigger = input.trigger;
-    let lastDecision: PrimeFigureDecision | null = null;
-
-    while (true) {
-      PrimeFigureRuntimeService.pendingTriggers.delete(key);
-      const agent = await this.agents.findByConversation(
-        input.ownerUserId,
-        input.conversationId,
+  private async waitForEndUserQuiet(ownerUserId: string, conversationId: string) {
+    const quietMs = Math.max(
+      0,
+      Number(process.env.PRIME_MESSAGE_COALESCE_MS ?? 2_000),
+    );
+    while (quietMs > 0) {
+      const latest = await this.messages.findLatestEndUserCreatedAt(
+        ownerUserId,
+        conversationId,
       );
-      if (!agent || agent.type !== "prime-figure") return null;
-      const state = await this.states.findByAgent(input.ownerUserId, agent.id);
-      if (!state) {
-        await this.logs.save({
-          ownerUserId: input.ownerUserId,
-          agentId: agent.id,
-          conversationId: input.conversationId,
-          action: { type: "prime_runtime", trigger },
-          status: "failed",
-          errorMessage: "本初角色状态缺失。",
-        });
-        return null;
-      }
-      if (state.silenceUntilMs && state.silenceUntilMs > Date.now())
-        return lastDecision;
-
-      try {
-        lastDecision = await this.createDecisionOnce({
-          ...input,
-          trigger,
-          agent,
-          state,
-        });
-      } catch (error) {
-        await this.logs.save({
-          ownerUserId: input.ownerUserId,
-          agentId: agent.id,
-          conversationId: input.conversationId,
-          action: { type: "prime_runtime", trigger },
-          status: "failed",
-          errorMessage:
-            error instanceof Error ? error.message : "本初角色运行时执行失败。",
-        });
-        return null;
-      }
-
-      const pending = PrimeFigureRuntimeService.pendingTriggers.get(key);
-      if (!pending) return lastDecision;
-      trigger = pending;
+      if (latest === null) return;
+      const remaining = latest + quietMs - Date.now();
+      if (remaining <= 0) return;
+      await delay(Math.min(remaining, quietMs));
     }
   }
 
@@ -163,10 +133,49 @@ export class PrimeFigureRuntimeService {
     agent: PrimeFigureAgent;
     state: PrimeFigureState;
   }) {
-    const timeline = await this.messages.listRecent(
-      input.ownerUserId,
-      input.agent.id,
-      PRIME_CONTEXT_MESSAGE_LIMIT,
+    const storedHandledEndUserSeq =
+      await this.conversations.getPrimeHandledEndUserSequence(
+        input.ownerUserId,
+        input.conversationId,
+      );
+    const lastHandledEndUserSeq =
+      storedHandledEndUserSeq ??
+      await this.messages.findLatestAssistantSequence(
+        input.ownerUserId,
+        input.conversationId,
+      );
+    const [recentTimeline, unhandledEndUserMessages] = await Promise.all([
+      this.messages.listRecent(
+        input.ownerUserId,
+        input.agent.id,
+        PRIME_CONTEXT_MESSAGE_LIMIT,
+        input.conversationId,
+      ),
+      this.messages.listEndUserAfterSequence(
+        input.ownerUserId,
+        input.agent.id,
+        lastHandledEndUserSeq,
+      ),
+    ]);
+    if (!unhandledEndUserMessages.length) return null;
+    const timeline = [...new Map(
+      [...recentTimeline, ...unhandledEndUserMessages]
+        .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
+        .map((message) => [message.id, message]),
+    ).values()];
+    const inputThroughEndUserSeq = timeline.reduce(
+      (latest, message) =>
+        message.sender === "end_user"
+          ? Math.max(latest, message.sequence ?? 0)
+          : latest,
+      lastHandledEndUserSeq,
+    );
+    const inputThroughEndUserAtMs = timeline.reduce(
+      (latest, message) =>
+        message.sender === "end_user"
+          ? Math.max(latest, message.occurredAtMs)
+          : latest,
+      0,
     );
     const provider = this.providers.getDefaultProvider();
     const model = this.providers.getDefaultModel();
@@ -178,6 +187,7 @@ export class PrimeFigureRuntimeService {
       input.ownerUserId,
       this.resources,
       this.conversationMedia,
+      lastHandledEndUserSeq,
     );
     const chatMessages = packet.messages;
 
@@ -279,7 +289,9 @@ export class PrimeFigureRuntimeService {
         decision,
         providerId: finalResponse.providerId,
         model: finalResponse.model,
+        silenceMessageCutoffAtMs: inputThroughEndUserAtMs,
         streamedMessageIds: streamed.messageIds,
+        messageCreatedAt: streamed.messageCreatedAt,
         voiceMedia: streamed.voiceMedia,
         ttsErrors: streamed.ttsErrors,
         imageMedia: streamed.imageMedia,
@@ -289,6 +301,11 @@ export class PrimeFigureRuntimeService {
         input,
         packet.pendingMedia,
         mediaAnnotations,
+      );
+      await this.conversations.advancePrimeHandledEndUserSequence(
+        input.ownerUserId,
+        input.conversationId,
+        inputThroughEndUserSeq,
       );
       return decision;
     } catch (error) {
@@ -318,6 +335,7 @@ export class PrimeFigureRuntimeService {
         const updated = await this.messages.applyMediaAnnotation({
           ownerUserId: input.ownerUserId,
           messageId: target.messageId,
+          conversationId: input.conversationId,
           expectedType: target.type,
           value,
         });
@@ -443,6 +461,7 @@ async function buildPrimeChatMessages(
   ownerUserId: string,
   resources: ResourceRepository,
   conversationMedia: PrimeConversationMediaRepository,
+  lastHandledEndUserSeq: number,
 ): Promise<{
   messages: ChatCompletionMessage[];
   pendingMedia: PendingMediaAnnotation[];
@@ -456,6 +475,22 @@ async function buildPrimeChatMessages(
   const eventTime = lastEndUserMessage?.occurredAtMs ?? now;
   const scheduleSegment = findScheduleSegment(agent.detail.schedule, eventTime);
   const hints: string[] = [];
+  const attentionIdByMessage = new Map(
+    timeline
+      .filter(
+        (message) =>
+          message.sender === "end_user" &&
+          (message.sequence ?? 0) > lastHandledEndUserSeq,
+      )
+      .map((message, index) => [message.id, `attention_${index + 1}`]),
+  );
+  if (attentionIdByMessage.size) {
+    hints.push(
+      `本次请求中新出现、figure 必须着重注意的 end_user 消息标记：${[
+        ...attentionIdByMessage.values(),
+      ].join(", ")}。请结合完整时间线顺序统一回应，不要遗漏这些消息。`,
+    );
+  }
 
   if (
     lastEndUserMessage?.content.type === "text" &&
@@ -512,6 +547,7 @@ async function buildPrimeChatMessages(
     const at = formatReadableMinute(message.occurredAtMs, timezone);
     const sender = toLlmSender(message.sender);
     const messageContent = message.content;
+    const attentionId = attentionIdByMessage.get(message.id);
 
     if (messageContent.type === "text") {
       content.push({
@@ -519,6 +555,7 @@ async function buildPrimeChatMessages(
         text: JSON.stringify({
           at,
           sender,
+          ...(attentionId ? { attentionId } : {}),
           type: "text",
           text: sanitizeVisibleText(messageContent.text, timezone),
         }),
@@ -543,6 +580,7 @@ async function buildPrimeChatMessages(
           text: JSON.stringify({
             at,
             sender,
+            ...(attentionId ? { attentionId } : {}),
             type: messageContent.type,
             description: sanitizeVisibleText(description, timezone),
           }),
@@ -568,6 +606,7 @@ async function buildPrimeChatMessages(
         text: JSON.stringify({
           at,
           sender,
+          ...(attentionId ? { attentionId } : {}),
           type: messageContent.type,
           annotationId: target.id,
           description: null,
@@ -601,6 +640,7 @@ async function buildPrimeChatMessages(
           text: JSON.stringify({
             at,
             sender,
+            ...(attentionId ? { attentionId } : {}),
             type: "voice",
             transcript: sanitizeVisibleText(transcript, timezone),
           }),
@@ -624,6 +664,7 @@ async function buildPrimeChatMessages(
         text: JSON.stringify({
           at,
           sender,
+          ...(attentionId ? { attentionId } : {}),
           type: "voice",
           annotationId: target.id,
           transcript: null,
@@ -646,6 +687,7 @@ async function buildPrimeChatMessages(
         text: JSON.stringify({
           at,
           sender,
+          ...(attentionId ? { attentionId } : {}),
           type: "sticker",
           description: sanitizeVisibleText(
             messageContent.description,
@@ -661,6 +703,7 @@ async function buildPrimeChatMessages(
       text: JSON.stringify({
         at,
         sender,
+        ...(attentionId ? { attentionId } : {}),
         type: "transfer",
         direction: messageContent.direction,
         currency: messageContent.currency,
@@ -1358,4 +1401,8 @@ function sanitizeVisibleText(value: string, timezone: string) {
     .replace(/\b1\d{12}\b/g, (timestamp) =>
       formatReadableMinute(Number(timestamp), timezone),
     );
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }

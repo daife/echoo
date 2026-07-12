@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { initApp } from "../../app/bootstrap/initApp";
 import { useRuntime } from "../../app/providers/RuntimeProvider";
-import { StreamingAudioPlayer } from "../../features/messages/streamingAudioPlayer";
+import { streamingAudioPlayer } from "../../features/messages/streamingAudioPlayer";
 import {
   appendMessageDelta,
   createPendingTextMessage,
@@ -43,7 +43,6 @@ export function useConversationMessages({
   const [error, setError] = useState<string | null>(null);
   const messagesRef = useRef<LocalMessage[]>([]);
   const streamBuffersRef = useRef(new Map<string, StreamDisplayBuffer>());
-  const streamingAudioRef = useRef(new StreamingAudioPlayer());
   const conversationId = agent?.conversationId;
   const canRollback = agent?.type === "slice-figure";
 
@@ -112,6 +111,12 @@ export function useConversationMessages({
 
   const enqueueDisplayDelta = useCallback(
     (messageId: string, delta: string) => {
+      if (agent?.type === "prime-figure") {
+        setMessages((current) =>
+          appendMessageDelta(current, messageId, delta, Date.now()),
+        );
+        return;
+      }
       const now = performance.now();
       const buffer = streamBuffersRef.current.get(messageId) ?? {
         chars: [],
@@ -134,7 +139,7 @@ export function useConversationMessages({
       streamBuffersRef.current.set(messageId, buffer);
       scheduleStreamDrain(messageId);
     },
-    [scheduleStreamDrain],
+    [agent?.type, scheduleStreamDrain],
   );
 
   const completeStreamedMessage = useCallback(
@@ -199,7 +204,7 @@ export function useConversationMessages({
   useEffect(() => {
     return () => {
       clearStreamBuffers();
-      streamingAudioRef.current.stopAll();
+      streamingAudioPlayer.stopAll();
     };
   }, [clearStreamBuffers, conversationId]);
 
@@ -226,25 +231,25 @@ export function useConversationMessages({
     const unsubscribeAudioStarted = runtime.message.onMessageAudioStarted(
       (event) => {
         if (event.conversationId !== conversationId) return;
-        streamingAudioRef.current.start(event.messageId, event.mimeType);
+        streamingAudioPlayer.start(event.messageId, event.mimeType);
       },
     );
     const unsubscribeAudioChunk = runtime.message.onMessageAudioChunk(
       (event) => {
         if (event.conversationId !== conversationId) return;
-        streamingAudioRef.current.append(event.messageId, event.dataBase64);
+        streamingAudioPlayer.append(event.messageId, event.dataBase64);
       },
     );
     const unsubscribeAudioCompleted = runtime.message.onMessageAudioCompleted(
       (event) => {
         if (event.conversationId !== conversationId) return;
-        streamingAudioRef.current.complete(event.messageId);
+        streamingAudioPlayer.complete(event.messageId);
       },
     );
     const unsubscribeAudioFailed = runtime.message.onMessageAudioFailed(
       (event) => {
         if (event.conversationId !== conversationId) return;
-        streamingAudioRef.current.stop(event.messageId);
+        streamingAudioPlayer.stop(event.messageId);
       },
     );
 

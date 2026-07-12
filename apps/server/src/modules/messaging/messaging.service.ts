@@ -297,23 +297,34 @@ export class MessagingService {
     pendingMessage: Message,
   ) {
     let streamedText = "";
+    let liveCacheWrite = Promise.resolve();
 
     try {
       const reply = await this.sliceRuntime.createStreamingReply(
         { ownerUserId, conversationId },
         (delta) => {
           streamedText += delta.text;
+          const liveText = streamedText;
+          const updatedAt = Date.now();
           this.appPush.pushToUser(ownerUserId, {
             type: "message.delta",
             messageId: pendingMessage.id,
             conversationId,
             delta: delta.text,
-            updatedAt: Date.now(),
+            updatedAt,
           });
+          liveCacheWrite = liveCacheWrite.then(() =>
+            this.repository.updateCachedLive(ownerUserId, {
+              ...pendingMessage,
+              content: { text: liveText },
+              updatedAt,
+            }),
+          );
         },
       );
 
       if (!reply) return undefined;
+      await liveCacheWrite;
       const now = Date.now();
       if (
         !(await this.repository.findByIdInConversation(
@@ -351,6 +362,7 @@ export class MessagingService {
       });
       return message;
     } catch (error) {
+      await liveCacheWrite;
       const now = Date.now();
       if (
         !(await this.repository.findByIdInConversation(

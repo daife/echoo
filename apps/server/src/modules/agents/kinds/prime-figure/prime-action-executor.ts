@@ -42,7 +42,9 @@ export class PrimeActionExecutor {
     decision: PrimeFigureDecision;
     providerId: string;
     model: string;
+    silenceMessageCutoffAtMs?: number;
     streamedMessageIds?: Map<number, string>;
+    messageCreatedAt?: Map<number, number>;
     voiceMedia?: Map<number, ResolvedPrimeVoiceMedia>;
     ttsErrors?: Map<number, string>;
     imageMedia?: Map<number, ResolvedPrimeImageMedia>;
@@ -84,7 +86,7 @@ export class PrimeActionExecutor {
 
         for (const [index, action] of decision.actions.entries()) {
           if (action.type !== "send_message") continue;
-          const occurredAtMs = now + index;
+          const occurredAtMs = input.messageCreatedAt?.get(index) ?? now + index;
           const voiceMedia = input.voiceMedia?.get(index);
           const imageMedia = input.imageMedia?.get(index);
           const primeContent = toPrimeMessageContent(
@@ -132,7 +134,7 @@ export class PrimeActionExecutor {
           unreadIncrement: decision.actions.length,
         });
       } else {
-        state.silenceStartedAtMs = now;
+        state.silenceStartedAtMs = input.silenceMessageCutoffAtMs ?? now;
         state.silenceUntilMs = now + silenceAction.revisitAfterMinutes * 60_000;
       }
 
