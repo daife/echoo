@@ -491,9 +491,9 @@ async function buildPrimeChatMessages(
   );
   if (attentionIdByMessage.size) {
     hints.push(
-      `本次请求中新出现、figure 必须着重注意的 end_user 消息标记：${[
+      `本次请求中新出现、figure 可能需要注意的 end_user 消息标记：${[
         ...attentionIdByMessage.values(),
-      ].join(", ")}。请结合完整时间线顺序统一回应，不要遗漏这些消息。`,
+      ].join(", ")}。结合完整时间线顺序统一回应，不要遗漏这些消息。`,
     );
   }
 
@@ -507,18 +507,18 @@ async function buildPrimeChatMessages(
   }
   if (scheduleSegment) {
     hints.push(
-      `最近一条 end_user 消息发生在角色的“${scheduleSegment.label}”时段（${scheduleSegment.start}-${scheduleSegment.end}）：${sanitizeVisibleText(scheduleSegment.description, timezone)}`,
+      `最近一条 end_user 消息发生在figure的“${scheduleSegment.label}”时段（${scheduleSegment.start}-${scheduleSegment.end}）：${sanitizeVisibleText(scheduleSegment.description, timezone)}`,
     );
   } else {
-    hints.push("最近一条 end_user 消息不处于角色已定义的任何日程时段。");
+    hints.push("最近一条 end_user 消息不处于figure已定义的任何日程时段。");
   }
   if (trigger === "mute_ended") {
     hints.push(
-      "角色此前选择的消息屏蔽期已经结束。屏蔽期间积累的 end_user 消息已合并到本次数据包，请只作出一次新的决定。",
+      "figure此前选择的消息屏蔽期已经结束。屏蔽期间 end_user 发送了新的消息，需要作出一次决策。",
     );
   } else if (trigger === "coalesced_messages") {
     hints.push(
-      "角色作出上一轮决定时又收到了新消息。本次数据包已经合并这些消息。",
+      "figure回复期间又收到了新的 end_user 消息，需要根据新消息继续作出一次决策。",
     );
   }
 
@@ -743,8 +743,8 @@ async function buildPrimeChatMessages(
       weekday: formatWeekdayCode(now, timezone),
       figureNow: {
         mood: state.mood
-          ? `角色当前情绪：“${state.mood}”。该判断形成于${describeAge(state.moodObservedAtMs, now)}。`
-          : "角色当前没有已记录的情绪。",
+          ? `figure当前情绪：“${state.mood}”。该判断形成于${describeAge(state.moodObservedAtMs, now)}。`
+          : "figure当前没有已记录的情绪。",
         relationship: state.relationshipStatus || undefined,
         variables: makeLlmReadable(state.variables, timezone),
       },
@@ -856,20 +856,15 @@ function buildSystemPrompt(agent: PrimeFigureAgent) {
   return [
     `你要从figure:“${agent.name}”自身的视角模拟该角色。`,
     "你的目标是维持一个可信的figure，使其人格、记忆、情绪、日程、偏好、边界和关系等保持连续。",
-    "先在rationale中写出简洁的决策分析。分析figure自身的情绪、动机、日程、记忆，以及应对end_user的行为如何采取action。",
-    "figure可以发送一条或多条文本、图片或语音消息，也可以用 silence 表示本次不回复，或用 mute 在一段时间内屏蔽新消息。每次决定建议生成 1 至 3 个 send_message 动作；当角色确实情绪激动时，可以发送更多消息。",
-    "发送图片时必须同时提供面向对话的客观 description 和用于后续生图的 generationPrompt。发送语音时 transcript 是角色实际说出的内容，并将用于后续 TTS。暂时不得发送 video 或 sticker。",
-    "图片消息的 referenceMediaIds 只能从 user 数据包 availableReferenceImages 中选择；需要维持角色外观时优先参考描述为“figure角色立绘”的资源，不需要参考图时必须返回空数组。media_n 只在当前会话内长期有效，不得猜测或编造列表外 ID。",
+    DECISION_PROMPT_RULES,
+    ACTION_PROMPT_RULES,
+    SEND_MESSAGE_PROMPT_RULES,
+    IMAGE_MESSAGE_PROMPT_RULES,
     IMAGE_GENERATION_PROMPT_RULES,
-    "语音 transcript 可以在自然位置使用 Fish Audio 表演标签：[angry] [sad] [embarrassed] [emphasis] [whispering] [soft] [breathy] [excited] [laughing] [chuckling] [moaning] [clear throat] [sobbing] [crying loudly] [sighing] [panting] [groaning] [crowd laughing] [background laughter] [audience laughing] [pause] [long pause]。标签只用于确有对应语气或声音的地方，不要机械添加。",
-    "为了让消息能够实时显示和合成，send_message.message 中必须先输出 type，再输出 text、description/generationPrompt 或 transcript；各消息必须严格按实际发送顺序输出。",
-    "send_message、silence 与 mute 互斥。silence 只表示本次不回复，不影响后续消息；mute 会在指定时间内屏蔽新消息。选择 silence 或 mute 时，它必须是唯一动作；否则所有动作都必须是 send_message，并按发送顺序排列。",
-    "只有当 currentSituation、schedule、itinerary 或 relationshipStatus 确实发生变化时，才使用可选的 stateUpdates 对象。要保留某字段当前值，可以省略该字段或将其设为 null。",
-    "已存储的情绪是历史证据，不是要求永远维持它的指令。请考虑它是在多久之前被观察到的。",
-    "记忆的 eventAt 表示该事件在角色时间线中的归属时间。有充分依据时复制可见的 YYYY-MM-DDTHH:mm 时间，否则使用 null。",
-    "所有可见的精确时间均采用角色时区下的 YYYY-MM-DDTHH:mm 格式。不得虚构更精确或没有依据的时间。",
-    "仅在 search_recall 工具描述规定的条件下使用该工具。",
-    "只返回符合严格 schema 的 JSON。创作者定义的参数可以使用 null 保留先前值。",
+    VOICE_MESSAGE_PROMPT_RULES,
+    STATE_UPDATE_PROMPT_RULES,
+    MEMORY_AND_TIME_PROMPT_RULES,
+    OUTPUT_PROMPT_RULES,
     "",
     `人设：${sanitizeVisibleText(agent.detail.persona, timezone)}`,
     `背景：${sanitizeVisibleText(agent.detail.background, timezone)}`,
@@ -879,9 +874,24 @@ function buildSystemPrompt(agent: PrimeFigureAgent) {
     `当前处境：${sanitizeVisibleText(agent.detail.currentSituation, timezone) || "无额外当前处境。"}`,
     `行程：${sanitizeVisibleText(agent.detail.itinerary, timezone) || "无行程。"}`,
     `日程：\n${schedule.length ? schedule.join("\n") : "无日程时段。"}`,
-    `创作者输出参数：\n${parameters.length ? parameters.join("\n") : "无自定义参数。"}`,
+    `变量：\n${parameters.length ? parameters.join("\n") : "无额外变量 。"}`,
   ].join("\n");
 }
+
+const DECISION_PROMPT_RULES = `先在rationale中写出简洁的决策分析。分析figure自身的情绪、动机、日程、记忆、变量，以及应对end_user的行为如何采取action。
+已存储的情绪是历史证据，不是要求永远维持它的指令。请考虑它是在多久之前被观察到的。`;
+
+const ACTION_PROMPT_RULES = `actions 注意事项：
+figure可以发送一条或多条文本、图片或语音消息，也可以用 silence 表示本次不回复，或用 mute 在一段时间内屏蔽新消息。
+send_message、silence 与 mute 互斥。silence 只表示本次不回复，不影响后续消息；mute 会在指定时间内屏蔽end_user的新消息。选择 silence 或 mute 时，它必须是唯一动作。`;
+
+const SEND_MESSAGE_PROMPT_RULES = `send_message 注意事项：
+不支持发送 video 或 sticker。
+send_message.message 中必须先输出 type，再输出 text、description/generationPrompt 或 transcript；各消息必须严格按实际发送顺序输出。`;
+
+const IMAGE_MESSAGE_PROMPT_RULES = `image 注意事项：
+发送图片时必须同时提供面向对话的客观 description 和用于后续生图的 generationPrompt。
+图片消息的 referenceMediaIds 只能从availableReferenceImages 中选择media_n；需要维持角色外观时优先参考描述为“figure角色立绘”的资源，不需要参考图时不存在availableReferenceImages时必须返回空数组。不得猜测或编造列表外 ID。`;
 
 const IMAGE_GENERATION_PROMPT_RULES = `图片 action 的 generationPrompt 规范：
 核心目标是生成“手机相册里的最终照片”，绝不能生成第三个人正在拍摄角色拍照的场景。提示词必须生活化、物理逻辑清楚，避免专业摄影、摆拍、机位穿帮、手机穿帮、反射错误、手指/手臂/身体畸形。
@@ -890,7 +900,22 @@ const IMAGE_GENERATION_PROMPT_RULES = `图片 action 的 generationPrompt 规范
 【负向提示词】必须覆盖与场景相关的：第三人称/别人帮拍/摄影师视角、专业写真、电影感构图、摄影棚灯光、过度摆拍美颜、塑料皮肤、完美构图、超现实光影、多余手指手臂、身体扭曲、不合理反射/错误镜像；除对镜自拍外不得出现正在拍摄的手机；普通自拍不得露出手机；第一视角拿物不得出现拿手机的手；风景不得变专业相机大片。
 【机位与身体逻辑检查】用简短条目回答谁在拍、手机是否入镜、拍摄者哪些部位可出现、哪些绝不能出现、机位为何符合现实。
 【推荐比例】只给一个最合适比例：自拍优先 2:3/3:4/9:16，对镜自拍或第一视角拿物优先 3:4/9:16，生活场景优先 3:4/4:3/9:16，风景优先 4:3/3:2/16:9；未指定时优先手机竖图 3:4。
-generationPrompt 必须严格依次包含【正向提示词】【负向提示词】【机位与身体逻辑检查】【推荐比例】四段。输入简略时主动补全合理生活细节，但不得改变核心需求。`;
+generationPrompt 必须严格依次包含【正向提示词】【负向提示词】【机位与身体逻辑检查】【推荐比例】四段。主动补全合理生活细节，但不得改变核心需求。`;
+
+const VOICE_MESSAGE_PROMPT_RULES = `voice 注意事项：
+figure发送语音时 transcript 内容需要在一个或多个合适位置插入tag来指导后方语句，以获得细腻真实的情感和语调，或者加入特定的音效。
+tag必须用中括号囊括，支持自由文本描述,不限于固定预设，比如[低声耳语] [专业广播腔] [提高音调] [强调] [笑] [吸气] [轻笑] [咂舌声] [碎玻璃声] [愤怒] [哭泣] [叹气] [喘息] [尖叫] [咳嗽] [打哈欠] [撒娇]
+其余消息类型禁止插入tag`;
+
+const STATE_UPDATE_PROMPT_RULES = `stateUpdates 注意事项：
+只有当 currentSituation、schedule、itinerary 或 relationshipStatus 确实发生变化时，才使用可选的 stateUpdates 对象。要保留某字段当前值，可以省略该字段或将其设为 null。`;
+
+const MEMORY_AND_TIME_PROMPT_RULES = `记忆与时间注意事项：
+记忆的 eventAt 表示该事件在角色时间线中的归属时间。有充分依据时复制可见的 YYYY-MM-DDTHH:mm 时间，否则使用 null。
+所有可见的精确时间均采用角色时区下的 YYYY-MM-DDTHH:mm 格式。不得虚构更精确或没有依据的时间。
+仅在 search_recall 工具描述规定的条件下使用该工具。`;
+
+const OUTPUT_PROMPT_RULES = `只返回符合严格 schema 的 JSON。创作者定义的参数可以使用 null 保留先前值。`;
 
 const SEARCH_RECALL_TOOL: ChatToolDefinition = {
   type: "function",
@@ -945,20 +970,18 @@ function buildPrimeDecisionResponseFormat(
       strict: true,
       schema: {
         type: "object",
-        description: "分析和维持可信figure，做出以figure为中心的action。",
         properties: {
           rationale: {
             type: "string",
             description:
-              "简洁的分析。分析情绪、动机、记忆、日程、变量等以及应对end_user的行为如何采取action",
+              "分析figure的情绪、动机、记忆、日程和变量以及用什么actions来应对。",
           },
           figureMood: {
             type: "string",
-            description: "figure作出本次决定时的当前情绪。",
           },
           variables: {
             type: "object",
-            description: "一些变量的当前值。需要保留原值时使用 null。",
+            description: "输出每个变量的替换值；保留原值时为 null。",
             properties: variableProperties,
             required: variableKeys,
             additionalProperties: false,
@@ -971,27 +994,20 @@ function buildPrimeDecisionResponseFormat(
             maxItems: 8,
             items: {
               type: "object",
-              description: "一条简洁记忆及其在figure时间线中的锚点。",
               properties: {
                 content: {
                   type: "string",
-                  description: "figure的记忆事件内容",
                 },
                 eventAt: {
                   anyOf: [
                     {
                       type: "string",
                       pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$",
-                      description:
-                        "该记忆在figure脑海中锚定的时间，必须从可见证据中复制。",
                     },
-                    {
-                      type: "null",
-                      description: "没有可证实的时间时使用",
-                    },
+                    { type: "null" },
                   ],
                   description:
-                    "该记忆在figure时间线中的归属时间；未知时为 null。",
+                    "该记忆在figure时间线中的归属时间，必须从可见证据中复制；无法证实时为 null。",
                 },
               },
               required: ["content", "eventAt"],
@@ -1037,14 +1053,12 @@ function buildPrimeDecisionResponseFormat(
               },
               {
                 type: "array",
-                description: "仅包含一个 silence 动作，不得包含消息动作。",
                 minItems: 1,
                 maxItems: 1,
                 items: buildSilenceActionSchema(),
               },
               {
                 type: "array",
-                description: "仅包含一个 mute 动作，不得包含其他动作。",
                 minItems: 1,
                 maxItems: 1,
                 items: buildMuteActionSchema(),
@@ -1056,7 +1070,7 @@ function buildPrimeDecisionResponseFormat(
                 mediaAnnotations: {
                   type: "array",
                   description:
-                    "为本轮数据包中所有尚未标注的媒体补充描述或语音转写。",
+                    "为本轮end_user消息中所有尚未标注的媒体补充描述或语音转写。",
                   minItems: pendingMedia.length,
                   maxItems: pendingMedia.length,
                   items: {
@@ -1083,10 +1097,9 @@ function buildMediaAnnotationOutputSchema(target: PendingMediaAnnotation) {
   if (target.type === "voice") {
     return {
       type: "object",
-      description: `语音 ${target.id} 的转写。`,
       properties: {
-        id: { const: target.id, description: "数据包中的临时媒体 ID。" },
-        type: { const: "voice", description: "媒体类型。" },
+        id: { const: target.id },
+        type: { const: "voice" },
         transcript: {
           type: "string",
           description: "忠实转写语音中可以听到的内容。",
@@ -1098,10 +1111,9 @@ function buildMediaAnnotationOutputSchema(target: PendingMediaAnnotation) {
   }
   return {
     type: "object",
-    description: `${target.type === "image" ? "图片" : "视频"} ${target.id} 的客观描述。`,
     properties: {
-      id: { const: target.id, description: "数据包中的临时媒体 ID。" },
-      type: { const: target.type, description: "媒体类型。" },
+      id: { const: target.id },
+      type: { const: target.type },
       description: {
         type: "string",
         description: "足以在后续对话中替代原始媒体的客观内容描述。",
@@ -1115,53 +1127,40 @@ function buildMediaAnnotationOutputSchema(target: PendingMediaAnnotation) {
 function nullableStringSchema(description: string, maxLength: number) {
   return {
     description,
-    anyOf: [
-      { type: "string", maxLength, description: "替换文本。" },
-      { type: "null", description: "保留现有值。" },
-    ],
+    anyOf: [{ type: "string", maxLength }, { type: "null" }],
   } as const;
 }
 
 function buildScheduleOutputSchema() {
   return {
     type: "object",
-    description: "角色的完整每周日程。",
     properties: {
       segments: {
         type: "array",
-        description: "每周日程时段。",
         // Keep the 100-item limit in Zod only. Gemini rejects this nested
         // maxItems constraint as an overly complex response schema.
         items: {
           type: "object",
-          description: "一个每周重复的日程时段。",
           properties: {
-            label: { type: "string", description: "简短的时段名称。" },
+            label: { type: "string" },
             days: {
               type: "array",
-              description: "生效的星期。",
               minItems: 1,
               maxItems: 7,
               items: {
                 type: "string",
                 enum: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
-                description: "小写星期代码。",
               },
             },
             start: {
               type: "string",
               pattern: "^([01]\\d|2[0-3]):[0-5]\\d$",
-              description: "采用 HH:mm 格式的开始时间。",
             },
             end: {
               type: "string",
               pattern: "^([01]\\d|2[0-3]):[0-5]\\d$",
-              description: "采用 HH:mm 格式的结束时间。",
             },
-            description: {
-              type: "string",
-              description: "角色在该时段通常会做什么。",
-            },
+            description: { type: "string" },
           },
           required: ["label", "days", "start", "end", "description"],
           additionalProperties: false,
@@ -1176,33 +1175,23 @@ function buildScheduleOutputSchema() {
 function buildSendMessageActionSchema(availableReferenceImageIds: string[]) {
   return {
     type: "object",
-    description: "立即以角色身份发送一条文本、图片或语音消息。",
     properties: {
-      type: {
-        const: "send_message",
-        description: "选择立即发送角色消息。",
-      },
+      type: { const: "send_message" },
       message: {
-        description: "角色发送给 end_user 的确切消息内容。",
         anyOf: [
           {
             type: "object",
-            description: "普通文本消息。",
             properties: {
-              type: { const: "text", description: "文本内容类型。" },
-              text: {
-                type: "string",
-                description: "角色发送给 end_user 的确切文本。",
-              },
+              type: { const: "text" },
+              text: { type: "string" },
             },
             required: ["type", "text"],
             additionalProperties: false,
           },
           {
             type: "object",
-            description: "等待后续生成资源的图片消息。",
             properties: {
-              type: { const: "image", description: "图片内容类型。" },
+              type: { const: "image" },
               description: {
                 type: "string",
                 description:
@@ -1216,7 +1205,7 @@ function buildSendMessageActionSchema(availableReferenceImageIds: string[]) {
               referenceMediaIds: {
                 type: "array",
                 description:
-                  "从 user 数据包 availableReferenceImages 中选择的参考图片 media_n ID；不需要参考图时返回空数组。",
+                  "从availableReferenceImages 中选择的参考图片 media_n ID；不需要参考图时应返回空数组。",
                 minItems: 0,
                 maxItems: Math.min(availableReferenceImageIds.length, 10),
                 uniqueItems: true,
@@ -1238,13 +1227,12 @@ function buildSendMessageActionSchema(availableReferenceImageIds: string[]) {
           },
           {
             type: "object",
-            description: "等待后续 TTS 生成资源的语音消息。",
             properties: {
-              type: { const: "voice", description: "语音内容类型。" },
+              type: { const: "voice" },
               transcript: {
                 type: "string",
                 description:
-                  "角色实际说出的内容，也是实时 TTS 的输入文本。可按系统提示在自然位置插入受支持的情绪或特殊表演标签。",
+                  "figure说话的内容，也是用于TTS的内容，在多个合适的位置插入tag来实现精细细腻的情感和语调控制。",
               },
             },
             required: ["type", "transcript"],
@@ -1263,10 +1251,7 @@ function buildSilenceActionSchema() {
     type: "object",
     description: "仅在本次决定中保持沉默，不回复当前消息",
     properties: {
-      type: {
-        const: "silence",
-        description: "选择让角色本次不回复。",
-      },
+      type: { const: "silence" },
     },
     required: ["type"],
     additionalProperties: false,
@@ -1276,15 +1261,12 @@ function buildSilenceActionSchema() {
 function buildMuteActionSchema() {
   return {
     type: "object",
-    description: "在重新检查期结束前屏蔽新的 end_user 消息和 LLM 数据包。",
+    description: "屏蔽之后一段时间内的 end_user 消息。",
     properties: {
-      type: {
-        const: "mute",
-        description: "选择让角色暂时屏蔽消息。",
-      },
+      type: { const: "mute" },
       revisitAfterMinutes: {
         type: "integer",
-        description: "屏蔽消息的分钟数；到期后合并处理期间收到的消息。",
+        description: "屏蔽消息的分钟数。",
         minimum: 1,
         maximum: 10080,
       },
@@ -1311,13 +1293,7 @@ function buildVariableSchema(definition: PrimeFigureVariableDefinition) {
         : { type: "string", description };
 
   return {
-    anyOf: [
-      base,
-      {
-        type: "null",
-        description: "保留先前值。",
-      },
-    ],
+    anyOf: [base, { type: "null" }],
     description,
   };
 }
