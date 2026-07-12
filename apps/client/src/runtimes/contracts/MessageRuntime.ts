@@ -20,6 +20,10 @@ export type MessageAudioFailedEvent = Extract<
   AppWsServerEvent,
   { type: "message.audio.failed" }
 >;
+export type ConversationAgentActivityEvent = Extract<
+  AppWsServerEvent,
+  { type: "conversation.agent_activity" }
+>;
 
 export interface MessageRuntime {
   startRealtime(): Promise<void>;
@@ -28,6 +32,9 @@ export interface MessageRuntime {
   onMessageCreated(handler: (message: Message) => void): () => void;
   onMessageDelta(handler: (event: MessageDeltaEvent) => void): () => void;
   onMessageCompleted(handler: (message: Message) => void): () => void;
+  onConversationAgentActivity(
+    handler: (event: ConversationAgentActivityEvent) => void,
+  ): () => void;
   onMessageAudioStarted(
     handler: (event: MessageAudioStartedEvent) => void,
   ): () => void;

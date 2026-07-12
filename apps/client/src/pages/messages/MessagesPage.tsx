@@ -1,4 +1,10 @@
-import { PaperPlaneRight, PencilSimple, Trash, Waveform, X } from "@phosphor-icons/react";
+import {
+  PaperPlaneRight,
+  PencilSimple,
+  Trash,
+  Waveform,
+  X,
+} from "@phosphor-icons/react";
 import {
   buildFigureSystemPrompt,
   type Agent,
@@ -7,12 +13,24 @@ import {
   type SliceFigureAgent,
   type UpdateSliceFigureRequest,
 } from "@echoo/shared";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import {
   MessageBubble,
   type MessageBubbleModel,
 } from "../../features/messages/components/MessageBubble";
+import {
+  formatConversationTime,
+  isVisibleConversationMessage,
+  shouldShowMessageTime,
+} from "../../features/messages/messagePresentation";
 import { useConversationMessages } from "./useConversationMessages";
 
 export type UpdateAgentHandlers = {
@@ -40,51 +58,102 @@ export function MessagesPage({
     draft,
     setDraft,
     isSending,
-    rollingBackMessageId,
     isDeletingConversation,
+    isAgentActive,
+    isInitialLoading,
+    isLoadingOlder,
+    hasOlder,
     error,
     canRollback,
     sendMessage,
+    loadOlderMessages,
     retryFailedMessage,
     deleteConversation,
     rollbackConversation,
   } = useConversationMessages({ agent, onConversationDeleted });
   const mainRef = useRef<HTMLElement | null>(null);
+  const messageInputRef = useRef<HTMLInputElement | null>(null);
+  const shouldFollowBottomRef = useRef(true);
+  const lastConversationRef = useRef<string | undefined>(undefined);
+  const lastVisibleMessageIdRef = useRef<string | undefined>(undefined);
+  const lastScrollTopRef = useRef(0);
   const title = agent?.name ?? "选择一个角色";
   const subtitle = agent
-    ? `${formatAgentType(agent)}，当前在线`
+    ? isAgentActive
+      ? "对方输入中…"
+      : `${formatAgentType(agent)}，当前在线`
     : "打开或创建一个角色以开始聊天";
   const prologueHtml =
     agent?.type === "slice-figure" || agent?.type === "prime-figure"
       ? agent.detail.prologueHtml
       : "";
   const editor = agent ? getAgentEditor(agent, updateHandlers) : null;
-
-  useEffect(() => {
-    mainRef.current?.scrollTo({
-      top: mainRef.current.scrollHeight,
-      behavior: "smooth",
-    });
-  }, [messages, isSending]);
+  const conversationId = agent?.conversationId;
 
   const visibleMessages = useMemo(() => {
-    if (messages.length > 0)
-      return messages.map((message) => toBubbleMessage(message, canRollback));
+    if (!agent) return [];
+    const visible = messages.filter((message) =>
+      isVisibleConversationMessage(message, agent.type),
+    );
+    if (visible.length > 0)
+      return visible.map((message) => toBubbleMessage(message, canRollback));
     if (agent?.type === "slice-figure" && agent.detail.openingLine) {
       return [
         {
           id: `${agent.id}-opening`,
           from: "agent",
           text: agent.detail.openingLine,
+          createdAt: 0,
+          kind: "text" as const,
         },
       ];
     }
     return [];
   }, [agent, canRollback, messages]);
 
+  useLayoutEffect(() => {
+    const main = mainRef.current;
+    if (!main || isInitialLoading) return;
+    const conversationChanged = lastConversationRef.current !== conversationId;
+    const latest = visibleMessages.at(-1);
+    const latestChanged = lastVisibleMessageIdRef.current !== latest?.id;
+    const optimisticMine =
+      latest?.from === "me" && latest.deliveryState === "sending";
+    if (
+      conversationChanged ||
+      (latestChanged && (shouldFollowBottomRef.current || optimisticMine))
+    ) {
+      main.scrollTop = main.scrollHeight;
+      lastScrollTopRef.current = main.scrollTop;
+      shouldFollowBottomRef.current = true;
+    }
+    lastConversationRef.current = conversationId;
+    lastVisibleMessageIdRef.current = latest?.id;
+  }, [conversationId, isInitialLoading, visibleMessages]);
+
+  const handleMessageScroll = () => {
+    const main = mainRef.current;
+    if (!main) return;
+    const scrollingUp = main.scrollTop < lastScrollTopRef.current;
+    lastScrollTopRef.current = main.scrollTop;
+    shouldFollowBottomRef.current =
+      main.scrollHeight - main.scrollTop - main.clientHeight <= 120;
+    if (!scrollingUp || main.scrollTop > 80 || !hasOlder || isLoadingOlder)
+      return;
+    const previousHeight = main.scrollHeight;
+    const previousTop = main.scrollTop;
+    void loadOlderMessages().finally(() => {
+      window.requestAnimationFrame(() => {
+        const current = mainRef.current;
+        if (!current) return;
+        current.scrollTop = previousTop + current.scrollHeight - previousHeight;
+      });
+    });
+  };
+
   if (!agent) {
     return (
-      <section className="grid min-h-[calc(100dvh-8rem)] place-items-center overflow-hidden rounded-2xl border border-white/8 bg-[#0d0d10]/80 p-8 text-center">
+      <section className="grid h-full min-h-0 place-items-center overflow-hidden rounded-2xl border border-white/8 bg-[#0d0d10]/80 p-8 text-center">
         <div className="max-w-sm">
           <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-full border border-white/15 bg-white/[0.05]">
             <Waveform size={26} weight="thin" />
@@ -97,27 +166,55 @@ export function MessagesPage({
   }
 
   return (
-    <section className="grid min-h-[calc(100dvh-8rem)] grid-rows-[auto_1fr_auto] overflow-hidden rounded-[1.25rem] bg-[#0d0d10]/92 shadow-[0_28px_90px_rgba(0,0,0,0.28)]">
+    <section className="grid h-full min-h-0 grid-rows-[auto_1fr_auto] overflow-hidden rounded-[1.25rem] bg-[#0d0d10]/92 shadow-[0_28px_90px_rgba(0,0,0,0.28)]">
       <header className="flex items-center justify-between border-b border-white/8 px-5 py-4 md:px-7">
         <div className="flex items-center gap-4">
           <div className="grid h-11 w-11 place-items-center rounded-xl bg-white/[0.06] text-white/75">
             <Waveform size={23} weight="duotone" />
           </div>
           <div>
-            <h1 className="text-[1.05rem] font-semibold tracking-[-0.015em] text-white">{title}</h1>
+            <h1 className="text-[1.05rem] font-semibold tracking-[-0.015em] text-white">
+              {title}
+            </h1>
             <p className="mt-0.5 text-xs text-white/45">{subtitle}</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          {editor ? <button aria-label="编辑角色" className="grid h-9 w-9 place-items-center rounded-lg text-white/45 transition hover:bg-white/[0.05] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white active:translate-y-px" type="button" onClick={() => { setEditError(null); setIsEditOpen(true); }}><PencilSimple size={17} /></button> : null}
-          <button aria-label="删除会话" className="grid h-9 w-9 place-items-center rounded-lg text-white/35 transition hover:bg-red-400/10 hover:text-red-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-300 active:translate-y-px disabled:opacity-40" disabled={isDeletingConversation} type="button" onClick={deleteConversation}><Trash size={17} /></button>
+          {editor ? (
+            <button
+              aria-label="编辑角色"
+              className="grid h-9 w-9 place-items-center rounded-lg text-white/45 transition hover:bg-white/[0.05] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white active:translate-y-px"
+              type="button"
+              onClick={() => {
+                setEditError(null);
+                setIsEditOpen(true);
+              }}
+            >
+              <PencilSimple size={17} />
+            </button>
+          ) : null}
+          <button
+            aria-label="删除会话"
+            className="grid h-9 w-9 place-items-center rounded-lg text-white/35 transition hover:bg-red-400/10 hover:text-red-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-300 active:translate-y-px disabled:opacity-40"
+            disabled={isDeletingConversation}
+            type="button"
+            onClick={deleteConversation}
+          >
+            <Trash size={17} />
+          </button>
         </div>
       </header>
 
       <main
         ref={mainRef}
-        className="flex flex-col gap-5 overflow-y-auto px-5 py-7 no-scrollbar md:px-9"
+        className="flex min-h-0 flex-col gap-5 overflow-y-auto px-5 py-7 no-scrollbar md:px-9"
+        onScroll={handleMessageScroll}
       >
+        {isLoadingOlder ? (
+          <div className="mb-4 flex justify-center text-xs text-white/32">
+            加载更早消息…
+          </div>
+        ) : null}
         {prologueHtml ? (
           <iframe
             className="max-h-[38dvh] min-h-64 w-full rounded-xl border border-white/8 bg-transparent"
@@ -126,28 +223,29 @@ export function MessagesPage({
             title={`${title} 的序引`}
           />
         ) : null}
-        {visibleMessages.map((message) => (
-          <MessageBubble
-            key={message.id}
-            message={{
-              ...message,
-              status:
-                rollingBackMessageId === message.id ? "回溯中" : message.status,
-            }}
-            onRetry={retryFailedMessage}
-            onRollback={canRollback ? rollbackConversation : undefined}
-          />
-        ))}
-        {isSending ? (
-          <div className="flex items-center gap-3 self-start">
-            <div className="h-8 w-8 rounded-full border border-white/10 bg-white/[0.04]" />
-            <div className="flex h-8 items-center gap-1.5">
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-white/35" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-white/35 [animation-delay:150ms]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-white/35 [animation-delay:300ms]" />
-            </div>
-          </div>
-        ) : null}
+        <div className="flex flex-col gap-5">
+          {visibleMessages.map((message, index) => {
+            const previous = visibleMessages[index - 1];
+            const showTime = shouldShowMessageTime(
+              message.createdAt,
+              previous?.createdAt,
+            );
+            return (
+              <Fragment key={message.id}>
+                {showTime && message.createdAt > 0 ? (
+                  <div className="self-center text-[11px] tabular-nums text-white/32">
+                    {formatConversationTime(message.createdAt)}
+                  </div>
+                ) : null}
+                <MessageBubble
+                  message={message}
+                  onRetry={retryFailedMessage}
+                  onRollback={canRollback ? rollbackConversation : undefined}
+                />
+              </Fragment>
+            );
+          })}
+        </div>
         {error ? (
           <div className="self-center rounded-full border border-red-400/20 px-4 py-2 text-xs text-red-200/80">
             {error}
@@ -159,12 +257,17 @@ export function MessagesPage({
         <div className="pointer-events-none absolute inset-x-0 bottom-full h-16 bg-gradient-to-t from-[#0d0d10] to-transparent" />
         <form
           className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#121216] p-2 shadow-[0_14px_38px_rgba(0,0,0,0.22)] transition focus-within:border-white/30"
-          onSubmit={sendMessage}
+          onSubmit={(event) => {
+            void sendMessage(event);
+            window.requestAnimationFrame(() =>
+              messageInputRef.current?.focus(),
+            );
+          }}
         >
           <input
+            ref={messageInputRef}
             aria-label={`给 ${title} 发消息`}
             className="min-w-0 flex-1 border-none bg-transparent px-3 py-2 text-sm text-white outline-none placeholder:text-white/32"
-            disabled={isSending}
             placeholder="写下消息，Enter 发送"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
@@ -727,22 +830,23 @@ function toBubbleMessage(
   return {
     id: message.id,
     from: message.role === "user" ? "me" : "agent",
-    text: message.content.text ?? "",
-    status:
+    text: message.contentType === "text" ? (message.content.text ?? "") : "",
+    createdAt: message.createdAt,
+    deliveryState:
       message.syncStatus === "pending"
         ? "sending"
-        : message.status === "pending" && message.role === "assistant"
-          ? "typing"
-          : message.status === "failed"
-            ? "failed"
-            : undefined,
+        : message.role === "user" && message.status === "failed"
+          ? "failed"
+          : undefined,
     kind:
       message.contentType === "voice"
         ? "voice"
         : message.contentType === "image"
           ? "image"
-          : undefined,
+          : "text",
     mediaUrl: message.content.mediaUrl,
+    transcript:
+      message.contentType === "voice" ? message.content.text : undefined,
     canRollback,
   };
 }

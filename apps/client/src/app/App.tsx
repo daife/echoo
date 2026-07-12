@@ -89,10 +89,7 @@ export function App() {
       })
       .catch(async (error) => {
         if (cancelled) return;
-        if (
-          error instanceof Error &&
-          error.message === "请重新登录。"
-        ) {
+        if (error instanceof Error && error.message === "请重新登录。") {
           await auth.signOut();
           setView("auth");
         }
@@ -277,7 +274,11 @@ export function App() {
       </header>
 
       <div
-        className={`relative z-10 mx-auto grid min-h-[100dvh] max-w-[1440px] grid-cols-1 px-5 pb-28 pt-24 md:gap-6 md:px-16 md:pb-8 ${
+        className={`relative z-10 mx-auto grid max-w-[1440px] grid-cols-1 px-5 pb-28 pt-24 md:gap-6 md:px-16 md:pb-8 ${
+          view === "messages"
+            ? "h-[100dvh] min-h-0 overflow-hidden"
+            : "min-h-[100dvh]"
+        } ${
           showConversationRail
             ? "md:grid-cols-[64px_300px_1fr]"
             : "md:grid-cols-[64px_1fr]"
@@ -314,7 +315,11 @@ export function App() {
           />
         ) : null}
 
-        <main className="min-w-0">{ActivePage}</main>
+        <main
+          className={`min-w-0 ${view === "messages" ? "min-h-0 overflow-hidden" : ""}`}
+        >
+          {ActivePage}
+        </main>
       </div>
 
       <nav className="fixed bottom-6 left-1/2 z-50 flex h-16 w-[calc(100%-40px)] max-w-md -translate-x-1/2 items-center justify-around rounded-full border border-white/10 bg-[#09090b]/50 px-3 backdrop-blur-2xl shadow-[0_0_60px_rgba(255,255,255,0.10)] md:hidden">

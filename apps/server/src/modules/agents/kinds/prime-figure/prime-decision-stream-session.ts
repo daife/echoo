@@ -110,9 +110,14 @@ export class PrimeDecisionStreamSession {
     ) {
       this.queueTextDelta(state, event.delta);
     }
-    if (event.complete && event.field === "text") {
+    if (
+      event.complete &&
+      ((state.type === "text" && event.field === "text") ||
+        (state.type === "voice" && event.field === "transcript"))
+    ) {
       this.resolveTextComplete(state);
-      void this.completeTextDelivery(state).catch(() => undefined);
+      if (state.type === "text")
+        void this.completeTextDelivery(state).catch(() => undefined);
     }
     if (event.complete && event.field === "transcript")
       this.maybeFinishVoice(state);
@@ -144,6 +149,7 @@ export class PrimeDecisionStreamSession {
         state.referenceMediaIdsComplete = true;
         this.maybeStartImage(state);
       } else if (action.message.type === "voice") {
+        this.resolveTextComplete(state);
         this.ensureTts(state);
         this.maybeFinishVoice(state);
       } else {
@@ -267,10 +273,12 @@ export class PrimeDecisionStreamSession {
     const predecessor = this.deliveryTail;
     state.revealPromise = (async () => {
       const predecessorCompletedAt = await predecessor;
-      if (index > 0 && state.type === "text") {
+      if (index > 0 && isTimedMessageType(state.type)) {
         await state.textComplete;
         const elapsed = Date.now() - predecessorCompletedAt;
-        const remaining = textMessageGapMs(state.fields.text ?? "") - elapsed;
+        const remaining =
+          textMessageGapMs(state.fields[visibleField(state.type)] ?? "") -
+          elapsed;
         if (remaining > 0) await delay(remaining);
       }
       const now = Date.now();
@@ -511,6 +519,12 @@ function isMessageType(
   value: string | undefined,
 ): value is "text" | "image" | "voice" {
   return value === "text" || value === "image" || value === "voice";
+}
+
+function isTimedMessageType(
+  value: StreamedActionState["type"],
+): value is "text" | "voice" {
+  return value === "text" || value === "voice";
 }
 
 function visibleField(type: StreamedActionState["type"]) {

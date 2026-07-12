@@ -16,6 +16,12 @@ export interface AgentRunJob {
   trigger?: "end_user_message" | "mute_ended" | "coalesced_messages";
 }
 
+export interface AgentRunActivity {
+  ownerUserId: string;
+  conversationId: string;
+  active: boolean;
+}
+
 export class AgentRunQueue {
   private running = false;
   private readonly consumer = `${hostname()}:${process.pid}:${createId("msg")}`;
@@ -52,7 +58,10 @@ export class AgentRunQueue {
       .exec();
   }
 
-  async start(handler: (job: AgentRunJob) => Promise<void>) {
+  async start(
+    handler: (job: AgentRunJob) => Promise<void>,
+    onActivity?: (activity: AgentRunActivity) => void,
+  ) {
     if (this.running) return;
     this.running = true;
     const redis = await getRedisWorker();
@@ -93,7 +102,12 @@ export class AgentRunQueue {
               ? { assistantMessageId: entry.message.assistantMessageId }
               : {}),
           };
-          const task = this.handleEntry(job, entry.id, handler).finally(() => {
+          const task = this.handleEntry(
+            job,
+            entry.id,
+            handler,
+            onActivity,
+          ).finally(() => {
             this.inFlight.delete(task);
           });
           this.inFlight.add(task);
@@ -111,10 +125,11 @@ export class AgentRunQueue {
     job: AgentRunJob,
     entryId: string,
     handler: (job: AgentRunJob) => Promise<void>,
+    onActivity?: (activity: AgentRunActivity) => void,
   ) {
     const redis = await getRedis();
     try {
-      await this.process(redis, job, handler);
+      await this.process(redis, job, handler, onActivity);
     } catch (error) {
       if ((job.attempts ?? 0) < 3) {
         await this.enqueue({ ...job, attempts: (job.attempts ?? 0) + 1 });
@@ -132,6 +147,7 @@ export class AgentRunQueue {
     redis: Awaited<ReturnType<typeof getRedis>>,
     job: AgentRunJob,
     handler: (job: AgentRunJob) => Promise<void>,
+    onActivity?: (activity: AgentRunActivity) => void,
   ) {
     if (await redis.exists(this.cancelledKey(job.conversationId))) return;
     const lockKey = `echoo:run-lock:${job.conversationId}`;
@@ -154,6 +170,11 @@ export class AgentRunQueue {
       void renewLock(redis, lockKey, token);
     }, 30_000);
     heartbeat.unref();
+    onActivity?.({
+      ownerUserId: job.ownerUserId,
+      conversationId: job.conversationId,
+      active: true,
+    });
     try {
       let currentJob = job;
       do {
@@ -164,6 +185,11 @@ export class AgentRunQueue {
       } while (job.kind === "prime-figure" && (await redis.getDel(dirtyKey)));
     } finally {
       clearInterval(heartbeat);
+      onActivity?.({
+        ownerUserId: job.ownerUserId,
+        conversationId: job.conversationId,
+        active: false,
+      });
       if ((await redis.get(lockKey)) === token) await redis.del(lockKey);
     }
   }

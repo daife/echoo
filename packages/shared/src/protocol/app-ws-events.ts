@@ -2,6 +2,12 @@ import type { Message } from "../types/message.js";
 
 export type AppWsServerEvent =
   | {
+      type: "conversation.agent_activity";
+      conversationId: string;
+      active: boolean;
+      updatedAt: number;
+    }
+  | {
       type: "message.created";
       message: Message;
     }

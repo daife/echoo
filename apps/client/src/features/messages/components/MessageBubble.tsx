@@ -1,21 +1,26 @@
-import { ArrowCounterClockwise, Waveform } from "@phosphor-icons/react";
+import {
+  ArrowCounterClockwise,
+  SpinnerGap,
+  TextAa,
+  WarningCircle,
+  Waveform,
+} from "@phosphor-icons/react";
 import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { useEffect, useRef, useState } from "react";
-import {
-  streamingAudioPlayer,
-  type StreamingAudioState,
-} from "../streamingAudioPlayer";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { sanitizeVoiceTranscript } from "../messagePresentation";
 
 export interface MessageBubbleModel {
   id: string;
   from: string;
   text: string;
-  status?: string;
-  kind?: string;
+  createdAt: number;
+  deliveryState?: "sending" | "failed";
+  kind?: "text" | "image" | "voice";
   mediaUrl?: string;
+  transcript?: string;
   canRollback?: boolean;
 }
 
@@ -29,14 +34,20 @@ export function MessageBubble({
   onRollback?: (messageId: string) => void;
 }) {
   const mine = message.from === "me";
-  const canRetry = mine && message.status === "failed" && onRetry;
-  const canRollback = Boolean(message.canRollback && onRollback);
-  const [isActionOpen, setIsActionOpen] = useState(false);
-  const pressTimerRef = useRef<number | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const [streamingAudio, setStreamingAudio] = useState<StreamingAudioState>(
-    () => streamingAudioPlayer.getState(message.id),
+  const canRetry = mine && message.deliveryState === "failed" && onRetry;
+  const cleanTranscript = useMemo(
+    () => sanitizeVoiceTranscript(message.transcript ?? ""),
+    [message.transcript],
   );
+  const canShowTranscript =
+    message.kind === "voice" && Boolean(cleanTranscript);
+  const canRollback = Boolean(message.canRollback && onRollback);
+  const hasActions = canRollback || canShowTranscript;
+  const [isActionOpen, setIsActionOpen] = useState(false);
+  const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
+  const pressTimerRef = useRef<number | null>(null);
+  const didLongPressRef = useRef(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   const clearPressTimer = () => {
     if (pressTimerRef.current !== null) {
@@ -48,42 +59,35 @@ export function MessageBubble({
   useEffect(() => clearPressTimer, []);
 
   useEffect(() => {
-    setStreamingAudio(streamingAudioPlayer.getState(message.id));
-    return streamingAudioPlayer.subscribe(() =>
-      setStreamingAudio(streamingAudioPlayer.getState(message.id)),
-    );
-  }, [message.id]);
-
-  useEffect(() => {
     if (!isActionOpen) return;
-
     const closeOnOutside = (event: PointerEvent) => {
       if (menuRef.current?.contains(event.target as Node)) return;
       setIsActionOpen(false);
     };
-
     document.addEventListener("pointerdown", closeOnOutside);
     return () => document.removeEventListener("pointerdown", closeOnOutside);
   }, [isActionOpen]);
 
   const openActions = () => {
-    if (!canRollback) return;
+    if (!hasActions) return;
+    didLongPressRef.current = true;
     setIsActionOpen(true);
   };
 
   const handlePointerDown = (_event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!canRollback) return;
+    if (!hasActions) return;
+    didLongPressRef.current = false;
     clearPressTimer();
     pressTimerRef.current = window.setTimeout(openActions, 520);
   };
 
   const handleContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!canRollback) return;
+    if (!hasActions) return;
     event.preventDefault();
     openActions();
   };
 
-  const longPressProps = canRollback
+  const longPressProps = hasActions
     ? {
         onPointerDown: handlePointerDown,
         onPointerUp: clearPressTimer,
@@ -93,17 +97,30 @@ export function MessageBubble({
       }
     : {};
 
-  const actionMenu =
-    canRollback && isActionOpen ? (
-      <div
-        ref={menuRef}
-        className={`absolute -top-11 z-20 rounded-xl border border-white/10 bg-[#17171b] p-1.5 shadow-[0_18px_50px_rgba(0,0,0,0.38)] ${
-          mine ? "right-10" : "left-10"
-        }`}
-        onPointerDown={(event) => event.stopPropagation()}
-      >
+  const actionMenu = isActionOpen ? (
+    <div
+      ref={menuRef}
+      className={`absolute -top-12 z-20 flex rounded-xl border border-white/10 bg-[#17171b] p-1.5 shadow-[0_18px_50px_rgba(0,0,0,0.38)] ${
+        mine ? "right-10" : "left-10"
+      }`}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      {canShowTranscript ? (
         <button
-          className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-white/80 transition hover:bg-white/[0.06] hover:text-white active:scale-95"
+          className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium text-white/80 transition hover:bg-white/[0.06] hover:text-white active:scale-95"
+          type="button"
+          onClick={() => {
+            setIsTranscriptOpen((current) => !current);
+            setIsActionOpen(false);
+          }}
+        >
+          <TextAa size={14} />
+          {isTranscriptOpen ? "收起文字" : "转文字"}
+        </button>
+      ) : null}
+      {canRollback ? (
+        <button
+          className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium text-white/80 transition hover:bg-white/[0.06] hover:text-white active:scale-95"
           type="button"
           onClick={() => {
             setIsActionOpen(false);
@@ -113,11 +130,13 @@ export function MessageBubble({
           <ArrowCounterClockwise size={14} />
           回溯
         </button>
-      </div>
-    ) : null;
+      ) : null}
+    </div>
+  ) : null;
 
   if (message.kind === "image") {
     const mediaUrl = resolveMediaUrl(message.mediaUrl);
+    if (!mediaUrl) return null;
     return (
       <div
         className="relative flex max-w-[85%] items-start gap-3 self-start md:max-w-[70%]"
@@ -125,130 +144,171 @@ export function MessageBubble({
       >
         {actionMenu}
         <div className="mt-1 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
-        <div className="flex max-w-[360px] flex-col gap-2 overflow-hidden rounded-xl bg-white/[0.035] p-2 text-white/82">
-          {mediaUrl ? (
-            <img
-              className="max-h-[480px] w-full rounded-xl object-cover"
-              src={mediaUrl}
-              alt={message.text || "角色发送的图片"}
-            />
-          ) : (
-            <div className="flex aspect-[3/4] w-[240px] max-w-full items-center justify-center rounded-xl bg-white/[0.04] text-xs text-white/35">
-              {message.status === "typing" ? "正在生成图片…" : "图片生成失败"}
-            </div>
-          )}
-          {message.text ? (
-            <p className="px-1 pb-1 text-xs leading-5 text-white/55">
-              {message.text}
-            </p>
-          ) : null}
-        </div>
+        <img
+          className="max-h-[480px] max-w-[360px] rounded-xl object-cover"
+          src={mediaUrl}
+          alt="角色发送的图片"
+        />
       </div>
     );
   }
 
   if (message.kind === "voice") {
     const mediaUrl = resolveMediaUrl(message.mediaUrl);
+    if (!mediaUrl) return null;
     return (
       <div
-        className="relative flex max-w-[85%] items-center gap-3 self-start md:max-w-[70%]"
+        className="relative flex max-w-[85%] items-start gap-3 self-start md:max-w-[70%]"
         {...longPressProps}
       >
         {actionMenu}
-        <div className="h-7 w-1 rounded-full bg-white/25" />
-        <div className="flex min-w-0 flex-col gap-2 py-2 text-white">
-          <button
-            className="flex items-center gap-3 text-left disabled:cursor-default"
-            type="button"
-            disabled={!streamingAudio.playable || Boolean(mediaUrl)}
-            onClick={() => streamingAudioPlayer.toggle(message.id)}
-            aria-label={streamingAudio.playing ? "暂停语音" : "播放语音"}
-          >
-            <Waveform size={23} weight="duotone" />
-            <div className="flex items-center gap-1">
-              {[16, 24, 12, 20, 8].map((height, index) => (
-                <span
-                  key={index}
-                  className="w-1 rounded-full bg-white/70"
-                  style={{ height }}
-                />
-              ))}
-            </div>
-            <span className="text-xs leading-5 text-white/55">
-              {message.text ||
-                (streamingAudio.playing
-                  ? "正在播放…"
-                  : streamingAudio.playable
-                    ? "点击播放（接收中）"
-                    : message.status === "typing"
-                      ? "正在生成语音…"
-                      : "语音")}
-            </span>
-          </button>
-          {mediaUrl ? (
-            <audio
-              className="h-8 w-[260px] max-w-full"
-              controls
-              preload="metadata"
-              src={mediaUrl}
-            />
-          ) : null}
-        </div>
+        <div className="mt-3 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
+        <VoiceBubble
+          mediaUrl={mediaUrl}
+          transcript={isTranscriptOpen ? cleanTranscript : undefined}
+          suppressNextClickRef={didLongPressRef}
+        />
       </div>
     );
   }
 
   return (
     <div
-      className={`relative flex max-w-[85%] items-start gap-3 md:max-w-[70%] ${mine ? "self-end" : "self-start"}`}
+      className={`relative flex max-w-[85%] items-end gap-2 md:max-w-[70%] ${
+        mine ? "self-end" : "self-start"
+      }`}
       {...longPressProps}
     >
       {actionMenu}
-      {!mine ? (
-        <div className="mt-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
-      ) : null}
-      {canRetry ? (
-        <button
-          className="mt-1 rounded-full border border-red-300/25 px-3 py-1.5 text-[11px] font-medium text-red-100/80 transition hover:border-red-200/45 hover:text-red-50 active:scale-95"
-          type="button"
-          onClick={() => onRetry(message.id)}
-        >
-          重试
-        </button>
-      ) : null}
+      {mine ? (
+        <DeliveryIndicator
+          state={message.deliveryState}
+          canRetry={Boolean(canRetry)}
+          onRetry={() => onRetry?.(message.id)}
+        />
+      ) : (
+        <div className="mb-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
+      )}
       <div
-        className={`flex flex-col gap-1 ${mine ? "items-end" : "items-start"}`}
+        className={`rounded-xl px-4 py-3 text-sm leading-6 ${
+          mine
+            ? message.deliveryState === "failed"
+              ? "border border-red-300/20 bg-red-400/[0.08] text-red-50"
+              : "bg-white/[0.09] text-white"
+            : "bg-white/[0.035] text-white/82"
+        }`}
       >
-        <div
-          className={`rounded-xl px-4 py-3 text-sm leading-6 ${
-            mine
-              ? message.status === "failed"
-                ? "border border-red-300/20 bg-red-400/[0.08] text-red-50"
-                : "bg-white/[0.09] text-white"
-              : "bg-white/[0.035] text-white/82"
-          }`}
-        >
-          {message.status === "typing" && !message.text ? (
-            <div className="flex h-6 items-center gap-1.5">
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-white/35" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-white/35 [animation-delay:150ms]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-white/35 [animation-delay:300ms]" />
-            </div>
-          ) : (
-            message.text
-          )}
-        </div>
-        {message.status ? (
-          <span className="mr-1 text-[10px] text-white/30">
-            {formatMessageStatus(message.status)}
-          </span>
-        ) : null}
+        {message.text}
       </div>
       {mine ? (
-        <div className="mt-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
+        <div className="mb-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
       ) : null}
     </div>
   );
+}
+
+function VoiceBubble({
+  mediaUrl,
+  transcript,
+  suppressNextClickRef,
+}: {
+  mediaUrl: string;
+  transcript?: string;
+  suppressNextClickRef: React.MutableRefObject<boolean>;
+}) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [duration, setDuration] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  useEffect(() => {
+    setDuration(0);
+    setIsPlaying(false);
+  }, [mediaUrl]);
+
+  const toggle = () => {
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      return;
+    }
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) void audio.play().catch(() => undefined);
+    else audio.pause();
+  };
+
+  const seconds = duration > 0 ? Math.max(1, Math.round(duration)) : null;
+  const width = Math.min(280, Math.max(148, 142 + (seconds ?? 0) * 3));
+
+  return (
+    <div className="min-w-0">
+      <button
+        className="flex h-12 items-center gap-3 rounded-xl bg-white/[0.055] px-4 text-left text-white transition hover:bg-white/[0.075] active:scale-[0.99]"
+        style={{ width }}
+        type="button"
+        aria-label={isPlaying ? "暂停语音" : "播放语音"}
+        onClick={toggle}
+      >
+        <Waveform
+          size={23}
+          weight={isPlaying ? "fill" : "duotone"}
+          className={isPlaying ? "animate-pulse text-white" : "text-white/75"}
+        />
+        <span className="ml-auto text-xs tabular-nums text-white/48">
+          {seconds ? `${seconds}″` : "语音"}
+        </span>
+      </button>
+      <audio
+        ref={audioRef}
+        className="hidden"
+        preload="metadata"
+        src={mediaUrl}
+        onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => setIsPlaying(false)}
+      />
+      {transcript ? (
+        <p className="mt-2 max-w-[320px] rounded-xl bg-white/[0.035] px-3.5 py-2.5 text-sm leading-6 text-white/72">
+          {transcript}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function DeliveryIndicator({
+  state,
+  canRetry,
+  onRetry,
+}: {
+  state?: "sending" | "failed";
+  canRetry: boolean;
+  onRetry: () => void;
+}) {
+  if (state === "sending") {
+    return (
+      <span
+        className="mb-1 grid h-7 w-7 place-items-center text-white/38"
+        aria-label="发送中"
+      >
+        <SpinnerGap className="animate-spin" size={16} />
+      </span>
+    );
+  }
+  if (state === "failed") {
+    return (
+      <button
+        className="mb-1 grid h-7 w-7 place-items-center rounded-full text-red-300/80 transition hover:bg-red-400/10 hover:text-red-200 disabled:cursor-default"
+        type="button"
+        disabled={!canRetry}
+        aria-label="发送失败，点击重试"
+        onClick={onRetry}
+      >
+        <WarningCircle size={18} weight="fill" />
+      </button>
+    );
+  }
+  return null;
 }
 
 function resolveMediaUrl(mediaUrl?: string) {
@@ -257,11 +317,4 @@ function resolveMediaUrl(mediaUrl?: string) {
   const apiBase =
     import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787/api";
   return new URL(mediaUrl, new URL(apiBase).origin).toString();
-}
-
-function formatMessageStatus(status: string) {
-  if (status === "sending") return "发送中";
-  if (status === "typing") return "输入中";
-  if (status === "failed") return "失败";
-  return status;
 }

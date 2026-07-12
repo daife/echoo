@@ -6,7 +6,8 @@ export function createPendingTextMessage(input: {
   clientMessageId?: string;
   now?: number;
 }): LocalMessage {
-  const clientMessageId = input.clientMessageId ?? `client_${crypto.randomUUID()}`;
+  const clientMessageId =
+    input.clientMessageId ?? `client_${crypto.randomUUID()}`;
   const now = input.now ?? Date.now();
 
   return {
@@ -19,37 +20,58 @@ export function createPendingTextMessage(input: {
     status: "pending",
     createdAt: now,
     updatedAt: now,
-    syncStatus: "pending"
+    syncStatus: "pending",
   };
 }
 
-export function mergeLocalMessage(messages: LocalMessage[], message: LocalMessage) {
-  return [...messages.filter((item) => item.id !== message.id), message].sort((left, right) =>
-    left.createdAt === right.createdAt ? left.id.localeCompare(right.id) : left.createdAt - right.createdAt
+export function mergeLocalMessage(
+  messages: LocalMessage[],
+  message: LocalMessage,
+) {
+  return [...messages.filter((item) => item.id !== message.id), message].sort(
+    (left, right) =>
+      left.createdAt === right.createdAt
+        ? left.id.localeCompare(right.id)
+        : left.createdAt - right.createdAt,
   );
 }
 
-export function mergeIncomingMessage(messages: LocalMessage[], message: LocalMessage) {
+export function mergeIncomingMessage(
+  messages: LocalMessage[],
+  message: LocalMessage,
+) {
   const existing = messages.find((item) => isSameLogicalMessage(item, message));
   const incomingText = message.content.text ?? "";
   const existingText = existing?.content.text ?? "";
-  const messagesWithoutExisting = messages.filter((item) => !isSameLogicalMessage(item, message));
+  const messagesWithoutExisting = messages.filter(
+    (item) => !isSameLogicalMessage(item, message),
+  );
 
-  if (existing && message.status === "pending" && !incomingText && existingText) {
+  if (
+    existing &&
+    message.status === "pending" &&
+    !incomingText &&
+    existingText
+  ) {
     return mergeLocalMessage(messagesWithoutExisting, {
       ...message,
       content: {
         ...message.content,
-        text: existingText
+        text: existingText,
       },
-      updatedAt: Math.max(existing.updatedAt, message.updatedAt)
+      updatedAt: Math.max(existing.updatedAt, message.updatedAt),
     });
   }
 
   return mergeLocalMessage(messagesWithoutExisting, message);
 }
 
-export function appendMessageDelta(messages: LocalMessage[], messageId: string, delta: string, updatedAt: number) {
+export function appendMessageDelta(
+  messages: LocalMessage[],
+  messageId: string,
+  delta: string,
+  updatedAt: number,
+) {
   return messages.map((message) => {
     if (message.id !== messageId) return message;
 
@@ -57,10 +79,10 @@ export function appendMessageDelta(messages: LocalMessage[], messageId: string, 
       ...message,
       content: {
         ...message.content,
-        text: `${message.content.text ?? ""}${delta}`
+        text: `${message.content.text ?? ""}${delta}`,
       },
       status: "pending" as const,
-      updatedAt
+      updatedAt,
     };
   });
 }
@@ -68,19 +90,39 @@ export function appendMessageDelta(messages: LocalMessage[], messageId: string, 
 export function mergeSentTextMessageResult(
   messages: LocalMessage[],
   clientMessageId: string,
-  result: { message: Message; assistantMessage?: Message }
+  result: { message: Message; assistantMessage?: Message },
 ) {
   const withUserMessage = mergeLocalMessage(
     messages.filter((message) => message.id !== clientMessageId),
     {
       ...result.message,
-      syncStatus: "synced"
-    }
+      syncStatus: "synced",
+    },
   );
 
   return result.assistantMessage
-    ? mergeIncomingMessage(withUserMessage, { ...result.assistantMessage, syncStatus: "synced" })
+    ? mergeIncomingMessage(withUserMessage, {
+        ...result.assistantMessage,
+        syncStatus: "synced",
+      })
     : withUserMessage;
+}
+
+export function markLocalMessageFailed(
+  messages: LocalMessage[],
+  messageId: string,
+  updatedAt = Date.now(),
+) {
+  return messages.map((message) =>
+    message.id === messageId || message.clientMessageId === messageId
+      ? {
+          ...message,
+          status: "failed" as const,
+          syncStatus: "failed" as const,
+          updatedAt,
+        }
+      : message,
+  );
 }
 
 function isSameLogicalMessage(left: LocalMessage, right: LocalMessage) {

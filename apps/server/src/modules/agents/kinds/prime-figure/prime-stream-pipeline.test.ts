@@ -202,6 +202,108 @@ test("prime non-text messages do not add a typing interval", async () => {
   }
 });
 
+test("prime voice messages use transcript length minus elapsed time", async () => {
+  const saved: Array<{ contentType: string; createdAt: number }> = [];
+  const previousTypingSpeed = process.env.PRIME_TYPING_CHARS_PER_MINUTE;
+  process.env.PRIME_TYPING_CHARS_PER_MINUTE = "600";
+  try {
+    const session = createSession({
+      tts: {
+        createStream() {
+          return {
+            write() {},
+            async finish() {
+              return { audio: Buffer.from("voice"), mimeType: "audio/mpeg" };
+            },
+          };
+        },
+      },
+      messages: {
+        async save(message: { contentType: string; createdAt: number }) {
+          saved.push({
+            contentType: message.contentType,
+            createdAt: message.createdAt,
+          });
+          return message;
+        },
+      },
+    });
+    const decision = {
+      rationale: "test",
+      figureMood: "calm",
+      variables: {},
+      actions: [
+        { type: "send_message", message: { type: "text", text: "第一条" } },
+        {
+          type: "send_message",
+          message: { type: "voice", transcript: "第二条语音" },
+        },
+      ],
+    } as PrimeFigureDecision;
+    session.handleField({
+      actionIndex: 0,
+      field: "type",
+      delta: "text",
+      complete: false,
+    });
+    session.handleField({
+      actionIndex: 0,
+      field: "type",
+      delta: "",
+      complete: true,
+    });
+    session.handleField({
+      actionIndex: 0,
+      field: "text",
+      delta: "第一条",
+      complete: false,
+    });
+    session.handleField({
+      actionIndex: 0,
+      field: "text",
+      delta: "",
+      complete: true,
+    });
+    await tick();
+    session.handleField({
+      actionIndex: 1,
+      field: "type",
+      delta: "voice",
+      complete: false,
+    });
+    session.handleField({
+      actionIndex: 1,
+      field: "type",
+      delta: "",
+      complete: true,
+    });
+    session.handleField({
+      actionIndex: 1,
+      field: "transcript",
+      delta: "第二条语音",
+      complete: false,
+    });
+    await wait(350);
+    session.handleField({
+      actionIndex: 1,
+      field: "transcript",
+      delta: "",
+      complete: true,
+    });
+    await session.finalize(decision);
+
+    assert.deepEqual(
+      saved.map((message) => message.contentType),
+      ["text", "voice"],
+    );
+    const elapsed = saved[1]!.createdAt - saved[0]!.createdAt;
+    assert.ok(elapsed >= 450);
+    assert.ok(elapsed < 700);
+  } finally {
+    restoreEnvironment("PRIME_TYPING_CHARS_PER_MINUTE", previousTypingSpeed);
+  }
+});
+
 test("a stale dirty wakeup cannot call the LLM after all end-user messages were handled", async () => {
   let providerAccessed = false;
   const runtime = new PrimeFigureRuntimeService(

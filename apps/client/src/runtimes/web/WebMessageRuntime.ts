@@ -1,6 +1,7 @@
 import type { AppWsServerEvent, Message } from "@echoo/shared";
 import type {
   AuthRuntime,
+  ConversationAgentActivityEvent,
   MessageAudioChunkEvent,
   MessageAudioCompletedEvent,
   MessageAudioFailedEvent,
@@ -20,6 +21,9 @@ export class WebMessageRuntime implements MessageRuntime {
   >();
   private readonly messageCompletedHandlers = new Set<
     (message: Message) => void
+  >();
+  private readonly agentActivityHandlers = new Set<
+    (event: ConversationAgentActivityEvent) => void
   >();
   private readonly audioStartedHandlers = new Set<
     (event: MessageAudioStartedEvent) => void
@@ -67,6 +71,10 @@ export class WebMessageRuntime implements MessageRuntime {
     };
     socket.onmessage = (event) => {
       const payload = JSON.parse(event.data as string) as AppWsServerEvent;
+      if (payload.type === "conversation.agent_activity") {
+        this.agentActivityHandlers.forEach((handler) => handler(payload));
+        return;
+      }
       if (payload.type === "message.created") {
         socket.send(
           JSON.stringify({ type: "ack", messageId: payload.message.id }),
@@ -124,6 +132,13 @@ export class WebMessageRuntime implements MessageRuntime {
   onMessageCompleted(handler: (message: Message) => void): () => void {
     this.messageCompletedHandlers.add(handler);
     return () => this.messageCompletedHandlers.delete(handler);
+  }
+
+  onConversationAgentActivity(
+    handler: (event: ConversationAgentActivityEvent) => void,
+  ): () => void {
+    this.agentActivityHandlers.add(handler);
+    return () => this.agentActivityHandlers.delete(handler);
   }
 
   onMessageAudioStarted(

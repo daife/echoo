@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { Message } from "@echoo/shared";
-import { AgentRunQueue, type AgentRunJob } from "../../infra/redis/run-queue.js";
+import {
+  AgentRunQueue,
+  type AgentRunJob,
+} from "../../infra/redis/run-queue.js";
 import { PrimeFigureRuntimeService } from "../agents/kinds/prime-figure/prime-figure-runtime.service.js";
 import { SliceFigureRuntimeService } from "../agents/kinds/slice-figure/slice-figure-runtime.service.js";
 import { ConversationRepository } from "../conversations/conversation.repository.js";
@@ -44,7 +47,9 @@ export class MessagingService {
     conversationId: string,
     options?: { after?: string | null; before?: string | null; limit?: number },
   ) {
-    if (!(await this.conversations.findByIdForOwner(ownerUserId, conversationId)))
+    if (
+      !(await this.conversations.findByIdForOwner(ownerUserId, conversationId))
+    )
       return null;
     return this.repository.listByConversation(
       ownerUserId,
@@ -116,28 +121,58 @@ export class MessagingService {
       type: "message.created",
       message: assistantMessage,
     });
-    await this.runQueue.enqueue({ ownerUserId: input.ownerUserId,
-      conversationId: input.conversationId, kind: "slice-figure",
-      assistantMessageId: assistantMessage.id });
+    await this.runQueue.enqueue({
+      ownerUserId: input.ownerUserId,
+      conversationId: input.conversationId,
+      kind: "slice-figure",
+      assistantMessageId: assistantMessage.id,
+    });
 
     return { message, assistantMessage };
   }
 
   async processQueuedRun(job: AgentRunJob) {
     if (job.kind === "prime-figure") {
-      await this.primeRuntime.requestDecision({ ownerUserId: job.ownerUserId,
-        conversationId: job.conversationId, trigger: job.trigger });
+      await this.primeRuntime.requestDecision({
+        ownerUserId: job.ownerUserId,
+        conversationId: job.conversationId,
+        trigger: job.trigger,
+      });
       return;
     }
     if (!job.assistantMessageId) return;
     const pending = await this.repository.findByIdInConversation(
-      job.ownerUserId, job.conversationId, job.assistantMessageId);
+      job.ownerUserId,
+      job.conversationId,
+      job.assistantMessageId,
+    );
     if (!pending || pending.status !== "pending") return;
-    await this.streamAssistantReply(job.ownerUserId, job.conversationId, pending);
+    await this.streamAssistantReply(
+      job.ownerUserId,
+      job.conversationId,
+      pending,
+    );
+  }
+
+  publishAgentActivity(input: {
+    ownerUserId: string;
+    conversationId: string;
+    active: boolean;
+  }) {
+    this.appPush.pushToUser(input.ownerUserId, {
+      type: "conversation.agent_activity",
+      conversationId: input.conversationId,
+      active: input.active,
+      updatedAt: Date.now(),
+    });
   }
 
   async markRead(ownerUserId: string, messageId: string, readAt: number) {
-    const updated = await this.repository.markRead(ownerUserId, messageId, readAt);
+    const updated = await this.repository.markRead(
+      ownerUserId,
+      messageId,
+      readAt,
+    );
     if (updated) {
       this.appPush.pushToUser(ownerUserId, {
         type: "message.status_changed",

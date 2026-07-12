@@ -22,7 +22,9 @@ export async function buildApp() {
   const app = Fastify({ logger: true });
   const primeSilenceScheduler = new PrimeFigureSilenceScheduler();
   const runQueue = new AgentRunQueue();
-  const runService = new (await import("./modules/messaging/messaging.service.js")).MessagingService();
+  const runService = new (
+    await import("./modules/messaging/messaging.service.js")
+  ).MessagingService();
 
   await app.register(cors, {
     origin: true,
@@ -33,7 +35,12 @@ export async function buildApp() {
   await app.register(websocket);
   registerAuthDecorators(app);
 
-  app.get("/health", async () => ({ ok: true, name: "echoo-server", storage: "mysql", queue: "redis" }));
+  app.get("/health", async () => ({
+    ok: true,
+    name: "echoo-server",
+    storage: "mysql",
+    queue: "redis",
+  }));
 
   await app.register(registerAuthRoutes, { prefix: "/api/auth" });
   await app.register(registerAgentRoutes, { prefix: "/api/agents" });
@@ -49,8 +56,12 @@ export async function buildApp() {
   app.addHook("onReady", async () => {
     await startRealtimeEventBus();
     primeSilenceScheduler.start();
-    void runQueue.start((job) => runService.processQueuedRun(job)).catch(
-      (error) => app.log.error(error, "Agent run worker stopped"));
+    void runQueue
+      .start(
+        (job) => runService.processQueuedRun(job),
+        (activity) => runService.publishAgentActivity(activity),
+      )
+      .catch((error) => app.log.error(error, "Agent run worker stopped"));
   });
   app.addHook("onClose", async () => {
     primeSilenceScheduler.stop();

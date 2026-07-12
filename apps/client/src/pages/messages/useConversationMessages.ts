@@ -1,16 +1,24 @@
 import type { Agent, LocalMessage } from "@echoo/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { initApp } from "../../app/bootstrap/initApp";
 import { useRuntime } from "../../app/providers/RuntimeProvider";
-import { streamingAudioPlayer } from "../../features/messages/streamingAudioPlayer";
 import {
   appendMessageDelta,
   createPendingTextMessage,
   mergeIncomingMessage,
   mergeLocalMessage,
   mergeSentTextMessageResult,
+  markLocalMessageFailed,
 } from "../../services/localMessageState";
+
+const MESSAGE_PAGE_SIZE = 50;
+
+interface ConversationMessageCache {
+  messages: LocalMessage[];
+  hasOlder: boolean;
+}
 
 interface StreamDisplayBuffer {
   chars: string[];
@@ -29,10 +37,15 @@ export function useConversationMessages({
   onConversationDeleted?: (conversationId: string) => void;
 }) {
   const runtime = useRuntime();
+  const queryClient = useQueryClient();
   const services = useMemo(() => initApp(runtime), [runtime]);
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isAgentActive, setIsAgentActive] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(false);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [hasOlder, setHasOlder] = useState(false);
   const [retryingMessageId, setRetryingMessageId] = useState<string | null>(
     null,
   );
@@ -42,9 +55,16 @@ export function useConversationMessages({
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesRef = useRef<LocalMessage[]>([]);
+  const hasOlderRef = useRef(false);
   const streamBuffersRef = useRef(new Map<string, StreamDisplayBuffer>());
   const conversationId = agent?.conversationId;
+  const activeConversationIdRef = useRef(conversationId);
+  activeConversationIdRef.current = conversationId;
   const canRollback = agent?.type === "slice-figure";
+  const cacheKey = useMemo(
+    () => ["conversation-messages", conversationId] as const,
+    [conversationId],
+  );
 
   const clearStreamBuffers = useCallback(() => {
     streamBuffersRef.current.forEach((buffer) => {
@@ -57,13 +77,84 @@ export function useConversationMessages({
     messagesRef.current = messages;
   }, [messages]);
 
-  const refreshMessages = useCallback(async () => {
-    if (!conversationId) {
-      setMessages([]);
-      return;
+  useEffect(() => {
+    hasOlderRef.current = hasOlder;
+  }, [hasOlder]);
+
+  const refreshMessages = useCallback(
+    async (replace = false, preservePaginationState = false) => {
+      if (!conversationId) {
+        setMessages([]);
+        return;
+      }
+      const latest =
+        await services.messageService.loadLatestConversationMessages(
+          conversationId,
+          MESSAGE_PAGE_SIZE,
+        );
+      if (activeConversationIdRef.current !== conversationId) return;
+      const next = replace
+        ? latest
+        : mergeMessagePages(messagesRef.current, latest);
+      setMessages(next);
+      if (
+        latest.some(
+          (message) =>
+            message.role === "assistant" && message.status === "pending",
+        )
+      ) {
+        setIsAgentActive(true);
+      }
+      const nextHasOlder = preservePaginationState
+        ? hasOlderRef.current
+        : replace
+          ? latest.length === MESSAGE_PAGE_SIZE
+          : hasOlderRef.current || latest.length === MESSAGE_PAGE_SIZE;
+      setHasOlder(nextHasOlder);
+      queryClient.setQueryData<ConversationMessageCache>(cacheKey, {
+        messages: next,
+        hasOlder: nextHasOlder,
+      });
+    },
+    [cacheKey, conversationId, queryClient, services.messageService],
+  );
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!conversationId || isLoadingOlder || !hasOlderRef.current) return;
+    const oldest = messagesRef.current.find((message) =>
+      Boolean(message.id && !message.id.startsWith("client_")),
+    );
+    if (!oldest) return;
+    setIsLoadingOlder(true);
+    try {
+      const older = await services.messageService.loadOlderConversationMessages(
+        conversationId,
+        oldest.id,
+        MESSAGE_PAGE_SIZE,
+      );
+      if (activeConversationIdRef.current !== conversationId) return;
+      const next = mergeMessagePages(older, messagesRef.current);
+      const nextHasOlder = older.length === MESSAGE_PAGE_SIZE;
+      setMessages(next);
+      setHasOlder(nextHasOlder);
+      queryClient.setQueryData<ConversationMessageCache>(cacheKey, {
+        messages: next,
+        hasOlder: nextHasOlder,
+      });
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error ? loadError.message : "加载更早消息失败。",
+      );
+    } finally {
+      setIsLoadingOlder(false);
     }
-    setMessages(await services.messageService.syncConversationMessages(conversationId));
-  }, [conversationId, services.messageService]);
+  }, [
+    cacheKey,
+    conversationId,
+    isLoadingOlder,
+    queryClient,
+    services.messageService,
+  ]);
 
   const scheduleStreamDrain = useCallback((messageId: string) => {
     const buffer = streamBuffersRef.current.get(messageId);
@@ -112,9 +203,6 @@ export function useConversationMessages({
   const enqueueDisplayDelta = useCallback(
     (messageId: string, delta: string) => {
       if (agent?.type === "prime-figure") {
-        setMessages((current) =>
-          appendMessageDelta(current, messageId, delta, Date.now()),
-        );
         return;
       }
       const now = performance.now();
@@ -183,28 +271,50 @@ export function useConversationMessages({
   );
 
   useEffect(() => {
-    if (!conversationId) return;
+    if (!conversationId) {
+      setMessages([]);
+      messagesRef.current = [];
+      setHasOlder(false);
+      hasOlderRef.current = false;
+      setIsAgentActive(false);
+      return;
+    }
 
     let cancelled = false;
+    const cached = queryClient.getQueryData<ConversationMessageCache>(cacheKey);
+    const cachedMessages = cached?.messages ?? [];
+    const cachedHasOlder = cached?.hasOlder ?? false;
+    messagesRef.current = cachedMessages;
+    hasOlderRef.current = cachedHasOlder;
+    setMessages(cachedMessages);
+    setHasOlder(cachedHasOlder);
+    setIsInitialLoading(!cached);
+    setIsAgentActive(false);
     setError(null);
 
-    void refreshMessages()
+    void refreshMessages(false, Boolean(cached))
       .catch((loadError) => {
         if (!cancelled)
           setError(
             loadError instanceof Error ? loadError.message : "加载消息失败。",
           );
+      })
+      .finally(() => {
+        if (!cancelled) setIsInitialLoading(false);
       });
 
     return () => {
       cancelled = true;
+      queryClient.setQueryData<ConversationMessageCache>(cacheKey, {
+        messages: messagesRef.current,
+        hasOlder: hasOlderRef.current,
+      });
     };
-  }, [conversationId, refreshMessages, services.messageService]);
+  }, [cacheKey, conversationId, queryClient, refreshMessages]);
 
   useEffect(() => {
     return () => {
       clearStreamBuffers();
-      streamingAudioPlayer.stopAll();
     };
   }, [clearStreamBuffers, conversationId]);
 
@@ -214,6 +324,9 @@ export function useConversationMessages({
     void runtime.message.startRealtime();
     const unsubscribeCreated = runtime.message.onMessageCreated((message) => {
       if (message.conversationId !== conversationId) return;
+      if (message.role === "assistant" && message.status === "pending") {
+        setIsAgentActive(true);
+      }
       setMessages((current) =>
         mergeIncomingMessage(current, { ...message, syncStatus: "synced" }),
       );
@@ -225,47 +338,32 @@ export function useConversationMessages({
     const unsubscribeCompleted = runtime.message.onMessageCompleted(
       (message) => {
         if (message.conversationId !== conversationId) return;
+        if (agent?.type === "prime-figure") {
+          setMessages((current) =>
+            mergeLocalMessage(current, { ...message, syncStatus: "synced" }),
+          );
+          return;
+        }
         completeStreamedMessage({ ...message, syncStatus: "synced" });
       },
     );
-    const unsubscribeAudioStarted = runtime.message.onMessageAudioStarted(
-      (event) => {
+    const unsubscribeAgentActivity =
+      runtime.message.onConversationAgentActivity((event) => {
         if (event.conversationId !== conversationId) return;
-        streamingAudioPlayer.start(event.messageId, event.mimeType);
-      },
-    );
-    const unsubscribeAudioChunk = runtime.message.onMessageAudioChunk(
-      (event) => {
-        if (event.conversationId !== conversationId) return;
-        streamingAudioPlayer.append(event.messageId, event.dataBase64);
-      },
-    );
-    const unsubscribeAudioCompleted = runtime.message.onMessageAudioCompleted(
-      (event) => {
-        if (event.conversationId !== conversationId) return;
-        streamingAudioPlayer.complete(event.messageId);
-      },
-    );
-    const unsubscribeAudioFailed = runtime.message.onMessageAudioFailed(
-      (event) => {
-        if (event.conversationId !== conversationId) return;
-        streamingAudioPlayer.stop(event.messageId);
-      },
-    );
+        setIsAgentActive(event.active);
+      });
 
     return () => {
       unsubscribeCreated();
       unsubscribeDelta();
       unsubscribeCompleted();
-      unsubscribeAudioStarted();
-      unsubscribeAudioChunk();
-      unsubscribeAudioCompleted();
-      unsubscribeAudioFailed();
+      unsubscribeAgentActivity();
     };
   }, [
     completeStreamedMessage,
     conversationId,
     enqueueDisplayDelta,
+    agent?.type,
     runtime.message,
     services.messageService,
   ]);
@@ -288,6 +386,7 @@ export function useConversationMessages({
     setDraft("");
     setError(null);
     setIsSending(true);
+    setIsAgentActive(true);
     setMessages((current) => [
       ...current.filter(
         (message) =>
@@ -304,14 +403,19 @@ export function useConversationMessages({
         clientMessageId,
         stream: true,
       });
+      if (activeConversationIdRef.current !== conversationId) return;
       setMessages((current) =>
         mergeSentTextMessageResult(current, clientMessageId, result),
       );
     } catch (sendError) {
+      if (activeConversationIdRef.current !== conversationId) return;
       setError(
         sendError instanceof Error ? sendError.message : "发送消息失败。",
       );
-      await refreshMessages();
+      setMessages((current) =>
+        markLocalMessageFailed(current, clientMessageId),
+      );
+      setIsAgentActive(false);
     } finally {
       setIsSending(false);
     }
@@ -343,6 +447,7 @@ export function useConversationMessages({
 
     setError(null);
     setRetryingMessageId(messageId);
+    setIsAgentActive(true);
     setMessages((current) =>
       mergeLocalMessage(
         current.filter((message) => message.id !== messageId),
@@ -357,12 +462,17 @@ export function useConversationMessages({
         clientMessageId,
         stream: true,
       });
+      if (activeConversationIdRef.current !== conversationId) return;
       setMessages((current) =>
         mergeSentTextMessageResult(current, clientMessageId, result),
       );
     } catch (retryError) {
+      if (activeConversationIdRef.current !== conversationId) return;
       setError(retryError instanceof Error ? retryError.message : "重试失败。");
-      await refreshMessages();
+      setMessages((current) =>
+        markLocalMessageFailed(current, clientMessageId),
+      );
+      setIsAgentActive(false);
     } finally {
       setRetryingMessageId(null);
     }
@@ -380,7 +490,11 @@ export function useConversationMessages({
     try {
       clearStreamBuffers();
       await services.messageService.deleteConversation(conversationId);
-      setMessages([]);
+      queryClient.removeQueries({ queryKey: cacheKey, exact: true });
+      if (activeConversationIdRef.current === conversationId) {
+        setMessages([]);
+        messagesRef.current = [];
+      }
       onConversationDeleted?.(conversationId);
     } catch (deleteError) {
       setError(
@@ -402,7 +516,7 @@ export function useConversationMessages({
         conversationId,
         messageId,
       );
-      await refreshMessages();
+      await refreshMessages(true);
     } catch (rollbackError) {
       setError(
         rollbackError instanceof Error ? rollbackError.message : "回溯失败。",
@@ -417,11 +531,16 @@ export function useConversationMessages({
     draft,
     setDraft,
     isSending,
+    isAgentActive,
+    isInitialLoading,
+    isLoadingOlder,
+    hasOlder,
     rollingBackMessageId,
     isDeletingConversation,
     error,
     canRollback,
     sendMessage,
+    loadOlderMessages,
     retryFailedMessage,
     deleteConversation,
     rollbackConversation,
@@ -448,4 +567,13 @@ function getStreamDrainDelay(buffer: StreamDisplayBuffer) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function mergeMessagePages(...pages: LocalMessage[][]) {
+  return pages.reduce<LocalMessage[]>((current, page) => {
+    return page.reduce(
+      (merged, message) => mergeIncomingMessage(merged, message),
+      current,
+    );
+  }, []);
 }
