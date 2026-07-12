@@ -24,10 +24,10 @@ export class MessageRepository {
   async listAfter(ownerUserId: string, after?: string | null, conversationId?: string | null, limit = 500) {
     const rows = await queryRows<MessageRow>(
       `SELECT messages.* FROM messages
-       LEFT JOIN messages cursor ON cursor.id = ? AND cursor.owner_user_id = ?
+       LEFT JOIN messages cursor_message ON cursor_message.id = ? AND cursor_message.owner_user_id = ?
        WHERE messages.owner_user_id = ?
          AND (? IS NULL OR messages.conversation_id = ?)
-         AND (cursor.seq IS NULL OR messages.seq > cursor.seq)
+         AND (cursor_message.seq IS NULL OR messages.seq > cursor_message.seq)
        ORDER BY messages.seq ASC LIMIT ?`,
       [after ?? null, ownerUserId, ownerUserId, conversationId ?? null,
         conversationId ?? null, clampLimit(limit, 500)],
@@ -43,10 +43,10 @@ export class MessageRepository {
     const order = options?.before || !options?.after ? "DESC" : "ASC";
     const rows = await queryRows<MessageRow>(
       `SELECT messages.* FROM messages
-       LEFT JOIN messages cursor ON cursor.id = ? AND cursor.conversation_id = ?
+       LEFT JOIN messages cursor_message ON cursor_message.id = ? AND cursor_message.conversation_id = ?
        WHERE messages.owner_user_id = ? AND messages.conversation_id = ?
          AND messages.status != 'failed'
-         AND (? IS NULL OR cursor.seq IS NULL OR messages.seq ${direction} cursor.seq)
+         AND (? IS NULL OR cursor_message.seq IS NULL OR messages.seq ${direction} cursor_message.seq)
        ORDER BY messages.seq ${order} LIMIT ?`,
       [cursor ?? null, conversationId, ownerUserId, conversationId, cursor ?? null, limit],
     );
@@ -82,9 +82,9 @@ export class MessageRepository {
 
   async findNextAssistantMessage(ownerUserId: string, conversationId: string, after: Message) {
     const row = await queryOne<MessageRow>(
-      `SELECT messages.* FROM messages JOIN messages cursor ON cursor.id = ?
+      `SELECT messages.* FROM messages JOIN messages cursor_message ON cursor_message.id = ?
        WHERE messages.owner_user_id = ? AND messages.conversation_id = ?
-         AND messages.role = 'assistant' AND messages.seq > cursor.seq
+         AND messages.role = 'assistant' AND messages.seq > cursor_message.seq
        ORDER BY messages.seq ASC LIMIT 1`,
       [after.id, ownerUserId, conversationId],
     );
@@ -101,8 +101,8 @@ export class MessageRepository {
 
   async deleteAfterMessage(ownerUserId: string, conversationId: string, retainedThrough: Message) {
     const result = await execute(
-      `DELETE messages FROM messages JOIN messages cursor ON cursor.id = ?
-       WHERE messages.owner_user_id = ? AND messages.conversation_id = ? AND messages.seq > cursor.seq`,
+      `DELETE messages FROM messages JOIN messages cursor_message ON cursor_message.id = ?
+       WHERE messages.owner_user_id = ? AND messages.conversation_id = ? AND messages.seq > cursor_message.seq`,
       [retainedThrough.id, ownerUserId, conversationId],
     );
     return result.affectedRows;
