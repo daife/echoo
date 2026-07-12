@@ -281,6 +281,9 @@ export type PrimeFigureAction =
     }
   | {
       type: "silence";
+    }
+  | {
+      type: "mute";
       revisitAfterMinutes: number;
     };
 
@@ -305,7 +308,8 @@ export interface PrimeFigureDecision {
         Extract<PrimeFigureAction, { type: "send_message" }>,
         ...Array<Extract<PrimeFigureAction, { type: "send_message" }>>,
       ]
-    | [Extract<PrimeFigureAction, { type: "silence" }>];
+    | [Extract<PrimeFigureAction, { type: "silence" }>]
+    | [Extract<PrimeFigureAction, { type: "mute" }>];
 }
 
 export interface CreateAgentResponse {

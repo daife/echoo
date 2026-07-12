@@ -6,36 +6,88 @@
 
 ```mermaid
 flowchart TD
-  A["end_user<br/>发送消息"] --> B["MessagingService<br/>入队 prime-figure"]
-  S["silence 到期<br/>且有排队消息"] --> B2["SilenceScheduler 入队<br/>prime-figure<br/>trigger=silence_ended"]
-  B --> C["processQueuedRun<br/>调用 requestDecision"]
+  A["end_user 消息写入数据库<br/>created_at = 接收时的 Date.now()"] --> B["入队 prime-figure<br/>trigger=end_user_message"]
+  S["mute 到期<br/>且 hadQueuedMessages=true"] --> B2["入队 prime-figure<br/>trigger=mute_ended"]
+  B --> C["worker 读取 Redis Stream 任务"]
   B2 --> C
-  C --> D["加载 agent/state<br/>检查 silenceUntilMs"]
-  D --> E["等待 PRIME_MESSAGE_COALESCE_MS<br/>静默窗口"]
-  E --> F["读取 recent timeline<br/>和未处理的 end_user 消息"]
-  F --> G["buildPrimeChatMessages<br/>构造 system/user 消息"]
-  G --> H["第一次<br/>chat completion"]
-  H --> I{"模型调用 search_recall?"}
-  I -- 否 --> K["解析 JSON<br/>决策"]
-  I -- 是 --> J["追加 assistant tool_calls<br/>和 tool 结果 JSON"]
-  J --> J2["第二次 chat completion<br/>toolChoice=none<br/>memoryWrites minItems=1"]
-  J2 --> K
-  K --> L["stream session<br/>finalize"]
-  L --> M{"有 image action?"}
-  M -- 是 --> N["把 generationPrompt 和参考图<br/>发送给 OpenRouter 图像模型"]
-  M -- 否 --> O["执行动作<br/>写消息/状态/记忆/日志"]
-  N --> O
-  L --> P{"有 voice action?"}
-  P -- 是 --> Q["把 transcript 流式发送给<br/>Fish Audio TTS"]
-  P -- 否 --> O
+  C --> D{"取得当前会话锁?"}
+  D -- 否 --> D1["设置 run-dirty=1<br/>当前任务结束并确认"]
+  D -- 是 --> E["删除旧 dirty 标记<br/>调用 requestDecision"]
+  E --> F["加载 agent 和 state"]
+  F --> G{"silenceUntilMs<br/>仍晚于当前时间?"}
+  G -- 是 --> R["返回 null"]
+  G -- 否 --> H["等待最新用户消息<br/>连续静默 PRIME_MESSAGE_COALESCE_MS"]
+  H --> I["读取 recent timeline<br/>及 lastHandledEndUserSeq 之后的用户消息"]
+  I --> I2{"存在未处理用户消息?"}
+  I2 -- 否 --> R
+  I2 -- 是 --> J["冻结本轮输入边界<br/>构造 system/user 消息"]
+  J --> K["第一次 chat completion<br/>允许调用 search_recall"]
+  K --> L{"模型调用 search_recall?"}
+  L -- 是 --> L1["追加 assistant tool_calls<br/>及 tool 结果"]
+  L1 --> L2["第二次 chat completion<br/>toolChoice=none"]
+  L -- 否 --> M["取得最终决策响应"]
+  L2 --> M
+  M -. "流式期间" .-> V["voice transcript delta<br/>写入 Fish Audio TTS"]
+  M -. "提示词完整后" .-> W["image generationPrompt 和参考图<br/>发送给 OpenRouter"]
+  M --> N["解析并校验 JSON<br/>finalize 等待媒体任务"]
+  V --> N
+  W --> N
+  N --> O["执行动作并持久化<br/>消息/状态/记忆/标注/日志"]
+  O --> P["推进 lastHandledEndUserSeq<br/>到本轮输入边界"]
+  P --> Q{"取出 run-dirty<br/>是否得到标记?"}
+  R --> Q
+  Q -- 是 --> Q1["trigger=coalesced_messages"]
+  Q1 --> E
+  Q -- 否 --> Q2["释放会话锁<br/>本次队列处理结束"]
 ```
 
-入口位置：
+关键入口和并发控制：
 
-- 用户文本消息写入后，`prime-figure` 会入队，不会同步生成回复：[`messaging.service.ts`](../apps/server/src/modules/messaging/messaging.service.ts#L100-L106)。
+- 用户文本消息先以服务端 `Date.now()` 作为 `createdAt` 写入数据库，随后 `prime-figure` 才入队，不会在写消息的请求中同步生成回复：[`messaging.service.ts`](../apps/server/src/modules/messaging/messaging.service.ts#L71-L106)。
 - worker 消费队列后调用 `PrimeFigureRuntimeService.requestDecision`：[`messaging.service.ts`](../apps/server/src/modules/messaging/messaging.service.ts#L126-L130)。
-- silence 到期时，如果沉默期间有排队消息，scheduler 会以 `trigger: "silence_ended"` 入队：[`prime-figure-silence.scheduler.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-silence.scheduler.ts#L37-L52)。
-- `requestDecision` 会加载 agent/state、跳过未到期 silence，并等待用户静默窗口：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L70-L127)。
+- mute 到期时，如果屏蔽期间有排队消息，scheduler 会以 `trigger: "mute_ended"` 入队：[`prime-figure-silence.scheduler.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-silence.scheduler.ts#L37-L52)。
+- 队列以 `conversationId` 获取租约为 10 分钟、每 30 秒续期的 Redis 锁。同一会话已有任务运行时，新任务不会并行执行，而是设置有效期 10 分钟的 `run-dirty` 标记：[`run-queue.ts`](../apps/server/src/infra/redis/run-queue.ts#L97-L125)。
+- 持锁任务每轮开始前删除旧 dirty 标记；一轮结束后原子取出 dirty。如果运行期间有新任务设置过 dirty，就以 `trigger: "coalesced_messages"` 在同一把锁内再运行一轮；否则释放锁：[`run-queue.ts`](../apps/server/src/infra/redis/run-queue.ts#L116-L125)。
+
+## 用户消息静默窗口
+
+`requestDecision` 加载 agent/state 并确认角色不处于尚未到期的 `silenceUntilMs` 后，调用 `waitForEndUserQuiet`：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L70-L127)。该窗口是基于最新用户消息写入时间的可延长 debounce，不是从任务入队或 worker 开始运行时重新计满一个固定时长。
+
+```mermaid
+flowchart TD
+  A["进入 waitForEndUserQuiet"] --> B["quietMs = max(0, Number<br/>PRIME_MESSAGE_COALESCE_MS 或默认 2000)"]
+  B --> C{"quietMs 大于 0?"}
+  C -- 否 --> Z["结束等待"]
+  C -- 是 --> D["查询当前会话最新一条<br/>role=user 消息的 created_at"]
+  D --> E{"找到用户消息?"}
+  E -- 否 --> Z
+  E -- 是 --> F["remaining = latest + quietMs<br/>- Date.now()"]
+  F --> G{"remaining 小于等于 0?"}
+  G -- 是 --> Z
+  G -- 否 --> H["delay min(remaining, quietMs)"]
+  H --> D
+```
+
+计时基准和计算方式如下：
+
+- `PRIME_MESSAGE_COALESCE_MS` 未配置时默认为 `2000` 毫秒；`0` 会关闭等待，负数会被钳制为 `0`。
+- `latest` 来自数据库中当前会话按消息序号排序后的最新 `role = 'user'` 消息，其值是该消息的 `created_at`：[`prime-message.repository.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-message.repository.ts#L61-L68)。
+- 静默截止时间是 `latest + quietMs`。worker 开始处理前已经过去的时间会被扣除；如果任务出队时窗口早已结束，就不再额外等待。
+- 每次等待结束都会重新查询 `latest`。如果期间又写入用户消息，截止时间会移动到“新消息的 `created_at + quietMs`”，直到最后一条用户消息之后连续安静满整个窗口。
+
+例如 `quietMs = 2000`：
+
+```text
+12:00:00.000  用户消息 A 写入，最初截止时间为 12:00:02.000
+12:00:00.150  worker 进入等待，只剩约 1850 ms，而不是重新等待 2000 ms
+12:00:01.500  用户消息 B 写入
+12:00:02.000  worker 醒来并重新查询，发现 B
+12:00:03.500  B 之后已连续静默 2000 ms，窗口结束
+```
+
+窗口结束后才读取 `recentTimeline` 和 `lastHandledEndUserSeq` 之后的用户消息。若没有未处理用户消息，本轮返回 `null`，不会请求 LLM；否则会记录本轮输入所覆盖的最大用户消息序号，构造稳定的输入快照：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L136-L179)。
+
+静默窗口内到达且在快照查询前已写入的消息，通常会合并进同一次 LLM 决策。快照形成后、LLM 或动作执行期间到达的消息不会被强行塞进已经发出的请求；它们会通过新的队列任务设置 `run-dirty`，当前轮结束后再以 `coalesced_messages` 触发下一轮。下一轮仍会先等待最新用户消息满足静默窗口。决策成功后，只有本轮快照覆盖到的最大用户消息序号会写入 `lastHandledEndUserSeq`，因此快照之后的新消息仍保持未处理状态：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L166-L179)、[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L305-L309)。
 
 ## 决策请求的构造
 
@@ -61,7 +113,7 @@ flowchart LR
 
 它包含三类信息：
 
-- 固定运行规则：角色视角、不是取悦用户、先输出简洁 rationale、禁止输出隐藏思维链或 `userIntent` 等、消息数量建议、`send_message` 与 `silence` 互斥、时间格式、何时使用 `search_recall`、必须返回严格 JSON 等。
+- 固定运行规则：角色视角、不是取悦用户、先输出简洁 rationale、禁止输出隐藏思维链或 `userIntent` 等、消息数量建议、`send_message`、`silence` 与 `mute` 互斥、时间格式、何时使用 `search_recall`、必须返回严格 JSON 等。
 - 图片和语音规则：图片 action 必须提供 `description` 与 `generationPrompt`，语音 action 的 `transcript` 会用于 TTS；图片参考图只能来自 user 数据包中的 `availableReferenceImages`；语音可使用 Fish Audio 表演标签。
 - 创作者/角色配置：`persona`、`background`、`personality`、`responseStyle`、`decisionStyle`、`currentSituation`、`itinerary`、每周 `schedule`、自定义输出参数定义。
 
@@ -87,7 +139,7 @@ flowchart LR
 - 新出现且必须注意的 end_user 消息会被分配 `attention_1`、`attention_2` 等，并写入 hint：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L477-L493)。
 - 最近一条用户文本命中回忆关键词正则时，写入“可能需要考虑调用 search_recall”的 hint：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L495-L502)。
 - 根据最近用户消息时间匹配角色日程，写入当前日程时段；匹配不到则写入“不处于任何日程时段”：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L503-L509)。
-- `trigger === "silence_ended"` 时写入沉默期结束提示；`trigger === "coalesced_messages"` 时写入上一轮决定期间收到新消息的提示：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L510-L518)。
+- `trigger === "mute_ended"` 时写入消息屏蔽期结束提示；`trigger === "coalesced_messages"` 时写入上一轮决定期间收到新消息的提示：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L510-L518)。
 - 如果本轮有未标注媒体，写入必须在 `mediaAnnotations` 中补描述或转写的 hint：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L718-L721)。
 
 ### tool 描述
@@ -123,7 +175,7 @@ flowchart LR
 - `variables`：来自创作者定义的每个输出参数；每个变量 schema 会拼入变量描述，并说明 `null` 保留先前值：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L1275-L1295)。
 - `memoryWrites`：新增持久记忆；第一次请求 `minItems: 0`，如果走过 `search_recall`，第二次请求 `minItems: 1`。
 - `stateUpdates`：可选持久上下文替换，包含 `currentSituation`、`schedule`、`itinerary`、`relationshipStatus`。
-- `actions`：要么是一条或多条 `send_message`，要么是单独一个 `silence`。
+- `actions`：要么是一条或多条 `send_message`，要么是单独一个 `silence`（仅本次不回复），要么是单独一个 `mute`（在指定时段屏蔽消息）。
 - 有待标注媒体时，额外要求 `mediaAnnotations`，数量必须等于待标注媒体数：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L1046-L1058)。
 
 `send_message` 的 schema 会继续告诉模型：
@@ -131,7 +183,7 @@ flowchart LR
 - 文本消息要输出 `text`。
 - 图片消息要输出 `description`、`generationPrompt`、`referenceMediaIds`；`generationPrompt` 的 schema description 明确说它会“供实际图像生成服务直接使用”：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L1193-L1229)。
 - 语音消息要输出 `transcript`，并说明它是实际说出的内容和 TTS 输入：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L1230-L1244)。
-- `silence` 要输出 `revisitAfterMinutes`：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L1253-L1272)。
+- `silence` 不带额外参数；`mute` 要输出 `revisitAfterMinutes`：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L1253-L1286)。
 
 ## 可选的第二次 LLM 请求
 

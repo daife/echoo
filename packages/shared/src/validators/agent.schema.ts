@@ -175,9 +175,7 @@ export const createPrimeFigureSchema = createAgentBaseSchema.extend({
   responseStyle: requiredText("回复风格"),
   decisionStyle: optionalText(4000),
   currentSituation: optionalText(4000),
-  schedule: primeFigureScheduleSchema
-    .optional()
-    .default({ segments: [] }),
+  schedule: primeFigureScheduleSchema.optional().default({ segments: [] }),
   itinerary: optionalText(8000),
   variableDefinitions: z
     .array(primeFigureVariableDefinitionSchema)
@@ -340,8 +338,11 @@ export const primeFigureActionSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("silence"),
+  }).strict(),
+  z.object({
+    type: z.literal("mute"),
     revisitAfterMinutes: z.number().int().min(1).max(10080),
-  }),
+  }).strict(),
 ]);
 
 export const primeFigureDecisionSchema = z.object({
@@ -375,13 +376,13 @@ export const primeFigureDecisionSchema = z.object({
     .min(1)
     .max(12)
     .superRefine((actions, context) => {
-      const containsSilence = actions.some(
-        (action) => action.type === "silence",
+      const containsExclusiveAction = actions.some(
+        (action) => action.type === "silence" || action.type === "mute",
       );
-      if (containsSilence && actions.length !== 1) {
+      if (containsExclusiveAction && actions.length !== 1) {
         context.addIssue({
           code: "custom",
-          message: "silence 必须是一次决定中的唯一动作。",
+          message: "silence 或 mute 必须是一次决定中的唯一动作。",
         });
       }
     }),

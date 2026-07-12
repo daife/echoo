@@ -12,7 +12,7 @@ export interface AgentRunJob {
   kind: "slice-figure" | "prime-figure";
   assistantMessageId?: string;
   attempts?: number;
-  trigger?: "end_user_message" | "silence_ended" | "coalesced_messages";
+  trigger?: "end_user_message" | "mute_ended" | "coalesced_messages";
 }
 
 export class AgentRunQueue {
@@ -22,22 +22,32 @@ export class AgentRunQueue {
 
   async enqueue(job: AgentRunJob) {
     const redis = await getRedis();
-    await redis.xAdd(STREAM, "*", {
-      ownerUserId: job.ownerUserId,
-      conversationId: job.conversationId,
-      kind: job.kind,
-      assistantMessageId: job.assistantMessageId ?? "",
-      attempts: String(job.attempts ?? 0),
-      trigger: job.trigger ?? "end_user_message",
-    }, { TRIM: { strategy: "MAXLEN", strategyModifier: "~", threshold: 100_000 } });
+    await redis.xAdd(
+      STREAM,
+      "*",
+      {
+        ownerUserId: job.ownerUserId,
+        conversationId: job.conversationId,
+        kind: job.kind,
+        assistantMessageId: job.assistantMessageId ?? "",
+        attempts: String(job.attempts ?? 0),
+        trigger: job.trigger ?? "end_user_message",
+      },
+      {
+        TRIM: { strategy: "MAXLEN", strategyModifier: "~", threshold: 100_000 },
+      },
+    );
   }
 
   async start(handler: (job: AgentRunJob) => Promise<void>) {
     if (this.running) return;
     this.running = true;
     const redis = await getRedisWorker();
-    try { await redis.xGroupCreate(STREAM, GROUP, "0", { MKSTREAM: true }); }
-    catch (error) { if (!String(error).includes("BUSYGROUP")) throw error; }
+    try {
+      await redis.xGroupCreate(STREAM, GROUP, "0", { MKSTREAM: true });
+    } catch (error) {
+      if (!String(error).includes("BUSYGROUP")) throw error;
+    }
 
     const concurrency = Math.max(
       1,
@@ -48,19 +58,28 @@ export class AgentRunQueue {
         await Promise.race(this.inFlight);
         continue;
       }
-      const batches = await redis.xReadGroup(GROUP, this.consumer,
-        [{ key: STREAM, id: ">" }], {
+      const batches = await redis.xReadGroup(
+        GROUP,
+        this.consumer,
+        [{ key: STREAM, id: ">" }],
+        {
           COUNT: concurrency - this.inFlight.size,
           BLOCK: 5_000,
-        });
+        },
+      );
       for (const batch of batches ?? []) {
         for (const entry of batch.messages) {
-          const job = { id: entry.id, ownerUserId: entry.message.ownerUserId,
+          const job = {
+            id: entry.id,
+            ownerUserId: entry.message.ownerUserId,
             conversationId: entry.message.conversationId,
             kind: entry.message.kind as AgentRunJob["kind"],
             attempts: Number(entry.message.attempts || 0),
             trigger: entry.message.trigger as AgentRunJob["trigger"],
-            ...(entry.message.assistantMessageId ? { assistantMessageId: entry.message.assistantMessageId } : {}) };
+            ...(entry.message.assistantMessageId
+              ? { assistantMessageId: entry.message.assistantMessageId }
+              : {}),
+          };
           const task = this.handleEntry(job, entry.id, handler).finally(() => {
             this.inFlight.delete(task);
           });
@@ -71,7 +90,9 @@ export class AgentRunQueue {
     await Promise.allSettled(this.inFlight);
   }
 
-  stop() { this.running = false; }
+  stop() {
+    this.running = false;
+  }
 
   private async handleEntry(
     job: AgentRunJob,
@@ -94,12 +115,18 @@ export class AgentRunQueue {
     await redis.xAck(STREAM, GROUP, entryId);
   }
 
-  private async process(redis: Awaited<ReturnType<typeof getRedis>>, job: AgentRunJob,
-    handler: (job: AgentRunJob) => Promise<void>) {
+  private async process(
+    redis: Awaited<ReturnType<typeof getRedis>>,
+    job: AgentRunJob,
+    handler: (job: AgentRunJob) => Promise<void>,
+  ) {
     const lockKey = `echoo:run-lock:${job.conversationId}`;
     const dirtyKey = `echoo:run-dirty:${job.conversationId}`;
     const token = createId("msg");
-    const acquired = await redis.set(lockKey, token, { NX: true, PX: 10 * 60_000 });
+    const acquired = await redis.set(lockKey, token, {
+      NX: true,
+      PX: 10 * 60_000,
+    });
     if (!acquired) {
       if (job.kind === "prime-figure") {
         await redis.set(dirtyKey, "1", { EX: 10 * 60 });
@@ -119,7 +146,7 @@ export class AgentRunQueue {
         await redis.del(dirtyKey);
         await handler(currentJob);
         currentJob = { ...job, trigger: "coalesced_messages" };
-      } while (job.kind === "prime-figure" && await redis.getDel(dirtyKey));
+      } while (job.kind === "prime-figure" && (await redis.getDel(dirtyKey)));
     } finally {
       clearInterval(heartbeat);
       if ((await redis.get(lockKey)) === token) await redis.del(lockKey);

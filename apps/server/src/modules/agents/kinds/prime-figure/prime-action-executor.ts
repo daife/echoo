@@ -42,7 +42,7 @@ export class PrimeActionExecutor {
     decision: PrimeFigureDecision;
     providerId: string;
     model: string;
-    silenceMessageCutoffAtMs?: number;
+    muteMessageCutoffAtMs?: number;
     streamedMessageIds?: Map<number, string>;
     messageCreatedAt?: Map<number, number>;
     voiceMedia?: Map<number, ResolvedPrimeVoiceMedia>;
@@ -61,12 +61,7 @@ export class PrimeActionExecutor {
         input.state.variables,
         decision.variables,
       ),
-      memories: appendMemories(
-        input.state,
-        decision,
-        APP_TIME_ZONE,
-        now,
-      ),
+      memories: appendMemories(input.state, decision, APP_TIME_ZONE, now),
       mood: decision.figureMood,
       moodObservedAtMs: now,
       relationshipStatus:
@@ -77,16 +72,17 @@ export class PrimeActionExecutor {
     const createdMessages: Array<{ message: Message; streamed: boolean }> = [];
 
     try {
-      const silenceAction = decision.actions.find(
-        (action) => action.type === "silence",
+      const muteAction = decision.actions.find(
+        (action) => action.type === "mute",
       );
-      if (!silenceAction) {
+      if (!muteAction) {
         delete state.silenceStartedAtMs;
         delete state.silenceUntilMs;
 
         for (const [index, action] of decision.actions.entries()) {
           if (action.type !== "send_message") continue;
-          const occurredAtMs = input.messageCreatedAt?.get(index) ?? now + index;
+          const occurredAtMs =
+            input.messageCreatedAt?.get(index) ?? now + index;
           const voiceMedia = input.voiceMedia?.get(index);
           const imageMedia = input.imageMedia?.get(index);
           const primeContent = toPrimeMessageContent(
@@ -124,18 +120,20 @@ export class PrimeActionExecutor {
           });
         }
         const lastMessage = decision.actions.at(-1);
-        if (lastMessage?.type !== "send_message")
-          throw new Error("本初角色的发送动作列表无效。");
-        await this.conversations.updatePreview({
-          ownerUserId: input.ownerUserId,
-          conversationId: input.conversationId,
-          preview: toConversationPreview(lastMessage.message),
-          updatedAt: now + decision.actions.length - 1,
-          unreadIncrement: decision.actions.length,
-        });
+        if (lastMessage?.type === "send_message") {
+          await this.conversations.updatePreview({
+            ownerUserId: input.ownerUserId,
+            conversationId: input.conversationId,
+            preview: toConversationPreview(lastMessage.message),
+            updatedAt: now + decision.actions.length - 1,
+            unreadIncrement: decision.actions.length,
+          });
+        } else if (lastMessage?.type !== "silence") {
+          throw new Error("本初角色的动作列表无效。");
+        }
       } else {
-        state.silenceStartedAtMs = input.silenceMessageCutoffAtMs ?? now;
-        state.silenceUntilMs = now + silenceAction.revisitAfterMinutes * 60_000;
+        state.silenceStartedAtMs = input.muteMessageCutoffAtMs ?? now;
+        state.silenceUntilMs = now + muteAction.revisitAfterMinutes * 60_000;
       }
 
       await this.figures.applyRuntimeUpdates(
@@ -144,16 +142,18 @@ export class PrimeActionExecutor {
         decision.stateUpdates ?? {},
       );
       await this.states.save(input.ownerUserId, input.agent.id, state);
-      await Promise.all(decision.actions.map((action) =>
-        this.logs.save({
-          ownerUserId: input.ownerUserId,
-          agentId: input.agent.id,
-          conversationId: input.conversationId,
-          action,
-          rationale: decision.rationale,
-          status: "applied",
-          now,
-        })),
+      await Promise.all(
+        decision.actions.map((action) =>
+          this.logs.save({
+            ownerUserId: input.ownerUserId,
+            agentId: input.agent.id,
+            conversationId: input.conversationId,
+            action,
+            rationale: decision.rationale,
+            status: "applied",
+            now,
+          }),
+        ),
       );
     } catch (error) {
       await this.logs.save({

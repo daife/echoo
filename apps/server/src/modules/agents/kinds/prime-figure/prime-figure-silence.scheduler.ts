@@ -47,7 +47,7 @@ export class PrimeFigureSilenceScheduler {
               ownerUserId: item.ownerUserId,
               conversationId: item.conversationId,
               kind: "prime-figure",
-              trigger: "silence_ended",
+              trigger: "mute_ended",
             }),
           ),
       );

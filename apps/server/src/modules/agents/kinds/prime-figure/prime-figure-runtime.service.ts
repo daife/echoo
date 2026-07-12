@@ -45,7 +45,7 @@ const PRIME_VISIBLE_MEMORY_LIMIT = 10;
 const RECALL_HINT_PATTERN = /记得|不记得|忘了|还记得|remember|forgot|recal+l/i;
 
 export type PrimeDecisionTrigger =
-  "end_user_message" | "silence_ended" | "coalesced_messages";
+  "end_user_message" | "mute_ended" | "coalesced_messages";
 
 interface PendingMediaAnnotation {
   id: string;
@@ -109,7 +109,10 @@ export class PrimeFigureRuntimeService {
     }
   }
 
-  private async waitForEndUserQuiet(ownerUserId: string, conversationId: string) {
+  private async waitForEndUserQuiet(
+    ownerUserId: string,
+    conversationId: string,
+  ) {
     const quietMs = Math.max(
       0,
       Number(process.env.PRIME_MESSAGE_COALESCE_MS ?? 2_000),
@@ -140,10 +143,10 @@ export class PrimeFigureRuntimeService {
       );
     const lastHandledEndUserSeq =
       storedHandledEndUserSeq ??
-      await this.messages.findLatestAssistantSequence(
+      (await this.messages.findLatestAssistantSequence(
         input.ownerUserId,
         input.conversationId,
-      );
+      ));
     const [recentTimeline, unhandledEndUserMessages] = await Promise.all([
       this.messages.listRecent(
         input.ownerUserId,
@@ -158,11 +161,13 @@ export class PrimeFigureRuntimeService {
       ),
     ]);
     if (!unhandledEndUserMessages.length) return null;
-    const timeline = [...new Map(
-      [...recentTimeline, ...unhandledEndUserMessages]
-        .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
-        .map((message) => [message.id, message]),
-    ).values()];
+    const timeline = [
+      ...new Map(
+        [...recentTimeline, ...unhandledEndUserMessages]
+          .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
+          .map((message) => [message.id, message]),
+      ).values(),
+    ];
     const inputThroughEndUserSeq = timeline.reduce(
       (latest, message) =>
         message.sender === "end_user"
@@ -289,7 +294,7 @@ export class PrimeFigureRuntimeService {
         decision,
         providerId: finalResponse.providerId,
         model: finalResponse.model,
-        silenceMessageCutoffAtMs: inputThroughEndUserAtMs,
+        muteMessageCutoffAtMs: inputThroughEndUserAtMs,
         streamedMessageIds: streamed.messageIds,
         messageCreatedAt: streamed.messageCreatedAt,
         voiceMedia: streamed.voiceMedia,
@@ -371,18 +376,18 @@ export class PrimeFigureRuntimeService {
   ) {
     const args = parseRecallArguments(toolCall.function.arguments);
     const timezone = APP_TIME_ZONE;
-    const history = (await this.messages
-      .searchByKeywords(
+    const history = (
+      await this.messages.searchByKeywords(
         context.ownerUserId,
         context.agent.id,
         args.keywords,
         args.limit,
-      ))
-      .map((message) => [
-        formatReadableMinute(message.occurredAtMs, timezone),
-        toLlmSender(message.sender),
-        sanitizeVisibleText(describePrimeContent(message.content), timezone),
-      ]);
+      )
+    ).map((message) => [
+      formatReadableMinute(message.occurredAtMs, timezone),
+      toLlmSender(message.sender),
+      sanitizeVisibleText(describePrimeContent(message.content), timezone),
+    ]);
     const lowered = args.keywords.map((keyword) => keyword.toLocaleLowerCase());
     const memories = context.state.memories
       .filter((memory) =>
@@ -507,9 +512,9 @@ async function buildPrimeChatMessages(
   } else {
     hints.push("最近一条 end_user 消息不处于角色已定义的任何日程时段。");
   }
-  if (trigger === "silence_ended") {
+  if (trigger === "mute_ended") {
     hints.push(
-      "角色此前选择的沉默期已经结束。沉默期间积累的 end_user 消息已合并到本次数据包，请只作出一次新的决定。",
+      "角色此前选择的消息屏蔽期已经结束。屏蔽期间积累的 end_user 消息已合并到本次数据包，请只作出一次新的决定。",
     );
   } else if (trigger === "coalesced_messages") {
     hints.push(
@@ -721,12 +726,15 @@ async function buildPrimeChatMessages(
     );
   }
 
-  const availableReferenceImages = (await conversationMedia
-    .listAvailableImages(ownerUserId, agent.conversationId))
-    .map((media) => ({
-      id: media.mediaId,
-      description: sanitizeVisibleText(media.description ?? "", timezone),
-    }));
+  const availableReferenceImages = (
+    await conversationMedia.listAvailableImages(
+      ownerUserId,
+      agent.conversationId,
+    )
+  ).map((media) => ({
+    id: media.mediaId,
+    description: sanitizeVisibleText(media.description ?? "", timezone),
+  }));
 
   content.push({
     type: "text",
@@ -846,18 +854,16 @@ function buildSystemPrompt(agent: PrimeFigureAgent) {
   );
 
   return [
-    `你要从角色“${agent.name}”自身的视角模拟该角色。`,
-    "你的目标是维持一个可信的角色，使其人格、记忆、情绪、日程、偏好、边界和关系保持连续。",
-    "你的目标不是满足、安慰、挽留或取悦 end_user。请决定这个角色真正会想什么、做什么。",
-    "先写出简洁的、以角色为中心的决策依据。分析角色自身的情绪、动机、日程、记忆、抗拒、欲望和边界。",
-    "不要对 end_user 的意图分类。不要输出 userIntent、relationshipSignal、riskLevel、隐藏思维链或逐动作理由。",
-    "角色可以发送一条或多条文本、图片或语音消息，也可以保持沉默。每次决定建议生成 1 至 3 个 send_message 动作；当角色确实情绪激动时，可以发送更多消息。",
+    `你要从figure:“${agent.name}”自身的视角模拟该角色。`,
+    "你的目标是维持一个可信的figure，使其人格、记忆、情绪、日程、偏好、边界和关系等保持连续。",
+    "先在rationale中写出简洁的决策分析。分析figure自身的情绪、动机、日程、记忆，以及应对end_user的行为如何采取action。",
+    "figure可以发送一条或多条文本、图片或语音消息，也可以用 silence 表示本次不回复，或用 mute 在一段时间内屏蔽新消息。每次决定建议生成 1 至 3 个 send_message 动作；当角色确实情绪激动时，可以发送更多消息。",
     "发送图片时必须同时提供面向对话的客观 description 和用于后续生图的 generationPrompt。发送语音时 transcript 是角色实际说出的内容，并将用于后续 TTS。暂时不得发送 video 或 sticker。",
     "图片消息的 referenceMediaIds 只能从 user 数据包 availableReferenceImages 中选择；需要维持角色外观时优先参考描述为“figure角色立绘”的资源，不需要参考图时必须返回空数组。media_n 只在当前会话内长期有效，不得猜测或编造列表外 ID。",
     IMAGE_GENERATION_PROMPT_RULES,
     "语音 transcript 可以在自然位置使用 Fish Audio 表演标签：[angry] [sad] [embarrassed] [emphasis] [whispering] [soft] [breathy] [excited] [laughing] [chuckling] [moaning] [clear throat] [sobbing] [crying loudly] [sighing] [panting] [groaning] [crowd laughing] [background laughter] [audience laughing] [pause] [long pause]。标签只用于确有对应语气或声音的地方，不要机械添加。",
     "为了让消息能够实时显示和合成，send_message.message 中必须先输出 type，再输出 text、description/generationPrompt 或 transcript；各消息必须严格按实际发送顺序输出。",
-    "send_message 与 silence 互斥。若选择 silence，它必须是唯一动作；否则所有动作都必须是 send_message，并按发送顺序排列。",
+    "send_message、silence 与 mute 互斥。silence 只表示本次不回复，不影响后续消息；mute 会在指定时间内屏蔽新消息。选择 silence 或 mute 时，它必须是唯一动作；否则所有动作都必须是 send_message，并按发送顺序排列。",
     "只有当 currentSituation、schedule、itinerary 或 relationshipStatus 确实发生变化时，才使用可选的 stateUpdates 对象。要保留某字段当前值，可以省略该字段或将其设为 null。",
     "已存储的情绪是历史证据，不是要求永远维持它的指令。请考虑它是在多久之前被观察到的。",
     "记忆的 eventAt 表示该事件在角色时间线中的归属时间。有充分依据时复制可见的 YYYY-MM-DDTHH:mm 时间，否则使用 null。",
@@ -891,23 +897,21 @@ const SEARCH_RECALL_TOOL: ChatToolDefinition = {
   function: {
     name: "search_recall",
     description:
-      "按关键词搜索角色更早的记忆和对话历史。仅当 end_user 明确询问角色是否记得过去的事实或事件，并且可见记忆与近期对话中尚无答案时调用。普通问题、随口提及过去、仅出现“记得”等词语，或可见上下文已经足够时，不得调用。若调用此工具，最终的 memoryWrites 必须至少包含一条整合后的记忆；若没有找到历史证据，应记录 end_user 当前的说法，不得假装角色此前就记得此事。",
+      "按关键词搜索角色更早的记忆和对话历史。仅当 end_user 明确询问角色是否记得过去的事实或事件，并且可见记忆与近期对话中尚无答案时调用。普通问题、随口提及过去、仅出现“记得”等词语，或可见上下文已经足够时，不得调用。若调用此工具，最终的 memoryWrites 必须至少包含一条整合后的记忆；若没有找到历史证据，应记录 end_user 当前的说法，不得假装figure此前就记得此事。",
     parameters: {
       type: "object",
-      description: "用于检索角色更早记忆的关键词查询。",
+      description: "设置用于检索的关键词以及返回结果的数量。",
       properties: {
         keywords: {
           type: "array",
-          description:
-            "从明确的回忆请求中复制或提炼出的 1 至 6 个简短且具有区分度的关键词。",
+          description: "填入1 至 6 个简短且具有区分度的关键词。",
           items: { type: "string", description: "一个简短的回忆检索关键词。" },
           minItems: 1,
           maxItems: 6,
         },
         limit: {
           type: "integer",
-          description:
-            "历史记录结果和记忆结果各自允许返回的最大数量，范围为 1 至 8。",
+          description: "查询结果返回的最大数量，范围为 1 至 8。",
           minimum: 1,
           maximum: 8,
         },
@@ -941,22 +945,20 @@ function buildPrimeDecisionResponseFormat(
       strict: true,
       schema: {
         type: "object",
-        description: "针对当前运行时事件数据包的一次以角色为中心的决定。",
+        description: "分析和维持可信figure，做出以figure为中心的action。",
         properties: {
           rationale: {
             type: "string",
             description:
-              "在选择动作前写出的简洁决策依据。分析角色自身的情绪、动机、日程、记忆、欲望、抗拒和边界，而不是 end_user 的意图。",
+              "简洁的分析。分析情绪、动机、记忆、日程、变量等以及应对end_user的行为如何采取action",
           },
           figureMood: {
             type: "string",
-            description:
-              "角色作出本次决定时的当前情绪。运行时会自动附加观察时间。",
+            description: "figure作出本次决定时的当前情绪。",
           },
           variables: {
             type: "object",
-            description:
-              "创作者定义的每个输出参数的当前值。需要保留原值时使用 null。",
+            description: "一些变量的当前值。需要保留原值时使用 null。",
             properties: variableProperties,
             required: variableKeys,
             additionalProperties: false,
@@ -964,17 +966,16 @@ function buildPrimeDecisionResponseFormat(
           memoryWrites: {
             type: "array",
             description:
-              "新增的持久角色记忆。除非该事件值得日后回忆，否则保持为空。调用 search_recall 后必须至少写入一条。",
+              "新增的持久figure记忆。除非该事件值得日后回忆，否则保持为空。调用 search_recall 后必须至少写入一条。",
             minItems: requireMemoryWrite ? 1 : 0,
             maxItems: 8,
             items: {
               type: "object",
-              description: "一条简洁记忆及其在角色时间线中的锚点。",
+              description: "一条简洁记忆及其在figure时间线中的锚点。",
               properties: {
                 content: {
                   type: "string",
-                  description:
-                    "自包含的记忆内容，不得包含数据库 ID 或来源消息元数据。",
+                  description: "figure的记忆事件内容",
                 },
                 eventAt: {
                   anyOf: [
@@ -982,16 +983,15 @@ function buildPrimeDecisionResponseFormat(
                       type: "string",
                       pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$",
                       description:
-                        "角色时区下的可读事件时间，必须从可见证据中复制。",
+                        "该记忆在figure脑海中锚定的时间，必须从可见证据中复制。",
                     },
                     {
                       type: "null",
-                      description:
-                        "没有可证实的可见事件时间时使用；运行时会将其锚定到响应时间。",
+                      description: "没有可证实的时间时使用",
                     },
                   ],
                   description:
-                    "该记忆在角色时间线中的归属时间；未知时为 null。",
+                    "该记忆在figure时间线中的归属时间；未知时为 null。",
                 },
               },
               required: ["content", "eventAt"],
@@ -1001,14 +1001,15 @@ function buildPrimeDecisionResponseFormat(
           stateUpdates: {
             type: "object",
             description:
-              "可选的持久角色上下文变更。无变化时省略此对象；要保留某字段时，省略该字段或使用 null。",
+              "可选的持久figure上下文变更。无变化时省略此对象；要保留某字段时，省略该字段或使用 null。",
             properties: {
               currentSituation: nullableStringSchema(
-                "角色当前处境的完整替换内容；使用 null 保留原值。",
+                "figure当前处境的完整替换内容；使用 null 保留原值。",
                 4000,
               ),
               schedule: {
-                description: "角色时区下的完整替换日程；使用 null 保留原值。",
+                description:
+                  "替换当前figure日程的完整日程内容；使用 null 保留原值。",
                 anyOf: [buildScheduleOutputSchema(), { type: "null" }],
               },
               itinerary: nullableStringSchema(
@@ -1016,7 +1017,7 @@ function buildPrimeDecisionResponseFormat(
                 8000,
               ),
               relationshipStatus: nullableStringSchema(
-                "角色与 end_user 更新后的关系状态；使用 null 保留原值。",
+                "figure与 end_user 更新后的关系状态；使用 null 保留原值。",
                 500,
               ),
             },
@@ -1024,12 +1025,12 @@ function buildPrimeDecisionResponseFormat(
           },
           actions: {
             description:
-              "按顺序执行的对外动作。优先发送 1 至 3 条消息；情绪激动时可合理增加。silence 必须单独出现，绝不能与 send_message 并存。",
+              "figure按顺序执行的动作。silence 或 mute 必须单独出现，绝不能与 send_message 并存。",
             anyOf: [
               {
                 type: "array",
                 description:
-                  "严格按此顺序发送的一条或多条文本、图片或语音消息。",
+                  "按序发送的一条或多条文本、图片或语音消息。优先 1 至 3 条短消息；情绪激动时可合理增加条数和长度。",
                 minItems: 1,
                 maxItems: 12,
                 items: buildSendMessageActionSchema(availableReferenceImageIds),
@@ -1040,6 +1041,13 @@ function buildPrimeDecisionResponseFormat(
                 minItems: 1,
                 maxItems: 1,
                 items: buildSilenceActionSchema(),
+              },
+              {
+                type: "array",
+                description: "仅包含一个 mute 动作，不得包含其他动作。",
+                minItems: 1,
+                maxItems: 1,
+                items: buildMuteActionSchema(),
               },
             ],
           },
@@ -1253,16 +1261,30 @@ function buildSendMessageActionSchema(availableReferenceImageIds: string[]) {
 function buildSilenceActionSchema() {
   return {
     type: "object",
-    description: "保持沉默，并在重新检查期结束前抑制新的 LLM 数据包。",
+    description: "仅在本次决定中保持沉默，不回复当前消息",
     properties: {
       type: {
         const: "silence",
-        description: "选择让角色暂时沉默。",
+        description: "选择让角色本次不回复。",
+      },
+    },
+    required: ["type"],
+    additionalProperties: false,
+  } as const;
+}
+
+function buildMuteActionSchema() {
+  return {
+    type: "object",
+    description: "在重新检查期结束前屏蔽新的 end_user 消息和 LLM 数据包。",
+    properties: {
+      type: {
+        const: "mute",
+        description: "选择让角色暂时屏蔽消息。",
       },
       revisitAfterMinutes: {
         type: "integer",
-        description:
-          "队列中的 end_user 消息可以触发一次合并决策数据包之前需要等待的分钟数。",
+        description: "屏蔽消息的分钟数；到期后合并处理期间收到的消息。",
         minimum: 1,
         maximum: 10080,
       },
