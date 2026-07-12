@@ -1,6 +1,10 @@
-import type { Agent, LocalMessage } from "@echoo/shared";
+import {
+  estimateMp3DurationSeconds,
+  type Agent,
+  type LocalMessage,
+} from "@echoo/shared";
 import { useQueryClient } from "@tanstack/react-query";
-import type { FormEvent } from "react";
+import type { Dispatch, FormEvent, SetStateAction } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { initApp } from "../../app/bootstrap/initApp";
 import { useRuntime } from "../../app/providers/RuntimeProvider";
@@ -12,6 +16,7 @@ import {
   mergeSentTextMessageResult,
   markLocalMessageFailed,
 } from "../../services/localMessageState";
+import { parsePrimeFigureHintCommand } from "../../features/messages/messagePresentation";
 
 const MESSAGE_PAGE_SIZE = 50;
 
@@ -57,6 +62,7 @@ export function useConversationMessages({
   const messagesRef = useRef<LocalMessage[]>([]);
   const hasOlderRef = useRef(false);
   const streamBuffersRef = useRef(new Map<string, StreamDisplayBuffer>());
+  const audioChunksRef = useRef(new Map<string, Uint8Array[]>());
   const conversationId = agent?.conversationId;
   const activeConversationIdRef = useRef(conversationId);
   activeConversationIdRef.current = conversationId;
@@ -71,6 +77,7 @@ export function useConversationMessages({
       if (buffer.timerId !== null) window.clearTimeout(buffer.timerId);
     });
     streamBuffersRef.current.clear();
+    audioChunksRef.current.clear();
   }, []);
 
   useEffect(() => {
@@ -203,6 +210,9 @@ export function useConversationMessages({
   const enqueueDisplayDelta = useCallback(
     (messageId: string, delta: string) => {
       if (agent?.type === "prime-figure") {
+        setMessages((current) =>
+          appendMessageDelta(current, messageId, delta, Date.now()),
+        );
         return;
       }
       const now = performance.now();
@@ -339,9 +349,19 @@ export function useConversationMessages({
       (message) => {
         if (message.conversationId !== conversationId) return;
         if (agent?.type === "prime-figure") {
-          setMessages((current) =>
-            mergeLocalMessage(current, { ...message, syncStatus: "synced" }),
-          );
+          setMessages((current) => {
+            const existing = current.find((item) => item.id === message.id);
+            return mergeLocalMessage(current, {
+              ...message,
+              metadata: {
+                ...existing?.metadata,
+                ...message.metadata,
+                audioStreaming: false,
+              },
+              syncStatus: "synced",
+            });
+          });
+          audioChunksRef.current.delete(message.id);
           return;
         }
         completeStreamedMessage({ ...message, syncStatus: "synced" });
@@ -352,12 +372,57 @@ export function useConversationMessages({
         if (event.conversationId !== conversationId) return;
         setIsAgentActive(event.active);
       });
+    const unsubscribeAudioStarted = runtime.message.onMessageAudioStarted(
+      (event) => {
+        if (event.conversationId !== conversationId) return;
+        audioChunksRef.current.set(event.messageId, []);
+        updateAudioMessage(setMessages, event.messageId, {
+          audioStreaming: true,
+          liveAudioDurationSeconds: 0,
+        });
+      },
+    );
+    const unsubscribeAudioChunk = runtime.message.onMessageAudioChunk(
+      (event) => {
+        if (event.conversationId !== conversationId) return;
+        const chunks = audioChunksRef.current.get(event.messageId) ?? [];
+        chunks.push(decodeBase64(event.dataBase64));
+        audioChunksRef.current.set(event.messageId, chunks);
+        const bytes = concatBytes(chunks);
+        updateAudioMessage(setMessages, event.messageId, {
+          audioStreaming: true,
+          liveAudioDurationSeconds: estimateMp3DurationSeconds(bytes),
+        });
+      },
+    );
+    const unsubscribeAudioCompleted = runtime.message.onMessageAudioCompleted(
+      (event) => {
+        if (event.conversationId !== conversationId) return;
+        updateAudioMessage(setMessages, event.messageId, {
+          audioStreaming: true,
+          ...(event.mediaUrl ? { mediaUrl: event.mediaUrl } : {}),
+        });
+      },
+    );
+    const unsubscribeAudioFailed = runtime.message.onMessageAudioFailed(
+      (event) => {
+        if (event.conversationId !== conversationId) return;
+        updateAudioMessage(setMessages, event.messageId, {
+          audioStreaming: false,
+        });
+        audioChunksRef.current.delete(event.messageId);
+      },
+    );
 
     return () => {
       unsubscribeCreated();
       unsubscribeDelta();
       unsubscribeCompleted();
       unsubscribeAgentActivity();
+      unsubscribeAudioStarted();
+      unsubscribeAudioChunk();
+      unsubscribeAudioCompleted();
+      unsubscribeAudioFailed();
     };
   }, [
     completeStreamedMessage,
@@ -372,6 +437,33 @@ export function useConversationMessages({
     event.preventDefault();
     const text = draft.trim();
     if (!text || !conversationId || isSending) return;
+
+    const hintCommand = parsePrimeFigureHintCommand(text);
+    if (agent?.type === "prime-figure" && hintCommand !== null) {
+      const instruction = hintCommand;
+      if (!instruction) {
+        setError("请在 /hint 后输入调试指令。");
+        return;
+      }
+      setDraft("");
+      setError(null);
+      setIsSending(true);
+      setIsAgentActive(true);
+      try {
+        await services.messageService.triggerPrimeFigureHint(
+          conversationId,
+          instruction,
+        );
+      } catch (sendError) {
+        setError(
+          sendError instanceof Error ? sendError.message : "调试指令发送失败。",
+        );
+        setIsAgentActive(false);
+      } finally {
+        setIsSending(false);
+      }
+      return;
+    }
 
     const failedOutgoingMessages = messagesRef.current.filter(
       (message) =>
@@ -576,4 +668,55 @@ function mergeMessagePages(...pages: LocalMessage[][]) {
       current,
     );
   }, []);
+}
+
+function updateAudioMessage(
+  setMessages: Dispatch<SetStateAction<LocalMessage[]>>,
+  messageId: string,
+  patch: {
+    audioStreaming: boolean;
+    liveAudioDurationSeconds?: number;
+    mediaUrl?: string;
+  },
+) {
+  setMessages((current) =>
+    current.map((message) =>
+      message.id === messageId
+        ? {
+            ...message,
+            content: {
+              ...message.content,
+              ...(patch.mediaUrl ? { mediaUrl: patch.mediaUrl } : {}),
+            },
+            metadata: {
+              ...message.metadata,
+              audioStreaming: patch.audioStreaming,
+              ...(patch.liveAudioDurationSeconds !== undefined
+                ? {
+                    liveAudioDurationSeconds:
+                      patch.liveAudioDurationSeconds,
+                  }
+                : {}),
+            },
+            updatedAt: Date.now(),
+          }
+        : message,
+    ),
+  );
+}
+
+function decodeBase64(value: string) {
+  const binary = window.atob(value);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+function concatBytes(chunks: Uint8Array[]) {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return bytes;
 }

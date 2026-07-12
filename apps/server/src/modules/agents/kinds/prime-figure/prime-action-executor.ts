@@ -259,6 +259,9 @@ function toMediaIntentMetadata(
     return {
       mediaIntent: {
         status: voiceMedia ? "ready" : "tts_failed",
+        ...(voiceMedia
+          ? { durationSeconds: voiceMedia.durationSeconds }
+          : {}),
         ...(ttsError ? { error: ttsError } : {}),
       },
     };

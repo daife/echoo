@@ -23,6 +23,11 @@ export interface CreateUserTextMessageResult {
   assistantMessage?: Message;
 }
 
+export type TriggerPrimeFigureHintResult =
+  | { kind: "ok" }
+  | { kind: "not_found" }
+  | { kind: "unsupported_type" };
+
 export class MessagingService {
   constructor(
     private readonly repository = new MessageRepository(),
@@ -131,12 +136,36 @@ export class MessagingService {
     return { message, assistantMessage };
   }
 
+  async triggerPrimeFigureHint(input: {
+    ownerUserId: string;
+    conversationId: string;
+    instruction: string;
+  }): Promise<TriggerPrimeFigureHintResult> {
+    const conversation = await this.conversations.findByIdForOwner(
+      input.ownerUserId,
+      input.conversationId,
+    );
+    if (!conversation) return { kind: "not_found" };
+    if (!conversation.agentId || conversation.type !== "prime-figure") {
+      return { kind: "unsupported_type" };
+    }
+    await this.runQueue.enqueue({
+      ownerUserId: input.ownerUserId,
+      conversationId: input.conversationId,
+      kind: "prime-figure",
+      trigger: "debug_hint",
+      debugInstruction: input.instruction,
+    });
+    return { kind: "ok" };
+  }
+
   async processQueuedRun(job: AgentRunJob) {
     if (job.kind === "prime-figure") {
       await this.primeRuntime.requestDecision({
         ownerUserId: job.ownerUserId,
         conversationId: job.conversationId,
         trigger: job.trigger,
+        debugInstruction: job.debugInstruction,
       });
       return;
     }

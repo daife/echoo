@@ -36,6 +36,16 @@ export class MessageApi {
     });
   }
 
+  triggerPrimeFigureHint(
+    conversationId: string,
+    instruction: string
+  ): Promise<{ ok: true }> {
+    return this.client.post<{ ok: true }>(
+      `/conversations/${conversationId}/prime-figure/hint`,
+      { instruction }
+    );
+  }
+
   markRead(messageId: string, readAt: number): Promise<{ ok: true }> {
     return this.client.post<{ ok: true }>(`/messages/${messageId}/read`, { readAt });
   }

@@ -3,8 +3,10 @@ import {
   formatConversationTime,
   isVisibleConversationMessage,
   sanitizeVoiceTranscript,
+  parsePrimeFigureHintCommand,
   shouldShowMessageTime,
 } from "./messagePresentation";
+import { estimateMp3DurationSeconds } from "@echoo/shared";
 import type { LocalMessage } from "@echoo/shared";
 
 const baseMessage: LocalMessage = {
@@ -20,13 +22,13 @@ const baseMessage: LocalMessage = {
 };
 
 describe("conversation message visibility", () => {
-  it("keeps Prime pending content hidden and reveals Slice after its first delta", () => {
+  it("reveals pending assistant text after its first delta", () => {
     expect(
       isVisibleConversationMessage(
         { ...baseMessage, content: { text: "partial" } },
         "prime-figure",
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(isVisibleConversationMessage(baseMessage, "slice-figure")).toBe(
       false,
     );
@@ -52,6 +54,19 @@ describe("conversation message visibility", () => {
       ),
     ).toBe(true);
   });
+
+  it("shows a Prime voice placeholder while audio is streaming", () => {
+    expect(
+      isVisibleConversationMessage(
+        {
+          ...baseMessage,
+          contentType: "voice",
+          metadata: { audioStreaming: true },
+        },
+        "prime-figure",
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("sanitizeVoiceTranscript", () => {
@@ -66,6 +81,31 @@ describe("sanitizeVoiceTranscript", () => {
   it("collapses whitespace and handles tag-only content", () => {
     expect(sanitizeVoiceTranscript("  你\n 好   ")).toBe("你 好");
     expect(sanitizeVoiceTranscript("[laughs] 【停顿】")).toBe("");
+  });
+});
+
+describe("Prime Figure hint commands", () => {
+  it("extracts only the standalone /hint slash command", () => {
+    expect(parsePrimeFigureHintCommand("/hint 必须回复三条消息")).toBe(
+      "必须回复三条消息",
+    );
+    expect(parsePrimeFigureHintCommand(" /HINT\n使用语音 ")).toBe("使用语音");
+    expect(parsePrimeFigureHintCommand("/hint")).toBe("");
+    expect(parsePrimeFigureHintCommand("/hinted 普通消息")).toBeNull();
+  });
+});
+
+describe("MP3 stream duration", () => {
+  it("estimates duration from the complete frames received so far", () => {
+    const frameLength = 417;
+    const bytes = new Uint8Array(frameLength * 2 + 100);
+    for (const offset of [0, frameLength]) {
+      bytes.set([0xff, 0xfb, 0x90, 0x00], offset);
+    }
+    expect(estimateMp3DurationSeconds(bytes)).toBeCloseTo(
+      (2 * 1152) / 44_100,
+      5,
+    );
   });
 });
 

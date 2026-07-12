@@ -847,8 +847,24 @@ function toBubbleMessage(
     mediaUrl: message.content.mediaUrl,
     transcript:
       message.contentType === "voice" ? message.content.text : undefined,
+    durationSeconds:
+      message.contentType === "voice"
+        ? getVoiceDurationSeconds(message.metadata)
+        : undefined,
     canRollback,
   };
+}
+
+function getVoiceDurationSeconds(metadata: LocalMessage["metadata"]) {
+  const live = metadata?.liveAudioDurationSeconds;
+  if (typeof live === "number" && Number.isFinite(live) && live >= 0)
+    return live;
+  const mediaIntent = metadata?.mediaIntent;
+  if (!mediaIntent || typeof mediaIntent !== "object") return undefined;
+  const duration = (mediaIntent as Record<string, unknown>).durationSeconds;
+  return typeof duration === "number" && Number.isFinite(duration)
+    ? duration
+    : undefined;
 }
 
 function buildPrologueDocument(html: string) {

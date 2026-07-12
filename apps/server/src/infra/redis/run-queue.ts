@@ -13,7 +13,12 @@ export interface AgentRunJob {
   kind: "slice-figure" | "prime-figure";
   assistantMessageId?: string;
   attempts?: number;
-  trigger?: "end_user_message" | "mute_ended" | "coalesced_messages";
+  trigger?:
+    | "end_user_message"
+    | "mute_ended"
+    | "coalesced_messages"
+    | "debug_hint";
+  debugInstruction?: string;
 }
 
 export interface AgentRunActivity {
@@ -40,6 +45,7 @@ export class AgentRunQueue {
         assistantMessageId: job.assistantMessageId ?? "",
         attempts: String(job.attempts ?? 0),
         trigger: job.trigger ?? "end_user_message",
+        debugInstruction: job.debugInstruction ?? "",
       },
       {
         TRIM: { strategy: "MAXLEN", strategyModifier: "~", threshold: 100_000 },
@@ -98,6 +104,9 @@ export class AgentRunQueue {
             kind: entry.message.kind as AgentRunJob["kind"],
             attempts: Number(entry.message.attempts || 0),
             trigger: entry.message.trigger as AgentRunJob["trigger"],
+            ...(entry.message.debugInstruction
+              ? { debugInstruction: entry.message.debugInstruction }
+              : {}),
             ...(entry.message.assistantMessageId
               ? { assistantMessageId: entry.message.assistantMessageId }
               : {}),
@@ -158,7 +167,7 @@ export class AgentRunQueue {
       PX: 10 * 60_000,
     });
     if (!acquired) {
-      if (job.kind === "prime-figure") {
+      if (job.kind === "prime-figure" && job.trigger !== "debug_hint") {
         await redis.set(dirtyKey, "1", { EX: 10 * 60 });
       } else {
         await delay(100);
@@ -181,7 +190,11 @@ export class AgentRunQueue {
         await redis.del(dirtyKey);
         if (await redis.exists(this.cancelledKey(job.conversationId))) return;
         await handler(currentJob);
-        currentJob = { ...job, trigger: "coalesced_messages" };
+        currentJob = {
+          ...job,
+          trigger: "coalesced_messages",
+          debugInstruction: undefined,
+        };
       } while (job.kind === "prime-figure" && (await redis.getDel(dirtyKey)));
     } finally {
       clearInterval(heartbeat);

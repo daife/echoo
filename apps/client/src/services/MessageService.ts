@@ -26,6 +26,9 @@ export class MessageService {
   }) {
     return this.api.createTextMessage(input);
   }
+  triggerPrimeFigureHint(conversationId: string, instruction: string) {
+    return this.api.triggerPrimeFigureHint(conversationId, instruction);
+  }
   ingestRealtimeMessage(_message: Message) {
     return Promise.resolve();
   }

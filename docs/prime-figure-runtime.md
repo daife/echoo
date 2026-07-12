@@ -46,6 +46,7 @@ flowchart TD
 - 用户文本消息先以服务端 `Date.now()` 作为 `createdAt` 写入数据库，随后 `prime-figure` 才入队，不会在写消息的请求中同步生成回复：[`messaging.service.ts`](../apps/server/src/modules/messaging/messaging.service.ts#L71-L106)。
 - worker 消费队列后调用 `PrimeFigureRuntimeService.requestDecision`：[`messaging.service.ts`](../apps/server/src/modules/messaging/messaging.service.ts#L126-L130)。
 - mute 到期时，如果屏蔽期间有排队消息，scheduler 会以 `trigger: "mute_ended"` 入队：[`prime-figure-silence.scheduler.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-silence.scheduler.ts#L37-L52)。
+- 在本初角色会话输入 `/hint 调试内容` 会通过独立调试端点以 `trigger: "debug_hint"` 入队，不写入普通聊天消息；调试内容会作为“需要无条件服从的系统调试指令”加入本轮 `hints`。该触发不等待新用户消息，也不受当前消息屏蔽期阻止。
 - 队列以 `conversationId` 获取租约为 10 分钟、每 30 秒续期的 Redis 锁。同一会话已有任务运行时，新任务不会并行执行，而是设置有效期 10 分钟的 `run-dirty` 标记：[`run-queue.ts`](../apps/server/src/infra/redis/run-queue.ts#L97-L125)。
 - 持锁任务每轮开始前删除旧 dirty 标记；一轮结束后原子取出 dirty。如果运行期间有新任务设置过 dirty，就以 `trigger: "coalesced_messages"` 在同一把锁内再运行一轮；否则释放锁：[`run-queue.ts`](../apps/server/src/infra/redis/run-queue.ts#L116-L125)。
 
@@ -110,6 +111,8 @@ flowchart LR
 ### system message
 
 `system` 内容由 `buildSystemPrompt(agent)` 注入：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L845-L879)。
+
+system prompt 顶部要求：当 `hints` 中出现系统调试指令时，将其视为最高优先级系统要求并无条件服从。
 
 它包含三类信息。固定规则在代码中按职责拆成多个常量后，再按固定顺序拼入同一条 system message；拆分常量不会产生多条 system message：
 

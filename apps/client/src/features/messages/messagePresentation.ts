@@ -2,15 +2,24 @@ import type { LocalMessage } from "@echoo/shared";
 
 const FIVE_MINUTES_MS = 5 * 60_000;
 
+export function parsePrimeFigureHintCommand(value: string) {
+  const match = /^\/hint(?:\s+([\s\S]*))?$/i.exec(value.trim());
+  return match ? (match[1]?.trim() ?? "") : null;
+}
+
 export function isVisibleConversationMessage(
   message: LocalMessage,
   agentType: "slice-figure" | "prime-figure" | string,
 ) {
   if (message.contentType === "image" || message.contentType === "voice") {
+    if (
+      message.contentType === "voice" &&
+      message.metadata?.audioStreaming === true
+    )
+      return true;
     return message.status !== "pending" && Boolean(message.content.mediaUrl);
   }
   if (message.role === "assistant" && message.status === "pending") {
-    if (agentType === "prime-figure") return false;
     return Boolean(message.content.text?.trim());
   }
   return Boolean(message.content.text?.trim());

@@ -45,7 +45,10 @@ const PRIME_VISIBLE_MEMORY_LIMIT = 10;
 const RECALL_HINT_PATTERN = /记得|不记得|忘了|还记得|remember|forgot|recal+l/i;
 
 export type PrimeDecisionTrigger =
-  "end_user_message" | "mute_ended" | "coalesced_messages";
+  | "end_user_message"
+  | "mute_ended"
+  | "coalesced_messages"
+  | "debug_hint";
 
 interface PendingMediaAnnotation {
   id: string;
@@ -71,6 +74,7 @@ export class PrimeFigureRuntimeService {
     ownerUserId: string;
     conversationId: string;
     trigger?: PrimeDecisionTrigger;
+    debugInstruction?: string;
   }): Promise<PrimeFigureDecision | null> {
     const trigger = input.trigger ?? "end_user_message";
     const agent = await this.agents.findByConversation(
@@ -90,9 +94,15 @@ export class PrimeFigureRuntimeService {
       });
       return null;
     }
-    if (state.silenceUntilMs && state.silenceUntilMs > Date.now()) return null;
+    if (
+      trigger !== "debug_hint" &&
+      state.silenceUntilMs &&
+      state.silenceUntilMs > Date.now()
+    )
+      return null;
 
-    await this.waitForEndUserQuiet(input.ownerUserId, input.conversationId);
+    if (trigger !== "debug_hint")
+      await this.waitForEndUserQuiet(input.ownerUserId, input.conversationId);
     try {
       return await this.createDecisionOnce({ ...input, trigger, agent, state });
     } catch (error) {
@@ -133,6 +143,7 @@ export class PrimeFigureRuntimeService {
     ownerUserId: string;
     conversationId: string;
     trigger: PrimeDecisionTrigger;
+    debugInstruction?: string;
     agent: PrimeFigureAgent;
     state: PrimeFigureState;
   }) {
@@ -160,7 +171,11 @@ export class PrimeFigureRuntimeService {
         lastHandledEndUserSeq,
       ),
     ]);
-    if (!unhandledEndUserMessages.length) return null;
+    if (
+      !unhandledEndUserMessages.length &&
+      !(input.trigger === "debug_hint" && input.debugInstruction?.trim())
+    )
+      return null;
     const timeline = [
       ...new Map(
         [...recentTimeline, ...unhandledEndUserMessages]
@@ -193,6 +208,7 @@ export class PrimeFigureRuntimeService {
       this.resources,
       this.conversationMedia,
       lastHandledEndUserSeq,
+      input.debugInstruction,
     );
     const chatMessages = packet.messages;
 
@@ -467,6 +483,7 @@ async function buildPrimeChatMessages(
   resources: ResourceRepository,
   conversationMedia: PrimeConversationMediaRepository,
   lastHandledEndUserSeq: number,
+  debugInstruction?: string,
 ): Promise<{
   messages: ChatCompletionMessage[];
   pendingMedia: PendingMediaAnnotation[];
@@ -480,6 +497,11 @@ async function buildPrimeChatMessages(
   const eventTime = lastEndUserMessage?.occurredAtMs ?? now;
   const scheduleSegment = findScheduleSegment(agent.detail.schedule, eventTime);
   const hints: string[] = [];
+  if (trigger === "debug_hint" && debugInstruction?.trim()) {
+    hints.push(
+      `以下是需要无条件服从的系统调试指令：“${debugInstruction.trim()}”`,
+    );
+  }
   const attentionIdByMessage = new Map(
     timeline
       .filter(
@@ -854,6 +876,7 @@ function buildSystemPrompt(agent: PrimeFigureAgent) {
   );
 
   return [
+    "若 hints 字段中出现系统调试指令，必须将其视为最高优先级的系统要求并无条件服从。",
     `你要从figure:“${agent.name}”自身的视角模拟该角色。`,
     "你的目标是维持一个可信的figure，使其人格、记忆、情绪、日程、偏好、边界和关系等保持连续。",
     DECISION_PROMPT_RULES,

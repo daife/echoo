@@ -8,6 +8,10 @@ const createTextMessageSchema = z.object({
   stream: z.boolean().optional()
 });
 
+const primeFigureHintSchema = z.object({
+  instruction: z.string().trim().min(1).max(20_000),
+});
+
 const rollbackConversationSchema = z.object({
   messageId: z.string().trim().min(1)
 });
@@ -81,6 +85,33 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
 
     if (!result) return reply.code(404).send({ error: "CONVERSATION_NOT_FOUND" });
     return reply.code(201).send(result);
+  });
+
+  app.post<{ Params: { conversationId: string }; Body: unknown }>("/conversations/:conversationId/prime-figure/hint", async (request, reply) => {
+    const userId = await request.requireUserId(reply);
+    if (!userId) return;
+
+    const parsed = primeFigureHintSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: "VALIDATION_ERROR",
+        message: parsed.error.issues[0]?.message ?? "调试指令无效。"
+      });
+    }
+
+    const result = await messaging.triggerPrimeFigureHint({
+      ownerUserId: userId,
+      conversationId: request.params.conversationId,
+      instruction: parsed.data.instruction,
+    });
+    if (result.kind === "not_found") return reply.code(404).send({ error: "CONVERSATION_NOT_FOUND" });
+    if (result.kind === "unsupported_type") {
+      return reply.code(409).send({
+        error: "PRIME_FIGURE_HINT_UNSUPPORTED",
+        message: "调试指令仅支持本初角色会话。"
+      });
+    }
+    return reply.code(202).send({ ok: true });
   });
 
   app.post<{ Params: { conversationId: string }; Body: unknown }>("/conversations/:conversationId/rollback", async (request, reply) => {

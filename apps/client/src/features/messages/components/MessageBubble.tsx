@@ -21,6 +21,7 @@ export interface MessageBubbleModel {
   kind?: "text" | "image" | "voice";
   mediaUrl?: string;
   transcript?: string;
+  durationSeconds?: number;
   canRollback?: boolean;
 }
 
@@ -155,7 +156,6 @@ export function MessageBubble({
 
   if (message.kind === "voice") {
     const mediaUrl = resolveMediaUrl(message.mediaUrl);
-    if (!mediaUrl) return null;
     return (
       <div
         className="relative flex max-w-[85%] items-start gap-3 self-start md:max-w-[70%]"
@@ -165,6 +165,7 @@ export function MessageBubble({
         <div className="mt-3 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
         <VoiceBubble
           mediaUrl={mediaUrl}
+          durationSeconds={message.durationSeconds}
           transcript={isTranscriptOpen ? cleanTranscript : undefined}
           suppressNextClickRef={didLongPressRef}
         />
@@ -209,10 +210,12 @@ export function MessageBubble({
 
 function VoiceBubble({
   mediaUrl,
+  durationSeconds,
   transcript,
   suppressNextClickRef,
 }: {
-  mediaUrl: string;
+  mediaUrl?: string;
+  durationSeconds?: number;
   transcript?: string;
   suppressNextClickRef: React.MutableRefObject<boolean>;
 }) {
@@ -236,7 +239,14 @@ function VoiceBubble({
     else audio.pause();
   };
 
-  const seconds = duration > 0 ? Math.max(1, Math.round(duration)) : null;
+  const resolvedDuration =
+    typeof durationSeconds === "number" && Number.isFinite(durationSeconds)
+      ? durationSeconds
+      : Number.isFinite(duration)
+        ? duration
+        : 0;
+  const seconds =
+    resolvedDuration > 0 ? Math.max(1, Math.round(resolvedDuration)) : null;
   const width = Math.min(280, Math.max(148, 142 + (seconds ?? 0) * 3));
 
   return (
@@ -245,8 +255,9 @@ function VoiceBubble({
         className="flex h-12 items-center gap-3 rounded-xl bg-white/[0.055] px-4 text-left text-white transition hover:bg-white/[0.075] active:scale-[0.99]"
         style={{ width }}
         type="button"
-        aria-label={isPlaying ? "暂停语音" : "播放语音"}
+        aria-label={mediaUrl ? (isPlaying ? "暂停语音" : "播放语音") : "语音生成中"}
         onClick={toggle}
+        disabled={!mediaUrl}
       >
         <Waveform
           size={23}
@@ -254,19 +265,26 @@ function VoiceBubble({
           className={isPlaying ? "animate-pulse text-white" : "text-white/75"}
         />
         <span className="ml-auto text-xs tabular-nums text-white/48">
-          {seconds ? `${seconds}″` : "语音"}
+          {seconds ? `${seconds}″` : mediaUrl ? "语音" : "生成中"}
         </span>
       </button>
-      <audio
+      {mediaUrl ? <audio
         ref={audioRef}
         className="hidden"
         preload="metadata"
         src={mediaUrl}
-        onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
+        onLoadedMetadata={(event) => {
+          const next = event.currentTarget.duration;
+          if (Number.isFinite(next)) setDuration(next);
+        }}
+        onDurationChange={(event) => {
+          const next = event.currentTarget.duration;
+          if (Number.isFinite(next)) setDuration(next);
+        }}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
         onEnded={() => setIsPlaying(false)}
-      />
+      /> : null}
       {transcript ? (
         <p className="mt-2 max-w-[320px] rounded-xl bg-white/[0.035] px-3.5 py-2.5 text-sm leading-6 text-white/72">
           {transcript}

@@ -12,6 +12,7 @@ export * from "./types/interfaceBinding.js";
 export * from "./types/conversation.js";
 export * from "./types/message.js";
 export * from "./types/sync.js";
+export * from "./utils/mp3-duration.js";
 export * from "./validators/agent.schema.js";
 export * from "./validators/auth.schema.js";
 export * from "./validators/message.schema.js";

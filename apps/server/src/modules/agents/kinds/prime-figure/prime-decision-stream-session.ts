@@ -4,6 +4,7 @@ import type {
   PrimeFigureDecision,
   PrimeFigureOutgoingMessage,
 } from "@echoo/shared";
+import { estimateMp3DurationSeconds } from "@echoo/shared";
 import { AppPushService } from "../../../realtime/delivery.service.js";
 import { ResourceRepository } from "../../../resources/resource.repository.js";
 import { OpenRouterImageGenerationService } from "../../../image-generation/openrouter-image-generation.service.js";
@@ -15,12 +16,16 @@ import type { PrimeDecisionStreamFieldDelta } from "./prime-decision-stream-pars
 import { PrimeConversationMediaRepository } from "./prime-conversation-media.repository.js";
 import { MessageRepository } from "../../../messaging/message.repository.js";
 
-export interface ResolvedPrimeVoiceMedia {
+interface ResolvedPrimeMedia {
   resourceId: string;
   mediaUrl: string;
 }
 
-export interface ResolvedPrimeImageMedia extends ResolvedPrimeVoiceMedia {
+export interface ResolvedPrimeVoiceMedia extends ResolvedPrimeMedia {
+  durationSeconds: number;
+}
+
+export interface ResolvedPrimeImageMedia extends ResolvedPrimeMedia {
   mediaId: string;
   model: string;
 }
@@ -367,7 +372,11 @@ export class PrimeDecisionStreamSession {
         conversationId: this.input.conversationId,
         mediaUrl: resource.publicPath,
       });
-      return { resourceId: resource.id, mediaUrl: resource.publicPath };
+      return {
+        resourceId: resource.id,
+        mediaUrl: resource.publicPath,
+        durationSeconds: estimateMp3DurationSeconds(result.audio),
+      };
     })();
     void state.voicePromise.catch(() => undefined);
   }
