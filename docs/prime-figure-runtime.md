@@ -6,27 +6,27 @@
 
 ```mermaid
 flowchart TD
-  A[end_user 发送消息] --> B[MessagingService 入队 prime-figure]
-  S[silence 到期且有排队消息] --> B2[SilenceScheduler 入队 prime-figure trigger=silence_ended]
-  B --> C[processQueuedRun 调 requestDecision]
+  A["end_user<br/>发送消息"] --> B["MessagingService<br/>入队 prime-figure"]
+  S["silence 到期<br/>且有排队消息"] --> B2["SilenceScheduler 入队<br/>prime-figure<br/>trigger=silence_ended"]
+  B --> C["processQueuedRun<br/>调用 requestDecision"]
   B2 --> C
-  C --> D[加载 agent/state, 检查 silenceUntilMs]
-  D --> E[等待 PRIME_MESSAGE_COALESCE_MS 静默窗口]
-  E --> F[读取 recent timeline + 未处理 end_user 消息]
-  F --> G[buildPrimeChatMessages 构造 system/user 消息]
-  G --> H[第一次 chat completion]
-  H --> I{模型调用 search_recall?}
-  I -- 否 --> K[解析 JSON 决策]
-  I -- 是 --> J[追加 assistant tool_calls + tool 结果 JSON]
-  J --> J2[第二次 chat completion, toolChoice=none, memoryWrites minItems=1]
+  C --> D["加载 agent/state<br/>检查 silenceUntilMs"]
+  D --> E["等待 PRIME_MESSAGE_COALESCE_MS<br/>静默窗口"]
+  E --> F["读取 recent timeline<br/>和未处理的 end_user 消息"]
+  F --> G["buildPrimeChatMessages<br/>构造 system/user 消息"]
+  G --> H["第一次<br/>chat completion"]
+  H --> I{"模型调用 search_recall?"}
+  I -- 否 --> K["解析 JSON<br/>决策"]
+  I -- 是 --> J["追加 assistant tool_calls<br/>和 tool 结果 JSON"]
+  J --> J2["第二次 chat completion<br/>toolChoice=none<br/>memoryWrites minItems=1"]
   J2 --> K
-  K --> L[stream session finalize]
-  L --> M{有 image action?}
-  M -- 是 --> N[把 generationPrompt + reference images 发给 OpenRouter 图像模型]
-  M -- 否 --> O[执行动作, 写消息/状态/记忆/日志]
+  K --> L["stream session<br/>finalize"]
+  L --> M{"有 image action?"}
+  M -- 是 --> N["把 generationPrompt 和参考图<br/>发送给 OpenRouter 图像模型"]
+  M -- 否 --> O["执行动作<br/>写消息/状态/记忆/日志"]
   N --> O
-  L --> P{有 voice action?}
-  P -- 是 --> Q[把 transcript 流式发给 Fish Audio TTS]
+  L --> P{"有 voice action?"}
+  P -- 是 --> Q["把 transcript 流式发送给<br/>Fish Audio TTS"]
   P -- 否 --> O
 ```
 
@@ -45,12 +45,12 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-  A[completionBase: model/session/temperature/maxTokens/reasoning disabled] --> R[OpenAI-compatible request body]
-  B[system message: buildSystemPrompt(agent)] --> R
-  C[user content: timeline JSON parts + raw media + final context JSON] --> R
-  D[tools: SEARCH_RECALL_TOOL] --> R
-  E[tool_choice: auto] --> R
-  F[response_format: figure_decision_v3 JSON schema] --> R
+  A["completionBase: model/session/temperature/maxTokens/reasoning disabled"] --> R["OpenAI-compatible request body"]
+  B["system message: buildSystemPrompt(agent)"] --> R
+  C["user content: timeline JSON parts + raw media + final context JSON"] --> R
+  D["tools: SEARCH_RECALL_TOOL"] --> R
+  E["tool_choice: auto"] --> R
+  F["response_format: figure_decision_v3 JSON schema"] --> R
 ```
 
 代码中第一次请求会传入 `messages`、`tools: [SEARCH_RECALL_TOOL]`、`toolChoice: "auto"`、`responseFormat`：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L198-L223)。这些字段最终会被放进 OpenAI-compatible `/chat/completions` body：[`openai-compatible-chat.ts`](../apps/server/src/modules/ai/providers/openai-compatible-chat.ts#L184-L201)。
