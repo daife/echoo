@@ -2,6 +2,7 @@ import type {
   Agent,
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
+  PrimeFigureAgent,
   PrimeFigureState,
   PrimeFigureVariableValue,
   UpdatePrimeFigureRequest,
@@ -105,6 +106,7 @@ export class AgentRepository {
       detail: buildDetail(existing.type, input),
     };
     delete (definition as Partial<Agent>).conversationId;
+    delete (definition as Partial<PrimeFigureAgent>).muteUntilMs;
     const now = Date.now();
     await withTransaction(async (connection) => {
       await execute(
@@ -138,6 +140,10 @@ const SELECT_AGENT = `SELECT agents.*, conversations.id AS conversation_id
 
 function rowToAgent(row: AgentRow): Agent {
   const stored = parseJson<Omit<Agent, "id" | "ownerUserId" | "conversationId" | "createdAt" | "updatedAt">>(row.definition, {} as never);
+  const runtimeState =
+    row.type === "prime-figure"
+      ? parseJson<PrimeFigureState>(row.runtime_state, {} as PrimeFigureState)
+      : null;
   return {
     ...stored,
     id: row.id,
@@ -148,6 +154,9 @@ function rowToAgent(row: AgentRow): Agent {
     conversationId: row.conversation_id ?? "",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    ...(runtimeState?.silenceUntilMs && runtimeState.silenceUntilMs > Date.now()
+      ? { muteUntilMs: runtimeState.silenceUntilMs }
+      : {}),
   } as Agent;
 }
 

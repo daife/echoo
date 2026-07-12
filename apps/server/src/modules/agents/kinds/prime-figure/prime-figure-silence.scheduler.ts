@@ -1,4 +1,5 @@
 import { AgentRunQueue } from "../../../../infra/redis/run-queue.js";
+import { AppPushService } from "../../../realtime/delivery.service.js";
 import { PrimeFigureStateRepository } from "./prime-figure-state.repository.js";
 
 export class PrimeFigureSilenceScheduler {
@@ -8,6 +9,7 @@ export class PrimeFigureSilenceScheduler {
   constructor(
     private readonly states = new PrimeFigureStateRepository(),
     private readonly runQueue = new AgentRunQueue(),
+    private readonly appPush = new AppPushService(),
   ) {}
 
   start() {
@@ -39,6 +41,14 @@ export class PrimeFigureSilenceScheduler {
     this.ticking = true;
     try {
       const due = await this.states.claimDueSilences(Date.now());
+      for (const item of due) {
+        this.appPush.pushToUser(item.ownerUserId, {
+          type: "conversation.agent_mute_changed",
+          conversationId: item.conversationId,
+          muteUntilMs: null,
+          updatedAt: Date.now(),
+        });
+      }
       await Promise.all(
         due
           .filter((item) => item.hadQueuedMessages)

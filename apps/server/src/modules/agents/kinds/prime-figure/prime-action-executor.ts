@@ -142,6 +142,15 @@ export class PrimeActionExecutor {
         decision.stateUpdates ?? {},
       );
       await this.states.save(input.ownerUserId, input.agent.id, state);
+      this.appPush.pushToUser(input.ownerUserId, {
+        type: "conversation.agent_mute_changed",
+        conversationId: input.conversationId,
+        muteUntilMs:
+          state.silenceUntilMs && state.silenceUntilMs > Date.now()
+            ? state.silenceUntilMs
+            : null,
+        updatedAt: Date.now(),
+      });
       await Promise.all(
         decision.actions.map((action) =>
           this.logs.save({

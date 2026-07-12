@@ -8,6 +8,12 @@ export type AppWsServerEvent =
       updatedAt: number;
     }
   | {
+      type: "conversation.agent_mute_changed";
+      conversationId: string;
+      muteUntilMs: number | null;
+      updatedAt: number;
+    }
+  | {
       type: "message.created";
       message: Message;
     }

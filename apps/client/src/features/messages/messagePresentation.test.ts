@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatConversationTime,
+  getConversationPresenceLabel,
   isVisibleConversationMessage,
   sanitizeVoiceTranscript,
   parsePrimeFigureHintCommand,
@@ -92,6 +93,25 @@ describe("Prime Figure hint commands", () => {
     expect(parsePrimeFigureHintCommand(" /HINT\n使用语音 ")).toBe("使用语音");
     expect(parsePrimeFigureHintCommand("/hint")).toBe("");
     expect(parsePrimeFigureHintCommand("/hinted 普通消息")).toBeNull();
+  });
+});
+
+describe("conversation presence", () => {
+  it("shows do-not-disturb before activity or online state", () => {
+    expect(
+      getConversationPresenceLabel({
+        agentTypeLabel: "本初角色",
+        isAgentActive: true,
+        isAgentMuted: true,
+      }),
+    ).toBe("对方已开启勿扰");
+    expect(
+      getConversationPresenceLabel({
+        agentTypeLabel: "本初角色",
+        isAgentActive: true,
+        isAgentMuted: false,
+      }),
+    ).toBe("对方输入中…");
   });
 });
 

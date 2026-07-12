@@ -7,6 +7,16 @@ export function parsePrimeFigureHintCommand(value: string) {
   return match ? (match[1]?.trim() ?? "") : null;
 }
 
+export function getConversationPresenceLabel(input: {
+  agentTypeLabel: string;
+  isAgentActive: boolean;
+  isAgentMuted: boolean;
+}) {
+  if (input.isAgentMuted) return "对方已开启勿扰";
+  if (input.isAgentActive) return "对方输入中…";
+  return `${input.agentTypeLabel}，当前在线`;
+}
+
 export function isVisibleConversationMessage(
   message: LocalMessage,
   agentType: "slice-figure" | "prime-figure" | string,

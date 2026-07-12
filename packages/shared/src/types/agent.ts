@@ -123,6 +123,8 @@ export interface SliceFigureAgent extends AgentBase {
 export interface PrimeFigureAgent extends AgentBase {
   type: "prime-figure";
   detail: PrimeFigureDetail;
+  /** Public runtime presence projection; omitted when the figure is not muted. */
+  muteUntilMs?: number;
 }
 
 export interface PrimeWorldAgent extends AgentBase {

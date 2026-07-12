@@ -2,6 +2,7 @@ import type { Message } from "@echoo/shared";
 import type {
   AuthRuntime,
   ConversationAgentActivityEvent,
+  ConversationAgentMuteChangedEvent,
   MessageAudioChunkEvent,
   MessageAudioCompletedEvent,
   MessageAudioFailedEvent,
@@ -55,6 +56,12 @@ export class TauriMessageRuntime implements MessageRuntime {
     _handler: (event: ConversationAgentActivityEvent) => void,
   ): () => void {
     return this.realtime.onConversationAgentActivity(_handler);
+  }
+
+  onConversationAgentMuteChanged(
+    _handler: (event: ConversationAgentMuteChangedEvent) => void,
+  ): () => void {
+    return this.realtime.onConversationAgentMuteChanged(_handler);
   }
 
   onMessageAudioStarted(

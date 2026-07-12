@@ -103,6 +103,20 @@ export function App() {
     };
   }, [auth.user, services.agentService]);
 
+  useEffect(() => {
+    if (!auth.user) return;
+    void runtime.message.startRealtime();
+    return runtime.message.onConversationAgentMuteChanged((event) => {
+      const updateAgent = (agent: Agent) =>
+        agent.conversationId === event.conversationId &&
+        agent.type === "prime-figure"
+          ? withPrimeFigureMute(agent, event.muteUntilMs)
+          : agent;
+      setMyAgents((current) => current.map(updateAgent));
+      setSelectedAgent((current) => (current ? updateAgent(current) : current));
+    });
+  }, [auth.user, runtime.message]);
+
   const openAgent = (agent: Agent) => {
     setSelectedAgent(agent);
     setView("messages");
@@ -344,4 +358,14 @@ export function App() {
       </nav>
     </div>
   );
+}
+
+function withPrimeFigureMute(
+  agent: Extract<Agent, { type: "prime-figure" }>,
+  muteUntilMs: number | null,
+): Agent {
+  const { muteUntilMs: _previousMuteUntilMs, ...rest } = agent;
+  return muteUntilMs && muteUntilMs > Date.now()
+    ? { ...rest, muteUntilMs }
+    : rest;
 }

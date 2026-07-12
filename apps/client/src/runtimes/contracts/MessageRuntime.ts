@@ -24,6 +24,10 @@ export type ConversationAgentActivityEvent = Extract<
   AppWsServerEvent,
   { type: "conversation.agent_activity" }
 >;
+export type ConversationAgentMuteChangedEvent = Extract<
+  AppWsServerEvent,
+  { type: "conversation.agent_mute_changed" }
+>;
 
 export interface MessageRuntime {
   startRealtime(): Promise<void>;
@@ -34,6 +38,9 @@ export interface MessageRuntime {
   onMessageCompleted(handler: (message: Message) => void): () => void;
   onConversationAgentActivity(
     handler: (event: ConversationAgentActivityEvent) => void,
+  ): () => void;
+  onConversationAgentMuteChanged(
+    handler: (event: ConversationAgentMuteChangedEvent) => void,
   ): () => void;
   onMessageAudioStarted(
     handler: (event: MessageAudioStartedEvent) => void,

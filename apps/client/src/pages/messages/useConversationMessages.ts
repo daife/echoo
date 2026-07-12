@@ -48,6 +48,9 @@ export function useConversationMessages({
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isAgentActive, setIsAgentActive] = useState(false);
+  const [muteUntilMs, setMuteUntilMs] = useState<number | undefined>(
+    agent?.type === "prime-figure" ? agent.muteUntilMs : undefined,
+  );
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [hasOlder, setHasOlder] = useState(false);
@@ -71,6 +74,8 @@ export function useConversationMessages({
     () => ["conversation-messages", conversationId] as const,
     [conversationId],
   );
+  const agentMuteUntilMs =
+    agent?.type === "prime-figure" ? agent.muteUntilMs : undefined;
 
   const clearStreamBuffers = useCallback(() => {
     streamBuffersRef.current.forEach((buffer) => {
@@ -87,6 +92,28 @@ export function useConversationMessages({
   useEffect(() => {
     hasOlderRef.current = hasOlder;
   }, [hasOlder]);
+
+  useEffect(() => {
+    setMuteUntilMs(
+      agentMuteUntilMs && agentMuteUntilMs > Date.now()
+        ? agentMuteUntilMs
+        : undefined,
+    );
+  }, [agent?.conversationId, agentMuteUntilMs]);
+
+  useEffect(() => {
+    if (!muteUntilMs) return;
+    const remaining = muteUntilMs - Date.now();
+    if (remaining <= 0) {
+      setMuteUntilMs(undefined);
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setMuteUntilMs(undefined),
+      Math.min(remaining, 2_147_483_647),
+    );
+    return () => window.clearTimeout(timer);
+  }, [muteUntilMs]);
 
   const refreshMessages = useCallback(
     async (replace = false, preservePaginationState = false) => {
@@ -372,6 +399,15 @@ export function useConversationMessages({
         if (event.conversationId !== conversationId) return;
         setIsAgentActive(event.active);
       });
+    const unsubscribeAgentMuteChanged =
+      runtime.message.onConversationAgentMuteChanged((event) => {
+        if (event.conversationId !== conversationId) return;
+        setMuteUntilMs(
+          event.muteUntilMs && event.muteUntilMs > Date.now()
+            ? event.muteUntilMs
+            : undefined,
+        );
+      });
     const unsubscribeAudioStarted = runtime.message.onMessageAudioStarted(
       (event) => {
         if (event.conversationId !== conversationId) return;
@@ -419,6 +455,7 @@ export function useConversationMessages({
       unsubscribeDelta();
       unsubscribeCompleted();
       unsubscribeAgentActivity();
+      unsubscribeAgentMuteChanged();
       unsubscribeAudioStarted();
       unsubscribeAudioChunk();
       unsubscribeAudioCompleted();
@@ -624,6 +661,7 @@ export function useConversationMessages({
     setDraft,
     isSending,
     isAgentActive,
+    isAgentMuted: Boolean(muteUntilMs && muteUntilMs > Date.now()),
     isInitialLoading,
     isLoadingOlder,
     hasOlder,

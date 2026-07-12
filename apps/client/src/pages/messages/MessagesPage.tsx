@@ -29,6 +29,7 @@ import {
 import {
   formatConversationTime,
   isVisibleConversationMessage,
+  getConversationPresenceLabel,
   shouldShowMessageTime,
 } from "../../features/messages/messagePresentation";
 import { useConversationMessages } from "./useConversationMessages";
@@ -60,6 +61,7 @@ export function MessagesPage({
     isSending,
     isDeletingConversation,
     isAgentActive,
+    isAgentMuted,
     isInitialLoading,
     isLoadingOlder,
     hasOlder,
@@ -79,9 +81,11 @@ export function MessagesPage({
   const lastScrollTopRef = useRef(0);
   const title = agent?.name ?? "选择一个角色";
   const subtitle = agent
-    ? isAgentActive
-      ? "对方输入中…"
-      : `${formatAgentType(agent)}，当前在线`
+    ? getConversationPresenceLabel({
+        agentTypeLabel: formatAgentType(agent),
+        isAgentActive,
+        isAgentMuted,
+      })
     : "打开或创建一个角色以开始聊天";
   const prologueHtml =
     agent?.type === "slice-figure" || agent?.type === "prime-figure"

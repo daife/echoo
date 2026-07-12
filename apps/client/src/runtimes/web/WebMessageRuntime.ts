@@ -2,6 +2,7 @@ import type { AppWsServerEvent, Message } from "@echoo/shared";
 import type {
   AuthRuntime,
   ConversationAgentActivityEvent,
+  ConversationAgentMuteChangedEvent,
   MessageAudioChunkEvent,
   MessageAudioCompletedEvent,
   MessageAudioFailedEvent,
@@ -24,6 +25,9 @@ export class WebMessageRuntime implements MessageRuntime {
   >();
   private readonly agentActivityHandlers = new Set<
     (event: ConversationAgentActivityEvent) => void
+  >();
+  private readonly agentMuteChangedHandlers = new Set<
+    (event: ConversationAgentMuteChangedEvent) => void
   >();
   private readonly audioStartedHandlers = new Set<
     (event: MessageAudioStartedEvent) => void
@@ -73,6 +77,10 @@ export class WebMessageRuntime implements MessageRuntime {
       const payload = JSON.parse(event.data as string) as AppWsServerEvent;
       if (payload.type === "conversation.agent_activity") {
         this.agentActivityHandlers.forEach((handler) => handler(payload));
+        return;
+      }
+      if (payload.type === "conversation.agent_mute_changed") {
+        this.agentMuteChangedHandlers.forEach((handler) => handler(payload));
         return;
       }
       if (payload.type === "message.created") {
@@ -139,6 +147,13 @@ export class WebMessageRuntime implements MessageRuntime {
   ): () => void {
     this.agentActivityHandlers.add(handler);
     return () => this.agentActivityHandlers.delete(handler);
+  }
+
+  onConversationAgentMuteChanged(
+    handler: (event: ConversationAgentMuteChangedEvent) => void,
+  ): () => void {
+    this.agentMuteChangedHandlers.add(handler);
+    return () => this.agentMuteChangedHandlers.delete(handler);
   }
 
   onMessageAudioStarted(
