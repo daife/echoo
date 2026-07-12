@@ -6,7 +6,10 @@ export interface ApiClientOptions {
 export class ApiClient {
   constructor(private readonly options: ApiClientOptions) {}
 
-  async get<T>(path: string, query?: Record<string, string | number | undefined>): Promise<T> {
+  async get<T>(
+    path: string,
+    query?: Record<string, string | number | undefined>,
+  ): Promise<T> {
     return this.request<T>("GET", path, undefined, query);
   }
 
@@ -25,7 +28,9 @@ export class ApiClient {
   resolveServerPath(path?: string): string | undefined {
     if (!path) return undefined;
     if (/^https?:\/\//i.test(path)) return path;
-    const baseUrl = this.options.baseUrl.endsWith("/") ? this.options.baseUrl : `${this.options.baseUrl}/`;
+    const baseUrl = this.options.baseUrl.endsWith("/")
+      ? this.options.baseUrl
+      : `${this.options.baseUrl}/`;
     const origin = new URL(baseUrl).origin;
     return `${origin}${path.startsWith("/") ? path : `/${path}`}`;
   }
@@ -34,28 +39,37 @@ export class ApiClient {
     method: string,
     path: string,
     body?: unknown,
-    query?: Record<string, string | number | undefined>
+    query?: Record<string, string | number | undefined>,
   ): Promise<T> {
-    const baseUrl = this.options.baseUrl.endsWith("/") ? this.options.baseUrl : `${this.options.baseUrl}/`;
+    const baseUrl = this.options.baseUrl.endsWith("/")
+      ? this.options.baseUrl
+      : `${this.options.baseUrl}/`;
     const url = new URL(path.replace(/^\/+/, ""), baseUrl);
     Object.entries(query ?? {}).forEach(([key, value]) => {
       if (value !== undefined) url.searchParams.set(key, String(value));
     });
 
     const token = await this.options.getAccessToken?.();
+    const serializedBody =
+      body === undefined ? undefined : JSON.stringify(body);
     const response = await fetch(url, {
       method,
       headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...(serializedBody === undefined
+          ? {}
+          : { "Content-Type": "application/json" }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: body === undefined ? undefined : JSON.stringify(body)
+      body: serializedBody,
     });
 
     if (!response.ok) {
       let detail = response.statusText;
       try {
-        const payload = (await response.json()) as { error?: string; message?: string };
+        const payload = (await response.json()) as {
+          error?: string;
+          message?: string;
+        };
         detail = payload.message ?? payload.error ?? detail;
       } catch {
         // Keep the status text when the response body is not JSON.

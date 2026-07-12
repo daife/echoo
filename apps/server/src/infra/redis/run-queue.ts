@@ -4,6 +4,7 @@ import { getRedis, getRedisWorker } from "./redis.js";
 
 const STREAM = "echoo:agent-runs";
 const GROUP = "echoo-server";
+const CANCELLED_TTL_SECONDS = 24 * 60 * 60;
 
 export interface AgentRunJob {
   id?: string;
@@ -22,6 +23,7 @@ export class AgentRunQueue {
 
   async enqueue(job: AgentRunJob) {
     const redis = await getRedis();
+    if (await redis.exists(this.cancelledKey(job.conversationId))) return;
     await redis.xAdd(
       STREAM,
       "*",
@@ -37,6 +39,17 @@ export class AgentRunQueue {
         TRIM: { strategy: "MAXLEN", strategyModifier: "~", threshold: 100_000 },
       },
     );
+  }
+
+  async cancelConversation(conversationId: string) {
+    const redis = await getRedis();
+    await redis
+      .multi()
+      .set(this.cancelledKey(conversationId), "1", {
+        EX: CANCELLED_TTL_SECONDS,
+      })
+      .del(`echoo:run-dirty:${conversationId}`)
+      .exec();
   }
 
   async start(handler: (job: AgentRunJob) => Promise<void>) {
@@ -120,6 +133,7 @@ export class AgentRunQueue {
     job: AgentRunJob,
     handler: (job: AgentRunJob) => Promise<void>,
   ) {
+    if (await redis.exists(this.cancelledKey(job.conversationId))) return;
     const lockKey = `echoo:run-lock:${job.conversationId}`;
     const dirtyKey = `echoo:run-dirty:${job.conversationId}`;
     const token = createId("msg");
@@ -144,6 +158,7 @@ export class AgentRunQueue {
       let currentJob = job;
       do {
         await redis.del(dirtyKey);
+        if (await redis.exists(this.cancelledKey(job.conversationId))) return;
         await handler(currentJob);
         currentJob = { ...job, trigger: "coalesced_messages" };
       } while (job.kind === "prime-figure" && (await redis.getDel(dirtyKey)));
@@ -151,6 +166,10 @@ export class AgentRunQueue {
       clearInterval(heartbeat);
       if ((await redis.get(lockKey)) === token) await redis.del(lockKey);
     }
+  }
+
+  private cancelledKey(conversationId: string) {
+    return `echoo:run-cancelled:${conversationId}`;
   }
 }
 
