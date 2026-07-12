@@ -11,11 +11,17 @@ test("prime stream starts image generation as soon as prompt and references are 
     imageGeneration: {
       async generate(input: { prompt: string }) {
         generatedPrompt = input.prompt;
-        return { mimeType: "image/png", data: Buffer.from("image"), model: "test-image" };
+        return {
+          mimeType: "image/png",
+          data: Buffer.from("image"),
+          model: "test-image",
+        };
       },
     },
   });
-  const parser = new PrimeDecisionStreamParser((event) => session.handleField(event));
+  const parser = new PrimeDecisionStreamParser((event) =>
+    session.handleField(event),
+  );
 
   parser.push(
     '{"actions":[{"message":{"type":"image","description":"海边","generationPrompt":"cinematic beach","referenceMediaIds":[]}',
@@ -35,14 +41,20 @@ test("prime voice transcript is written to streaming TTS before the decision com
             writes.push(text);
           },
           async finish() {
-            return { audio: Buffer.from("voice"), mimeType: "audio/mpeg", format: "mp3" };
+            return {
+              audio: Buffer.from("voice"),
+              mimeType: "audio/mpeg",
+              format: "mp3",
+            };
           },
           abort() {},
         };
       },
     },
   });
-  const parser = new PrimeDecisionStreamParser((event) => session.handleField(event));
+  const parser = new PrimeDecisionStreamParser((event) =>
+    session.handleField(event),
+  );
 
   parser.push('{"actions":[{"message":{"type":"voice","transcript":"你好');
 
@@ -51,10 +63,8 @@ test("prime voice transcript is written to streaming TTS before the decision com
 
 test("prime messages are persisted when revealed and later actions wait for the prior completion", async () => {
   const saved: Array<{ id: string; createdAt: number }> = [];
-  const previousMinimum = process.env.PRIME_MESSAGE_GAP_MIN_MS;
-  const previousMaximum = process.env.PRIME_MESSAGE_GAP_MAX_MS;
-  process.env.PRIME_MESSAGE_GAP_MIN_MS = "1";
-  process.env.PRIME_MESSAGE_GAP_MAX_MS = "1";
+  const previousTypingSpeed = process.env.PRIME_TYPING_CHARS_PER_MINUTE;
+  process.env.PRIME_TYPING_CHARS_PER_MINUTE = "600";
   try {
     const session = createSession({
       messages: {
@@ -73,15 +83,122 @@ test("prime messages are persisted when revealed and later actions wait for the 
         { type: "send_message", message: { type: "text", text: "第二条" } },
       ],
     } as PrimeFigureDecision;
-    const parser = new PrimeDecisionStreamParser((event) => session.handleField(event));
-    parser.push(JSON.stringify(decision));
+    session.handleField({
+      actionIndex: 0,
+      field: "type",
+      delta: "text",
+      complete: false,
+    });
+    session.handleField({
+      actionIndex: 0,
+      field: "type",
+      delta: "",
+      complete: true,
+    });
+    session.handleField({
+      actionIndex: 0,
+      field: "text",
+      delta: "第一条",
+      complete: false,
+    });
+    session.handleField({
+      actionIndex: 0,
+      field: "text",
+      delta: "",
+      complete: true,
+    });
+    await tick();
+    session.handleField({
+      actionIndex: 1,
+      field: "type",
+      delta: "text",
+      complete: false,
+    });
+    session.handleField({
+      actionIndex: 1,
+      field: "type",
+      delta: "",
+      complete: true,
+    });
+    session.handleField({
+      actionIndex: 1,
+      field: "text",
+      delta: "第二条",
+      complete: false,
+    });
+    await wait(350);
+    session.handleField({
+      actionIndex: 1,
+      field: "text",
+      delta: "",
+      complete: true,
+    });
     await session.finalize(decision);
 
     assert.equal(saved.length, 2);
-    assert.ok(saved[1]!.createdAt >= saved[0]!.createdAt + 1);
+    const elapsed = saved[1]!.createdAt - saved[0]!.createdAt;
+    assert.ok(elapsed >= 300);
+    assert.ok(elapsed < 550);
   } finally {
-    restoreEnvironment("PRIME_MESSAGE_GAP_MIN_MS", previousMinimum);
-    restoreEnvironment("PRIME_MESSAGE_GAP_MAX_MS", previousMaximum);
+    restoreEnvironment("PRIME_TYPING_CHARS_PER_MINUTE", previousTypingSpeed);
+  }
+});
+
+test("prime non-text messages do not add a typing interval", async () => {
+  const saved: Array<{ contentType: string; createdAt: number }> = [];
+  const previousTypingSpeed = process.env.PRIME_TYPING_CHARS_PER_MINUTE;
+  process.env.PRIME_TYPING_CHARS_PER_MINUTE = "1";
+  try {
+    const session = createSession({
+      imageGeneration: {
+        async generate() {
+          return {
+            mimeType: "image/png",
+            data: Buffer.from("image"),
+            model: "test-image",
+          };
+        },
+      },
+      messages: {
+        async save(message: { contentType: string; createdAt: number }) {
+          saved.push({
+            contentType: message.contentType,
+            createdAt: message.createdAt,
+          });
+          return message;
+        },
+      },
+    });
+    const decision = {
+      rationale: "test",
+      figureMood: "calm",
+      variables: {},
+      actions: [
+        { type: "send_message", message: { type: "text", text: "第一条" } },
+        {
+          type: "send_message",
+          message: {
+            type: "image",
+            description: "海边",
+            generationPrompt: "cinematic beach",
+            referenceMediaIds: [],
+          },
+        },
+      ],
+    } as PrimeFigureDecision;
+    const parser = new PrimeDecisionStreamParser((event) =>
+      session.handleField(event),
+    );
+    parser.push(JSON.stringify(decision));
+    await session.finalize(decision);
+
+    assert.deepEqual(
+      saved.map((message) => message.contentType),
+      ["text", "image"],
+    );
+    assert.ok(saved[1]!.createdAt - saved[0]!.createdAt < 1_000);
+  } finally {
+    restoreEnvironment("PRIME_TYPING_CHARS_PER_MINUTE", previousTypingSpeed);
   }
 });
 
@@ -99,9 +216,15 @@ test("a stale dirty wakeup cannot call the LLM after all end-user messages were 
       },
     } as never,
     {
-      async findLatestEndUserCreatedAt() { return Date.now() - 5_000; },
-      async listRecent() { return []; },
-      async listEndUserAfterSequence() { return []; },
+      async findLatestEndUserCreatedAt() {
+        return Date.now() - 5_000;
+      },
+      async listRecent() {
+        return [];
+      },
+      async listEndUserAfterSequence() {
+        return [];
+      },
     } as never,
     {
       getDefaultProvider() {
@@ -114,7 +237,9 @@ test("a stale dirty wakeup cannot call the LLM after all end-user messages were 
     {} as never,
     {} as never,
     {
-      async getPrimeHandledEndUserSequence() { return 39; },
+      async getPrimeHandledEndUserSequence() {
+        return 39;
+      },
     } as never,
   );
 
@@ -136,20 +261,36 @@ function createSession(overrides?: {
   return new PrimeDecisionStreamSession(
     { ownerUserId: "user_1", conversationId: "conversation_1" },
     { pushToUser() {} } as never,
-    (overrides?.tts ?? { createStream() { throw new Error("unused"); } }) as never,
+    (overrides?.tts ?? {
+      createStream() {
+        throw new Error("unused");
+      },
+    }) as never,
     {
-      async readForOwner() { return null; },
+      async readForOwner() {
+        return null;
+      },
       async saveGeneratedMedia(_owner: string, kind: string) {
         return { id: `resource_${kind}`, publicPath: `/resources/${kind}` };
       },
     } as never,
-    (overrides?.imageGeneration ?? { async generate() { throw new Error("unused"); } }) as never,
+    (overrides?.imageGeneration ?? {
+      async generate() {
+        throw new Error("unused");
+      },
+    }) as never,
     {
-      async resolveImageReferences() { return []; },
-      async ensure() { return { mediaId: "media_1" }; },
+      async resolveImageReferences() {
+        return [];
+      },
+      async ensure() {
+        return { mediaId: "media_1" };
+      },
     } as never,
     {
-      async save(message: unknown) { return message; },
+      async save(message: unknown) {
+        return message;
+      },
       async updateCachedLive() {},
       ...(overrides?.messages ?? {}),
     } as never,
@@ -158,6 +299,10 @@ function createSession(overrides?: {
 
 function tick() {
   return new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 function restoreEnvironment(name: string, value: string | undefined) {

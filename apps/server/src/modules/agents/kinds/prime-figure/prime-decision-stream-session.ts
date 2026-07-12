@@ -36,8 +36,8 @@ interface StreamedActionState {
   revealed: boolean;
   createdAt?: number;
   revealPromise?: Promise<void>;
-  deliveryDone: Promise<void>;
-  resolveDeliveryDone: () => void;
+  deliveryDone: Promise<number>;
+  resolveDeliveryDone: (completedAt: number) => void;
   deliveryResolved: boolean;
   tts?: FishAudioTtsStream;
   voicePromise?: Promise<ResolvedPrimeVoiceMedia>;
@@ -51,12 +51,15 @@ interface StreamedActionState {
   imagePromise?: Promise<ResolvedPrimeImageMedia>;
   pendingText: string;
   textFlushScheduled: boolean;
+  textComplete: Promise<void>;
+  resolveTextComplete: () => void;
+  textCompleteResolved: boolean;
   liveCacheWrite: Promise<void>;
 }
 
 export class PrimeDecisionStreamSession {
   private readonly actions = new Map<number, StreamedActionState>();
-  private deliveryTail: Promise<void> = Promise.resolve();
+  private deliveryTail: Promise<number> = Promise.resolve(Date.now());
 
   constructor(
     private readonly input: { ownerUserId: string; conversationId: string },
@@ -107,8 +110,10 @@ export class PrimeDecisionStreamSession {
     ) {
       this.queueTextDelta(state, event.delta);
     }
-    if (event.complete && event.field === "text")
+    if (event.complete && event.field === "text") {
+      this.resolveTextComplete(state);
       void this.completeTextDelivery(state).catch(() => undefined);
+    }
     if (event.complete && event.field === "transcript")
       this.maybeFinishVoice(state);
   }
@@ -142,6 +147,7 @@ export class PrimeDecisionStreamSession {
         this.ensureTts(state);
         this.maybeFinishVoice(state);
       } else {
+        this.resolveTextComplete(state);
         void this.completeTextDelivery(state).catch(() => undefined);
       }
     }
@@ -210,6 +216,7 @@ export class PrimeDecisionStreamSession {
 
   fail(error: unknown) {
     for (const state of this.actions.values()) {
+      this.resolveTextComplete(state);
       this.flushTextDelta(state);
       state.tts?.abort();
       if (!state.created) continue;
@@ -220,9 +227,13 @@ export class PrimeDecisionStreamSession {
   private getAction(index: number) {
     const existing = this.actions.get(index);
     if (existing) return existing;
-    let resolveDeliveryDone!: () => void;
-    const deliveryDone = new Promise<void>((resolve) => {
+    let resolveDeliveryDone!: (completedAt: number) => void;
+    const deliveryDone = new Promise<number>((resolve) => {
       resolveDeliveryDone = resolve;
+    });
+    let resolveTextComplete!: () => void;
+    const textComplete = new Promise<void>((resolve) => {
+      resolveTextComplete = resolve;
     });
     const state: StreamedActionState = {
       id: `msg_${randomUUID()}`,
@@ -241,6 +252,9 @@ export class PrimeDecisionStreamSession {
       generationPromptComplete: false,
       pendingText: "",
       textFlushScheduled: false,
+      textComplete,
+      resolveTextComplete,
+      textCompleteResolved: false,
       liveCacheWrite: Promise.resolve(),
     };
     this.actions.set(index, state);
@@ -252,8 +266,13 @@ export class PrimeDecisionStreamSession {
     state.created = true;
     const predecessor = this.deliveryTail;
     state.revealPromise = (async () => {
-      await predecessor;
-      if (index > 0) await delay(randomMessageGapMs());
+      const predecessorCompletedAt = await predecessor;
+      if (index > 0 && state.type === "text") {
+        await state.textComplete;
+        const elapsed = Date.now() - predecessorCompletedAt;
+        const remaining = textMessageGapMs(state.fields.text ?? "") - elapsed;
+        if (remaining > 0) await delay(remaining);
+      }
       const now = Date.now();
       state.createdAt = now;
       const placeholder = this.buildPlaceholder(state, now, "pending", {
@@ -275,7 +294,8 @@ export class PrimeDecisionStreamSession {
           conversationId: this.input.conversationId,
           mimeType: "audio/mpeg",
         });
-        for (const chunk of state.pendingAudio) this.pushAudioChunk(state, chunk);
+        for (const chunk of state.pendingAudio)
+          this.pushAudioChunk(state, chunk);
         state.pendingAudio = [];
       }
       this.flushTextDelta(state);
@@ -405,7 +425,13 @@ export class PrimeDecisionStreamSession {
   private resolveDelivery(state: StreamedActionState) {
     if (state.deliveryResolved) return;
     state.deliveryResolved = true;
-    state.resolveDeliveryDone();
+    state.resolveDeliveryDone(Date.now());
+  }
+
+  private resolveTextComplete(state: StreamedActionState) {
+    if (state.textCompleteResolved) return;
+    state.textCompleteResolved = true;
+    state.resolveTextComplete();
   }
 
   private async failState(state: StreamedActionState, error: unknown) {
@@ -416,7 +442,10 @@ export class PrimeDecisionStreamSession {
       kind: "prime_figure_stream_error",
       error: toErrorMessage(error),
     });
-    await this.messages.save({ ownerUserId: this.input.ownerUserId, ...message });
+    await this.messages.save({
+      ownerUserId: this.input.ownerUserId,
+      ...message,
+    });
     this.appPush.pushToUser(this.input.ownerUserId, {
       type: "message.completed",
       message,
@@ -447,12 +476,9 @@ export class PrimeDecisionStreamSession {
     });
     const updatedAt = Date.now();
     const liveMessage: Message = {
-      ...this.buildPlaceholder(
-        state,
-        state.createdAt ?? updatedAt,
-        "pending",
-        { kind: "prime_figure" },
-      ),
+      ...this.buildPlaceholder(state, state.createdAt ?? updatedAt, "pending", {
+        kind: "prime_figure",
+      }),
       content: { text: state.fields[visibleField(state.type)] ?? "" },
       updatedAt,
     };
@@ -509,12 +535,12 @@ function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function randomMessageGapMs() {
-  const minimum = Number(process.env.PRIME_MESSAGE_GAP_MIN_MS ?? 1_500);
-  const maximum = Number(process.env.PRIME_MESSAGE_GAP_MAX_MS ?? 3_000);
-  const low = Math.min(minimum, maximum);
-  const high = Math.max(minimum, maximum);
-  return Math.round(low + Math.random() * (high - low));
+function textMessageGapMs(text: string) {
+  const configured = Number(process.env.PRIME_TYPING_CHARS_PER_MINUTE ?? 300);
+  const charactersPerMinute =
+    Number.isFinite(configured) && configured > 0 ? configured : 300;
+  const characterCount = Array.from(text).length;
+  return Math.round((characterCount * 60_000) / charactersPerMinute);
 }
 
 function delay(ms: number) {
