@@ -51,7 +51,7 @@ flowchart TD
 
 ## 用户消息静默窗口
 
-`requestDecision` 加载 agent/state 并确认角色不处于尚未到期的 `silenceUntilMs` 后，调用 `waitForEndUserQuiet`：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L70-L127)。该窗口是基于最新用户消息写入时间的可延长 debounce，不是从任务入队或 worker 开始运行时重新计满一个固定时长。
+`requestDecision` 加载 agent/state 并确认角色不处于尚未到期的 `silenceUntilMs` 后，调用 `waitForEndUserQuiet`：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L70-L130)。该窗口是基于最新用户消息写入时间的可延长 debounce，不是从任务入队或 worker 开始运行时重新计满一个固定时长。
 
 ```mermaid
 flowchart TD
@@ -85,13 +85,13 @@ flowchart TD
 12:00:03.500  B 之后已连续静默 2000 ms，窗口结束
 ```
 
-窗口结束后才读取 `recentTimeline` 和 `lastHandledEndUserSeq` 之后的用户消息。若没有未处理用户消息，本轮返回 `null`，不会请求 LLM；否则会记录本轮输入所覆盖的最大用户消息序号，构造稳定的输入快照：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L136-L179)。
+窗口结束后才读取 `recentTimeline` 和 `lastHandledEndUserSeq` 之后的用户消息。若没有未处理用户消息，本轮返回 `null`，不会请求 LLM；否则会记录本轮输入所覆盖的最大用户消息序号，构造稳定的输入快照：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L132-L196)。
 
-静默窗口内到达且在快照查询前已写入的消息，通常会合并进同一次 LLM 决策。快照形成后、LLM 或动作执行期间到达的消息不会被强行塞进已经发出的请求；它们会通过新的队列任务设置 `run-dirty`，当前轮结束后再以 `coalesced_messages` 触发下一轮。下一轮仍会先等待最新用户消息满足静默窗口。决策成功后，只有本轮快照覆盖到的最大用户消息序号会写入 `lastHandledEndUserSeq`，因此快照之后的新消息仍保持未处理状态：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L166-L179)、[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L305-L309)。
+静默窗口内到达且在快照查询前已写入的消息，通常会合并进同一次 LLM 决策。快照形成后、LLM 或动作执行期间到达的消息不会被强行塞进已经发出的请求；它们会通过新的队列任务设置 `run-dirty`，当前轮结束后再以 `coalesced_messages` 触发下一轮。下一轮仍会先等待最新用户消息满足静默窗口。决策成功后，只有本轮快照覆盖到的最大用户消息序号会写入 `lastHandledEndUserSeq`，因此快照之后的新消息仍保持未处理状态：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L164-L196)、[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L289-L314)。
 
 ## 决策请求的构造
 
-运行时先读取最近上下文和未处理的新用户消息，并调用 `buildPrimeChatMessages` 产出 chat messages：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L136-L192)。
+运行时先读取最近上下文和未处理的新用户消息，并调用 `buildPrimeChatMessages` 产出 chat messages：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L132-L197)。
 
 第一次 LLM 请求的可见内容如下：
 
@@ -105,46 +105,48 @@ flowchart LR
   F["response_format: figure_decision_v3 JSON schema"] --> R
 ```
 
-代码中第一次请求会传入 `messages`、`tools: [SEARCH_RECALL_TOOL]`、`toolChoice: "auto"`、`responseFormat`：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L198-L223)。这些字段最终会被放进 OpenAI-compatible `/chat/completions` body：[`openai-compatible-chat.ts`](../apps/server/src/modules/ai/providers/openai-compatible-chat.ts#L184-L201)。
+代码中第一次请求会传入 `messages`、`tools: [SEARCH_RECALL_TOOL]`、`toolChoice: "auto"`、`responseFormat`：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L203-L229)。这些字段最终会被放进 OpenAI-compatible `/chat/completions` body：[`openai-compatible-chat.ts`](../apps/server/src/modules/ai/providers/openai-compatible-chat.ts#L184-L201)。
 
 ### system message
 
-`system` 内容由 `buildSystemPrompt(agent)` 注入：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L837-L878)。
+`system` 内容由 `buildSystemPrompt(agent)` 注入：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L845-L879)。
 
-它包含三类信息：
+它包含三类信息。固定规则在代码中按职责拆成多个常量后，再按固定顺序拼入同一条 system message；拆分常量不会产生多条 system message：
 
-- 固定运行规则：角色视角、不是取悦用户、先输出简洁 rationale、禁止输出隐藏思维链或 `userIntent` 等、消息数量建议、`send_message`、`silence` 与 `mute` 互斥、时间格式、何时使用 `search_recall`、必须返回严格 JSON 等。
-- 图片和语音规则：图片 action 必须提供 `description` 与 `generationPrompt`，语音 action 的 `transcript` 会用于 TTS；图片参考图只能来自 user 数据包中的 `availableReferenceImages`；语音可使用 Fish Audio 表演标签。
-- 创作者/角色配置：`persona`、`background`、`personality`、`responseStyle`、`decisionStyle`、`currentSituation`、`itinerary`、每周 `schedule`、自定义输出参数定义。
+- 固定运行规则：角色视角、先输出简洁 rationale、`send_message`、`silence` 与 `mute` 互斥、时间格式、何时使用 `search_recall`、必须返回严格 JSON 等。当前规则不再建议每次生成固定数量的 `send_message`。
+- 图片和语音规则：图片 action 必须提供 `description` 与 `generationPrompt`，语音 action 的 `transcript` 会用于 TTS；图片参考图只能来自 user 数据包中的 `availableReferenceImages`；语音可使用方括号包裹的自由文本 tag 控制后方语句的情感、语调或音效。
+- 创作者/角色配置：`persona`、`background`、`personality`、`responseStyle`、`decisionStyle`、`currentSituation`、`itinerary`、每周 `schedule`、变量定义。
 
-图片 `generationPrompt` 的四段格式规范也直接拼进 system prompt：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L880-L887)。因此，决策 LLM 会看到“正向提示词/负向提示词/机位与身体逻辑检查/推荐比例”的要求。
+固定规则的实际拼接顺序是 `DECISION_PROMPT_RULES`、`ACTION_PROMPT_RULES`、`SEND_MESSAGE_PROMPT_RULES`、`IMAGE_MESSAGE_PROMPT_RULES`、`IMAGE_GENERATION_PROMPT_RULES`、`VOICE_MESSAGE_PROMPT_RULES`、`STATE_UPDATE_PROMPT_RULES`、`MEMORY_AND_TIME_PROMPT_RULES`、`OUTPUT_PROMPT_RULES`。其中语音规则已改为自由文本 tag：`transcript` 应在合适位置插入一个或多个方括号标签来控制后方语句的情感、语调或音效，例如 `[低声耳语]`、`[笑]`、`[叹气]`；标签不限于固定预设，并且其他消息类型禁止插入 tag。
+
+图片 `generationPrompt` 的四段格式规范也直接拼进 system prompt：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L896-L903)。因此，决策 LLM 会看到“正向提示词/负向提示词/机位与身体逻辑检查/推荐比例”的要求。
 
 ### user message
 
-`user` 是一个 content parts 数组，由对话时间线和最终上下文组成：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L456-L759)。
+`user` 是一个 content parts 数组，由对话时间线和最终上下文组成：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L461-L759)。
 
 时间线部分：
 
-- 文本消息会作为 JSON 文本 part 注入，字段包括 `at`、`sender`、可选 `attentionId`、`type: "text"`、`text`：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L552-L563)。
-- 已有描述的图片/视频会作为 JSON 文本 part 注入 `description`；没有描述的图片/视频会注入 `annotationId` 和 `description: null`，并额外追加原始 `image_url` 或 `video_url` data URL part：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L566-L623)、[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L790-L824)。
-- 已有转写的语音会作为 JSON 文本 part 注入 `transcript`；没有转写的语音会注入 `annotationId` 和 `transcript: null`，并额外追加 `input_audio` part：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L626-L681)、[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L826-L834)。
-- sticker 和 transfer 也会被转成 JSON 文本 part：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L684-L715)。
+- 文本消息会作为 JSON 文本 part 注入，字段包括 `at`、`sender`、可选 `attentionId`、`type: "text"`、`text`：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L551-L578)。
+- 已有描述的图片/视频会作为 JSON 文本 part 注入 `description`；没有描述的图片/视频会注入 `annotationId` 和 `description: null`，并额外追加原始 `image_url` 或 `video_url` data URL part：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L579-L636)、[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L798-L832)。
+- 已有转写的语音会作为 JSON 文本 part 注入 `transcript`；没有转写的语音会注入 `annotationId` 和 `transcript: null`，并额外追加 `input_audio` part：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L637-L683)、[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L834-L842)。
+- sticker 和 transfer 也会被转成 JSON 文本 part：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L684-L721)。
 
-最后一个 user JSON part 注入运行时上下文：`now`、`weekday`、`figureNow.mood`、`figureNow.relationship`、`figureNow.variables`、可见 `memories`、`availableReferenceImages`、`hints`：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L731-L747)。
+最后一个 user JSON part 注入运行时上下文：`now`、`weekday`、`figureNow.mood`、`figureNow.relationship`、`figureNow.variables`、可见 `memories`、`availableReferenceImages`、`hints`：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L729-L755)。
 
 ### hints 注入规则
 
 `hints` 是 user message 最后一个 JSON part 中的数组，不是 system prompt。当前有这些来源：
 
-- 新出现且必须注意的 end_user 消息会被分配 `attention_1`、`attention_2` 等，并写入 hint：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L477-L493)。
-- 最近一条用户文本命中回忆关键词正则时，写入“可能需要考虑调用 search_recall”的 hint：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L495-L502)。
-- 根据最近用户消息时间匹配角色日程，写入当前日程时段；匹配不到则写入“不处于任何日程时段”：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L503-L509)。
-- `trigger === "mute_ended"` 时写入消息屏蔽期结束提示；`trigger === "coalesced_messages"` 时写入上一轮决定期间收到新消息的提示：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L510-L518)。
-- 如果本轮有未标注媒体，写入必须在 `mediaAnnotations` 中补描述或转写的 hint：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L718-L721)。
+- 新出现且可能需要注意的 end_user 消息会被分配 `attention_1`、`attention_2` 等，并写入 hint；模型仍被要求结合完整时间线统一回应、不要遗漏这些消息：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L482-L498)。
+- 最近一条用户文本命中回忆关键词正则时，写入“可能需要考虑调用 search_recall”的 hint：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L500-L507)。
+- 根据最近用户消息时间匹配角色日程，写入当前日程时段；匹配不到则写入“不处于任何日程时段”：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L508-L514)。
+- `trigger === "mute_ended"` 时提示屏蔽期间 end_user 发送了新消息、需要重新决策；`trigger === "coalesced_messages"` 时提示 figure 回复期间收到了新的 end_user 消息、需要继续决策：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L515-L523)。
+- 如果本轮有未标注媒体，写入必须在 `mediaAnnotations` 中补描述或转写的 hint：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L723-L727)。
 
 ### tool 描述
 
-第一次请求会暴露 `search_recall` function tool：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L889-L919)。
+第一次请求会暴露 `search_recall` function tool：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L920-L948)。
 
 模型可见内容包括：
 
@@ -161,33 +163,33 @@ flowchart LR
 }
 ```
 
-工具结果构造位置：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L366-L399)。
+工具结果构造位置：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L369-L405)。
 
 ## JSON output schema 注入
 
-`response_format` 是 strict JSON schema，名称为 `figure_decision_v3`：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L921-L1072)。
+`response_format` 是 strict JSON schema，名称为 `figure_decision_v3`：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L950-L1094)。
 
 模型可见的 schema 说明包括：
 
-- 顶层 description：这是“针对当前运行时事件数据包的一次以角色为中心的决定”。
-- `rationale`：要求简洁分析角色自己的情绪、动机、日程、记忆、欲望、抗拒和边界，而不是用户意图。
-- `figureMood`：本次决定时的当前情绪。
-- `variables`：来自创作者定义的每个输出参数；每个变量 schema 会拼入变量描述，并说明 `null` 保留先前值：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L1275-L1295)。
+- 顶层 schema 当前没有 description。
+- `rationale`：要求分析 figure 的情绪、动机、记忆、日程和变量，以及用什么 actions 应对。
+- `figureMood`：必填字符串，但当前 schema 没有额外 description；它的语义由字段名和 system prompt 共同限定。
+- `variables`：来自创作者定义的每个变量；对象 description 要求输出每个变量的替换值，保留原值时为 `null`。每个变量 schema 仍会拼入创作者填写的变量描述：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L1279-L1299)。
 - `memoryWrites`：新增持久记忆；第一次请求 `minItems: 0`，如果走过 `search_recall`，第二次请求 `minItems: 1`。
 - `stateUpdates`：可选持久上下文替换，包含 `currentSituation`、`schedule`、`itinerary`、`relationshipStatus`。
 - `actions`：要么是一条或多条 `send_message`，要么是单独一个 `silence`（仅本次不回复），要么是单独一个 `mute`（在指定时段屏蔽消息）。
-- 有待标注媒体时，额外要求 `mediaAnnotations`，数量必须等于待标注媒体数：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L1046-L1058)。
+- 有待标注媒体时，额外要求 `mediaAnnotations`，数量必须等于待标注媒体数：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L1064-L1088)。
 
 `send_message` 的 schema 会继续告诉模型：
 
-- 文本消息要输出 `text`。
-- 图片消息要输出 `description`、`generationPrompt`、`referenceMediaIds`；`generationPrompt` 的 schema description 明确说它会“供实际图像生成服务直接使用”：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L1193-L1229)。
-- 语音消息要输出 `transcript`，并说明它是实际说出的内容和 TTS 输入：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L1230-L1244)。
-- `silence` 不带额外参数；`mute` 要输出 `revisitAfterMinutes`：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L1253-L1286)。
+- 文本消息要输出 `text`；其对象和字段当前不再附加额外 schema description。
+- 图片消息要输出 `description`、`generationPrompt`、`referenceMediaIds`；`generationPrompt` 的 schema description 明确说它会“供实际图像生成服务直接使用”：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L1192-L1227)。
+- 语音消息要输出 `transcript`。schema 说明它既是 figure 说话的内容，也是 TTS 输入，并要求在多个合适位置插入 tag 以进行细粒度的情感与语调控制：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L1229-L1246)。
+- `silence` 不带额外参数；`mute` 要输出 `revisitAfterMinutes`：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L1249-L1277)。
 
 ## 可选的第二次 LLM 请求
 
-如果第一次响应包含 `search_recall` tool call，运行时会原地追加两条消息后再次调用 LLM：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L226-L256)。
+如果第一次响应包含 `search_recall` tool call，运行时会原地追加两条消息后再次调用 LLM：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L231-L261)。
 
 第二次请求中模型可见内容：
 
@@ -221,13 +223,13 @@ flowchart LR
 
 语音 action 的 `transcript` 会在流式解析期间写入 Fish Audio WebSocket：[`prime-decision-stream-session.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-decision-stream-session.ts#L286-L344)、[`prime-decision-stream-session.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-decision-stream-session.ts#L427-L429)。
 
-Fish Audio 请求不是 LLM 决策请求，但外部 TTS 服务会看到：
+Fish Audio 请求不是 LLM 决策请求，但外部 TTS 服务会看到。运行时不会把自由文本 tag 转换为旧的固定英文标签；模型产出的 `transcript` delta 会原样进入 TTS 文本流：
 
 - start payload 中的空 `text`、`format`、`latency`、`chunk_length`、`reference_id`：[`fish-audio-tts.service.ts`](../apps/server/src/modules/tts/fish-audio-tts.service.ts#L66-L79)。
 - 后续 `event: "text"` payload 中的 `text`，也就是模型输出的 `transcript` delta：[`fish-audio-tts.service.ts`](../apps/server/src/modules/tts/fish-audio-tts.service.ts#L95-L104)。
 
 ## 执行与持久化
 
-LLM 最终文本会被 `JSON.parse` 和 `primeFigureDecisionSchema.parse` 校验，然后执行动作、写状态、写记忆、写日志：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L259-L303)。
+LLM 最终文本会被 `JSON.parse` 和 `primeFigureDecisionSchema.parse` 校验，然后执行动作、写状态、写记忆、写日志：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L264-L304)。
 
-如果本轮补充了媒体标注，运行时会把 `mediaAnnotations` 写回消息和 conversation media 索引，之后同一媒体就可以在后续 user message 中以文本描述形式出现：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L305-L358)。
+如果本轮补充了媒体标注，运行时会把 `mediaAnnotations` 写回消息和 conversation media 索引，之后同一媒体就可以在后续 user message 中以文本描述形式出现：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L305-L367)。

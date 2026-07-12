@@ -887,7 +887,8 @@ send_message、silence 与 mute 互斥。silence 只表示本次不回复，不�
 
 const SEND_MESSAGE_PROMPT_RULES = `send_message 注意事项：
 不支持发送 video 或 sticker。
-send_message.message 中必须先输出 type，再输出 text、description/generationPrompt 或 transcript；各消息必须严格按实际发送顺序输出。`;
+send_message.message 中必须先输出 type，再输出 text、description/generationPrompt 或 transcript；各消息必须严格按实际发送顺序输出。
+只有voice消息提供的transcript可以加tag，其他类型消息禁止插入tag！其他消息类型禁止插入tag!`;
 
 const IMAGE_MESSAGE_PROMPT_RULES = `image 注意事项：
 发送图片时必须同时提供面向对话的客观 description 和用于后续生图的 generationPrompt。
@@ -905,7 +906,7 @@ generationPrompt 必须严格依次包含【正向提示词】【负向提示词
 const VOICE_MESSAGE_PROMPT_RULES = `voice 注意事项：
 figure发送语音时 transcript 内容需要在一个或多个合适位置插入tag来指导后方语句，以获得细腻真实的情感和语调，或者加入特定的音效。
 tag必须用中括号囊括，支持自由文本描述,不限于固定预设，比如[低声耳语] [专业广播腔] [提高音调] [强调] [笑] [吸气] [轻笑] [咂舌声] [碎玻璃声] [愤怒] [哭泣] [叹气] [喘息] [尖叫] [咳嗽] [打哈欠] [撒娇]
-其余消息类型禁止插入tag`;
+例如：哎呀，今天去买奶茶的时候，店员听我说话就问我是不是福建的，我说对啊，然后她说她也是福建的，我们就用闽南话聊起来了，感觉[强调]特别亲切，[兴奋]真的好开心啊。`;
 
 const STATE_UPDATE_PROMPT_RULES = `stateUpdates 注意事项：
 只有当 currentSituation、schedule、itinerary 或 relationshipStatus 确实发生变化时，才使用可选的 stateUpdates 对象。要保留某字段当前值，可以省略该字段或将其设为 null。`;

@@ -33,6 +33,7 @@ export class OpenRouterImageGenerationService {
     const model =
       process.env.DEFAULT_PRIME_IMAGE_MODEL ??
       "google/gemini-3.1-flash-lite-image";
+    const upstreamProvider = process.env.OPENROUTER_PROVIDER?.trim();
     const baseUrl = (
       process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1"
     ).replace(/\/+$/, "");
@@ -49,6 +50,7 @@ export class OpenRouterImageGenerationService {
       },
       body: JSON.stringify({
         model,
+        ...(upstreamProvider ? { provider: { only: [upstreamProvider] } } : {}),
         messages: [
           {
             role: "user",
