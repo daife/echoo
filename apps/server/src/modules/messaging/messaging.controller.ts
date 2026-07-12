@@ -35,7 +35,7 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
     }
 
     const query = parsed.data;
-    return messaging.listMessages(userId, query.after, query.conversationId, query.limit);
+    return await messaging.listMessages(userId, query.after, query.conversationId, query.limit);
   });
 
   app.get<{
@@ -54,7 +54,7 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
     }
 
     const query = parsed.data;
-    const messages = messaging.listConversationMessages(userId, request.params.conversationId, query);
+    const messages = await messaging.listConversationMessages(userId, request.params.conversationId, query);
     if (!messages) return reply.code(404).send({ error: "CONVERSATION_NOT_FOUND" });
     return messages;
   });
@@ -95,7 +95,7 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
       });
     }
 
-    const result = messaging.rollbackConversation(userId, request.params.conversationId, parsed.data.messageId);
+    const result = await messaging.rollbackConversation(userId, request.params.conversationId, parsed.data.messageId);
     if (result.kind === "not_found") return reply.code(404).send({ error: "CONVERSATION_NOT_FOUND" });
     if (result.kind === "message_not_found") return reply.code(404).send({ error: "MESSAGE_NOT_FOUND" });
     if (result.kind === "unsupported_type") {
@@ -116,7 +116,7 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
     const userId = await request.requireUserId(reply);
     if (!userId) return;
 
-    const updated = messaging.markRead(userId, request.params.id, request.body?.readAt ?? Date.now());
+    const updated = await messaging.markRead(userId, request.params.id, request.body?.readAt ?? Date.now());
     if (!updated) return reply.code(404).send({ error: "MESSAGE_NOT_FOUND" });
     return { ok: true };
   });

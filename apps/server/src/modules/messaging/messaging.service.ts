@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Message } from "@echoo/shared";
+import { AgentRunQueue, type AgentRunJob } from "../../infra/redis/run-queue.js";
 import { PrimeFigureRuntimeService } from "../agents/kinds/prime-figure/prime-figure-runtime.service.js";
-import { PrimeMessageRepository } from "../agents/kinds/prime-figure/prime-message.repository.js";
 import { SliceFigureRuntimeService } from "../agents/kinds/slice-figure/slice-figure-runtime.service.js";
 import { ConversationRepository } from "../conversations/conversation.repository.js";
 import { AppPushService } from "../realtime/delivery.service.js";
@@ -26,8 +26,8 @@ export class MessagingService {
     private readonly conversations = new ConversationRepository(),
     private readonly appPush = new AppPushService(),
     private readonly sliceRuntime = new SliceFigureRuntimeService(),
-    private readonly primeMessages = new PrimeMessageRepository(),
     private readonly primeRuntime = new PrimeFigureRuntimeService(),
+    private readonly runQueue = new AgentRunQueue(),
   ) {}
 
   listMessages(
@@ -39,12 +39,12 @@ export class MessagingService {
     return this.repository.listAfter(ownerUserId, after, conversationId, limit);
   }
 
-  listConversationMessages(
+  async listConversationMessages(
     ownerUserId: string,
     conversationId: string,
     options?: { after?: string | null; before?: string | null; limit?: number },
   ) {
-    if (!this.conversations.findByIdForOwner(ownerUserId, conversationId))
+    if (!(await this.conversations.findByIdForOwner(ownerUserId, conversationId)))
       return null;
     return this.repository.listByConversation(
       ownerUserId,
@@ -56,20 +56,20 @@ export class MessagingService {
   async createUserTextMessage(
     input: CreateUserTextMessageInput,
   ): Promise<CreateUserTextMessageResult | null> {
-    const conversation = this.conversations.findByIdForOwner(
+    const conversation = await this.conversations.findByIdForOwner(
       input.ownerUserId,
       input.conversationId,
     );
     if (!conversation) return null;
 
-    const existing = this.repository.findByClientMessageId(
+    const existing = await this.repository.findByClientMessageId(
       input.ownerUserId,
       input.clientMessageId,
     );
     if (existing) return { message: existing };
 
     const now = Date.now();
-    const message = this.repository.save({
+    const message = await this.repository.save({
       ownerUserId: input.ownerUserId,
       id: `msg_${randomUUID()}`,
       ...(input.clientMessageId
@@ -84,7 +84,7 @@ export class MessagingService {
       updatedAt: now,
     });
 
-    this.conversations.updatePreview({
+    await this.conversations.updatePreview({
       ownerUserId: input.ownerUserId,
       conversationId: input.conversationId,
       preview: input.text,
@@ -98,33 +98,17 @@ export class MessagingService {
     if (!conversation.agentId) return { message };
 
     if (conversation.type === "prime-figure") {
-      this.primeMessages.save({
-        ownerUserId: input.ownerUserId,
-        agentId: conversation.agentId,
-        conversationId: input.conversationId,
-        sender: "end_user",
-        content: { type: "text", text: input.text },
-        occurredAtMs: now,
-        timezone: process.env.TZ ?? "UTC",
-      });
-      void this.primeRuntime.requestDecision({
+      await this.runQueue.enqueue({
         ownerUserId: input.ownerUserId,
         conversationId: input.conversationId,
+        kind: "prime-figure",
       });
       return { message };
     }
 
     if (conversation.type !== "slice-figure") return { message };
 
-    if (input.stream === false) {
-      const assistantMessage = await this.createAssistantReply(
-        input.ownerUserId,
-        input.conversationId,
-      );
-      return { message, assistantMessage };
-    }
-
-    const assistantMessage = this.createAssistantPlaceholder(
+    const assistantMessage = await this.createAssistantPlaceholder(
       input.ownerUserId,
       input.conversationId,
     );
@@ -132,17 +116,28 @@ export class MessagingService {
       type: "message.created",
       message: assistantMessage,
     });
-    void this.streamAssistantReply(
-      input.ownerUserId,
-      input.conversationId,
-      assistantMessage,
-    );
+    await this.runQueue.enqueue({ ownerUserId: input.ownerUserId,
+      conversationId: input.conversationId, kind: "slice-figure",
+      assistantMessageId: assistantMessage.id });
 
     return { message, assistantMessage };
   }
 
-  markRead(ownerUserId: string, messageId: string, readAt: number) {
-    const updated = this.repository.markRead(ownerUserId, messageId, readAt);
+  async processQueuedRun(job: AgentRunJob) {
+    if (job.kind === "prime-figure") {
+      await this.primeRuntime.requestDecision({ ownerUserId: job.ownerUserId,
+        conversationId: job.conversationId, trigger: job.trigger });
+      return;
+    }
+    if (!job.assistantMessageId) return;
+    const pending = await this.repository.findByIdInConversation(
+      job.ownerUserId, job.conversationId, job.assistantMessageId);
+    if (!pending || pending.status !== "pending") return;
+    await this.streamAssistantReply(job.ownerUserId, job.conversationId, pending);
+  }
+
+  async markRead(ownerUserId: string, messageId: string, readAt: number) {
+    const updated = await this.repository.markRead(ownerUserId, messageId, readAt);
     if (updated) {
       this.appPush.pushToUser(ownerUserId, {
         type: "message.status_changed",
@@ -154,12 +149,12 @@ export class MessagingService {
     return updated;
   }
 
-  rollbackConversation(
+  async rollbackConversation(
     ownerUserId: string,
     conversationId: string,
     messageId: string,
   ) {
-    const conversation = this.conversations.findByIdForOwner(
+    const conversation = await this.conversations.findByIdForOwner(
       ownerUserId,
       conversationId,
     );
@@ -167,7 +162,7 @@ export class MessagingService {
     if (conversation.type !== "slice-figure")
       return { kind: "unsupported_type" as const };
 
-    const anchor = this.repository.findByIdInConversation(
+    const anchor = await this.repository.findByIdInConversation(
       ownerUserId,
       conversationId,
       messageId,
@@ -176,24 +171,24 @@ export class MessagingService {
 
     const retainedThrough =
       anchor.role === "user"
-        ? (this.repository.findNextAssistantMessage(
+        ? ((await this.repository.findNextAssistantMessage(
             ownerUserId,
             conversationId,
             anchor,
-          ) ?? anchor)
+          )) ?? anchor)
         : anchor;
-    const deletedCount = this.repository.deleteAfterMessage(
+    const deletedCount = await this.repository.deleteAfterMessage(
       ownerUserId,
       conversationId,
       retainedThrough,
     );
-    const lastMessage = this.repository.findLastByConversation(
+    const lastMessage = await this.repository.findLastByConversation(
       ownerUserId,
       conversationId,
     );
     const now = Date.now();
 
-    this.conversations.updatePreview({
+    await this.conversations.updatePreview({
       ownerUserId,
       conversationId,
       preview: lastMessage?.content.text ?? null,
@@ -207,7 +202,7 @@ export class MessagingService {
     };
   }
 
-  private createAssistantPlaceholder(
+  private async createAssistantPlaceholder(
     ownerUserId: string,
     conversationId: string,
   ) {
@@ -239,7 +234,7 @@ export class MessagingService {
       });
       if (!reply) return undefined;
 
-      const message = this.repository.save({
+      const message = await this.repository.save({
         ownerUserId,
         id: `msg_${randomUUID()}`,
         conversationId,
@@ -253,7 +248,7 @@ export class MessagingService {
         updatedAt: now,
       });
 
-      this.conversations.updatePreview({
+      await this.conversations.updatePreview({
         ownerUserId,
         conversationId,
         preview: reply.text,
@@ -266,7 +261,7 @@ export class MessagingService {
       });
       return message;
     } catch (error) {
-      const message = this.repository.save({
+      const message = await this.repository.save({
         ownerUserId,
         id: `msg_${randomUUID()}`,
         conversationId,
@@ -281,7 +276,7 @@ export class MessagingService {
         updatedAt: now,
       });
 
-      this.conversations.updatePreview({
+      await this.conversations.updatePreview({
         ownerUserId,
         conversationId,
         preview: "AI reply failed.",
@@ -321,15 +316,15 @@ export class MessagingService {
       if (!reply) return undefined;
       const now = Date.now();
       if (
-        !this.repository.findByIdInConversation(
+        !(await this.repository.findByIdInConversation(
           ownerUserId,
           conversationId,
           pendingMessage.id,
-        )
+        ))
       )
         return undefined;
 
-      const message = this.repository.save({
+      const message = await this.repository.save({
         ownerUserId,
         id: pendingMessage.id,
         conversationId,
@@ -343,7 +338,7 @@ export class MessagingService {
         updatedAt: now,
       });
 
-      this.conversations.updatePreview({
+      await this.conversations.updatePreview({
         ownerUserId,
         conversationId,
         preview: reply.text,
@@ -358,14 +353,14 @@ export class MessagingService {
     } catch (error) {
       const now = Date.now();
       if (
-        !this.repository.findByIdInConversation(
+        !(await this.repository.findByIdInConversation(
           ownerUserId,
           conversationId,
           pendingMessage.id,
-        )
+        ))
       )
         return undefined;
-      const message = this.repository.save({
+      const message = await this.repository.save({
         ownerUserId,
         id: pendingMessage.id,
         conversationId,
@@ -382,7 +377,7 @@ export class MessagingService {
         updatedAt: now,
       });
 
-      this.conversations.updatePreview({
+      await this.conversations.updatePreview({
         ownerUserId,
         conversationId,
         preview: "AI reply failed.",

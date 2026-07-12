@@ -1,4 +1,4 @@
-import type { Agent, CreatePrimeFigureRequest, CreateSliceFigureRequest, UpdatePrimeFigureRequest, UpdateSliceFigureRequest } from "@echoo/shared";
+import type { CreatePrimeFigureRequest, CreateSliceFigureRequest, UpdatePrimeFigureRequest, UpdateSliceFigureRequest } from "@echoo/shared";
 import { AgentKindRegistry } from "./agent-kind.registry.js";
 import { AgentRepository } from "./agent.repository.js";
 
@@ -24,7 +24,7 @@ export class AgentsService {
     return handler.create(userId, input);
   }
 
-  createAgent(userId: string, input: CreateSliceFigureRequest | CreatePrimeFigureRequest): Agent {
+  createAgent(userId: string, input: CreateSliceFigureRequest | CreatePrimeFigureRequest) {
     if (input.type === "prime-figure") return this.createPrimeFigure(userId, input);
     return this.createSliceFigure(userId, input);
   }

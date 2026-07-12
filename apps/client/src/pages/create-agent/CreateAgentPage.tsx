@@ -250,7 +250,6 @@ const initialPrimeForm = (): CreatePrimeFigureRequest => ({
   decisionStyle: "",
   currentSituation: "",
   schedule: {
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     segments: [],
   },
   itinerary: "",
@@ -304,7 +303,7 @@ function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigu
   const updateSegment = (index: number, patch: Partial<PrimeFigureScheduleSegment>) => {
     const segments = [...(form.schedule?.segments ?? [])];
     segments[index] = { ...(segments[index] as PrimeFigureScheduleSegment), ...patch };
-    setField("schedule", { timezone: form.schedule?.timezone ?? "UTC", segments });
+    setField("schedule", { segments });
   };
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -326,7 +325,7 @@ function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigu
     <form className="glass-panel rounded-2xl p-6 md:p-8" onSubmit={submit}>
       <FormHeader icon={Brain} title="本初角色" description="持续状态、记忆、日程与自主沉默由本初角色专属运行时处理。" />
 
-      <JsonImport value={jsonInput} onChange={setJsonInput} onApply={importJson} placeholder='{"type":"prime-figure","name":"Mira","persona":"...","schedule":{"timezone":"Asia/Shanghai","segments":[]},...}' />
+      <JsonImport value={jsonInput} onChange={setJsonInput} onApply={importJson} placeholder='{"type":"prime-figure","name":"Mira","persona":"...","schedule":{"segments":[]},...}' />
 
       <FormSection title="展示与关系数据 · 不进入上下文" description="名字、图片、属性、标签、介绍、序引、链接 ID、解锁条件和公开状态不会发送给模型。">
         <DisplayFields form={form} unlockText={unlockText} onUnlockTextChange={setUnlockText} onChange={setField} />
@@ -343,18 +342,17 @@ function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigu
           <TextField label="初始情绪" value={form.initialMood ?? ""} placeholder="平静，但有些疲惫" onChange={(value) => setField("initialMood", value)} />
           <TextField label="初始关系状态" value={form.initialRelationshipStatus ?? ""} placeholder="熟悉但仍保持边界" onChange={(value) => setField("initialRelationshipStatus", value)} />
         </div>
-        <TextField label="行程与长期安排" multiline value={form.itinerary ?? ""} placeholder="使用角色时区下的易读时间" onChange={(value) => setField("itinerary", value)} />
+        <TextField label="行程与长期安排" multiline value={form.itinerary ?? ""} placeholder="使用上海时间的易读时间" onChange={(value) => setField("itinerary", value)} />
       </FormSection>
 
       <FormSection title="日程感知 · 进入上下文" description="运行时会将消息所在时段转换成决策提示。">
-        <TextField label="IANA 时区" required value={form.schedule?.timezone ?? "UTC"} placeholder="Asia/Shanghai" onChange={(value) => setField("schedule", { timezone: value, segments: form.schedule?.segments ?? [] })} />
         {(form.schedule?.segments ?? []).map((segment, index) => (
           <div key={index} className="rounded-xl border border-white/10 bg-black/15 p-4">
             <div className="grid gap-3 md:grid-cols-[1fr_120px_120px_auto]">
               <input className={inputClass} value={segment.label} placeholder="工作" onChange={(event) => updateSegment(index, { label: event.target.value })} />
               <input className={inputClass} type="time" value={segment.start} onChange={(event) => updateSegment(index, { start: event.target.value })} />
               <input className={inputClass} type="time" value={segment.end} onChange={(event) => updateSegment(index, { end: event.target.value })} />
-              <IconButton label="删除日程" onClick={() => setField("schedule", { timezone: form.schedule?.timezone ?? "UTC", segments: (form.schedule?.segments ?? []).filter((_, itemIndex) => itemIndex !== index) })} />
+              <IconButton label="删除日程" onClick={() => setField("schedule", { segments: (form.schedule?.segments ?? []).filter((_, itemIndex) => itemIndex !== index) })} />
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {weekdays.map(([day, label]) => {
@@ -365,7 +363,7 @@ function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigu
             <textarea className={`${inputClass} mt-3 min-h-20 py-3`} value={segment.description} placeholder="这个时段角色通常在做什么，是否方便回应" onChange={(event) => updateSegment(index, { description: event.target.value })} />
           </div>
         ))}
-        <button className={secondaryButtonClass} type="button" onClick={() => setField("schedule", { timezone: form.schedule?.timezone ?? "UTC", segments: [...(form.schedule?.segments ?? []), { label: "", days: ["mon", "tue", "wed", "thu", "fri"], start: "09:00", end: "18:00", description: "" }] })}>
+        <button className={secondaryButtonClass} type="button" onClick={() => setField("schedule", { segments: [...(form.schedule?.segments ?? []), { label: "", days: ["mon", "tue", "wed", "thu", "fri"], start: "09:00", end: "18:00", description: "" }] })}>
           <Plus size={16} />添加日程时段
         </button>
       </FormSection>
@@ -513,13 +511,10 @@ function buildPrimePayload(form: CreatePrimeFigureRequest, drafts: PrimeVariable
   if (typeof common === "string") return common;
   const required = normalizeRequired({ persona: form.persona, background: form.background, personality: form.personality, responseStyle: form.responseStyle });
   if (typeof required === "string") return required;
-  const timezone = form.schedule?.timezone.trim();
-  if (!timezone) return "日程时区不能为空。";
-  try { new Intl.DateTimeFormat("zh-CN", { timeZone: timezone }).format(); } catch { return "日程时区不是有效的 IANA 时区，例如 Asia/Shanghai。"; }
   for (const segment of form.schedule?.segments ?? []) if (!segment.label.trim() || !segment.description.trim() || !segment.days.length) return "每个日程时段都需要名称、描述和至少一个星期选项。";
   const definitions = parseVariableDrafts(drafts);
   if (typeof definitions === "string") return definitions;
-  return { ...form, ...common, ...required, type: "prime-figure", decisionStyle: form.decisionStyle?.trim() ?? "", currentSituation: form.currentSituation?.trim() ?? "", itinerary: form.itinerary?.trim() ?? "", initialMood: form.initialMood?.trim() ?? "", initialRelationshipStatus: form.initialRelationshipStatus?.trim() ?? "", schedule: { timezone, segments: form.schedule?.segments ?? [] }, variableDefinitions: definitions };
+  return { ...form, ...common, ...required, type: "prime-figure", decisionStyle: form.decisionStyle?.trim() ?? "", currentSituation: form.currentSituation?.trim() ?? "", itinerary: form.itinerary?.trim() ?? "", initialMood: form.initialMood?.trim() ?? "", initialRelationshipStatus: form.initialRelationshipStatus?.trim() ?? "", schedule: { segments: form.schedule?.segments ?? [] }, variableDefinitions: definitions };
 }
 
 function normalizeDisplayFields(form: DisplayForm, unlockText: string) {

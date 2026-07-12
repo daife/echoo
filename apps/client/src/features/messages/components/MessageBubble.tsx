@@ -110,8 +110,8 @@ export function MessageBubble({
         {...longPressProps}
       >
         {actionMenu}
-        <div className="h-8 w-8 flex-shrink-0 rounded-full border border-white/10 bg-white/[0.04]" />
-        <div className="flex max-w-[360px] flex-col gap-2 overflow-hidden rounded-2xl rounded-tl-sm border border-white/8 bg-white/[0.03] p-2 text-white/82">
+        <div className="mt-1 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
+        <div className="flex max-w-[360px] flex-col gap-2 overflow-hidden rounded-xl bg-white/[0.035] p-2 text-white/82">
           {mediaUrl ? (
             <img
               className="max-h-[480px] w-full rounded-xl object-cover"
@@ -141,7 +141,7 @@ export function MessageBubble({
         {...longPressProps}
       >
         {actionMenu}
-        <div className="h-8 w-8 rounded-full border border-white/10 bg-white/[0.04]" />
+        <div className="h-7 w-1 rounded-full bg-white/25" />
         <div className="flex min-w-0 flex-col gap-2 py-2 text-white">
           <div className="flex items-center gap-3">
             <Waveform size={23} weight="duotone" />
@@ -179,7 +179,7 @@ export function MessageBubble({
     >
       {actionMenu}
       {!mine ? (
-        <div className="h-8 w-8 flex-shrink-0 rounded-full border border-white/10 bg-white/[0.04]" />
+        <div className="mt-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
       ) : null}
       {canRetry ? (
         <button
@@ -194,12 +194,12 @@ export function MessageBubble({
         className={`flex flex-col gap-1 ${mine ? "items-end" : "items-start"}`}
       >
         <div
-          className={`rounded-2xl px-4 py-3 text-sm leading-6 ${
+          className={`rounded-xl px-4 py-3 text-sm leading-6 ${
             mine
               ? message.status === "failed"
-                ? "rounded-tr-sm border border-red-300/20 bg-red-400/[0.08] text-red-50"
-                : "rounded-tr-sm border border-white/8 bg-white/[0.08] text-white"
-              : "rounded-tl-sm border border-white/8 bg-white/[0.03] text-white/82 backdrop-blur-xl"
+                ? "border border-red-300/20 bg-red-400/[0.08] text-red-50"
+                : "bg-white/[0.09] text-white"
+              : "bg-white/[0.035] text-white/82"
           }`}
         >
           {message.status === "typing" && !message.text ? (
@@ -219,7 +219,7 @@ export function MessageBubble({
         ) : null}
       </div>
       {mine ? (
-        <div className="h-8 w-8 flex-shrink-0 rounded-full border border-white/10 bg-white/[0.04]" />
+        <div className="mt-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
       ) : null}
     </div>
   );

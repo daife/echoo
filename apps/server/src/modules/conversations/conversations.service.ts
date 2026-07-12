@@ -7,8 +7,8 @@ export class ConversationsService {
     return this.repository.listByOwner(ownerUserId);
   }
 
-  deleteConversation(ownerUserId: string, conversationId: string) {
-    if (!this.repository.findByIdForOwner(ownerUserId, conversationId)) return false;
+  async deleteConversation(ownerUserId: string, conversationId: string) {
+    if (!(await this.repository.findByIdForOwner(ownerUserId, conversationId))) return false;
     return this.repository.deleteForOwner(ownerUserId, conversationId);
   }
 }

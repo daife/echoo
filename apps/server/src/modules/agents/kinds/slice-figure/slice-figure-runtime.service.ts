@@ -27,7 +27,7 @@ export class SliceFigureRuntimeService {
     ownerUserId: string;
     conversationId: string;
   }): Promise<SliceFigureRuntimeResult | null> {
-    const context = this.loadContext(input);
+    const context = await this.loadContext(input);
     if (!context) return null;
 
     const provider = this.providers.getDefaultProvider();
@@ -50,7 +50,7 @@ export class SliceFigureRuntimeService {
     input: { ownerUserId: string; conversationId: string },
     onDelta: (delta: { text: string }) => void,
   ): Promise<SliceFigureRuntimeResult | null> {
-    const context = this.loadContext(input);
+    const context = await this.loadContext(input);
     if (!context) return null;
 
     const provider = this.providers.getDefaultProvider();
@@ -84,17 +84,17 @@ export class SliceFigureRuntimeService {
     return { text, providerId: provider.id, model };
   }
 
-  private loadContext(input: { ownerUserId: string; conversationId: string }) {
-    const agent = this.agents.findByConversation(input.ownerUserId, input.conversationId);
+  private async loadContext(input: { ownerUserId: string; conversationId: string }) {
+    const agent = await this.agents.findByConversation(input.ownerUserId, input.conversationId);
     if (!agent) return null;
     if (agent.type !== "slice-figure")
       throw new Error(`切片角色运行时收到了错误的角色类型：${agent.type}。`);
 
-    const user = this.users.findById(input.ownerUserId);
+    const user = await this.users.findById(input.ownerUserId);
     return {
       agent,
       user: user ? toUserProfile(user) : null,
-      history: this.messages.listRecentForContext(
+      history: await this.messages.listRecentForContext(
         input.ownerUserId,
         input.conversationId,
         CONTEXT_MESSAGE_LIMIT,

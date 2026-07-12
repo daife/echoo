@@ -5,7 +5,7 @@ export async function registerResourceRoutes(app: FastifyInstance) {
   const resources = new ResourceRepository();
 
   app.get<{ Params: { id: string } }>("/:id/file", async (request, reply) => {
-    const resource = resources.findById(request.params.id);
+    const resource = await resources.findById(request.params.id);
     if (!resource) {
       return reply.code(404).send({ error: "RESOURCE_NOT_FOUND" });
     }

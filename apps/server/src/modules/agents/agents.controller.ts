@@ -9,7 +9,7 @@ export async function registerAgentRoutes(app: FastifyInstance) {
   app.get("/", async (request, reply) => {
     const userId = await request.requireUserId(reply);
     if (!userId) return;
-    return agents.listMyAgents(userId);
+    return await agents.listMyAgents(userId);
   });
 
   app.post<{ Body: CreateSliceFigureRequest | CreatePrimeFigureRequest }>("/", async (request, reply) => {
@@ -17,7 +17,7 @@ export async function registerAgentRoutes(app: FastifyInstance) {
     if (!userId) return;
 
     try {
-      const agent = agents.createAgent(userId, request.body);
+      const agent = await agents.createAgent(userId, request.body);
       return reply.code(201).send({ agent });
     } catch (error) {
       if (error instanceof ZodError) {
@@ -32,7 +32,7 @@ export async function registerAgentRoutes(app: FastifyInstance) {
     if (!userId) return;
 
     try {
-      const agent = agents.updatePrimeFigure(userId, request.params.agentId, request.body);
+      const agent = await agents.updatePrimeFigure(userId, request.params.agentId, request.body);
       if (!agent) return reply.code(404).send({ error: "NOT_FOUND", message: "未找到本初角色。" });
       return { agent };
     } catch (error) {
@@ -48,7 +48,7 @@ export async function registerAgentRoutes(app: FastifyInstance) {
     if (!userId) return;
 
     try {
-      const agent = agents.updateSliceFigure(userId, request.params.agentId, request.body);
+      const agent = await agents.updateSliceFigure(userId, request.params.agentId, request.body);
       if (!agent) return reply.code(404).send({ error: "NOT_FOUND", message: "未找到角色。" });
       return { agent };
     } catch (error) {

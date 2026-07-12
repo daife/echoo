@@ -1,0 +1,35 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: echoo
+      MYSQL_USER: echoo
+      MYSQL_PASSWORD: echoo
+      MYSQL_ROOT_PASSWORD: local-root-only
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - echoo_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-plocal-root-only"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:6.2-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - echoo_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  echoo_mysql:
+  echoo_redis:

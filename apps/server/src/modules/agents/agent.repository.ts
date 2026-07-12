@@ -1,474 +1,234 @@
 import type {
   Agent,
-  AgentAttribute,
-  AgentResourceUpload,
-  AgentType,
-  PrimeFigureDetail,
-  PrimeFigureSchedule,
-  PrimeFigureVariableDefinition,
-  SliceFigureDetail,
+  CreatePrimeFigureRequest,
+  CreateSliceFigureRequest,
+  PrimeFigureState,
+  PrimeFigureVariableValue,
+  UpdatePrimeFigureRequest,
+  UpdateSliceFigureRequest,
 } from "@echoo/shared";
-import { randomUUID } from "node:crypto";
-import { getDatabase } from "../../infra/database/sqlite.js";
+import type { RowDataPacket } from "mysql2";
+import {
+  execute,
+  queryOne,
+  queryRows,
+  withTransaction,
+} from "../../infra/database/mysql.js";
+import { createId } from "../../shared/utils/id.js";
 import { ResourceRepository } from "../resources/resource.repository.js";
 
-interface AgentRow {
+interface AgentRow extends RowDataPacket {
   id: string;
   owner_user_id: string;
-  type: AgentType;
-  avatar_resource_path: string | null;
-  cover_resource_path: string | null;
+  type: Agent["type"];
   name: string;
-  attributes_json: string;
-  tags_json: string;
-  introduction: string;
-  is_public: number;
+  definition: unknown;
+  runtime_state: unknown;
+  is_public: number | boolean;
   conversation_id: string | null;
   created_at: number;
   updated_at: number;
-  prologue_html: string | null;
-  current_situation: string | null;
-  opening_line: string | null;
-  linked_agent_ids_json: string | null;
-  unlock_conditions_json: string | null;
-  persona: string | null;
-  background: string | null;
-  personality: string | null;
-  response_style: string | null;
-  system_prompt: string | null;
-  prime_prologue_html: string | null;
-  prime_linked_agent_ids_json: string | null;
-  prime_unlock_conditions_json: string | null;
-  prime_persona: string | null;
-  prime_background: string | null;
-  prime_personality: string | null;
-  prime_response_style: string | null;
-  prime_decision_style: string | null;
-  prime_current_situation: string | null;
-  prime_schedule_json: string | null;
-  prime_itinerary_json: string | null;
-  prime_variable_definitions_json: string | null;
 }
 
-export interface AgentBaseInput {
-  type: AgentType;
-  avatar?: AgentResourceUpload | null;
-  cover?: AgentResourceUpload | null;
-  name: string;
-  attributes?: AgentAttribute[];
-  tags?: string[];
-  introduction?: string;
-  isPublic: boolean;
-}
-
-export interface AgentBaseUpdateInput {
-  name: string;
-  attributes?: AgentAttribute[];
-  tags?: string[];
-  introduction?: string;
-  isPublic: boolean;
-}
-
-export interface CreatedAgentBase {
-  id: string;
-  ownerUserId: string;
-  type: AgentType;
-  avatarResourcePath?: string;
-  coverResourcePath?: string;
-  name: string;
-  attributes: AgentAttribute[];
-  tags: string[];
-  introduction: string;
-  isPublic: boolean;
-  createdAt: number;
-  updatedAt: number;
-}
+type CreateAgentInput = CreateSliceFigureRequest | CreatePrimeFigureRequest;
+type UpdateAgentInput = UpdateSliceFigureRequest | UpdatePrimeFigureRequest;
 
 export class AgentRepository {
-  private readonly db = getDatabase();
-
   constructor(private readonly resources = new ResourceRepository()) {}
 
-  transaction<T>(callback: () => T): T {
-    this.db.exec("BEGIN");
-    try {
-      const result = callback();
-      this.db.exec("COMMIT");
-      return result;
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
-  }
-
-  listByOwner(ownerUserId: string): Agent[] {
-    const rows = this.db
-      .prepare(
-        `
-          SELECT
-            agents.*,
-            conversations.id AS conversation_id,
-            slice.prologue_html,
-            slice.current_situation,
-            slice.opening_line,
-            slice.linked_agent_ids_json,
-            slice.unlock_conditions_json,
-            slice.persona,
-            slice.background,
-            slice.personality,
-            slice.response_style,
-            slice.system_prompt,
-            prime.prologue_html AS prime_prologue_html,
-            prime.linked_agent_ids_json AS prime_linked_agent_ids_json,
-            prime.unlock_conditions_json AS prime_unlock_conditions_json,
-            prime.persona AS prime_persona,
-            prime.background AS prime_background,
-            prime.personality AS prime_personality,
-            prime.response_style AS prime_response_style,
-            prime.decision_style AS prime_decision_style,
-            prime.current_situation AS prime_current_situation,
-            prime.schedule_json AS prime_schedule_json,
-            prime.itinerary_json AS prime_itinerary_json,
-            prime.variable_definitions_json AS prime_variable_definitions_json
-          FROM agents
-          LEFT JOIN conversations ON conversations.agent_id = agents.id
-          LEFT JOIN agent_slice_figures slice ON slice.agent_id = agents.id
-          LEFT JOIN agent_prime_figures prime ON prime.agent_id = agents.id
-          WHERE agents.owner_user_id = ?
-          ORDER BY agents.created_at DESC
-        `,
-      )
-      .all(ownerUserId) as unknown as AgentRow[];
-
+  async listByOwner(ownerUserId: string) {
+    const rows = await queryRows<AgentRow>(`${SELECT_AGENT}
+      WHERE agents.owner_user_id = ? ORDER BY agents.created_at DESC`, [ownerUserId]);
     return rows.map(rowToAgent);
   }
 
-  findByConversation(
-    ownerUserId: string,
-    conversationId: string,
-  ): Agent | null {
-    const row = this.db
-      .prepare(
-        `
-          SELECT
-            agents.*,
-            conversations.id AS conversation_id,
-            slice.prologue_html,
-            slice.current_situation,
-            slice.opening_line,
-            slice.linked_agent_ids_json,
-            slice.unlock_conditions_json,
-            slice.persona,
-            slice.background,
-            slice.personality,
-            slice.response_style,
-            slice.system_prompt,
-            prime.prologue_html AS prime_prologue_html,
-            prime.linked_agent_ids_json AS prime_linked_agent_ids_json,
-            prime.unlock_conditions_json AS prime_unlock_conditions_json,
-            prime.persona AS prime_persona,
-            prime.background AS prime_background,
-            prime.personality AS prime_personality,
-            prime.response_style AS prime_response_style,
-            prime.decision_style AS prime_decision_style,
-            prime.current_situation AS prime_current_situation,
-            prime.schedule_json AS prime_schedule_json,
-            prime.itinerary_json AS prime_itinerary_json,
-            prime.variable_definitions_json AS prime_variable_definitions_json
-          FROM agents
-          JOIN conversations ON conversations.agent_id = agents.id
-          LEFT JOIN agent_slice_figures slice ON slice.agent_id = agents.id
-          LEFT JOIN agent_prime_figures prime ON prime.agent_id = agents.id
-          WHERE agents.owner_user_id = ? AND conversations.id = ?
-        `,
-      )
-      .get(ownerUserId, conversationId) as AgentRow | undefined;
-
+  async findByConversation(ownerUserId: string, conversationId: string) {
+    const row = await queryOne<AgentRow>(`${SELECT_AGENT}
+      WHERE agents.owner_user_id = ? AND conversations.id = ?`, [ownerUserId, conversationId]);
     return row ? rowToAgent(row) : null;
   }
 
-  findById(ownerUserId: string, agentId: string): Agent | null {
-    const row = this.db
-      .prepare(
-        `
-          SELECT
-            agents.*,
-            conversations.id AS conversation_id,
-            slice.prologue_html,
-            slice.current_situation,
-            slice.opening_line,
-            slice.linked_agent_ids_json,
-            slice.unlock_conditions_json,
-            slice.persona,
-            slice.background,
-            slice.personality,
-            slice.response_style,
-            slice.system_prompt,
-            prime.prologue_html AS prime_prologue_html,
-            prime.linked_agent_ids_json AS prime_linked_agent_ids_json,
-            prime.unlock_conditions_json AS prime_unlock_conditions_json,
-            prime.persona AS prime_persona,
-            prime.background AS prime_background,
-            prime.personality AS prime_personality,
-            prime.response_style AS prime_response_style,
-            prime.decision_style AS prime_decision_style,
-            prime.current_situation AS prime_current_situation,
-            prime.schedule_json AS prime_schedule_json,
-            prime.itinerary_json AS prime_itinerary_json,
-            prime.variable_definitions_json AS prime_variable_definitions_json
-          FROM agents
-          LEFT JOIN conversations ON conversations.agent_id = agents.id
-          LEFT JOIN agent_slice_figures slice ON slice.agent_id = agents.id
-          LEFT JOIN agent_prime_figures prime ON prime.agent_id = agents.id
-          WHERE agents.owner_user_id = ? AND agents.id = ?
-        `,
-      )
-      .get(ownerUserId, agentId) as AgentRow | undefined;
-
+  async findById(ownerUserId: string, agentId: string) {
+    const row = await queryOne<AgentRow>(`${SELECT_AGENT}
+      WHERE agents.owner_user_id = ? AND agents.id = ?`, [ownerUserId, agentId]);
     return row ? rowToAgent(row) : null;
   }
 
-  createBase(ownerUserId: string, input: AgentBaseInput): CreatedAgentBase {
+  async create(ownerUserId: string, input: CreateAgentInput) {
     const now = Date.now();
-    const agentId = `agent_${randomUUID()}`;
+    const id = createId("agent");
+    const conversationId = createId("conv");
     const avatar = input.avatar
-      ? this.resources.saveImage(ownerUserId, "agent_avatar", input.avatar)
+      ? await this.resources.saveImage(ownerUserId, "agent_avatar", input.avatar)
       : null;
     const cover = input.cover
-      ? this.resources.saveImage(ownerUserId, "agent_cover", input.cover)
+      ? await this.resources.saveImage(ownerUserId, "agent_cover", input.cover)
       : null;
-    const attributes = input.attributes ?? [];
-    const tags = input.tags ?? [];
-    const introduction = input.introduction ?? "";
+    const definition = buildDefinition(input, avatar?.publicPath, cover?.publicPath);
+    const runtimeState = buildRuntimeState(input, now);
+    const preview = getInitialPreview(input);
 
-    this.db
-      .prepare(
-        `
-          INSERT INTO agents (
-            id,
-            owner_user_id,
-            type,
-            avatar_resource_path,
-            cover_resource_path,
-            name,
-            attributes_json,
-            tags_json,
-            introduction,
-            is_public,
-            created_at,
-            updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-      )
-      .run(
-        agentId,
-        ownerUserId,
-        input.type,
-        avatar?.publicPath ?? null,
-        cover?.publicPath ?? null,
-        input.name,
-        JSON.stringify(attributes),
-        JSON.stringify(tags),
-        introduction,
-        input.isPublic ? 1 : 0,
-        now,
-        now,
-      );
-
-    return {
-      id: agentId,
-      ownerUserId,
-      type: input.type,
-      ...(avatar ? { avatarResourcePath: avatar.publicPath } : {}),
-      ...(cover ? { coverResourcePath: cover.publicPath } : {}),
-      name: input.name,
-      attributes,
-      tags,
-      introduction,
-      isPublic: input.isPublic,
-      createdAt: now,
-      updatedAt: now,
-    };
+    await withTransaction(async (connection) => {
+      await execute(
+        `INSERT INTO agents
+         (id, owner_user_id, type, name, definition, runtime_state, is_public,
+          next_run_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+        [id, ownerUserId, input.type, input.name, JSON.stringify(definition),
+          JSON.stringify(runtimeState), input.isPublic, now, now], connection);
+      await execute(
+        `INSERT INTO conversations
+         (id, owner_user_id, agent_id, type, title, last_message_preview,
+          unread_count, pinned_at, runtime_state, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, NULL, JSON_OBJECT(), ?, ?)`,
+        [conversationId, ownerUserId, id, input.type, input.name, preview, now, now], connection);
+      if (input.type === "slice-figure" && input.openingLine?.trim()) {
+        await execute(
+          `INSERT INTO messages
+           (id, owner_user_id, conversation_id, client_message_id, role,
+            content_type, content, status, run_metadata, read_at, created_at, updated_at)
+           VALUES (?, ?, ?, NULL, 'assistant', 'text', ?, 'delivered', ?, NULL, ?, ?)`,
+          [createId("msg"), ownerUserId, conversationId,
+            JSON.stringify({ text: input.openingLine.trim() }),
+            JSON.stringify({ kind: "opening_line" }), now, now], connection);
+      }
+    });
+    return (await this.findById(ownerUserId, id))!;
   }
 
-  updateBase(
-    ownerUserId: string,
-    agentId: string,
-    input: AgentBaseUpdateInput,
-    updatedAt = Date.now(),
-  ) {
-    this.db
-      .prepare(
-        `
-          UPDATE agents
-          SET
-            name = ?,
-            attributes_json = ?,
-            tags_json = ?,
-            introduction = ?,
-            is_public = ?,
-            updated_at = ?
-          WHERE owner_user_id = ? AND id = ?
-        `,
-      )
-      .run(
-        input.name,
-        JSON.stringify(input.attributes ?? []),
-        JSON.stringify(input.tags ?? []),
-        input.introduction ?? "",
-        input.isPublic ? 1 : 0,
-        updatedAt,
-        ownerUserId,
-        agentId,
-      );
+  async update(ownerUserId: string, agentId: string, input: UpdateAgentInput) {
+    const existing = await this.findById(ownerUserId, agentId);
+    if (!existing) return null;
+    const definition = {
+      ...existing,
+      ...baseDefinition(input),
+      detail: buildDetail(existing.type, input),
+    };
+    delete (definition as Partial<Agent>).conversationId;
+    const now = Date.now();
+    await withTransaction(async (connection) => {
+      await execute(
+        "UPDATE agents SET name = ?, definition = ?, is_public = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?",
+        [input.name, JSON.stringify(definition), input.isPublic, now, agentId, ownerUserId], connection);
+      await execute(
+        "UPDATE conversations SET title = ?, updated_at = ? WHERE agent_id = ? AND owner_user_id = ?",
+        [input.name, now, agentId, ownerUserId], connection);
+    });
+    return this.findById(ownerUserId, agentId);
+  }
+
+  async getRuntimeState<T>(ownerUserId: string, agentId: string) {
+    const row = await queryOne<AgentRow>(
+      "SELECT runtime_state FROM agents WHERE owner_user_id = ? AND id = ?",
+      [ownerUserId, agentId],
+    );
+    return row ? parseJson<T>(row.runtime_state, {} as T) : null;
+  }
+
+  async saveRuntimeState(ownerUserId: string, agentId: string, state: unknown, nextRunAt?: number | null) {
+    await execute(
+      "UPDATE agents SET runtime_state = ?, next_run_at = ?, updated_at = ? WHERE owner_user_id = ? AND id = ?",
+      [JSON.stringify(state), nextRunAt ?? null, Date.now(), ownerUserId, agentId],
+    );
   }
 }
 
+const SELECT_AGENT = `SELECT agents.*, conversations.id AS conversation_id
+  FROM agents LEFT JOIN conversations ON conversations.agent_id = agents.id`;
+
 function rowToAgent(row: AgentRow): Agent {
-  const base = {
+  const stored = parseJson<Omit<Agent, "id" | "ownerUserId" | "conversationId" | "createdAt" | "updatedAt">>(row.definition, {} as never);
+  return {
+    ...stored,
     id: row.id,
     ownerUserId: row.owner_user_id,
-    ...(row.avatar_resource_path
-      ? { avatarResourcePath: row.avatar_resource_path }
-      : {}),
-    ...(row.cover_resource_path
-      ? { coverResourcePath: row.cover_resource_path }
-      : {}),
+    type: row.type,
     name: row.name,
-    attributes: parseJson<AgentAttribute[]>(row.attributes_json, []),
-    tags: parseJson<string[]>(row.tags_json, []),
-    introduction: row.introduction,
-    isPublic: row.is_public === 1,
+    isPublic: Boolean(row.is_public),
     conversationId: row.conversation_id ?? "",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  };
+  } as Agent;
+}
 
-  if (row.type === "slice-figure") {
+function buildDefinition(input: CreateAgentInput, avatar?: string, cover?: string) {
+  return {
+    type: input.type,
+    ...baseDefinition(input),
+    ...(avatar ? { avatarResourcePath: avatar } : {}),
+    ...(cover ? { coverResourcePath: cover } : {}),
+    detail: buildDetail(input.type, input),
+  };
+}
+
+function baseDefinition(input: UpdateAgentInput | CreateAgentInput) {
+  return {
+    name: input.name,
+    attributes: input.attributes ?? [],
+    tags: input.tags ?? [],
+    introduction: input.introduction ?? "",
+    isPublic: input.isPublic,
+  };
+}
+
+function buildDetail(type: Agent["type"], input: UpdateAgentInput | CreateAgentInput) {
+  if (type === "slice-figure") {
+    const value = input as CreateSliceFigureRequest;
     return {
-      ...base,
-      type: "slice-figure",
-      detail: rowToSliceDetail(row),
+      prologueHtml: value.prologueHtml ?? "",
+      currentSituation: value.currentSituation ?? "",
+      openingLine: value.openingLine ?? "",
+      linkedAgentIds: value.linkedAgentIds ?? [],
+      ...(value.unlockConditions ? { unlockConditions: value.unlockConditions } : {}),
+      persona: value.persona,
+      background: value.background,
+      personality: value.personality,
+      responseStyle: value.responseStyle,
+      systemPrompt: value.systemPrompt,
     };
   }
-
-  if (row.type === "prime-world") {
-    return {
-      ...base,
-      type: "prime-world",
-      detail: { status: "placeholder" },
-    };
-  }
-
+  const value = input as CreatePrimeFigureRequest;
   return {
-    ...base,
-    type: "prime-figure",
-    detail: rowToPrimeDetail(row),
+    prologueHtml: value.prologueHtml ?? "",
+    linkedAgentIds: value.linkedAgentIds ?? [],
+    ...(value.unlockConditions ? { unlockConditions: value.unlockConditions } : {}),
+    persona: value.persona,
+    background: value.background,
+    personality: value.personality,
+    responseStyle: value.responseStyle,
+    decisionStyle: value.decisionStyle ?? "",
+    currentSituation: value.currentSituation ?? "",
+    schedule: { segments: value.schedule?.segments ?? [] },
+    itinerary: value.itinerary ?? "",
+    variableDefinitions: value.variableDefinitions ?? [],
   };
 }
 
-function rowToSliceDetail(row: AgentRow): SliceFigureDetail {
-  return {
-    prologueHtml: row.prologue_html ?? "",
-    currentSituation: row.current_situation ?? "",
-    openingLine: row.opening_line ?? "",
-    linkedAgentIds: parseJson<string[]>(row.linked_agent_ids_json ?? "[]", []),
-    ...(row.unlock_conditions_json
-      ? {
-          unlockConditions: parseJson<Record<string, unknown>>(
-            row.unlock_conditions_json,
-            {},
-          ),
-        }
-      : {}),
-    persona: row.persona ?? "",
-    background: row.background ?? "",
-    personality: row.personality ?? "",
-    responseStyle: row.response_style ?? "",
-    systemPrompt: row.system_prompt ?? "",
-  };
-}
-
-function rowToPrimeDetail(row: AgentRow): PrimeFigureDetail {
-  return {
-    prologueHtml: row.prime_prologue_html ?? "",
-    linkedAgentIds: parseJson<string[]>(
-      row.prime_linked_agent_ids_json ?? "[]",
-      [],
-    ),
-    ...(row.prime_unlock_conditions_json
-      ? {
-          unlockConditions: parseJson<Record<string, unknown>>(
-            row.prime_unlock_conditions_json,
-            {},
-          ),
-        }
-      : {}),
-    persona: row.prime_persona ?? "",
-    background: row.prime_background ?? "",
-    personality: row.prime_personality ?? "",
-    responseStyle: row.prime_response_style ?? "",
-    decisionStyle: row.prime_decision_style ?? "",
-    currentSituation: row.prime_current_situation ?? "",
-    schedule: parsePrimeSchedule(row.prime_schedule_json),
-    itinerary: parseStringJson(row.prime_itinerary_json),
-    variableDefinitions: parsePrimeVariableDefinitions(
-      row.prime_variable_definitions_json,
-    ),
-  };
-}
-
-function parseJson<T>(value: string, fallback: T): T {
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
+function buildRuntimeState(input: CreateAgentInput, now: number) {
+  if (input.type !== "prime-figure") return {};
+  const variables: Record<string, PrimeFigureVariableValue> = {};
+  for (const definition of input.variableDefinitions ?? []) {
+    if (definition.defaultValue !== undefined) variables[definition.key] = definition.defaultValue;
   }
+  const state: PrimeFigureState = {
+    variables,
+    memories: [],
+    mood: input.initialMood ?? "",
+    moodObservedAtMs: now,
+    relationshipStatus: input.initialRelationshipStatus ?? "",
+    updatedAt: now,
+  };
+  return state;
 }
 
-function parseStringJson(value: string | null) {
-  if (!value) return "";
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return typeof parsed === "string" ? parsed : "";
-  } catch {
-    return value;
-  }
+function getInitialPreview(input: CreateAgentInput) {
+  if (input.type === "slice-figure")
+    return input.openingLine || input.introduction || input.persona;
+  return input.introduction || input.currentSituation || input.persona;
 }
 
-function parsePrimeSchedule(value: string | null): PrimeFigureSchedule {
-  const parsed = parseJson<Partial<PrimeFigureSchedule>>(value ?? "{}", {});
-  if (typeof parsed.timezone !== "string" || !Array.isArray(parsed.segments))
-    return { timezone: "UTC", segments: [] };
-  return { timezone: parsed.timezone, segments: parsed.segments };
-}
-
-function parsePrimeVariableDefinitions(
-  value: string | null,
-): PrimeFigureVariableDefinition[] {
-  const parsed = parseJson<Array<Partial<PrimeFigureVariableDefinition>>>(
-    value ?? "[]",
-    [],
-  );
-  return parsed
-    .filter(
-      (definition) =>
-        typeof definition.key === "string" &&
-        typeof definition.label === "string" &&
-        typeof definition.type === "string",
-    )
-    .map((definition) => ({
-      key: definition.key as string,
-      label: definition.label as string,
-      type: definition.type as PrimeFigureVariableDefinition["type"],
-      description:
-        typeof definition.description === "string" && definition.description
-          ? definition.description
-          : (definition.label as string),
-      ...(definition.defaultValue !== undefined
-        ? { defaultValue: definition.defaultValue }
-        : {}),
-      ...(typeof definition.min === "number" ? { min: definition.min } : {}),
-      ...(typeof definition.max === "number" ? { max: definition.max } : {}),
-    }));
+function parseJson<T>(value: unknown, fallback: T): T {
+  if (value && typeof value === "object") return value as T;
+  if (typeof value !== "string") return fallback;
+  try { return JSON.parse(value) as T; } catch { return fallback; }
 }

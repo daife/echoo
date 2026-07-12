@@ -1,1 +1,0 @@
-export { getEchooDb } from "./db";

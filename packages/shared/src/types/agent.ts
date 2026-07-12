@@ -59,7 +59,6 @@ export interface PrimeFigureScheduleSegment {
 }
 
 export interface PrimeFigureSchedule {
-  timezone: string;
   segments: PrimeFigureScheduleSegment[];
 }
 
@@ -244,7 +243,6 @@ export interface PrimeMessage {
   content: PrimeMessageContent;
   occurredAtMs: number;
   occurredAtIso: string;
-  timezone: string;
   createdAt: number;
   updatedAt: number;
 }

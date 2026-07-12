@@ -1,14 +1,4 @@
-import {
-  GearSix,
-  Microphone,
-  PaperPlaneRight,
-  Paperclip,
-  PencilSimple,
-  Plus,
-  Trash,
-  Waveform,
-  X,
-} from "@phosphor-icons/react";
+import { PaperPlaneRight, PencilSimple, Trash, Waveform, X } from "@phosphor-icons/react";
 import {
   buildFigureSystemPrompt,
   type Agent,
@@ -52,10 +42,6 @@ export function MessagesPage({
     isSending,
     rollingBackMessageId,
     isDeletingConversation,
-    isSettingsOpen,
-    setIsSettingsOpen,
-    conversationSettings,
-    updateConversationSettings,
     error,
     canRollback,
     sendMessage,
@@ -111,113 +97,35 @@ export function MessagesPage({
   }
 
   return (
-    <section className="grid min-h-[calc(100dvh-8rem)] grid-rows-[auto_1fr_auto] overflow-hidden rounded-2xl border border-white/8 bg-[#0d0d10]/80">
-      <header className="relative flex items-center justify-between border-b border-white/8 p-5">
+    <section className="grid min-h-[calc(100dvh-8rem)] grid-rows-[auto_1fr_auto] overflow-hidden rounded-[1.25rem] bg-[#0d0d10]/92 shadow-[0_28px_90px_rgba(0,0,0,0.28)]">
+      <header className="flex items-center justify-between border-b border-white/8 px-5 py-4 md:px-7">
         <div className="flex items-center gap-4">
-          <div className="grid h-12 w-12 place-items-center rounded-full border border-white/15 bg-white/[0.05] shadow-[0_0_26px_rgba(255,255,255,0.10)]">
-            <Waveform size={25} weight="thin" />
+          <div className="grid h-11 w-11 place-items-center rounded-xl bg-white/[0.06] text-white/75">
+            <Waveform size={23} weight="duotone" />
           </div>
           <div>
-            <h1 className="text-lg font-semibold text-white">{title}</h1>
-            <p className="text-sm text-white/42">{subtitle}</p>
+            <h1 className="text-[1.05rem] font-semibold tracking-[-0.015em] text-white">{title}</h1>
+            <p className="mt-0.5 text-xs text-white/45">{subtitle}</p>
           </div>
         </div>
-        <button
-          aria-label="会话设置"
-          className="grid h-10 w-10 place-items-center rounded-full border border-white/10 text-white/65 transition hover:border-white/20 hover:text-white active:scale-95"
-          onClick={() => setIsSettingsOpen((open) => !open)}
-        >
-          <GearSix size={18} />
-        </button>
-        {isSettingsOpen ? (
-          <div className="absolute right-5 top-[4.25rem] z-30 w-72 rounded-xl border border-white/10 bg-[#121216] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-white">会话设置</h2>
-              <button
-                aria-label="关闭会话设置"
-                className="grid h-8 w-8 place-items-center rounded-full text-white/45 transition hover:bg-white/[0.06] hover:text-white"
-                onClick={() => setIsSettingsOpen(false)}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <label className="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-3">
-              <div>
-                <div className="text-sm font-medium text-white/88">
-                  启用流式传输
-                </div>
-                <div className="mt-1 text-xs leading-5 text-white/38">
-                  开启后 AI 回复会边生成边显示。
-                </div>
-              </div>
-              <input
-                checked={conversationSettings.streamEnabled}
-                className="h-5 w-5 accent-white"
-                type="checkbox"
-                onChange={(event) =>
-                  void updateConversationSettings({
-                    ...conversationSettings,
-                    streamEnabled: event.target.checked,
-                  })
-                }
-              />
-            </label>
-            {editor ? (
-              <button
-                className="mt-3 flex w-full items-center justify-between gap-4 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-3 text-left transition hover:border-white/18 hover:bg-white/[0.055]"
-                type="button"
-                onClick={() => {
-                  setIsSettingsOpen(false);
-                  setEditError(null);
-                  setIsEditOpen(true);
-                }}
-              >
-                <div>
-                  <div className="text-sm font-medium text-white/88">
-                    {editor.actionLabel}
-                  </div>
-                  <div className="mt-1 text-xs leading-5 text-white/38">
-                    {editor.actionDescription}
-                  </div>
-                </div>
-                <PencilSimple className="text-white/60" size={17} />
-              </button>
-            ) : null}
-            <button
-              className="mt-3 flex w-full items-center justify-between gap-4 rounded-lg border border-red-300/20 bg-red-400/[0.06] px-3 py-3 text-left transition hover:border-red-200/35 hover:bg-red-400/[0.09] disabled:cursor-not-allowed disabled:opacity-55"
-              disabled={isDeletingConversation}
-              type="button"
-              onClick={deleteConversation}
-            >
-              <div>
-                <div className="text-sm font-medium text-red-50">删除会话</div>
-                <div className="mt-1 text-xs leading-5 text-red-100/45">
-                  删除本地和远程数据库中的这个会话。
-                </div>
-              </div>
-              <Trash className="text-red-100/70" size={17} />
-            </button>
-          </div>
-        ) : null}
+        <div className="flex items-center gap-1">
+          {editor ? <button aria-label="编辑角色" className="grid h-9 w-9 place-items-center rounded-lg text-white/45 transition hover:bg-white/[0.05] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white active:translate-y-px" type="button" onClick={() => { setEditError(null); setIsEditOpen(true); }}><PencilSimple size={17} /></button> : null}
+          <button aria-label="删除会话" className="grid h-9 w-9 place-items-center rounded-lg text-white/35 transition hover:bg-red-400/10 hover:text-red-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-300 active:translate-y-px disabled:opacity-40" disabled={isDeletingConversation} type="button" onClick={deleteConversation}><Trash size={17} /></button>
+        </div>
       </header>
 
       <main
         ref={mainRef}
-        className="flex flex-col gap-6 overflow-y-auto px-5 py-8 no-scrollbar md:px-10"
+        className="flex flex-col gap-5 overflow-y-auto px-5 py-7 no-scrollbar md:px-9"
       >
         {prologueHtml ? (
           <iframe
-            className="h-[420px] w-full rounded-2xl border border-white/8 bg-transparent"
+            className="max-h-[38dvh] min-h-64 w-full rounded-xl border border-white/8 bg-transparent"
             sandbox="allow-scripts"
             srcDoc={buildPrologueDocument(prologueHtml)}
             title={`${title} 的序引`}
           />
         ) : null}
-        <div className="flex justify-center">
-          <span className="rounded-full border border-white/8 bg-white/[0.025] px-4 py-1 text-xs uppercase tracking-[0.16em] text-white/30">
-            会话
-          </span>
-        </div>
         {visibleMessages.map((message) => (
           <MessageBubble
             key={message.id}
@@ -247,39 +155,23 @@ export function MessagesPage({
         ) : null}
       </main>
 
-      <footer className="relative p-4 md:p-6">
-        <div className="pointer-events-none absolute inset-x-0 bottom-full h-24 bg-gradient-to-t from-[#0d0d10] to-transparent" />
+      <footer className="relative px-4 pb-4 pt-2 md:px-6 md:pb-6">
+        <div className="pointer-events-none absolute inset-x-0 bottom-full h-16 bg-gradient-to-t from-[#0d0d10] to-transparent" />
         <form
-          className="glass-panel flex items-center gap-2 rounded-full p-2"
+          className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#121216] p-2 shadow-[0_14px_38px_rgba(0,0,0,0.22)] transition focus-within:border-white/30"
           onSubmit={sendMessage}
         >
-          <button
-            className="grid h-10 w-10 place-items-center rounded-full text-white/55 transition hover:bg-white/[0.05] hover:text-white active:scale-95"
-            type="button"
-          >
-            <Plus size={20} />
-          </button>
-          <button
-            className="grid h-10 w-10 place-items-center rounded-full text-white/55 transition hover:bg-white/[0.05] hover:text-white active:scale-95"
-            type="button"
-          >
-            <Paperclip size={20} />
-          </button>
           <input
-            className="min-w-0 flex-1 border-none bg-transparent px-2 text-sm text-white outline-none placeholder:text-white/35"
+            aria-label={`给 ${title} 发消息`}
+            className="min-w-0 flex-1 border-none bg-transparent px-3 py-2 text-sm text-white outline-none placeholder:text-white/32"
             disabled={isSending}
-            placeholder="发消息..."
+            placeholder="写下消息，Enter 发送"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
           />
           <button
-            className="hidden h-10 w-10 place-items-center rounded-full text-white/55 transition hover:bg-white/[0.05] hover:text-white active:scale-95 md:grid"
-            type="button"
-          >
-            <Microphone size={20} />
-          </button>
-          <button
-            className="grid h-10 w-10 place-items-center rounded-full bg-white text-[#09090b] shadow-[0_0_22px_rgba(255,255,255,0.20)] transition active:scale-95 disabled:opacity-45"
+            aria-label="发送消息"
+            className="grid h-10 w-10 place-items-center rounded-lg bg-white text-[#09090b] transition hover:bg-white/88 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white active:translate-y-px disabled:cursor-not-allowed disabled:opacity-35"
             disabled={!draft.trim() || isSending}
             type="submit"
           >

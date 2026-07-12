@@ -100,15 +100,15 @@ export class PrimeDecisionStreamSession {
         if (action.type !== "send_message") return;
         if (action.message.type === "image") {
           try {
-            const references = this.conversationMedia.resolveImageReferences(
+            const references = await this.conversationMedia.resolveImageReferences(
               this.input.ownerUserId,
               this.input.conversationId,
               action.message.referenceMediaIds,
             );
             const generated = await this.imageGeneration.generate({
               prompt: action.message.generationPrompt,
-              references: references.map((reference) => {
-                const resource = this.resources.readForOwner(
+              references: await Promise.all(references.map(async (reference) => {
+                const resource = await this.resources.readForOwner(
                   this.input.ownerUserId,
                   reference.resourceId,
                 );
@@ -118,15 +118,15 @@ export class PrimeDecisionStreamSession {
                   mimeType: resource.record.mimeType,
                   data: resource.data,
                 };
-              }),
+              })),
             });
-            const resource = this.resources.saveGeneratedMedia(
+            const resource = await this.resources.saveGeneratedMedia(
               this.input.ownerUserId,
               "prime_figure_image",
               generated.mimeType,
               generated.data,
             );
-            const registered = this.conversationMedia.ensure({
+            const registered = await this.conversationMedia.ensure({
               ownerUserId: this.input.ownerUserId,
               conversationId: this.input.conversationId,
               resourceId: resource.id,
@@ -150,13 +150,13 @@ export class PrimeDecisionStreamSession {
         if (!state.tts) return;
         try {
           const result = await state.tts.finish();
-          const resource = this.resources.saveGeneratedMedia(
+          const resource = await this.resources.saveGeneratedMedia(
             this.input.ownerUserId,
             "prime_figure_voice",
             result.mimeType,
             result.audio,
           );
-          this.conversationMedia.ensure({
+          await this.conversationMedia.ensure({
             ownerUserId: this.input.ownerUserId,
             conversationId: this.input.conversationId,
             resourceId: resource.id,

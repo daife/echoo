@@ -1,4 +1,4 @@
-import { PrimeFigureRuntimeService } from "./prime-figure-runtime.service.js";
+import { AgentRunQueue } from "../../../../infra/redis/run-queue.js";
 import { PrimeFigureStateRepository } from "./prime-figure-state.repository.js";
 
 export class PrimeFigureSilenceScheduler {
@@ -7,7 +7,7 @@ export class PrimeFigureSilenceScheduler {
 
   constructor(
     private readonly states = new PrimeFigureStateRepository(),
-    private readonly runtime = new PrimeFigureRuntimeService(),
+    private readonly runQueue = new AgentRunQueue(),
   ) {}
 
   start() {
@@ -38,14 +38,15 @@ export class PrimeFigureSilenceScheduler {
     if (this.ticking) return;
     this.ticking = true;
     try {
-      const due = this.states.claimDueSilences(Date.now());
+      const due = await this.states.claimDueSilences(Date.now());
       await Promise.all(
         due
           .filter((item) => item.hadQueuedMessages)
           .map((item) =>
-            this.runtime.requestDecision({
+            this.runQueue.enqueue({
               ownerUserId: item.ownerUserId,
               conversationId: item.conversationId,
+              kind: "prime-figure",
               trigger: "silence_ended",
             }),
           ),

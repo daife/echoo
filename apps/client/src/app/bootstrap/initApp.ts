@@ -13,6 +13,6 @@ export function initApp(runtime: RuntimeBundle) {
   return {
     agentService: new AgentService(new AgentsApi(api)),
     authService: new AuthService(new AuthApi(api), runtime.auth, runtime.storage),
-    messageService: new MessageService(new MessageApi(api), runtime.storage)
+    messageService: new MessageService(new MessageApi(api))
   };
 }

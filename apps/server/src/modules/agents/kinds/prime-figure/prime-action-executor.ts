@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { primeFigureDecisionSchema } from "@echoo/shared";
 import type {
   Message,
@@ -11,12 +10,12 @@ import type {
   PrimeFigureVariableValue,
   PrimeMessageContent,
 } from "@echoo/shared";
-import { getDatabase } from "../../../../infra/database/sqlite.js";
+import { createId } from "../../../../shared/utils/id.js";
+import { APP_TIME_ZONE } from "../../../../shared/constants/time.js";
 import { ConversationRepository } from "../../../conversations/conversation.repository.js";
 import { MessageRepository } from "../../../messaging/message.repository.js";
 import { AppPushService } from "../../../realtime/delivery.service.js";
 import { PrimeActionLogRepository } from "./prime-action-log.repository.js";
-import { PrimeMessageRepository } from "./prime-message.repository.js";
 import { PrimeFigureStateRepository } from "./prime-figure-state.repository.js";
 import { PrimeFigureRepository } from "./prime-figure.repository.js";
 import { parseReadableMinute } from "./prime-time.js";
@@ -26,19 +25,16 @@ import type {
 } from "./prime-decision-stream-session.js";
 
 export class PrimeActionExecutor {
-  private readonly db = getDatabase();
-
   constructor(
     private readonly states = new PrimeFigureStateRepository(),
     private readonly figures = new PrimeFigureRepository(),
-    private readonly primeMessages = new PrimeMessageRepository(),
     private readonly messages = new MessageRepository(),
     private readonly logs = new PrimeActionLogRepository(),
     private readonly conversations = new ConversationRepository(),
     private readonly appPush = new AppPushService(),
   ) {}
 
-  executeDecision(input: {
+  async executeDecision(input: {
     ownerUserId: string;
     conversationId: string;
     agent: PrimeFigureAgent;
@@ -66,7 +62,7 @@ export class PrimeActionExecutor {
       memories: appendMemories(
         input.state,
         decision,
-        input.agent.detail.schedule.timezone,
+        APP_TIME_ZONE,
         now,
       ),
       mood: decision.figureMood,
@@ -78,7 +74,6 @@ export class PrimeActionExecutor {
     };
     const createdMessages: Array<{ message: Message; streamed: boolean }> = [];
 
-    this.db.exec("BEGIN IMMEDIATE");
     try {
       const silenceAction = decision.actions.find(
         (action) => action.type === "silence",
@@ -87,8 +82,8 @@ export class PrimeActionExecutor {
         delete state.silenceStartedAtMs;
         delete state.silenceUntilMs;
 
-        decision.actions.forEach((action, index) => {
-          if (action.type !== "send_message") return;
+        for (const [index, action] of decision.actions.entries()) {
+          if (action.type !== "send_message") continue;
           const occurredAtMs = now + index;
           const voiceMedia = input.voiceMedia?.get(index);
           const imageMedia = input.imageMedia?.get(index);
@@ -97,21 +92,12 @@ export class PrimeActionExecutor {
             voiceMedia,
             imageMedia,
           );
-          const primeMessage = this.primeMessages.save({
-            ownerUserId: input.ownerUserId,
-            agentId: input.agent.id,
-            conversationId: input.conversationId,
-            sender: "prime_figure",
-            content: primeContent,
-            occurredAtMs,
-            timezone: input.agent.detail.schedule.timezone,
-          });
           const streamedMessageId = input.streamedMessageIds?.get(index);
           createdMessages.push({
             streamed: Boolean(streamedMessageId),
-            message: this.messages.save({
+            message: await this.messages.save({
               ownerUserId: input.ownerUserId,
-              id: streamedMessageId ?? `msg_${randomUUID()}`,
+              id: streamedMessageId ?? createId("msg"),
               conversationId: input.conversationId,
               role: "assistant",
               contentType: toMessageContentType(action.message),
@@ -121,7 +107,7 @@ export class PrimeActionExecutor {
               model: input.model,
               metadata: {
                 kind: "prime_figure",
-                primeMessageId: primeMessage.id,
+                primeContent,
                 ...toMediaIntentMetadata(
                   action.message,
                   voiceMedia,
@@ -134,11 +120,11 @@ export class PrimeActionExecutor {
               updatedAt: occurredAtMs,
             }),
           });
-        });
+        }
         const lastMessage = decision.actions.at(-1);
         if (lastMessage?.type !== "send_message")
           throw new Error("本初角色的发送动作列表无效。");
-        this.conversations.updatePreview({
+        await this.conversations.updatePreview({
           ownerUserId: input.ownerUserId,
           conversationId: input.conversationId,
           preview: toConversationPreview(lastMessage.message),
@@ -150,13 +136,13 @@ export class PrimeActionExecutor {
         state.silenceUntilMs = now + silenceAction.revisitAfterMinutes * 60_000;
       }
 
-      this.figures.applyRuntimeUpdates(
+      await this.figures.applyRuntimeUpdates(
         input.agent.id,
         input.agent.detail,
         decision.stateUpdates ?? {},
       );
-      this.states.save(input.ownerUserId, input.agent.id, state);
-      decision.actions.forEach((action) =>
+      await this.states.save(input.ownerUserId, input.agent.id, state);
+      await Promise.all(decision.actions.map((action) =>
         this.logs.save({
           ownerUserId: input.ownerUserId,
           agentId: input.agent.id,
@@ -165,12 +151,10 @@ export class PrimeActionExecutor {
           rationale: decision.rationale,
           status: "applied",
           now,
-        }),
+        })),
       );
-      this.db.exec("COMMIT");
     } catch (error) {
-      this.db.exec("ROLLBACK");
-      this.logs.save({
+      await this.logs.save({
         ownerUserId: input.ownerUserId,
         agentId: input.agent.id,
         conversationId: input.conversationId,
@@ -293,7 +277,7 @@ function appendMemories(
   now: number,
 ) {
   const writes = (decision.memoryWrites ?? []).map((memory) => ({
-    id: `pmem_${randomUUID()}`,
+    id: createId("pmem"),
     content: memory.content,
     eventAtMs: memory.eventAt
       ? (parseReadableMinute(memory.eventAt, timezone) ?? now)

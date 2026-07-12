@@ -13,6 +13,7 @@ import type {
   PrimeMessageContent,
 } from "@echoo/shared";
 import { AiProviderRegistry } from "../../../ai/ai-provider.registry.js";
+import { APP_TIME_ZONE } from "../../../../shared/constants/time.js";
 import type {
   AiTextProvider,
   ChatCompletionInput,
@@ -109,14 +110,14 @@ export class PrimeFigureRuntimeService {
 
     while (true) {
       PrimeFigureRuntimeService.pendingTriggers.delete(key);
-      const agent = this.agents.findByConversation(
+      const agent = await this.agents.findByConversation(
         input.ownerUserId,
         input.conversationId,
       );
       if (!agent || agent.type !== "prime-figure") return null;
-      const state = this.states.findByAgent(input.ownerUserId, agent.id);
+      const state = await this.states.findByAgent(input.ownerUserId, agent.id);
       if (!state) {
-        this.logs.save({
+        await this.logs.save({
           ownerUserId: input.ownerUserId,
           agentId: agent.id,
           conversationId: input.conversationId,
@@ -137,7 +138,7 @@ export class PrimeFigureRuntimeService {
           state,
         });
       } catch (error) {
-        this.logs.save({
+        await this.logs.save({
           ownerUserId: input.ownerUserId,
           agentId: agent.id,
           conversationId: input.conversationId,
@@ -162,14 +163,14 @@ export class PrimeFigureRuntimeService {
     agent: PrimeFigureAgent;
     state: PrimeFigureState;
   }) {
-    const timeline = this.messages.listRecent(
+    const timeline = await this.messages.listRecent(
       input.ownerUserId,
       input.agent.id,
       PRIME_CONTEXT_MESSAGE_LIMIT,
     );
     const provider = this.providers.getDefaultProvider();
     const model = this.providers.getDefaultModel();
-    const packet = buildPrimeChatMessages(
+    const packet = await buildPrimeChatMessages(
       input.agent,
       input.state,
       timeline,
@@ -226,7 +227,7 @@ export class PrimeFigureRuntimeService {
           role: "tool",
           toolCallId: recallCall.id,
           name: recallCall.function.name,
-          content: this.executeRecallTool(recallCall, input),
+          content: await this.executeRecallTool(recallCall, input),
         });
         finalResponse = await streamPrimeChatCompletion(
           provider,
@@ -261,7 +262,7 @@ export class PrimeFigureRuntimeService {
         actionIndex,
         errorMessage,
       ] of streamed.imageGenerationErrors) {
-        this.logs.save({
+        await this.logs.save({
           ownerUserId: input.ownerUserId,
           agentId: input.agent.id,
           conversationId: input.conversationId,
@@ -270,7 +271,7 @@ export class PrimeFigureRuntimeService {
           errorMessage,
         });
       }
-      this.executor.executeDecision({
+      await this.executor.executeDecision({
         ownerUserId: input.ownerUserId,
         conversationId: input.conversationId,
         agent: input.agent,
@@ -284,7 +285,7 @@ export class PrimeFigureRuntimeService {
         imageMedia: streamed.imageMedia,
         imageGenerationErrors: streamed.imageGenerationErrors,
       });
-      this.persistMediaAnnotations(
+      await this.persistMediaAnnotations(
         input,
         packet.pendingMedia,
         mediaAnnotations,
@@ -296,7 +297,7 @@ export class PrimeFigureRuntimeService {
     }
   }
 
-  private persistMediaAnnotations(
+  private async persistMediaAnnotations(
     input: {
       ownerUserId: string;
       conversationId: string;
@@ -314,14 +315,14 @@ export class PrimeFigureRuntimeService {
           annotation.type === "voice"
             ? annotation.transcript
             : annotation.description;
-        const updated = this.messages.applyMediaAnnotation({
+        const updated = await this.messages.applyMediaAnnotation({
           ownerUserId: input.ownerUserId,
           messageId: target.messageId,
           expectedType: target.type,
           value,
         });
         if (!updated) throw new Error("待标注媒体消息不存在或类型已改变。");
-        this.conversationMedia.ensure({
+        await this.conversationMedia.ensure({
           ownerUserId: input.ownerUserId,
           conversationId: input.conversationId,
           resourceId: target.resourceId,
@@ -329,7 +330,7 @@ export class PrimeFigureRuntimeService {
           description: value,
         });
       } catch (error) {
-        this.logs.save({
+        await this.logs.save({
           ownerUserId: input.ownerUserId,
           agentId: input.agent.id,
           conversationId: input.conversationId,
@@ -342,7 +343,7 @@ export class PrimeFigureRuntimeService {
     }
   }
 
-  private executeRecallTool(
+  private async executeRecallTool(
     toolCall: ChatToolCall,
     context: {
       ownerUserId: string;
@@ -351,14 +352,14 @@ export class PrimeFigureRuntimeService {
     },
   ) {
     const args = parseRecallArguments(toolCall.function.arguments);
-    const timezone = context.agent.detail.schedule.timezone;
-    const history = this.messages
+    const timezone = APP_TIME_ZONE;
+    const history = (await this.messages
       .searchByKeywords(
         context.ownerUserId,
         context.agent.id,
         args.keywords,
         args.limit,
-      )
+      ))
       .map((message) => [
         formatReadableMinute(message.occurredAtMs, timezone),
         toLlmSender(message.sender),
@@ -434,7 +435,7 @@ async function streamPrimeChatCompletion(
   };
 }
 
-function buildPrimeChatMessages(
+async function buildPrimeChatMessages(
   agent: PrimeFigureAgent,
   state: PrimeFigureState,
   timeline: PrimeMessage[],
@@ -442,12 +443,12 @@ function buildPrimeChatMessages(
   ownerUserId: string,
   resources: ResourceRepository,
   conversationMedia: PrimeConversationMediaRepository,
-): {
+): Promise<{
   messages: ChatCompletionMessage[];
   pendingMedia: PendingMediaAnnotation[];
   availableReferenceImages: Array<{ id: string; description: string }>;
-} {
-  const timezone = agent.detail.schedule.timezone;
+}> {
+  const timezone = APP_TIME_ZONE;
   const now = Date.now();
   const lastEndUserMessage = [...timeline]
     .reverse()
@@ -493,12 +494,12 @@ function buildPrimeChatMessages(
   const content: ChatCompletionContentPart[] = [];
   const pendingMedia: PendingMediaAnnotation[] = [];
   if (agent.coverResourcePath) {
-    const cover = resources.findByPublicPath(
+    const cover = await resources.findByPublicPath(
       ownerUserId,
       agent.coverResourcePath,
     );
     if (!cover) throw new Error("figure 封面资源不存在或不属于当前用户。");
-    conversationMedia.ensure({
+    await conversationMedia.ensure({
       ownerUserId,
       conversationId: agent.conversationId,
       resourceId: cover.id,
@@ -528,7 +529,7 @@ function buildPrimeChatMessages(
     if (messageContent.type === "image" || messageContent.type === "video") {
       const description = messageContent.description?.trim();
       const registeredMedia = messageContent.resourceId
-        ? conversationMedia.ensure({
+        ? await conversationMedia.ensure({
             ownerUserId,
             conversationId: message.conversationId,
             resourceId: messageContent.resourceId,
@@ -573,7 +574,7 @@ function buildPrimeChatMessages(
         }),
       });
       content.push(
-        buildRawMediaPart(
+        await buildRawMediaPart(
           ownerUserId,
           messageContent.resourceId,
           messageContent.type,
@@ -586,7 +587,7 @@ function buildPrimeChatMessages(
     if (messageContent.type === "voice") {
       const transcript = messageContent.transcript?.trim();
       const registeredMedia = messageContent.resourceId
-        ? conversationMedia.ensure({
+        ? await conversationMedia.ensure({
             ownerUserId,
             conversationId: message.conversationId,
             resourceId: messageContent.resourceId,
@@ -629,7 +630,7 @@ function buildPrimeChatMessages(
         }),
       });
       content.push(
-        buildRawMediaPart(
+        await buildRawMediaPart(
           ownerUserId,
           messageContent.resourceId,
           "voice",
@@ -677,8 +678,8 @@ function buildPrimeChatMessages(
     );
   }
 
-  const availableReferenceImages = conversationMedia
-    .listAvailableImages(ownerUserId, agent.conversationId)
+  const availableReferenceImages = (await conversationMedia
+    .listAvailableImages(ownerUserId, agent.conversationId))
     .map((media) => ({
       id: media.mediaId,
       description: sanitizeVisibleText(media.description ?? "", timezone),
@@ -743,14 +744,14 @@ const AUDIO_FORMAT_BY_MIME_TYPE = new Map([
   ["audio/mp4", "m4a"],
 ]);
 
-function buildRawMediaPart(
+async function buildRawMediaPart(
   ownerUserId: string,
   resourceId: string | undefined,
   type: PendingMediaAnnotation["type"],
   resources: ResourceRepository,
-): ChatCompletionContentPart {
+): Promise<ChatCompletionContentPart> {
   if (!resourceId) throw new Error(`未描述的 ${type} 消息缺少资源 ID。`);
-  const resource = resources.readForOwner(ownerUserId, resourceId);
+  const resource = await resources.readForOwner(ownerUserId, resourceId);
   if (!resource) throw new Error(`媒体资源不存在或不属于当前用户：${type}。`);
   const base64 = resource.data.toString("base64");
 
@@ -791,7 +792,7 @@ function buildRawMediaPart(
 }
 
 function buildSystemPrompt(agent: PrimeFigureAgent) {
-  const timezone = agent.detail.schedule.timezone;
+  const timezone = APP_TIME_ZONE;
   const schedule = agent.detail.schedule.segments.map(
     (segment) =>
       `${segment.days.join(",")} ${segment.start}-${segment.end} ${segment.label}: ${sanitizeVisibleText(segment.description, timezone)}`,
@@ -1075,10 +1076,6 @@ function buildScheduleOutputSchema() {
     type: "object",
     description: "角色的完整每周日程。",
     properties: {
-      timezone: {
-        type: "string",
-        description: "有效的 IANA 时区，例如 Asia/Shanghai。",
-      },
       segments: {
         type: "array",
         description: "每周日程时段。",
@@ -1120,7 +1117,7 @@ function buildScheduleOutputSchema() {
         },
       },
     },
-    required: ["timezone", "segments"],
+    required: ["segments"],
     additionalProperties: false,
   } as const;
 }

@@ -3,6 +3,7 @@ import type {
   PrimeFigureScheduleSegment,
   PrimeFigureWeekday,
 } from "@echoo/shared";
+import { APP_TIME_ZONE } from "../../../../shared/constants/time.js";
 
 const WEEKDAYS: PrimeFigureWeekday[] = [
   "sun",
@@ -85,7 +86,7 @@ export function findScheduleSegment(
   schedule: PrimeFigureSchedule,
   timestampMs: number,
 ): PrimeFigureScheduleSegment | null {
-  const parts = getDateTimeParts(timestampMs, schedule.timezone);
+  const parts = getDateTimeParts(timestampMs, APP_TIME_ZONE);
   const weekday = WEEKDAYS[parts.weekday] ?? "sun";
   const minuteOfDay = parts.hour * 60 + parts.minute;
 

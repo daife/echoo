@@ -1,12 +1,5 @@
-import { MagnifyingGlass, Robot } from "@phosphor-icons/react";
+import { Robot } from "@phosphor-icons/react";
 import type { Agent } from "@echoo/shared";
-
-const conversations = [
-  { name: "Aster", text: "我已经把今天的待办拆成三段。", unread: 3 },
-  { name: "Mira", text: "我们可以先保存这个片段，明天继续。", unread: 1 },
-  { name: "Noir", text: "我把这段信息整理成了三个可执行步骤。", unread: 2 },
-  { name: "Lyra", text: "我把你的语气偏好记下来了。", unread: 0 }
-];
 
 export function ConversationRail({
   agents,
@@ -17,33 +10,28 @@ export function ConversationRail({
   onOpenAgent: (agent: Agent) => void;
   onOpenChat: () => void;
 }) {
-  const visibleConversations =
-    agents.length > 0
-      ? agents.map((agent) => ({ name: agent.name, text: agent.introduction || getAgentFallbackText(agent), unread: 0, agent }))
-      : conversations.map((conversation) => ({ ...conversation, agent: null }));
+  const visibleConversations = agents.map((agent) => ({ name: agent.name,
+    text: agent.introduction || getAgentFallbackText(agent), unread: 0, agent }));
 
   return (
     <aside className="hidden min-w-0 md:block">
-      <div className="glass-panel sticky top-24 overflow-hidden rounded-2xl">
+      <div className="sticky top-24 overflow-hidden rounded-xl bg-[#0d0d10]/72">
         <div className="border-b border-white/8 p-5">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-white">会话</h2>
-            <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[#09090b]">{visibleConversations.length}</span>
-          </div>
-          <div className="mt-5 flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.025] px-4 py-3 text-white/45">
-            <MagnifyingGlass size={17} />
-            <span className="text-sm">搜索角色与记忆</span>
+            <h2 className="text-base font-semibold tracking-[-0.015em] text-white">会话</h2>
+            <span className="font-mono text-xs tabular-nums text-white/42">{String(visibleConversations.length).padStart(2, "0")}</span>
           </div>
         </div>
         <div className="max-h-[calc(100dvh-220px)] overflow-y-auto p-2 no-scrollbar">
+          {!visibleConversations.length ? <div className="px-4 py-12 text-center"><Robot className="mx-auto text-white/35" size={24} /><p className="mt-3 text-sm text-white/42">创建角色后，会话会出现在这里。</p></div> : null}
           {visibleConversations.map((conversation) => {
             return (
               <button
                 key={conversation.name}
-                className="flex w-full items-center gap-3 rounded-xl p-3 text-left transition hover:bg-white/[0.045] active:scale-[0.99]"
+                className="flex w-full items-center gap-3 rounded-lg p-3 text-left transition hover:bg-white/[0.055] active:translate-y-px"
                 onClick={() => (conversation.agent ? onOpenAgent(conversation.agent) : onOpenChat())}
               >
-                <div className="grid h-11 w-11 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-white">
+                <div className="grid h-10 w-10 place-items-center rounded-lg bg-white/[0.06] text-white/75">
                   <Robot size={19} weight="duotone" />
                 </div>
                 <div className="min-w-0 flex-1">

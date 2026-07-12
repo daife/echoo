@@ -27,20 +27,20 @@ export class AuthService {
 
   async register(input: RegisterBody) {
     const body = registerSchema.parse(input);
-    const existingUser = this.users.findByEmail(body.email);
+    const existingUser = await this.users.findByEmail(body.email);
     if (existingUser?.emailVerifiedAt) {
       throw new AuthError("EMAIL_TAKEN", "该邮箱已注册。", 409);
     }
 
     const user =
       existingUser ??
-      this.users.create({
+      await this.users.create({
         email: body.email,
         passwordHash: await this.passwordService.hash(body.password),
         displayName: body.displayName ?? body.email.split("@")[0] ?? "Echoo User"
       });
 
-    const verificationToken = this.users.createEmailVerificationToken(user.id);
+    const verificationToken = await this.users.createEmailVerificationToken(user.id);
     const clientUrl = process.env.CLIENT_URL ?? "http://localhost:5173";
     const verificationUrl = `${clientUrl}/?verificationToken=${encodeURIComponent(verificationToken.token)}`;
     await this.emailService.sendVerificationEmail(toUserProfile(user), verificationUrl);
@@ -53,7 +53,7 @@ export class AuthService {
 
   async login(input: LoginBody): Promise<AuthSession> {
     const body = loginSchema.parse(input);
-    const user = this.users.findByEmail(body.email);
+    const user = await this.users.findByEmail(body.email);
     if (!user || !(await this.passwordService.verify(body.password, user.passwordHash))) {
       throw new AuthError("INVALID_CREDENTIALS", "邮箱或密码不正确。", 401);
     }
@@ -66,7 +66,7 @@ export class AuthService {
   }
 
   async me(userId: string) {
-    const user = this.users.findById(userId);
+    const user = await this.users.findById(userId);
     if (!user) {
       throw new AuthError("USER_NOT_FOUND", "用户不存在。", 404);
     }
@@ -75,10 +75,10 @@ export class AuthService {
 
   async forgotPassword(input: ForgotPasswordBody) {
     const body = forgotPasswordSchema.parse(input);
-    const user = this.users.findByEmail(body.email);
+    const user = await this.users.findByEmail(body.email);
     if (!user) return { ok: true as const };
 
-    const resetToken = this.users.createPasswordResetToken(user.id);
+    const resetToken = await this.users.createPasswordResetToken(user.id);
     const clientUrl = process.env.CLIENT_URL ?? "http://localhost:5173";
     const resetUrl = `${clientUrl}/?resetToken=${encodeURIComponent(resetToken.token)}`;
     await this.emailService.sendPasswordResetEmail(toUserProfile(user), resetUrl);
@@ -91,31 +91,31 @@ export class AuthService {
 
   async resetPassword(input: ResetPasswordBody) {
     const body = resetPasswordSchema.parse(input);
-    const resetToken = this.users.findPasswordResetToken(body.token);
+    const resetToken = await this.users.findPasswordResetToken(body.token);
     if (!resetToken || resetToken.usedAt || resetToken.expiresAt <= Date.now()) {
       throw new AuthError("RESET_TOKEN_INVALID", "该重置链接无效或已过期。", 400);
     }
 
     const passwordHash = await this.passwordService.hash(body.password);
-    this.users.updatePassword(resetToken.userId, passwordHash);
-    this.users.markPasswordResetTokenUsed(body.token);
+    await this.users.updatePassword(resetToken.userId, passwordHash);
+    await this.users.markPasswordResetTokenUsed(body.token);
     return { ok: true as const };
   }
 
   async verifyEmail(input: VerifyEmailBody) {
     const body = verifyEmailSchema.parse(input);
-    const verificationToken = this.users.findEmailVerificationToken(body.token);
+    const verificationToken = await this.users.findEmailVerificationToken(body.token);
     if (!verificationToken || verificationToken.usedAt || verificationToken.expiresAt <= Date.now()) {
       throw new AuthError("VERIFICATION_TOKEN_INVALID", "该验证链接无效或已过期。", 400);
     }
 
-    this.users.markEmailVerified(verificationToken.userId);
-    this.users.markEmailVerificationTokenUsed(body.token);
+    await this.users.markEmailVerified(verificationToken.userId);
+    await this.users.markEmailVerificationTokenUsed(body.token);
     return { ok: true as const };
   }
 
-  private createSession(userId: string): AuthSession {
-    const user = this.users.findById(userId);
+  private async createSession(userId: string): Promise<AuthSession> {
+    const user = await this.users.findById(userId);
     if (!user) throw new AuthError("USER_NOT_FOUND", "用户不存在。", 404);
 
     return {

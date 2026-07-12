@@ -1,5 +1,4 @@
 import {
-  Bell,
   ChatCircleText,
   Compass,
   GearSix,
@@ -249,30 +248,26 @@ export function App() {
   return (
     <div className="relative min-h-[100dvh] overflow-hidden bg-[#09090b] text-[#e5e2e1]">
       <div className="pointer-events-none fixed inset-0 opacity-80">
-        <div className="absolute left-[8%] top-[12%] h-80 w-80 rounded-full bg-white/[0.045] blur-[100px]" />
-        <div className="absolute bottom-[8%] right-[5%] h-[32rem] w-[32rem] rounded-full bg-white/[0.035] blur-[140px]" />
+        <div className="absolute left-[7%] top-[8%] h-80 w-80 rounded-full bg-white/[0.045] blur-[110px]" />
+        <div className="absolute bottom-[4%] right-[3%] h-[30rem] w-[30rem] rounded-full bg-white/[0.035] blur-[150px]" />
       </div>
 
-      <header className="fixed inset-x-0 top-0 z-40 border-b border-white/10 bg-[#09090b]/70 backdrop-blur-2xl">
+      <header className="fixed inset-x-0 top-0 z-40 border-b border-white/10 bg-[#09090b]/78 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between px-5 md:px-16">
           <button
             aria-label="探索"
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-white transition hover:border-white/20 active:scale-95"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-white/55 transition hover:bg-white/[0.05] hover:text-white active:translate-y-px"
             onClick={() => setView("explore")}
           >
             <Compass size={20} weight="duotone" />
           </button>
-          <div className="text-lg font-semibold tracking-[0.18em] text-white">
-            ECHOO
+          <div className="text-sm font-semibold tracking-[0.24em] text-white">
+            ECHOO <span className="text-white/35">/</span>
           </div>
           <div className="flex items-center gap-3">
-            <button className="hidden h-10 items-center gap-2 rounded-full border border-white/10 px-4 text-sm text-white/70 transition hover:border-white/20 hover:text-white md:flex">
-              <Bell size={16} />
-              12
-            </button>
             <button
               aria-label="个人资料"
-              className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/[0.04] text-white transition hover:border-white/20"
+              className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg text-white/55 transition hover:bg-white/[0.05] hover:text-white"
               onClick={() => setView(auth.user ? "profile" : "auth")}
             >
               <UserCircle size={24} weight="duotone" />
@@ -284,12 +279,12 @@ export function App() {
       <div
         className={`relative z-10 mx-auto grid min-h-[100dvh] max-w-[1440px] grid-cols-1 px-5 pb-28 pt-24 md:gap-6 md:px-16 md:pb-8 ${
           showConversationRail
-            ? "md:grid-cols-[88px_340px_1fr]"
-            : "md:grid-cols-[88px_1fr]"
+            ? "md:grid-cols-[64px_300px_1fr]"
+            : "md:grid-cols-[64px_1fr]"
         }`}
       >
         <aside className="hidden md:block">
-          <nav className="glass-panel sticky top-24 flex flex-col items-center gap-3 rounded-full p-2">
+          <nav className="glass-panel sticky top-24 flex flex-col items-center gap-2 rounded-xl p-2">
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = view === item.id;
@@ -297,7 +292,7 @@ export function App() {
                 <button
                   key={item.id}
                   aria-label={item.label}
-                  className={`flex h-12 w-12 items-center justify-center rounded-full transition active:scale-95 ${
+                  className={`flex h-11 w-11 items-center justify-center rounded-lg transition active:translate-y-px ${
                     active
                       ? "bg-white text-[#09090b] luminous-ring"
                       : "text-white/50 hover:bg-white/[0.06] hover:text-white"

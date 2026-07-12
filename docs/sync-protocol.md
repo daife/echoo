@@ -5,10 +5,8 @@ Startup and resume flow:
 ```text
 app starts
   -> check auth
-  -> read last_message_id
-  -> GET /api/messages?after=last_message_id
-  -> save messages with StorageRuntime
-  -> update sync cursor
+  -> GET the latest conversation message page from MySQL
+  -> keep the visible page in memory
   -> start MessageRuntime realtime
 ```
 
@@ -20,7 +18,7 @@ bound external interface receives user text
   -> model produces a reply for that same session
   -> server sends message.created to Echoo clients
   -> server mirrors the reply through the bound interface
-  -> foreground client stores message and updates UI
+  -> foreground client updates the in-memory conversation page
   -> background Android service shows notification only
   -> client or service sends ack
 ```

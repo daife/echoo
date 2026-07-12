@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   createReadStream,
   mkdirSync,
@@ -7,7 +6,9 @@ import {
 } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 import type { AgentResourceUpload } from "@echoo/shared";
-import { getDatabase } from "../../infra/database/sqlite.js";
+import type { RowDataPacket } from "mysql2";
+import { execute, queryOne } from "../../infra/database/mysql.js";
+import { createId } from "../../shared/utils/id.js";
 
 const allowedMimeTypes = new Map([
   ["image/jpeg", ".jpg"],
@@ -36,7 +37,7 @@ export interface ResourceRecord {
   createdAt: number;
 }
 
-interface ResourceRow {
+interface ResourceRow extends RowDataPacket {
   id: string;
   owner_user_id: string;
   kind: string;
@@ -48,17 +49,16 @@ interface ResourceRow {
 }
 
 export class ResourceRepository {
-  private readonly db = getDatabase();
   private readonly rootDir = resolve(
     process.cwd(),
     process.env.RESOURCE_STORAGE_DIR ?? ".data/resources",
   );
 
-  saveImage(
+  async saveImage(
     ownerUserId: string,
     kind: "agent_avatar" | "agent_cover",
     upload: AgentResourceUpload,
-  ): ResourceRecord {
+  ): Promise<ResourceRecord> {
     const extension = allowedMimeTypes.get(upload.mimeType);
     if (!extension) throw new Error("Unsupported image type.");
 
@@ -67,7 +67,7 @@ export class ResourceRepository {
     if (buffer.length > 5 * 1024 * 1024)
       throw new Error("图片大小不能超过 5MB。");
 
-    const id = `res_${randomUUID()}`;
+    const id = createId("res");
     const originalExtension = extname(upload.fileName).toLowerCase();
     const finalExtension = allowedMimeTypes.has(upload.mimeType)
       ? extension
@@ -83,8 +83,7 @@ export class ResourceRepository {
     mkdirSync(dirname(storagePath), { recursive: true });
     writeFileSync(storagePath, buffer);
 
-    this.db
-      .prepare(
+    await execute(
         `
           INSERT INTO resources (
             id,
@@ -97,8 +96,7 @@ export class ResourceRepository {
             created_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `,
-      )
-      .run(
+      [
         id,
         ownerUserId,
         kind,
@@ -107,7 +105,7 @@ export class ResourceRepository {
         storagePath,
         publicPath,
         now,
-      );
+      ]);
 
     return {
       id,
@@ -121,32 +119,29 @@ export class ResourceRepository {
     };
   }
 
-  saveGeneratedMedia(
+  async saveGeneratedMedia(
     ownerUserId: string,
     kind: "prime_figure_voice" | "prime_figure_image",
     mimeType: string,
     data: Buffer,
-  ): ResourceRecord {
+  ): Promise<ResourceRecord> {
     const extension = generatedMimeTypes.get(mimeType);
     if (!extension)
       throw new Error(`Unsupported generated media type: ${mimeType}.`);
     if (!data.length) throw new Error("Generated media is empty.");
 
-    const id = `res_${randomUUID()}`;
+    const id = createId("res");
     const fileName = `${id}${extension}`;
     const storagePath = join(this.rootDir, ownerUserId, fileName);
     const publicPath = `/api/resources/${id}/file`;
     const now = Date.now();
     mkdirSync(dirname(storagePath), { recursive: true });
     writeFileSync(storagePath, data);
-    this.db
-      .prepare(
+    await execute(
         `INSERT INTO resources (
           id, owner_user_id, kind, mime_type, original_file_name,
           storage_path, public_path, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
         id,
         ownerUserId,
         kind,
@@ -155,7 +150,7 @@ export class ResourceRepository {
         storagePath,
         publicPath,
         now,
-      );
+      ]);
     return {
       id,
       ownerUserId,
@@ -168,24 +163,20 @@ export class ResourceRepository {
     };
   }
 
-  findById(id: string): ResourceRecord | null {
-    const row = this.db
-      .prepare("SELECT * FROM resources WHERE id = ?")
-      .get(id) as unknown as ResourceRow | undefined;
+  async findById(id: string): Promise<ResourceRecord | null> {
+    const row = await queryOne<ResourceRow>("SELECT * FROM resources WHERE id = ?", [id]);
     return row ? rowToResource(row) : null;
   }
 
-  findByPublicPath(ownerUserId: string, publicPath: string) {
-    const row = this.db
-      .prepare(
+  async findByPublicPath(ownerUserId: string, publicPath: string) {
+    const row = await queryOne<ResourceRow>(
         "SELECT * FROM resources WHERE owner_user_id = ? AND public_path = ?",
-      )
-      .get(ownerUserId, publicPath) as ResourceRow | undefined;
+      [ownerUserId, publicPath]);
     return row ? rowToResource(row) : null;
   }
 
-  readForOwner(ownerUserId: string, id: string) {
-    const record = this.findById(id);
+  async readForOwner(ownerUserId: string, id: string) {
+    const record = await this.findById(id);
     if (!record || record.ownerUserId !== ownerUserId) return null;
     return {
       record,

@@ -21,14 +21,6 @@ interface StreamDisplayBuffer {
   completedMessage?: LocalMessage;
 }
 
-export interface ConversationSettings {
-  streamEnabled: boolean;
-}
-
-export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
-  streamEnabled: true,
-};
-
 export function useConversationMessages({
   agent,
   onConversationDeleted,
@@ -48,9 +40,6 @@ export function useConversationMessages({
     string | null
   >(null);
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [conversationSettings, setConversationSettings] =
-    useState<ConversationSettings>(DEFAULT_CONVERSATION_SETTINGS);
   const [error, setError] = useState<string | null>(null);
   const messagesRef = useRef<LocalMessage[]>([]);
   const streamBuffersRef = useRef(new Map<string, StreamDisplayBuffer>());
@@ -69,52 +58,13 @@ export function useConversationMessages({
     messagesRef.current = messages;
   }, [messages]);
 
-  const refreshLocalMessages = useCallback(async () => {
+  const refreshMessages = useCallback(async () => {
     if (!conversationId) {
       setMessages([]);
       return;
     }
-    setMessages(
-      await services.messageService.listLocalMessages(conversationId),
-    );
+    setMessages(await services.messageService.syncConversationMessages(conversationId));
   }, [conversationId, services.messageService]);
-
-  useEffect(() => {
-    if (!conversationId) {
-      setConversationSettings(DEFAULT_CONVERSATION_SETTINGS);
-      setIsSettingsOpen(false);
-      return;
-    }
-
-    let cancelled = false;
-    void runtime.storage
-      .getSetting<ConversationSettings>(
-        getConversationSettingsKey(conversationId),
-      )
-      .then((settings) => {
-        if (cancelled) return;
-        setConversationSettings({
-          ...DEFAULT_CONVERSATION_SETTINGS,
-          ...(settings ?? {}),
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [conversationId, runtime.storage]);
-
-  const updateConversationSettings = useCallback(
-    async (settings: ConversationSettings) => {
-      if (!conversationId) return;
-      setConversationSettings(settings);
-      await runtime.storage.setSetting(
-        getConversationSettingsKey(conversationId),
-        settings,
-      );
-    },
-    [conversationId, runtime.storage],
-  );
 
   const scheduleStreamDrain = useCallback((messageId: string) => {
     const buffer = streamBuffersRef.current.get(messageId);
@@ -233,14 +183,7 @@ export function useConversationMessages({
     let cancelled = false;
     setError(null);
 
-    void refreshLocalMessages()
-      .then(() =>
-        services.messageService.syncConversationMessages(conversationId),
-      )
-      .then(() => {
-        if (!cancelled) return refreshLocalMessages();
-        return undefined;
-      })
+    void refreshMessages()
       .catch((loadError) => {
         if (!cancelled)
           setError(
@@ -251,7 +194,7 @@ export function useConversationMessages({
     return () => {
       cancelled = true;
     };
-  }, [conversationId, refreshLocalMessages, services.messageService]);
+  }, [conversationId, refreshMessages, services.messageService]);
 
   useEffect(() => {
     return () => {
@@ -266,7 +209,6 @@ export function useConversationMessages({
     void runtime.message.startRealtime();
     const unsubscribeCreated = runtime.message.onMessageCreated((message) => {
       if (message.conversationId !== conversationId) return;
-      void services.messageService.ingestRealtimeMessage(message);
       setMessages((current) =>
         mergeIncomingMessage(current, { ...message, syncStatus: "synced" }),
       );
@@ -278,7 +220,6 @@ export function useConversationMessages({
     const unsubscribeCompleted = runtime.message.onMessageCompleted(
       (message) => {
         if (message.conversationId !== conversationId) return;
-        void services.messageService.ingestRealtimeCompleted(message);
         completeStreamedMessage({ ...message, syncStatus: "synced" });
       },
     );
@@ -342,11 +283,6 @@ export function useConversationMessages({
     setDraft("");
     setError(null);
     setIsSending(true);
-    await Promise.all(
-      failedOutgoingMessages.map((message) =>
-        runtime.storage.deleteMessage(message.id),
-      ),
-    );
     setMessages((current) => [
       ...current.filter(
         (message) =>
@@ -361,7 +297,7 @@ export function useConversationMessages({
         conversationId,
         text,
         clientMessageId,
-        stream: conversationSettings.streamEnabled,
+        stream: true,
       });
       setMessages((current) =>
         mergeSentTextMessageResult(current, clientMessageId, result),
@@ -370,7 +306,7 @@ export function useConversationMessages({
       setError(
         sendError instanceof Error ? sendError.message : "发送消息失败。",
       );
-      await refreshLocalMessages();
+      await refreshMessages();
     } finally {
       setIsSending(false);
     }
@@ -414,14 +350,14 @@ export function useConversationMessages({
         conversationId,
         text,
         clientMessageId,
-        stream: conversationSettings.streamEnabled,
+        stream: true,
       });
       setMessages((current) =>
         mergeSentTextMessageResult(current, clientMessageId, result),
       );
     } catch (retryError) {
       setError(retryError instanceof Error ? retryError.message : "重试失败。");
-      await refreshLocalMessages();
+      await refreshMessages();
     } finally {
       setRetryingMessageId(null);
     }
@@ -430,7 +366,7 @@ export function useConversationMessages({
   const deleteConversation = async () => {
     if (!conversationId || isDeletingConversation) return;
     const confirmed = window.confirm(
-      "确定要删除这个会话吗？本地和远程数据库中的会话消息都会被删除。",
+      "确定要删除这个会话吗？会话与消息将从服务器永久删除。",
     );
     if (!confirmed) return;
 
@@ -439,11 +375,7 @@ export function useConversationMessages({
     try {
       clearStreamBuffers();
       await services.messageService.deleteConversation(conversationId);
-      await runtime.storage.removeSetting(
-        getConversationSettingsKey(conversationId),
-      );
       setMessages([]);
-      setIsSettingsOpen(false);
       onConversationDeleted?.(conversationId);
     } catch (deleteError) {
       setError(
@@ -465,7 +397,7 @@ export function useConversationMessages({
         conversationId,
         messageId,
       );
-      await refreshLocalMessages();
+      await refreshMessages();
     } catch (rollbackError) {
       setError(
         rollbackError instanceof Error ? rollbackError.message : "回溯失败。",
@@ -482,10 +414,6 @@ export function useConversationMessages({
     isSending,
     rollingBackMessageId,
     isDeletingConversation,
-    isSettingsOpen,
-    setIsSettingsOpen,
-    conversationSettings,
-    updateConversationSettings,
     error,
     canRollback,
     sendMessage,
@@ -515,8 +443,4 @@ function getStreamDrainDelay(buffer: StreamDisplayBuffer) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
-}
-
-function getConversationSettingsKey(conversationId: string) {
-  return `conversation.settings.${conversationId}`;
 }

@@ -130,14 +130,6 @@ const clockTimeSchema = z
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "时间必须采用 HH:mm 格式。");
 
 export const primeFigureScheduleSchema = z.object({
-  timezone: requiredText("日程时区", 80).refine((timezone) => {
-    try {
-      new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
-      return true;
-    } catch {
-      return false;
-    }
-  }, "日程时区必须是有效的 IANA 时区。"),
   segments: z
     .array(
       z.object({
@@ -185,7 +177,7 @@ export const createPrimeFigureSchema = createAgentBaseSchema.extend({
   currentSituation: optionalText(4000),
   schedule: primeFigureScheduleSchema
     .optional()
-    .default({ timezone: "UTC", segments: [] }),
+    .default({ segments: [] }),
   itinerary: optionalText(8000),
   variableDefinitions: z
     .array(primeFigureVariableDefinitionSchema)
@@ -316,7 +308,6 @@ export const primeMessageSchema = z.object({
   content: primeMessageContentSchema,
   occurredAtMs: z.number().nonnegative(),
   occurredAtIso: z.string().trim().min(1).max(80),
-  timezone: z.string().trim().min(1).max(80),
   createdAt: z.number().nonnegative(),
   updatedAt: z.number().nonnegative(),
 });
