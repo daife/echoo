@@ -6,7 +6,6 @@ import { UserRepository, toUserProfile } from "../../../auth/user.repository.js"
 import { MessageRepository } from "../../../messaging/message.repository.js";
 import { AgentRepository } from "../../agent.repository.js";
 
-const CONTEXT_MESSAGE_LIMIT = 500;
 const CONTEXT_ROUND_STEP = 100;
 
 export interface SliceFigureRuntimeResult {
@@ -35,7 +34,12 @@ export class SliceFigureRuntimeService {
     const result = await provider.createChatCompletion({
       model,
       sessionId: input.conversationId,
-      messages: buildChatMessages(context.agent, context.user, context.history),
+      messages: buildChatMessages(
+        context.agent,
+        context.user,
+        context.history,
+        context.isInitialWindow,
+      ),
       temperature: Number(process.env.DEFAULT_TEXT_TEMPERATURE ?? 0.8),
       maxTokens: process.env.DEFAULT_TEXT_MAX_TOKENS
         ? Number(process.env.DEFAULT_TEXT_MAX_TOKENS)
@@ -58,7 +62,12 @@ export class SliceFigureRuntimeService {
     const completion: ChatCompletionInput = {
       model,
       sessionId: input.conversationId,
-      messages: buildChatMessages(context.agent, context.user, context.history),
+      messages: buildChatMessages(
+        context.agent,
+        context.user,
+        context.history,
+        context.isInitialWindow,
+      ),
       temperature: Number(process.env.DEFAULT_TEXT_TEMPERATURE ?? 0.8),
       maxTokens: process.env.DEFAULT_TEXT_MAX_TOKENS
         ? Number(process.env.DEFAULT_TEXT_MAX_TOKENS)
@@ -91,14 +100,16 @@ export class SliceFigureRuntimeService {
       throw new Error(`切片角色运行时收到了错误的角色类型：${agent.type}。`);
 
     const user = await this.users.findById(input.ownerUserId);
+    const contextWindow = await this.messages.listSliceFigureContextWindow(
+      input.ownerUserId,
+      input.conversationId,
+      CONTEXT_ROUND_STEP,
+    );
     return {
       agent,
       user: user ? toUserProfile(user) : null,
-      history: await this.messages.listRecentForContext(
-        input.ownerUserId,
-        input.conversationId,
-        CONTEXT_MESSAGE_LIMIT,
-      ),
+      history: contextWindow.messages,
+      isInitialWindow: contextWindow.isInitialWindow,
     };
   }
 }
@@ -107,41 +118,36 @@ function buildChatMessages(
   agent: SliceFigureAgent,
   user: UserProfile | null,
   history: Message[],
+  isInitialWindow: boolean,
 ): ChatCompletionMessage[] {
   return [
     {
       role: "system",
       content: buildFigureSystemPrompt(agent.detail, { user }),
     },
-    ...selectContextMessages(agent, history),
+    ...selectSliceFigureContextMessages(agent, history, isInitialWindow),
   ];
 }
 
-function selectContextMessages(
+export function selectSliceFigureContextMessages(
   agent: SliceFigureAgent,
   history: Message[],
+  isInitialWindow: boolean,
 ): ChatCompletionMessage[] {
   const textHistory = history.filter((message) => {
     if (message.contentType !== "text" || message.status === "failed") return false;
     if (message.role !== "user" && message.role !== "assistant") return false;
     return Boolean(message.content.text?.trim());
   });
-  const userRoundCount = textHistory.filter((message) => message.role === "user").length;
-  const startRound =
-    Math.floor(Math.max(0, userRoundCount - CONTEXT_ROUND_STEP) / CONTEXT_ROUND_STEP) *
-    CONTEXT_ROUND_STEP;
   const hasPersistedOpeningLine = textHistory.some(
     (message) => message.role === "assistant" && message.metadata?.kind === "opening_line",
   );
   const selected: ChatCompletionMessage[] = [];
 
-  if (startRound === 0 && agent.detail.openingLine.trim() && !hasPersistedOpeningLine)
+  if (isInitialWindow && agent.detail.openingLine.trim() && !hasPersistedOpeningLine)
     selected.push({ role: "assistant", content: agent.detail.openingLine.trim() });
 
-  let currentRound = 0;
   for (const message of textHistory) {
-    if (message.role === "user") currentRound += 1;
-    if (startRound !== 0 && currentRound < startRound) continue;
     selected.push({ role: message.role, content: message.content.text?.trim() ?? "" });
   }
   return selected;

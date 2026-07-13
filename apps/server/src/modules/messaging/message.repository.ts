@@ -19,6 +19,10 @@ interface MessageRow extends RowDataPacket {
   updated_at: number;
 }
 
+interface SliceFigureContextRow extends MessageRow {
+  context_start_round: number | string;
+}
+
 export type SaveMessageInput = Message & { ownerUserId: string };
 
 export class MessageRepository {
@@ -67,17 +71,45 @@ export class MessageRepository {
     return messages;
   }
 
-  async listRecentForContext(ownerUserId: string, conversationId: string, limit = 500) {
-    const cached = await this.readCached(ownerUserId, conversationId, limit);
-    if (cached) return cached.map((item) => item.message);
-    const rows = await queryRows<MessageRow>(
-      `SELECT * FROM messages WHERE owner_user_id = ? AND conversation_id = ?
-       ORDER BY seq DESC LIMIT ?`,
-      [ownerUserId, conversationId, clampLimit(limit, 500)],
+  /** LLM-only context window; client history pagination must use listByConversation. */
+  async listSliceFigureContextWindow(
+    ownerUserId: string,
+    conversationId: string,
+    roundStep = 100,
+  ) {
+    const normalizedRoundStep = Math.max(1, Math.trunc(roundStep));
+    const rows = await queryRows<SliceFigureContextRow>(
+      `WITH eligible_messages AS (
+         SELECT messages.*,
+          SUM(CASE WHEN messages.role = 'user' THEN 1 ELSE 0 END)
+            OVER (ORDER BY messages.seq ROWS UNBOUNDED PRECEDING) AS user_round,
+          SUM(CASE WHEN messages.role = 'user' THEN 1 ELSE 0 END)
+            OVER () AS user_round_count
+         FROM messages
+         WHERE messages.owner_user_id = ? AND messages.conversation_id = ?
+          AND messages.content_type = 'text' AND messages.status != 'failed'
+          AND messages.role IN ('user', 'assistant')
+          AND messages.search_text REGEXP '[^[:space:]]'
+       ), context_messages AS (
+         SELECT eligible_messages.*,
+          FLOOR(GREATEST(0, user_round_count - ?) / ?) * ? AS context_start_round
+         FROM eligible_messages
+       )
+       SELECT * FROM context_messages
+       WHERE user_round >= context_start_round
+       ORDER BY seq ASC`,
+      [
+        ownerUserId,
+        conversationId,
+        normalizedRoundStep,
+        normalizedRoundStep,
+        normalizedRoundStep,
+      ],
     );
-    rows.reverse();
-    await this.replaceCache(ownerUserId, conversationId, rows, limit);
-    return rows.map(rowToMessage);
+    return {
+      messages: rows.map(rowToMessage),
+      isInitialWindow: rows.length === 0 || Number(rows[0].context_start_round) === 0,
+    };
   }
 
   async findByClientMessageId(ownerUserId: string, clientMessageId?: string | null) {
