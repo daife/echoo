@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { ZodError } from "zod";
-import type { CreatePrimeFigureRequest, CreateSliceFigureRequest, UpdatePrimeFigureRequest, UpdateSliceFigureRequest } from "@echoo/shared";
+import { updatePrimeFigurePreferencesSchema } from "@echoo/shared";
+import type { CreatePrimeFigureRequest, CreateSliceFigureRequest, UpdatePrimeFigurePreferencesRequest, UpdatePrimeFigureRequest, UpdateSliceFigureRequest } from "@echoo/shared";
 import { AgentsService } from "./agents.service.js";
 
 export async function registerAgentRoutes(app: FastifyInstance) {
@@ -56,6 +57,36 @@ export async function registerAgentRoutes(app: FastifyInstance) {
     } catch (error) {
       if (error instanceof ZodError) {
         return reply.code(400).send({ error: "VALIDATION_ERROR", message: error.issues[0]?.message ?? "角色数据无效。" });
+      }
+      throw error;
+    }
+  });
+
+  app.patch<{
+    Params: { agentId: string };
+    Body: UpdatePrimeFigurePreferencesRequest;
+  }>("/:agentId/prime-figure/preferences", async (request, reply) => {
+    const userId = await request.requireUserId(reply);
+    if (!userId) return;
+
+    try {
+      const input = updatePrimeFigurePreferencesSchema.parse(request.body);
+      const agent = await agents.updatePrimeFigurePreferences(
+        userId,
+        request.params.agentId,
+        input,
+      );
+      if (!agent)
+        return reply
+          .code(404)
+          .send({ error: "NOT_FOUND", message: "未找到本初角色。" });
+      return { agent };
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({
+          error: "VALIDATION_ERROR",
+          message: error.issues[0]?.message ?? "角色偏好数据无效。",
+        });
       }
       throw error;
     }

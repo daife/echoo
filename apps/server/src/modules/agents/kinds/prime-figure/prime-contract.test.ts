@@ -80,6 +80,7 @@ test("prime create and update contracts accept described creator images and curr
     ...base,
   });
   assert.equal(created.referenceImages[0]?.description, "角色的日常穿搭");
+  assert.equal(created.voiceRequestStreaming, false);
 
   const updated = updatePrimeFigureSchema.parse({
     ...base,
@@ -91,6 +92,7 @@ test("prime create and update contracts accept described creator images and curr
   assert.equal(updated.avatar, null);
   assert.deepEqual(updated.currentVariables, { trust: 72 });
   assert.equal(updated.currentMood, "轻松");
+  assert.equal(updated.voiceRequestStreaming, undefined);
 });
 
 test("prime creator images require descriptions", () => {
@@ -156,6 +158,7 @@ test("prime context registers cover and creator images before conversation media
             description: "日常外观",
           },
         ],
+        voiceRequestStreaming: false,
       },
     },
     {
@@ -233,6 +236,7 @@ test("prime debug hints are injected as a dedicated highest-priority system mess
         itinerary: "",
         variableDefinitions: [],
         referenceImages: [],
+        voiceRequestStreaming: false,
       },
     },
     {

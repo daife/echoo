@@ -44,6 +44,7 @@ describe("prime figure edit form adapters", () => {
               description: "日常外观",
             },
           ],
+          voiceRequestStreaming: true,
         },
       },
       state: {
@@ -61,6 +62,7 @@ describe("prime figure edit form adapters", () => {
     expect(form.referenceImages).toEqual([
       { resourceId: "res_1", description: "日常外观" },
     ]);
+    expect(form.voiceRequestStreaming).toBe(true);
   });
 
   it("maps the shared form back to explicit current-state update fields", () => {
@@ -72,6 +74,7 @@ describe("prime figure edit form adapters", () => {
       background: "背景",
       personality: "性格",
       responseStyle: "风格",
+      voiceRequestStreaming: true,
       variableDefinitions: [
         {
           key: "trust",
@@ -88,5 +91,6 @@ describe("prime figure edit form adapters", () => {
     expect(update.currentVariables).toEqual({ trust: 91 });
     expect(update.currentMood).toBe("专注");
     expect(update.currentRelationshipStatus).toBe("亲密");
+    expect(update.voiceRequestStreaming).toBe(true);
   });
 });

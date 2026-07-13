@@ -12,6 +12,7 @@ import type {
   PrimeFigureState,
   PrimeFigureVariableValue,
   UpdatePrimeFigureRequest,
+  UpdatePrimeFigurePreferencesRequest,
   UpdateSliceFigureRequest,
 } from "@echoo/shared";
 import type { RowDataPacket } from "mysql2";
@@ -188,14 +189,23 @@ export class AgentRepository {
     const definition = {
       ...existing,
       ...baseDefinition(input),
-      detail: buildDetail(
-        existing.type,
-        input,
-        nextReferenceImages ??
-          (existing.type === "prime-figure"
-            ? existing.detail.referenceImages
-            : []),
-      ),
+      detail: {
+        ...buildDetail(
+          existing.type,
+          input,
+          nextReferenceImages ??
+            (existing.type === "prime-figure"
+              ? existing.detail.referenceImages
+              : []),
+        ),
+        ...(existing.type === "prime-figure"
+          ? {
+              voiceRequestStreaming:
+                (input as UpdatePrimeFigureRequest).voiceRequestStreaming ??
+                existing.detail.voiceRequestStreaming,
+            }
+          : {}),
+      },
     };
     if (nextAvatar !== undefined) {
       if (nextAvatar) definition.avatarResourcePath = nextAvatar.publicPath;
@@ -274,6 +284,26 @@ export class AgentRepository {
             )
         : []),
     ]).catch((error) => console.warn("旧角色资源清理失败。", error));
+    return this.findById(ownerUserId, agentId);
+  }
+
+  async updatePrimeFigurePreferences(
+    ownerUserId: string,
+    agentId: string,
+    input: UpdatePrimeFigurePreferencesRequest,
+  ) {
+    const result = await execute(
+      `UPDATE agents SET definition = JSON_SET(definition,
+        '$.detail.voiceRequestStreaming', CAST(? AS JSON)), updated_at = ?
+       WHERE id = ? AND owner_user_id = ? AND type = 'prime-figure'`,
+      [
+        JSON.stringify(input.voiceRequestStreaming),
+        Date.now(),
+        agentId,
+        ownerUserId,
+      ],
+    );
+    if (!result.affectedRows) return null;
     return this.findById(ownerUserId, agentId);
   }
 
@@ -371,6 +401,7 @@ export class AgentRepository {
           }),
         ),
         referenceImages,
+        voiceRequestStreaming: agent.detail.voiceRequestStreaming,
         initialMood: state.mood,
         initialRelationshipStatus: state.relationshipStatus,
       },
@@ -486,6 +517,10 @@ function rowToAgent(row: AgentRow): Agent {
             referenceImages:
               (stored as Extract<Agent, { type: "prime-figure" }>).detail
                 ?.referenceImages ?? [],
+            voiceRequestStreaming: Boolean(
+              (stored as Extract<Agent, { type: "prime-figure" }>).detail
+                ?.voiceRequestStreaming,
+            ),
           },
         }
       : {}),
@@ -576,6 +611,7 @@ function buildDetail(
     itinerary: value.itinerary ?? "",
     variableDefinitions: value.variableDefinitions ?? [],
     referenceImages,
+    voiceRequestStreaming: value.voiceRequestStreaming ?? false,
   };
 }
 

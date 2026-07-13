@@ -305,6 +305,7 @@ export const initialPrimeForm = (): CreatePrimeFigureRequest => ({
   itinerary: "",
   variableDefinitions: [],
   referenceImages: [],
+  voiceRequestStreaming: false,
   initialMood: "",
   initialRelationshipStatus: "",
 });

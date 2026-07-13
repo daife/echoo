@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import test from "node:test";
+import { decode, encode } from "@msgpack/msgpack";
 import { FishAudioTtsService } from "./fish-audio-tts.service.js";
 
 test("Fish Audio TTS posts the complete transcript and streams response chunks", async () => {
@@ -76,6 +78,58 @@ test("Fish Audio TTS propagates interrupted audio responses", async () => {
   });
 });
 
+test("Fish Audio streaming TTS sends MessagePack start, text, flush, and stop events", async () => {
+  await withFishAudioEnvironment(async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    let socketUrl = "";
+    let socketHeaders: Record<string, unknown> | undefined;
+    const socket = new MockWebSocket((data) => {
+      const event = decode(data) as Record<string, unknown>;
+      sent.push(event);
+      if (event.event !== "stop") return;
+      queueMicrotask(() => {
+        socket.emit(
+          "message",
+          Buffer.from(encode({ event: "audio", audio: Buffer.from("voice") })),
+        );
+        socket.emit(
+          "message",
+          Buffer.from(encode({ event: "finish", reason: "stop" })),
+        );
+      });
+    });
+    const service = new FishAudioTtsService((url, options) => {
+      socketUrl = url;
+      socketHeaders = options.headers as Record<string, unknown>;
+      queueMicrotask(() => socket.open());
+      return socket as never;
+    });
+    const chunks: Buffer[] = [];
+
+    const stream = service.createStream((chunk) => chunks.push(chunk));
+    stream.write("你好。");
+    const result = await stream.finish();
+
+    assert.equal(socketUrl, "wss://fish.test/v1/tts/live");
+    assert.equal(socketHeaders?.Authorization, "Bearer test-key");
+    assert.equal(socketHeaders?.model, "test-model");
+    assert.deepEqual(
+      sent.map((event) => event.event),
+      ["start", "text", "flush", "stop"],
+    );
+    assert.deepEqual(sent[0]?.request, {
+      text: "",
+      format: "mp3",
+      latency: "balanced",
+      chunk_length: 100,
+      reference_id: "reference_1",
+    });
+    assert.equal(sent[1]?.text, "你好。");
+    assert.equal(Buffer.concat(chunks).toString(), "voice");
+    assert.equal(result.audio.toString(), "voice");
+  });
+});
+
 async function withFishAudioEnvironment(run: () => Promise<void>) {
   const originalFetch = globalThis.fetch;
   const original = {
@@ -83,6 +137,7 @@ async function withFishAudioEnvironment(run: () => Promise<void>) {
     referenceId: process.env.FISH_AUDIO_REFERENCE_ID,
     model: process.env.FISH_AUDIO_MODEL,
     url: process.env.FISH_AUDIO_TTS_URL,
+    wsUrl: process.env.FISH_AUDIO_WS_URL,
     latency: process.env.FISH_AUDIO_LATENCY,
     chunkLength: process.env.FISH_AUDIO_CHUNK_LENGTH,
   };
@@ -90,6 +145,7 @@ async function withFishAudioEnvironment(run: () => Promise<void>) {
   process.env.FISH_AUDIO_REFERENCE_ID = "reference_1";
   process.env.FISH_AUDIO_MODEL = "test-model";
   process.env.FISH_AUDIO_TTS_URL = "https://fish.test/v1/tts";
+  process.env.FISH_AUDIO_WS_URL = "wss://fish.test/v1/tts/live";
   process.env.FISH_AUDIO_LATENCY = "balanced";
   process.env.FISH_AUDIO_CHUNK_LENGTH = "100";
   try {
@@ -100,8 +156,32 @@ async function withFishAudioEnvironment(run: () => Promise<void>) {
     restoreEnvironment("FISH_AUDIO_REFERENCE_ID", original.referenceId);
     restoreEnvironment("FISH_AUDIO_MODEL", original.model);
     restoreEnvironment("FISH_AUDIO_TTS_URL", original.url);
+    restoreEnvironment("FISH_AUDIO_WS_URL", original.wsUrl);
     restoreEnvironment("FISH_AUDIO_LATENCY", original.latency);
     restoreEnvironment("FISH_AUDIO_CHUNK_LENGTH", original.chunkLength);
+  }
+}
+
+class MockWebSocket extends EventEmitter {
+  readyState = 0;
+  binaryType = "nodebuffer";
+
+  constructor(private readonly onSend: (data: Uint8Array) => void) {
+    super();
+  }
+
+  open() {
+    this.readyState = 1;
+    this.emit("open");
+  }
+
+  send(data: unknown) {
+    this.onSend(data as Uint8Array);
+  }
+
+  close() {
+    this.readyState = 3;
+    this.emit("close");
   }
 }
 

@@ -28,10 +28,12 @@ flowchart TD
   L -- 否 --> M["取得最终决策响应"]
   L2 --> M
   M -. "提示词完整后" .-> W["image generationPrompt 和参考图<br/>发送给 OpenRouter"]
+  M -. "启用流式语音请求时<br/>transcript delta" .-> VS["Fish Audio WebSocket TTS"]
   M --> N["解析并校验最终 JSON"]
-  N --> V["完整 voice transcript<br/>一次提交给 Fish Audio TTS"]
+  N --> V["未启用流式语音请求时<br/>完整 transcript POST /v1/tts"]
   N --> X["finalize 等待媒体任务"]
   V --> X
+  VS --> X
   W --> X
   X --> O["执行动作并持久化<br/>消息/状态/记忆/标注/日志"]
   O --> P["推进 lastHandledEndUserSeq<br/>到本轮输入边界"]
@@ -225,12 +227,13 @@ system prompt 顶部要求：当 `hints` 中出现系统调试指令时，将其
 
 ## 语音 TTS 请求
 
-语音 action 的 `transcript` delta 在 LLM 流式响应期间仍用于消息文字增量展示和实时缓存，但不会发送给 Fish Audio。只有最终响应完成、JSON 解析并通过 `primeFigureDecisionSchema` 校验后，stream session 才会用最终 voice action 中的完整 `transcript` 启动 TTS：[`prime-decision-stream-session.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-decision-stream-session.ts)。
+每个本初角色通过 `detail.voiceRequestStreaming` 固定选择语音请求方式；缺失该字段的旧角色按 `false` 处理。右上角设置修改只影响之后启动的运行轮次，已经开始的轮次不会中途切换协议：[`prime-decision-stream-session.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-decision-stream-session.ts)。
 
-Fish Audio 请求不是 LLM 决策请求，但外部 TTS 服务会看到。运行时不会转换自由文本 tag；最终 `transcript` 会原样进入一次 HTTP 请求：
+Fish Audio 请求不是 LLM 决策请求，但外部 TTS 服务会看到。运行时不会转换自由文本 tag，两种模式均继续分块读取返回音频、推送现有 `message.audio.*` 事件，并聚合完整 MP3 用于资源持久化：
 
-- `POST /v1/tts` 请求体一次包含完整 `text`、`format`、`latency`、`chunk_length` 和 `reference_id`：[`fish-audio-tts.service.ts`](../apps/server/src/modules/tts/fish-audio-tts.service.ts)。
-- HTTP 响应体仍按音频 chunk 读取并通过现有 `message.audio.*` 事件推送客户端，同时聚合成完整 MP3 用于资源持久化。
+- 默认关闭：`transcript` delta 只用于消息文字增量展示和实时缓存。最终响应完成并通过 `JSON.parse` 与 `primeFigureDecisionSchema` 校验后，使用 `FISH_AUDIO_TTS_URL`（默认 `https://api.fish.audio/v1/tts`）一次提交完整 transcript。
+- 启用流式语音请求：使用 `FISH_AUDIO_WS_URL`（默认 `wss://api.fish.audio/v1/tts/live`）建立 MessagePack WebSocket，在最终 JSON/schema 校验前发送 transcript delta；达到字符阈值或句末标点时 `flush`，transcript 字段结束时 `stop`。若后续解析或校验失败，连接会被中止，因此该模式延迟更低，但可能产生更多真实停顿或已经生成部分音频。
+- 两种请求都使用 `FISH_AUDIO_API_KEY`、`FISH_AUDIO_REFERENCE_ID`、`FISH_AUDIO_MODEL`、`FISH_AUDIO_LATENCY` 和 `FISH_AUDIO_CHUNK_LENGTH`：[`fish-audio-tts.service.ts`](../apps/server/src/modules/tts/fish-audio-tts.service.ts)。
 
 ## 执行与持久化
 

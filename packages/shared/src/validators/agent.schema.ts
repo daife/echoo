@@ -207,6 +207,7 @@ export const createPrimeFigureSchema = createAgentBaseSchema.extend({
     .max(10)
     .optional()
     .default([]),
+  voiceRequestStreaming: z.boolean().optional().default(false),
   initialMood: optionalText(500),
   initialRelationshipStatus: optionalText(500),
 });
@@ -226,7 +227,13 @@ export const updatePrimeFigureSchema = createPrimeFigureSchema
     currentVariables: z.record(z.string(), primeVariableValueSchema),
     currentMood: z.string().trim().max(500),
     currentRelationshipStatus: z.string().trim().max(500),
+    // Preserve the stored preference when older clients omit this field.
+    voiceRequestStreaming: z.boolean().optional(),
   });
+
+export const updatePrimeFigurePreferencesSchema = z.object({
+  voiceRequestStreaming: z.boolean(),
+});
 
 const urlLikeSchema = z.string().trim().min(1).max(2048);
 

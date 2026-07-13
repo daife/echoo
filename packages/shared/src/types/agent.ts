@@ -107,6 +107,7 @@ export interface PrimeFigureDetail {
   itinerary: string;
   variableDefinitions: PrimeFigureVariableDefinition[];
   referenceImages: PrimeFigureReferenceImage[];
+  voiceRequestStreaming: boolean;
 }
 
 export interface PrimeWorldDetail {
@@ -205,6 +206,7 @@ export interface CreatePrimeFigureRequest {
   itinerary?: string;
   variableDefinitions?: PrimeFigureVariableDefinition[];
   referenceImages?: PrimeFigureReferenceImageInput[];
+  voiceRequestStreaming?: boolean;
   initialMood?: string;
   initialRelationshipStatus?: string;
 }
@@ -217,6 +219,10 @@ export type UpdatePrimeFigureRequest = Omit<
   currentMood: string;
   currentRelationshipStatus: string;
 };
+
+export interface UpdatePrimeFigurePreferencesRequest {
+  voiceRequestStreaming: boolean;
+}
 
 export interface PrimeFigureEditSnapshot {
   agent: PrimeFigureAgent;

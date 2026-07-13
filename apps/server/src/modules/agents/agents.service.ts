@@ -1,4 +1,4 @@
-import type { CreatePrimeFigureRequest, CreateSliceFigureRequest, UpdatePrimeFigureRequest, UpdateSliceFigureRequest } from "@echoo/shared";
+import type { CreatePrimeFigureRequest, CreateSliceFigureRequest, UpdatePrimeFigurePreferencesRequest, UpdatePrimeFigureRequest, UpdateSliceFigureRequest } from "@echoo/shared";
 import { AgentKindRegistry } from "./agent-kind.registry.js";
 import { AgentRepository } from "./agent.repository.js";
 
@@ -47,5 +47,13 @@ export class AgentsService {
     const handler = this.kinds.get("prime-figure");
     if (!handler) throw new Error("本初角色处理器未注册。");
     return handler.update(userId, agentId, input);
+  }
+
+  updatePrimeFigurePreferences(
+    userId: string,
+    agentId: string,
+    input: UpdatePrimeFigurePreferencesRequest,
+  ) {
+    return this.repository.updatePrimeFigurePreferences(userId, agentId, input);
   }
 }

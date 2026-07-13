@@ -16,6 +16,7 @@ import {
   type PrimeFigureEditSnapshot,
   type PrimeFigureAgent,
   type SliceFigureAgent,
+  type UpdatePrimeFigurePreferencesRequest,
   type UpdatePrimeFigureRequest,
   type UpdateSliceFigureRequest,
 } from "@echoo/shared";
@@ -58,6 +59,10 @@ export type UpdateAgentHandlers = {
   "prime-figure": (
     agentId: string,
     input: UpdatePrimeFigureRequest,
+  ) => Promise<Agent>;
+  updatePrimeFigurePreferences: (
+    agentId: string,
+    input: UpdatePrimeFigurePreferencesRequest,
   ) => Promise<Agent>;
   getPrimeFigureEditSnapshot: (
     agentId: string,
@@ -287,6 +292,10 @@ export function MessagesPage({
               {agent.type === "slice-figure" ? <label className="mt-1 flex cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 text-sm text-white/75 transition hover:bg-white/[0.06]">
                 <span>回复自动分段</span>
                 <input type="checkbox" checked={agent.detail.replyAutoSegment} disabled={isUpdatingPreference} onChange={async (event) => { const checked = event.target.checked; setIsUpdatingPreference(true); setEditError(null); try { await updateHandlers["slice-figure"](agent.id, { ...agentToUpdateForm(agent), replyAutoSegment: checked }); } catch (caught) { setEditError(caught instanceof Error ? caught.message : "设置保存失败。"); } finally { setIsUpdatingPreference(false); } }} />
+              </label> : null}
+              {agent.type === "prime-figure" ? <label className="mt-1 flex cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 text-sm text-white/75 transition hover:bg-white/[0.06]">
+                <span>流式语音请求</span>
+                <input type="checkbox" checked={agent.detail.voiceRequestStreaming} disabled={isUpdatingPreference} onChange={async (event) => { const checked = event.target.checked; setIsUpdatingPreference(true); setEditError(null); try { await updateHandlers.updatePrimeFigurePreferences(agent.id, { voiceRequestStreaming: checked }); } catch (caught) { setEditError(caught instanceof Error ? caught.message : "设置保存失败。"); } finally { setIsUpdatingPreference(false); } }} />
               </label> : null}
               <button className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-red-200/75 transition hover:bg-red-400/10 hover:text-red-100 disabled:opacity-40" disabled={isDeletingConversation} type="button" onClick={() => { setIsSettingsOpen(false); void deleteConversation(); }}><Trash size={16} />删除会话</button>
               {editError ? <p className="px-3 pb-1 pt-2 text-xs leading-5 text-red-200/75">{editError}</p> : null}
@@ -634,6 +643,7 @@ export function primeSnapshotToForm(
       resourceId: item.resourceId,
       description: item.description,
     })),
+    voiceRequestStreaming: agent.detail.voiceRequestStreaming,
     initialMood: state.mood,
     initialRelationshipStatus: state.relationshipStatus,
   };

@@ -6,6 +6,7 @@ import type {
   CreateSliceFigureRequest,
   PrimeFigureEditSnapshot,
   UpdatePrimeFigureRequest,
+  UpdatePrimeFigurePreferencesRequest,
   UpdateSliceFigureRequest
 } from "@echoo/shared";
 import type { ApiClient } from "./client";
@@ -41,6 +42,20 @@ export class AgentsApi {
       .then((response) => ({ agent: normalizeAgentResources(this.client, response.agent) }));
   }
 
+  updatePrimeFigurePreferences(
+    agentId: string,
+    body: UpdatePrimeFigurePreferencesRequest,
+  ): Promise<CreateAgentResponse> {
+    return this.client
+      .patch<CreateAgentResponse>(
+        `/agents/${agentId}/prime-figure/preferences`,
+        body,
+      )
+      .then((response) => ({
+        agent: normalizeAgentResources(this.client, response.agent),
+      }));
+  }
+
   getPrimeFigureEditSnapshot(agentId: string): Promise<PrimeFigureEditSnapshot> {
     return this.client
       .get<PrimeFigureEditSnapshot>(`/agents/${agentId}/prime-figure/edit`)
@@ -74,6 +89,7 @@ function normalizeAgentResources(client: ApiClient, agent: Agent): Agent {
         resourcePath:
           client.resolveServerPath(item.resourcePath) ?? item.resourcePath,
       })),
+      voiceRequestStreaming: Boolean(agent.detail.voiceRequestStreaming),
     },
   } as Agent;
 }

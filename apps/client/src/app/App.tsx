@@ -10,6 +10,7 @@ import type {
   Agent,
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
+  UpdatePrimeFigurePreferencesRequest,
   UpdatePrimeFigureRequest,
   UpdateSliceFigureRequest,
 } from "@echoo/shared";
@@ -219,6 +220,29 @@ export function App() {
     }
   };
 
+  const updatePrimeFigurePreferences = async (
+    agentId: string,
+    input: UpdatePrimeFigurePreferencesRequest,
+  ) => {
+    try {
+      const { agent } =
+        await services.agentService.updatePrimeFigurePreferences(agentId, input);
+      setMyAgents((current) =>
+        current.map((item) => (item.id === agent.id ? agent : item)),
+      );
+      setSelectedAgent((current) =>
+        current?.id === agent.id ? agent : current,
+      );
+      return agent;
+    } catch (error) {
+      if (error instanceof Error && error.message === "请重新登录。") {
+        await auth.signOut();
+        setView("auth");
+      }
+      throw error;
+    }
+  };
+
   const ActivePage = useMemo(() => {
     if (auth.isLoading) {
       return (
@@ -261,6 +285,7 @@ export function App() {
           updateHandlers={{
             "slice-figure": updateSliceFigure,
             "prime-figure": updatePrimeFigure,
+            updatePrimeFigurePreferences,
             getPrimeFigureEditSnapshot: (agentId) =>
               services.agentService.getPrimeFigureEditSnapshot(agentId),
             exportAgent: (agentId) => services.agentService.exportAgent(agentId),

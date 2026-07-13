@@ -88,6 +88,85 @@ test("prime voice sends one complete transcript while keeping audio chunks strea
   );
 });
 
+test("prime voice streams transcript deltas to TTS before decision validation when enabled", async () => {
+  const writes: string[] = [];
+  let finishes = 0;
+  const session = createSession({
+    voiceRequestStreaming: true,
+    tts: {
+      createStream(onAudio: (chunk: Buffer) => void) {
+        return {
+          write(text: string) {
+            writes.push(text);
+          },
+          async finish() {
+            finishes += 1;
+            onAudio(Buffer.from("streamed-voice"));
+            return {
+              audio: Buffer.from("streamed-voice"),
+              mimeType: "audio/mpeg",
+              format: "mp3",
+            };
+          },
+          abort() {},
+        };
+      },
+    },
+  });
+  const parser = new PrimeDecisionStreamParser((event) =>
+    session.handleField(event),
+  );
+
+  parser.push('{"actions":[{"message":{"type":"voice","transcript":"你好');
+
+  assert.equal(writes.join(""), "你好");
+  assert.equal(finishes, 0);
+
+  parser.push('。"}}]}');
+  await session.finalize({
+    rationale: "test",
+    figureMood: "calm",
+    variables: {},
+    actions: [
+      {
+        type: "send_message",
+        message: { type: "voice", transcript: "你好。" },
+      },
+    ],
+  } as PrimeFigureDecision);
+
+  assert.equal(writes.join(""), "你好。");
+  assert.equal(finishes, 1);
+});
+
+test("prime voice aborts an active streaming TTS request when the decision fails", async () => {
+  let aborted = false;
+  const session = createSession({
+    voiceRequestStreaming: true,
+    tts: {
+      createStream() {
+        return {
+          write() {},
+          async finish() {
+            return new Promise(() => undefined);
+          },
+          abort() {
+            aborted = true;
+          },
+        };
+      },
+    },
+  });
+  const parser = new PrimeDecisionStreamParser((event) =>
+    session.handleField(event),
+  );
+  parser.push('{"actions":[{"message":{"type":"voice","transcript":"半句');
+
+  await session.fail(new Error("invalid final response"));
+
+  assert.equal(aborted, true);
+});
+
 test("prime voice exposes HTTP TTS failures through audio events and metadata", async () => {
   const pushed: Array<Record<string, unknown>> = [];
   const session = createSession({
@@ -453,13 +532,18 @@ test("a stale dirty wakeup cannot call the LLM after all end-user messages were 
 });
 
 function createSession(overrides?: {
+  voiceRequestStreaming?: boolean;
   appPush?: object;
   tts?: object;
   imageGeneration?: object;
   messages?: object;
 }) {
   return new PrimeDecisionStreamSession(
-    { ownerUserId: "user_1", conversationId: "conversation_1" },
+    {
+      ownerUserId: "user_1",
+      conversationId: "conversation_1",
+      voiceRequestStreaming: overrides?.voiceRequestStreaming ?? false,
+    },
     (overrides?.appPush ?? { pushToUser() {} }) as never,
     (overrides?.tts ?? {
       synthesize() {

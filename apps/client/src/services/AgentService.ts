@@ -1,5 +1,5 @@
 import type { AgentsApi } from "@echoo/api-client";
-import type { CreatePrimeFigureRequest, CreateSliceFigureRequest, UpdatePrimeFigureRequest, UpdateSliceFigureRequest } from "@echoo/shared";
+import type { CreatePrimeFigureRequest, CreateSliceFigureRequest, UpdatePrimeFigurePreferencesRequest, UpdatePrimeFigureRequest, UpdateSliceFigureRequest } from "@echoo/shared";
 
 export class AgentService {
   constructor(private readonly api: AgentsApi) {}
@@ -22,6 +22,13 @@ export class AgentService {
 
   updatePrimeFigure(agentId: string, input: UpdatePrimeFigureRequest) {
     return this.api.updatePrimeFigure(agentId, input);
+  }
+
+  updatePrimeFigurePreferences(
+    agentId: string,
+    input: UpdatePrimeFigurePreferencesRequest,
+  ) {
+    return this.api.updatePrimeFigurePreferences(agentId, input);
   }
 
 
