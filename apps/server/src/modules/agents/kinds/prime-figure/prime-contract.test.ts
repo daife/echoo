@@ -120,6 +120,33 @@ test("prime decision normalizes message-shaped action discriminator mistakes", (
   ]);
 });
 
+test("prime decision accepts image prompts without enforcing prompt prose structure", () => {
+  const decision = primeFigureDecisionSchema.parse({
+    rationale: "发送午餐照片",
+    figureMood: "轻松",
+    variables: {},
+    actions: [
+      {
+        type: "send_message",
+        message: {
+          type: "image",
+          description: "一张午餐照片",
+          generationPrompt: "A casual phone photo of lunch on the table.",
+          referenceMediaIds: [],
+        },
+      },
+    ],
+  });
+
+  assert.equal(
+    decision.actions[0]?.type === "send_message" &&
+      decision.actions[0].message.type === "image"
+      ? decision.actions[0].message.generationPrompt
+      : undefined,
+    "A casual phone photo of lunch on the table.",
+  );
+});
+
 test("prime decision keeps required outgoing message fields strict", () => {
   const base = { rationale: "回应", figureMood: "平静", variables: {} };
   assert.throws(() =>

@@ -4,16 +4,7 @@ const requiredText = (label: string, max = 2000) =>
   z.string().trim().min(1, `${label}不能为空。`).max(max);
 const optionalText = (max = 2000) =>
   z.string().trim().max(max).optional().default("");
-const generationPromptSchema = requiredText("生图提示词", 12000).refine(
-  (value) =>
-    [
-      "【正向提示词】",
-      "【负向提示词】",
-      "【机位与身体逻辑检查】",
-      "【推荐比例】",
-    ].every((section) => value.includes(section)),
-  "生图提示词必须包含正向提示词、负向提示词、机位与身体逻辑检查和推荐比例四段。",
-);
+const generationPromptSchema = requiredText("生图提示词", 12000);
 
 const imageUploadSchema = z.object({
   fileName: z.string().trim().min(1).max(255),
