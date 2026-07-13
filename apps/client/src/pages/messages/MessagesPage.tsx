@@ -1,4 +1,5 @@
 import {
+  GearSix,
   PaperPlaneRight,
   PencilSimple,
   Trash,
@@ -6,9 +7,8 @@ import {
   X,
 } from "@phosphor-icons/react";
 import {
-  buildFigureSystemPrompt,
   type Agent,
-  type AgentAttribute,
+  type CreateSliceFigureRequest,
   type LocalMessage,
   type SliceFigureAgent,
   type UpdateSliceFigureRequest,
@@ -16,6 +16,7 @@ import {
 import {
   Fragment,
   useLayoutEffect,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -30,7 +31,9 @@ import {
   isVisibleConversationMessage,
   getConversationPresenceLabel,
   shouldShowMessageTime,
+  splitFigureReply,
 } from "../../features/messages/messagePresentation";
+import { buildSlicePayload, SliceFigureFormFields } from "../create-agent/CreateAgentPage";
 import { useConversationMessages } from "./useConversationMessages";
 
 export type UpdateAgentHandlers = {
@@ -53,6 +56,10 @@ export function MessagesPage({
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isUpdatingAgent, setIsUpdatingAgent] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isUpdatingPreference, setIsUpdatingPreference] = useState(false);
+  const [messageBeingEdited, setMessageBeingEdited] = useState<{ id: string; text: string } | null>(null);
+  const settingsRef = useRef<HTMLDivElement | null>(null);
   const {
     messages,
     draft,
@@ -71,6 +78,8 @@ export function MessagesPage({
     retryFailedMessage,
     deleteConversation,
     rollbackConversation,
+    updateAssistantMessage,
+    updatingMessageId,
   } = useConversationMessages({ agent, onConversationDeleted });
   const mainRef = useRef<HTMLElement | null>(null);
   const messageInputRef = useRef<HTMLInputElement | null>(null);
@@ -97,7 +106,14 @@ export function MessagesPage({
     if (!agent) return [];
     const visible = messages.filter(isVisibleConversationMessage);
     if (visible.length > 0)
-      return visible.map((message) => toBubbleMessage(message, canRollback));
+      return visible.flatMap((message) =>
+        toBubbleMessages(
+          message,
+          canRollback,
+          agent.type === "slice-figure" && agent.detail.replyAutoSegment,
+          agent.type === "slice-figure",
+        ),
+      );
     if (agent?.type === "slice-figure" && agent.detail.openingLine) {
       return [
         {
@@ -111,6 +127,21 @@ export function MessagesPage({
     }
     return [];
   }, [agent, canRollback, messages]);
+
+  useEffect(() => {
+    if (!isSettingsOpen) return;
+    const close = (event: PointerEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      if (event instanceof PointerEvent && settingsRef.current?.contains(event.target as Node)) return;
+      setIsSettingsOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [isSettingsOpen]);
 
   useLayoutEffect(() => {
     const main = mainRef.current;
@@ -180,21 +211,19 @@ export function MessagesPage({
             <p className="mt-0.5 text-xs text-white/45">{subtitle}</p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          {editor ? (
+        <div className="relative flex items-center gap-1" ref={settingsRef}>
+          {agent.type === "slice-figure" && editor ? (
             <button
-              aria-label="编辑角色"
+              aria-label="切片角色设置"
+              aria-expanded={isSettingsOpen}
               className="grid h-9 w-9 place-items-center rounded-lg text-white/45 transition hover:bg-white/[0.05] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white active:translate-y-px"
               type="button"
-              onClick={() => {
-                setEditError(null);
-                setIsEditOpen(true);
-              }}
+              onClick={() => setIsSettingsOpen((current) => !current)}
             >
-              <PencilSimple size={17} />
+              <GearSix size={18} />
             </button>
-          ) : null}
-          <button
+          ) : (
+            <button
             aria-label="删除会话"
             className="grid h-9 w-9 place-items-center rounded-lg text-white/35 transition hover:bg-red-400/10 hover:text-red-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-300 active:translate-y-px disabled:opacity-40"
             disabled={isDeletingConversation}
@@ -202,7 +231,19 @@ export function MessagesPage({
             onClick={deleteConversation}
           >
             <Trash size={17} />
-          </button>
+            </button>
+          )}
+          {isSettingsOpen && agent.type === "slice-figure" && editor ? (
+            <div className="absolute right-0 top-11 z-30 w-64 rounded-xl border border-white/10 bg-[#17171b] p-2 shadow-[0_18px_50px_rgba(0,0,0,0.42)]">
+              <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/75 transition hover:bg-white/[0.06] hover:text-white" type="button" onClick={() => { setIsSettingsOpen(false); setEditError(null); setIsEditOpen(true); }}><PencilSimple size={16} />修改角色</button>
+              <label className="mt-1 flex cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 text-sm text-white/75 transition hover:bg-white/[0.06]">
+                <span>回复自动分段</span>
+                <input type="checkbox" checked={agent.detail.replyAutoSegment} disabled={isUpdatingPreference} onChange={async (event) => { const checked = event.target.checked; setIsUpdatingPreference(true); setEditError(null); try { await editor.update({ ...agentToUpdateForm(agent), replyAutoSegment: checked }); } catch (caught) { setEditError(caught instanceof Error ? caught.message : "设置保存失败。"); } finally { setIsUpdatingPreference(false); } }} />
+              </label>
+              <button className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-red-200/75 transition hover:bg-red-400/10 hover:text-red-100 disabled:opacity-40" disabled={isDeletingConversation} type="button" onClick={() => { setIsSettingsOpen(false); void deleteConversation(); }}><Trash size={16} />删除会话</button>
+              {editError ? <p className="px-3 pb-1 pt-2 text-xs leading-5 text-red-200/75">{editError}</p> : null}
+            </div>
+          ) : null}
         </div>
       </header>
 
@@ -227,7 +268,7 @@ export function MessagesPage({
         <div className="flex flex-col gap-5">
           {visibleMessages.map((message, index) => {
             const previous = visibleMessages[index - 1];
-            const showTime = shouldShowMessageTime(
+              const showTime = message.isSourceStart !== false && shouldShowMessageTime(
               message.createdAt,
               previous?.createdAt,
             );
@@ -242,6 +283,7 @@ export function MessagesPage({
                   message={message}
                   onRetry={retryFailedMessage}
                   onRollback={canRollback ? rollbackConversation : undefined}
+                  onEdit={(messageId, text) => setMessageBeingEdited({ id: messageId, text })}
                 />
               </Fragment>
             );
@@ -311,6 +353,17 @@ export function MessagesPage({
             },
           })
         : null}
+      {messageBeingEdited ? (
+        <EditMessageDialog
+          initialText={messageBeingEdited.text}
+          isSubmitting={updatingMessageId === messageBeingEdited.id}
+          onClose={() => { if (!updatingMessageId) setMessageBeingEdited(null); }}
+          onSubmit={async (text) => {
+            await updateAssistantMessage(messageBeingEdited.id, text);
+            setMessageBeingEdited(null);
+          }}
+        />
+      ) : null}
     </section>
   );
 }
@@ -357,72 +410,37 @@ function EditSliceFigureDialog({
   onClose: () => void;
   onSubmit: (payload: UpdateSliceFigureRequest) => Promise<void>;
 }) {
-  const [form, setForm] = useState<UpdateSliceFigureRequest>(() =>
-    agentToUpdateForm(agent),
-  );
+  const [form, setForm] = useState<CreateSliceFigureRequest>(() => ({
+    type: "slice-figure",
+    ...agentToUpdateForm(agent),
+  }));
   const [localError, setLocalError] = useState<string | null>(null);
   const [promptPreview, setPromptPreview] = useState<string | null>(null);
+  const [jsonInput, setJsonInput] = useState("");
+  const [unlockText, setUnlockText] = useState(
+    agent.detail.unlockConditions
+      ? JSON.stringify(agent.detail.unlockConditions, null, 2)
+      : "",
+  );
 
   const updateField = (
-    key: keyof UpdateSliceFigureRequest,
-    value: UpdateSliceFigureRequest[keyof UpdateSliceFigureRequest],
+    key: keyof CreateSliceFigureRequest,
+    value: CreateSliceFigureRequest[keyof CreateSliceFigureRequest],
   ) => {
     setForm((current) => ({ ...current, [key]: value }));
     setLocalError(null);
     setPromptPreview(null);
   };
 
-  const updateAttribute = (
-    index: number,
-    key: keyof AgentAttribute,
-    value: string,
-  ) => {
-    const attributes = [...(form.attributes ?? [])];
-    attributes[index] = {
-      ...(attributes[index] ?? { key: "", value: "" }),
-      [key]: value,
-    };
-    updateField("attributes", attributes);
-  };
-
-  const removeAttribute = (index: number) => {
-    updateField(
-      "attributes",
-      (form.attributes ?? []).filter((_, itemIndex) => itemIndex !== index),
-    );
-  };
-
-  const updateTag = (index: number, value: string) => {
-    const tags = [...(form.tags ?? [])];
-    tags[index] = value;
-    updateField("tags", tags);
-  };
-
-  const removeTag = (index: number) => {
-    updateField(
-      "tags",
-      (form.tags ?? []).filter((_, itemIndex) => itemIndex !== index),
-    );
-  };
-
-  const updateList = (key: "linkedAgentIds", value: string) => {
-    updateField(
-      key,
-      value
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean),
-    );
-  };
-
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const payload = buildUpdatePayload(form);
+    const payload = buildSlicePayload(form, unlockText);
     if (typeof payload === "string") {
       setLocalError(payload);
       return;
     }
-    await onSubmit(payload);
+    const { type: _type, ...update } = payload;
+    await onSubmit(update);
   };
 
   return (
@@ -447,140 +465,30 @@ function EditSliceFigureDialog({
           </button>
         </div>
 
-        <div className="grid gap-4">
-          <TextField
-            label="名字"
-            required
-            value={form.name}
-            onChange={(value) => updateField("name", value)}
-          />
-          <TextField
-            label="人设"
-            required
-            multiline
-            value={form.persona}
-            onChange={(value) => updateField("persona", value)}
-          />
-          <TextField
-            label="背景"
-            required
-            multiline
-            value={form.background}
-            onChange={(value) => updateField("background", value)}
-          />
-          <TextField
-            label="性格"
-            required
-            multiline
-            value={form.personality}
-            onChange={(value) => updateField("personality", value)}
-          />
-          <TextField
-            label="回复风格"
-            required
-            multiline
-            value={form.responseStyle}
-            onChange={(value) => updateField("responseStyle", value)}
-          />
-          <TextField
-            label="系统提示词模板"
-            required
-            multiline
-            mono
-            value={form.systemPrompt}
-            onChange={(value) => updateField("systemPrompt", value)}
-          />
-          <TextField
-            label="介绍"
-            multiline
-            value={form.introduction ?? ""}
-            onChange={(value) => updateField("introduction", value)}
-          />
-          <TextField
-            label="叙引（HTML，可选）"
-            multiline
-            mono
-            value={form.prologueHtml ?? ""}
-            onChange={(value) => updateField("prologueHtml", value)}
-          />
-          <TextField
-            label="当前情景（可选）"
-            multiline
-            value={form.currentSituation ?? ""}
-            onChange={(value) => updateField("currentSituation", value)}
-          />
-          <TextField
-            label="开场白（可选）"
-            multiline
-            value={form.openingLine ?? ""}
-            onChange={(value) => updateField("openingLine", value)}
-          />
-          <TextField
-            label="链接的角色 ID（逗号分隔）"
-            value={(form.linkedAgentIds ?? []).join(", ")}
-            onChange={(value) => updateList("linkedAgentIds", value)}
-          />
-
-          <EditablePairs
-            items={form.attributes ?? []}
-            onAdd={() =>
-              updateField("attributes", [
-                ...(form.attributes ?? []),
-                { key: "", value: "" },
-              ])
+        <SliceFigureFormFields
+          form={form}
+          jsonInput={jsonInput}
+          unlockText={unlockText}
+          promptPreview={promptPreview}
+          user={user}
+          existingAvatarUrl={agent.avatarResourcePath}
+          existingCoverUrl={agent.coverResourcePath}
+          onApplyJson={() => {
+            try {
+              const parsed = JSON.parse(jsonInput) as Partial<CreateSliceFigureRequest>;
+              const next = { ...form, ...parsed, type: "slice-figure" as const };
+              setForm(next);
+              setUnlockText(next.unlockConditions ? JSON.stringify(next.unlockConditions, null, 2) : "");
+              setLocalError(null);
+            } catch {
+              setLocalError("JSON 无法解析，请检查格式。");
             }
-            onRemove={removeAttribute}
-            onUpdate={updateAttribute}
-          />
-
-          <EditableTags
-            tags={form.tags ?? []}
-            onAdd={() => updateField("tags", [...(form.tags ?? []), ""])}
-            onRemove={removeTag}
-            onUpdate={updateTag}
-          />
-
-          <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.025] p-4">
-            <span>
-              <span className="block text-sm font-medium text-white/78">
-                是否公开
-              </span>
-              <span className="mt-1 block text-xs text-white/40">
-                公开后可用于未来的探索页和分享场景。
-              </span>
-            </span>
-            <input
-              checked={form.isPublic}
-              type="checkbox"
-              onChange={(event) =>
-                updateField("isPublic", event.target.checked)
-              }
-            />
-          </label>
-        </div>
-
-        <div className="mt-5">
-          <p className="mb-3 text-xs leading-5 text-white/38">
-            可用：{"{{user.name}}"}、{"{{figure.persona}}"}、
-            {"{{figure.background}}"}、{"{{figure.personality}}"}、
-            {"{{figure.responseStyle}}"}、{"{{figure.currentSituation}}"}
-            。不提供用户 ID、邮箱等字段。
-          </p>
-          <button
-            className="rounded-full border border-white/12 px-4 py-2 text-sm text-white/65 transition hover:border-white/25 hover:text-white"
-            type="button"
-            onClick={() =>
-              setPromptPreview(buildFigureSystemPrompt(form, { user }))
-            }
-          >
-            预览提示词
-          </button>
-          {promptPreview ? (
-            <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-black/25 p-4 text-xs leading-5 text-white/65">
-              {promptPreview}
-            </pre>
-          ) : null}
-        </div>
+          }}
+          onJsonInputChange={setJsonInput}
+          onUnlockTextChange={setUnlockText}
+          onPromptPreviewChange={setPromptPreview}
+          onChange={updateField}
+        />
 
         {localError || error ? (
           <p className="mt-5 rounded-xl border border-white/10 bg-white/[0.035] p-4 text-sm text-white/70">
@@ -596,154 +504,6 @@ function EditSliceFigureDialog({
           {isSubmitting ? "保存中……" : "保存修改"}
         </button>
       </form>
-    </div>
-  );
-}
-
-function TextField({
-  label,
-  value,
-  required,
-  multiline,
-  mono,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  required?: boolean;
-  multiline?: boolean;
-  mono?: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="block">
-      <span className="text-sm font-medium text-white/78">
-        {label}
-        {required ? " *" : ""}
-      </span>
-      {multiline ? (
-        <textarea
-          className={`mt-2 min-h-20 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/28 focus:border-white/25 ${mono ? "font-mono text-xs leading-5" : ""}`}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      ) : (
-        <input
-          className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-white/[0.035] px-4 text-sm text-white outline-none transition placeholder:text-white/28 focus:border-white/25"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      )}
-    </label>
-  );
-}
-
-function EditablePairs({
-  items,
-  onAdd,
-  onRemove,
-  onUpdate,
-}: {
-  items: AgentAttribute[];
-  onAdd: () => void;
-  onRemove: (index: number) => void;
-  onUpdate: (index: number, key: keyof AgentAttribute, value: string) => void;
-}) {
-  return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <span className="text-sm font-medium text-white/78">属性</span>
-          <p className="mt-1 text-xs text-white/35">
-            用于卡片内部右上角标注，不进入系统提示词。
-          </p>
-        </div>
-        <button
-          className="text-sm text-white/55 hover:text-white"
-          type="button"
-          onClick={onAdd}
-        >
-          添加
-        </button>
-      </div>
-      <div className="mt-3 grid gap-3">
-        {items.map((attribute, index) => (
-          <div key={index} className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-            <input
-              className="h-11 rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none"
-              value={attribute.key}
-              placeholder="年龄"
-              onChange={(event) => onUpdate(index, "key", event.target.value)}
-            />
-            <input
-              className="h-11 rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none"
-              value={attribute.value}
-              placeholder="19"
-              onChange={(event) => onUpdate(index, "value", event.target.value)}
-            />
-            <button
-              aria-label="删除属性"
-              className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 text-white/45 transition hover:border-white/20 hover:text-white"
-              type="button"
-              onClick={() => onRemove(index)}
-            >
-              <Trash size={16} />
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function EditableTags({
-  tags,
-  onAdd,
-  onRemove,
-  onUpdate,
-}: {
-  tags: string[];
-  onAdd: () => void;
-  onRemove: (index: number) => void;
-  onUpdate: (index: number, value: string) => void;
-}) {
-  return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <span className="text-sm font-medium text-white/78">标签</span>
-          <p className="mt-1 text-xs text-white/35">
-            用于卡片底部标注，不进入系统提示词。
-          </p>
-        </div>
-        <button
-          className="text-sm text-white/55 hover:text-white"
-          type="button"
-          onClick={onAdd}
-        >
-          添加
-        </button>
-      </div>
-      <div className="mt-3 grid gap-3">
-        {tags.map((tag, index) => (
-          <div key={index} className="grid gap-3 md:grid-cols-[1fr_auto]">
-            <input
-              className="h-11 rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none"
-              value={tag}
-              placeholder="陪伴"
-              onChange={(event) => onUpdate(index, event.target.value)}
-            />
-            <button
-              aria-label="删除标签"
-              className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 text-white/45 transition hover:border-white/20 hover:text-white"
-              type="button"
-              onClick={() => onRemove(index)}
-            >
-              <Trash size={16} />
-            </button>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
@@ -765,6 +525,7 @@ function agentToUpdateForm(agent: SliceFigureAgent): UpdateSliceFigureRequest {
     personality: agent.detail.personality,
     responseStyle: agent.detail.responseStyle,
     systemPrompt: agent.detail.systemPrompt,
+    replyAutoSegment: agent.detail.replyAutoSegment,
   };
 }
 
@@ -774,64 +535,26 @@ function formatAgentType(agent: Agent) {
   return "本初角色";
 }
 
-function buildUpdatePayload(
-  form: UpdateSliceFigureRequest,
-): UpdateSliceFigureRequest | string {
-  const requiredText = {
-    name: form.name.trim(),
-    persona: form.persona.trim(),
-    background: form.background.trim(),
-    personality: form.personality.trim(),
-    responseStyle: form.responseStyle.trim(),
-    systemPrompt: form.systemPrompt.trim(),
-  };
-
-  if (!requiredText.name) return "名字不能为空。";
-  if (!requiredText.persona) return "人设不能为空。";
-  if (!requiredText.background) return "背景不能为空。";
-  if (!requiredText.personality) return "性格不能为空。";
-  if (!requiredText.responseStyle) return "回复风格不能为空。";
-  if (!requiredText.systemPrompt) return "系统提示词不能为空。";
-
-  const attributes = (form.attributes ?? []).map((attribute) => ({
-    key: typeof attribute.key === "string" ? attribute.key.trim() : "",
-    value: typeof attribute.value === "string" ? attribute.value.trim() : "",
-  }));
-  if (attributes.some((attribute) => !attribute.key || !attribute.value))
-    return "属性不能包含空键或空值，请补全或删除该属性。";
-
-  const tags = (form.tags ?? []).map((tag) =>
-    typeof tag === "string" ? tag.trim() : "",
-  );
-  if (tags.some((tag) => !tag)) return "标签不能包含空值，请补全或删除该标签。";
-
-  const linkedAgentIds = (form.linkedAgentIds ?? []).map((agentId) =>
-    typeof agentId === "string" ? agentId.trim() : "",
-  );
-  if (linkedAgentIds.some((agentId) => !agentId))
-    return "链接的角色 ID 不能包含空值。";
-
-  return {
-    ...form,
-    ...requiredText,
-    introduction: form.introduction?.trim() ?? "",
-    prologueHtml: form.prologueHtml?.trim() ?? "",
-    currentSituation: form.currentSituation?.trim() ?? "",
-    openingLine: form.openingLine?.trim() ?? "",
-    attributes,
-    tags,
-    linkedAgentIds,
-  };
-}
-
-function toBubbleMessage(
+function toBubbleMessages(
   message: LocalMessage,
   canRollback: boolean,
-): MessageBubbleModel {
-  return {
-    id: message.id,
+  autoSegment: boolean,
+  canEditFigureMessages: boolean,
+): MessageBubbleModel[] {
+  const text = message.contentType === "text" ? (message.content.text ?? "") : "";
+  const segments =
+    autoSegment && message.role === "assistant" && message.contentType === "text"
+      ? splitFigureReply(text)
+      : [text];
+  const isSegmented =
+    autoSegment && message.role === "assistant" && message.contentType === "text";
+  return segments.map((segment, index) => ({
+    id: isSegmented ? `${message.id}:segment:${index}` : message.id,
+    sourceMessageId: message.id,
+    sourceText: text,
+    isSourceStart: index === 0,
     from: message.role === "user" ? "me" : "agent",
-    text: message.contentType === "text" ? (message.content.text ?? "") : "",
+    text: segment,
     createdAt: message.createdAt,
     deliveryState:
       message.syncStatus === "pending"
@@ -853,7 +576,43 @@ function toBubbleMessage(
         ? getVoiceDurationSeconds(message.metadata)
         : undefined,
     canRollback,
-  };
+    canEdit:
+      canEditFigureMessages &&
+      message.role === "assistant" &&
+      message.contentType === "text" &&
+      message.status !== "pending" &&
+      message.status !== "failed",
+    isPending:
+      message.role === "assistant" &&
+      message.status === "pending" &&
+      index === segments.length - 1,
+  }));
+}
+
+function EditMessageDialog({
+  initialText,
+  isSubmitting,
+  onClose,
+  onSubmit,
+}: {
+  initialText: string;
+  isSubmitting: boolean;
+  onClose: () => void;
+  onSubmit: (text: string) => Promise<void>;
+}) {
+  const [text, setText] = useState(initialText);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 px-4 backdrop-blur-sm">
+      <form className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#101014] p-5 shadow-[0_24px_100px_rgba(0,0,0,0.55)]" onSubmit={async (event) => { event.preventDefault(); const value = text.trim(); if (!value) return setError("消息内容不能为空。"); setError(null); try { await onSubmit(value); } catch (caught) { setError(caught instanceof Error ? caught.message : "修改消息失败。"); } }}>
+        <div className="flex items-center justify-between"><h2 className="text-lg font-semibold text-white">修改角色回复</h2><button aria-label="关闭" className="grid h-9 w-9 place-items-center rounded-lg text-white/45 hover:bg-white/[0.06] hover:text-white" type="button" onClick={onClose}><X size={17} /></button></div>
+        <p className="mt-1 text-xs text-white/40">自动分段仅影响显示，这里始终修改完整的一轮回复。</p>
+        <textarea autoFocus className="mt-4 min-h-44 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-6 text-white outline-none transition focus:border-white/25" value={text} onChange={(event) => setText(event.target.value)} />
+        {error ? <p className="mt-3 text-sm text-red-200/80">{error}</p> : null}
+        <div className="mt-5 flex justify-end gap-2"><button className="rounded-lg px-4 py-2 text-sm text-white/55 hover:bg-white/[0.05] hover:text-white" type="button" onClick={onClose}>取消</button><button className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-45" disabled={isSubmitting || !text.trim()} type="submit">{isSubmitting ? "保存中…" : "保存修改"}</button></div>
+      </form>
+    </div>
+  );
 }
 
 function getVoiceDurationSeconds(metadata: LocalMessage["metadata"]) {

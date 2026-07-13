@@ -133,6 +133,7 @@ const initialSliceForm: CreateSliceFigureRequest = {
   currentSituation: "",
   openingLine: "",
   systemPrompt: DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT,
+  replyAutoSegment: false,
 };
 
 function SliceFigureCreateForm({ onCreate }: { onCreate: (input: CreateSliceFigureRequest) => Promise<Agent> }) {
@@ -196,36 +197,77 @@ function SliceFigureCreateForm({ onCreate }: { onCreate: (input: CreateSliceFigu
     <form className="glass-panel rounded-2xl p-6 md:p-8" onSubmit={submit}>
       <FormHeader icon={CirclesThreePlus} title="切片角色" description="展示信息不会进入模型上下文；下方人格与对话配置可由系统提示词模板引用。" />
 
-      <JsonImport value={jsonInput} onChange={setJsonInput} onApply={importJson} placeholder='{"type":"slice-figure","name":"Mira","systemPrompt":"你的人设：\\n{{figure.persona}}",...}' />
-
-      <FormSection title="展示与关系数据 · 不进入上下文" description="仅用于界面展示、发现、序引或未来的关联与解锁能力。">
-        <DisplayFields
-          form={form}
-          unlockText={unlockText}
-          onUnlockTextChange={setUnlockText}
-          onChange={setField}
-        />
-      </FormSection>
-
-      <FormSection title="人格与对话 · 进入上下文" description="带 * 的字段必填。系统提示词决定这些字段如何组织和发送给模型。">
-        <TextField label="人设" required multiline value={form.persona} placeholder="角色是谁，与用户是什么关系" onChange={(value) => setField("persona", value)} />
-        <TextField label="背景" required multiline value={form.background} placeholder="经历、环境、世界观与任务背景" onChange={(value) => setField("background", value)} />
-        <TextField label="性格" required multiline value={form.personality} placeholder="偏好、边界、缺点和稳定行为模式" onChange={(value) => setField("personality", value)} />
-        <TextField label="回复风格" required multiline value={form.responseStyle} placeholder="语言长度、语气、动作表达和禁忌，图片发送习惯，语音发送习惯...示例回复..." onChange={(value) => setField("responseStyle", value)} />
-        <TextField label="当前情景" multiline value={form.currentSituation ?? ""} placeholder="可在模板中通过 {{figure.currentSituation}} 引用" onChange={(value) => setField("currentSituation", value)} />
-        <TextField label="开场白" multiline value={form.openingLine ?? ""} placeholder="作为首条助手消息写入会话，因此会进入对话历史" onChange={(value) => setField("openingLine", value)} />
-        <TextField label="系统提示词模板" required multiline mono value={form.systemPrompt} placeholder={DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT} onChange={(value) => setField("systemPrompt", value)} />
-        <p className="text-xs leading-5 text-white/42">
-          可用：{"{{user.name}}"}、{"{{figure.persona}}"}、{"{{figure.background}}"}、{"{{figure.personality}}"}、{"{{figure.responseStyle}}"}、{"{{figure.currentSituation}}"}。不提供用户 ID、邮箱等字段。
-        </p>
-        <button className="w-fit rounded-full border border-white/12 px-4 py-2 text-sm text-white/65 transition hover:border-white/25 hover:text-white" type="button" onClick={() => setPromptPreview(buildFigureSystemPrompt(form, { user }))}>
-          预览解析后的完整系统提示词
-        </button>
-        {promptPreview !== null ? <PromptPreview value={promptPreview} /> : null}
-      </FormSection>
+      <SliceFigureFormFields
+        form={form}
+        jsonInput={jsonInput}
+        unlockText={unlockText}
+        promptPreview={promptPreview}
+        user={user}
+        onApplyJson={importJson}
+        onJsonInputChange={setJsonInput}
+        onPromptPreviewChange={setPromptPreview}
+        onUnlockTextChange={setUnlockText}
+        onChange={setField}
+      />
 
       <SubmitState error={error} isSubmitting={isSubmitting} label="创建切片角色" />
     </form>
+  );
+}
+
+export function SliceFigureFormFields({
+  form,
+  jsonInput,
+  unlockText,
+  promptPreview,
+  user,
+  existingAvatarUrl,
+  existingCoverUrl,
+  onApplyJson,
+  onJsonInputChange,
+  onUnlockTextChange,
+  onPromptPreviewChange,
+  onChange,
+}: {
+  form: CreateSliceFigureRequest;
+  jsonInput: string;
+  unlockText: string;
+  promptPreview: string | null;
+  user: { displayName: string } | null;
+  existingAvatarUrl?: string;
+  existingCoverUrl?: string;
+  onApplyJson: () => void;
+  onJsonInputChange: (value: string) => void;
+  onUnlockTextChange: (value: string) => void;
+  onPromptPreviewChange: (value: string | null) => void;
+  onChange: <K extends keyof CreateSliceFigureRequest>(
+    key: K,
+    value: CreateSliceFigureRequest[K],
+  ) => void;
+}) {
+  return (
+    <>
+      <JsonImport value={jsonInput} onChange={onJsonInputChange} onApply={onApplyJson} placeholder='{"type":"slice-figure","name":"Mira","systemPrompt":"你的人设：\\n{{figure.persona}}",...}' />
+      <FormSection title="展示与关系数据 · 不进入上下文" description="仅用于界面展示、发现、序引或未来的关联与解锁能力。">
+        <DisplayFields form={form} unlockText={unlockText} onUnlockTextChange={onUnlockTextChange} onChange={onChange} existingAvatarUrl={existingAvatarUrl} existingCoverUrl={existingCoverUrl} />
+        <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.025] p-4">
+          <span><span className="block text-sm font-medium text-white/78">回复自动分段</span><span className="mt-1 block text-xs text-white/40">只改变气泡展示，不改变消息和对话轮数。</span></span>
+          <input checked={Boolean(form.replyAutoSegment)} type="checkbox" onChange={(event) => onChange("replyAutoSegment", event.target.checked)} />
+        </label>
+      </FormSection>
+      <FormSection title="人格与对话 · 进入上下文" description="带 * 的字段必填。系统提示词决定这些字段如何组织和发送给模型。">
+        <TextField label="人设" required multiline value={form.persona} placeholder="角色是谁，与用户是什么关系" onChange={(value) => onChange("persona", value)} />
+        <TextField label="背景" required multiline value={form.background} placeholder="经历、环境、世界观与任务背景" onChange={(value) => onChange("background", value)} />
+        <TextField label="性格" required multiline value={form.personality} placeholder="偏好、边界、缺点和稳定行为模式" onChange={(value) => onChange("personality", value)} />
+        <TextField label="回复风格" required multiline value={form.responseStyle} placeholder="语言长度、语气、动作表达和禁忌，图片发送习惯，语音发送习惯...示例回复..." onChange={(value) => onChange("responseStyle", value)} />
+        <TextField label="当前情景" multiline value={form.currentSituation ?? ""} placeholder="可在模板中通过 {{figure.currentSituation}} 引用" onChange={(value) => onChange("currentSituation", value)} />
+        <TextField label="开场白" multiline value={form.openingLine ?? ""} placeholder="作为首条助手消息写入会话，因此会进入对话历史" onChange={(value) => onChange("openingLine", value)} />
+        <TextField label="系统提示词模板" required multiline mono value={form.systemPrompt} placeholder={DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT} onChange={(value) => onChange("systemPrompt", value)} />
+        <p className="text-xs leading-5 text-white/42">可用：{"{{user.name}}"}、{"{{figure.persona}}"}、{"{{figure.background}}"}、{"{{figure.personality}}"}、{"{{figure.responseStyle}}"}、{"{{figure.currentSituation}}"}。不提供用户 ID、邮箱等字段。</p>
+        <button className="w-fit rounded-full border border-white/12 px-4 py-2 text-sm text-white/65 transition hover:border-white/25 hover:text-white" type="button" onClick={() => onPromptPreviewChange(buildFigureSystemPrompt(form, { user }))}>预览解析后的完整系统提示词</button>
+        {promptPreview !== null ? <PromptPreview value={promptPreview} /> : null}
+      </FormSection>
+    </>
   );
 }
 
@@ -384,11 +426,13 @@ function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigu
 
 type DisplayForm = Pick<CreateSliceFigureRequest, "avatar" | "cover" | "name" | "attributes" | "tags" | "introduction" | "prologueHtml" | "linkedAgentIds" | "unlockConditions" | "isPublic">;
 
-function DisplayFields<T extends DisplayForm>({ form, unlockText, onUnlockTextChange, onChange }: {
+function DisplayFields<T extends DisplayForm>({ form, unlockText, onUnlockTextChange, onChange, existingAvatarUrl, existingCoverUrl }: {
   form: T;
   unlockText: string;
   onUnlockTextChange: (value: string) => void;
   onChange: <K extends keyof T>(key: K, value: T[K]) => void;
+  existingAvatarUrl?: string;
+  existingCoverUrl?: string;
 }) {
   const set = (key: keyof T, value: T[keyof T]) => onChange(key, value);
   const attributes = form.attributes ?? [];
@@ -396,8 +440,8 @@ function DisplayFields<T extends DisplayForm>({ form, unlockText, onUnlockTextCh
   return (
     <>
       <div className="grid gap-4 md:grid-cols-2">
-        <ImageInput label="头像" value={form.avatar ?? null} onChange={(value) => set("avatar", value as T[keyof T])} />
-        <ImageInput label="封面" value={form.cover ?? null} onChange={(value) => set("cover", value as T[keyof T])} />
+        <ImageInput label="头像" value={form.avatar} existingUrl={existingAvatarUrl} onChange={(value) => set("avatar", value as T[keyof T])} />
+        <ImageInput label="封面" value={form.cover} existingUrl={existingCoverUrl} onChange={(value) => set("cover", value as T[keyof T])} />
       </div>
       <TextField label="名字" required value={form.name} placeholder="例如：Mira" onChange={(value) => set("name", value as T[keyof T])} />
       <AttributeEditor items={attributes} onChange={(items) => set("attributes", items as T[keyof T])} />
@@ -493,12 +537,13 @@ function IconButton({ label, onClick }: { label: string; onClick: () => void }) 
   return <button aria-label={label} className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 text-white/45 transition hover:border-white/20 hover:text-white" type="button" onClick={onClick}><Trash size={16} /></button>;
 }
 
-function ImageInput({ label, value, onChange }: { label: string; value: AgentResourceUpload | null; onChange: (value: AgentResourceUpload | null) => void }) {
+function ImageInput({ label, value, existingUrl, onChange }: { label: string; value?: AgentResourceUpload | null; existingUrl?: string; onChange: (value: AgentResourceUpload | null) => void }) {
   const [error, setError] = useState<string | null>(null);
-  return <label className="block"><span className="text-sm font-medium text-white/78">{label}</span><span className="mt-2 flex min-h-28 cursor-pointer items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/[0.025] p-4 text-center transition hover:border-white/28"><input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; try { onChange(await fileToUpload(file)); setError(null); } catch (caught) { setError(caught instanceof Error ? caught.message : "图片读取失败。"); } }} /><span><UploadSimple className="mx-auto text-white/55" size={24} /><span className="mt-2 block text-xs text-white/45">{value?.fileName ?? "选择图片"}</span></span></span>{value ? <button className="mt-2 text-xs text-white/45 hover:text-white" type="button" onClick={() => onChange(null)}>移除</button> : null}{error ? <span className="mt-2 block text-xs text-red-200/70">{error}</span> : null}</label>;
+  const preview = value ? `data:${value.mimeType};base64,${value.dataBase64}` : value === undefined ? existingUrl : undefined;
+  return <label className="block"><span className="text-sm font-medium text-white/78">{label}</span><span className="mt-2 flex min-h-28 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-dashed border-white/15 bg-white/[0.025] p-4 text-center transition hover:border-white/28"><input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; try { onChange(await fileToUpload(file)); setError(null); } catch (caught) { setError(caught instanceof Error ? caught.message : "图片读取失败。"); } }} />{preview ? <img className="h-24 w-full rounded-lg object-cover" src={preview} alt={`${label}预览`} /> : <span><UploadSimple className="mx-auto text-white/55" size={24} /><span className="mt-2 block text-xs text-white/45">选择图片</span></span>}</span>{preview ? <button className="mt-2 text-xs text-white/45 hover:text-white" type="button" onClick={() => onChange(null)}>移除</button> : null}{error ? <span className="mt-2 block text-xs text-red-200/70">{error}</span> : null}</label>;
 }
 
-function buildSlicePayload(form: CreateSliceFigureRequest, unlockText: string): CreateSliceFigureRequest | string {
+export function buildSlicePayload(form: CreateSliceFigureRequest, unlockText: string): CreateSliceFigureRequest | string {
   const common = normalizeDisplayFields(form, unlockText);
   if (typeof common === "string") return common;
   const required = normalizeRequired({ persona: form.persona, background: form.background, personality: form.personality, responseStyle: form.responseStyle, systemPrompt: form.systemPrompt });

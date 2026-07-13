@@ -1,5 +1,6 @@
 import {
   ArrowCounterClockwise,
+  PencilSimple,
   SpinnerGap,
   TextAa,
   WarningCircle,
@@ -10,7 +11,7 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { sanitizeVoiceTranscript } from "../messagePresentation";
+import { sanitizeVoiceTranscript, tokenizeParentheticalText } from "../messagePresentation";
 
 export interface MessageBubbleModel {
   id: string;
@@ -23,16 +24,23 @@ export interface MessageBubbleModel {
   transcript?: string;
   durationSeconds?: number;
   canRollback?: boolean;
+  canEdit?: boolean;
+  sourceMessageId?: string;
+  sourceText?: string;
+  isPending?: boolean;
+  isSourceStart?: boolean;
 }
 
 export function MessageBubble({
   message,
   onRetry,
   onRollback,
+  onEdit,
 }: {
   message: MessageBubbleModel;
   onRetry?: (messageId: string) => void;
   onRollback?: (messageId: string) => void;
+  onEdit?: (messageId: string, text: string) => void;
 }) {
   const mine = message.from === "me";
   const canRetry = mine && message.deliveryState === "failed" && onRetry;
@@ -43,7 +51,8 @@ export function MessageBubble({
   const canShowTranscript =
     message.kind === "voice" && Boolean(cleanTranscript);
   const canRollback = Boolean(message.canRollback && onRollback);
-  const hasActions = canRollback || canShowTranscript;
+  const canEdit = Boolean(message.canEdit && onEdit);
+  const hasActions = canRollback || canEdit || canShowTranscript;
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
   const pressTimerRef = useRef<number | null>(null);
@@ -125,11 +134,24 @@ export function MessageBubble({
           type="button"
           onClick={() => {
             setIsActionOpen(false);
-            onRollback?.(message.id);
+            onRollback?.(message.sourceMessageId ?? message.id);
           }}
         >
           <ArrowCounterClockwise size={14} />
           回溯
+        </button>
+      ) : null}
+      {canEdit ? (
+        <button
+          className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium text-white/80 transition hover:bg-white/[0.06] hover:text-white active:scale-95"
+          type="button"
+          onClick={() => {
+            setIsActionOpen(false);
+            onEdit?.(message.sourceMessageId ?? message.id, message.sourceText ?? message.text);
+          }}
+        >
+          <PencilSimple size={14} />
+          修改
         </button>
       ) : null}
     </div>
@@ -199,13 +221,24 @@ export function MessageBubble({
             : "bg-white/[0.035] text-white/82"
         }`}
       >
-        {message.text}
+        <ParentheticalText value={message.text} />
+        {!mine && message.isPending ? (
+          <SpinnerGap className="ml-2 inline animate-spin text-white/35" size={13} aria-label="回复生成中" />
+        ) : null}
       </div>
       {mine ? (
         <div className="mb-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
       ) : null}
     </div>
   );
+}
+
+function ParentheticalText({ value }: { value: string }) {
+  return tokenizeParentheticalText(value).map((run, index) => (
+    <span key={index} className={run.muted ? "text-white/38" : undefined}>
+      {run.text}
+    </span>
+  ));
 }
 
 function VoiceBubble({
@@ -287,7 +320,7 @@ function VoiceBubble({
       /> : null}
       {transcript ? (
         <p className="mt-2 max-w-[320px] rounded-xl bg-white/[0.035] px-3.5 py-2.5 text-sm leading-6 text-white/72">
-          {transcript}
+          <ParentheticalText value={transcript} />
         </p>
       ) : null}
     </div>

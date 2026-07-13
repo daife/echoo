@@ -85,6 +85,12 @@ export class PrimeActionExecutor {
             input.messageCreatedAt?.get(index) ?? now + index;
           const voiceMedia = input.voiceMedia?.get(index);
           const imageMedia = input.imageMedia?.get(index);
+          const status =
+            action.message.type === "image" &&
+            !action.message.description.trim() &&
+            !imageMedia
+              ? "failed"
+              : "delivered";
           const primeContent = toPrimeMessageContent(
             action.message,
             voiceMedia,
@@ -100,7 +106,7 @@ export class PrimeActionExecutor {
               role: "assistant",
               contentType: toMessageContentType(action.message),
               content: toMessageContent(action.message, voiceMedia, imageMedia),
-              status: "delivered",
+              status,
               providerId: input.providerId,
               model: input.model,
               metadata: {
@@ -119,17 +125,24 @@ export class PrimeActionExecutor {
             }),
           });
         }
-        const lastMessage = decision.actions.at(-1);
+        const deliveredMessages = createdMessages.filter(
+          (created) => created.message.status !== "failed",
+        );
+        const lastMessage = [...decision.actions]
+          .reverse()
+          .find((action, reverseIndex) => {
+            if (action.type !== "send_message") return false;
+            const index = decision.actions.length - reverseIndex - 1;
+            return createdMessages[index]?.message.status !== "failed";
+          });
         if (lastMessage?.type === "send_message") {
           await this.conversations.updatePreview({
             ownerUserId: input.ownerUserId,
             conversationId: input.conversationId,
             preview: toConversationPreview(lastMessage.message),
             updatedAt: now + decision.actions.length - 1,
-            unreadIncrement: decision.actions.length,
+            unreadIncrement: deliveredMessages.length,
           });
-        } else if (lastMessage?.type !== "silence") {
-          throw new Error("本初角色的动作列表无效。");
         }
       } else {
         state.silenceStartedAtMs = input.muteMessageCutoffAtMs ?? now;
@@ -268,9 +281,7 @@ function toMediaIntentMetadata(
     return {
       mediaIntent: {
         status: voiceMedia ? "ready" : "tts_failed",
-        ...(voiceMedia
-          ? { durationSeconds: voiceMedia.durationSeconds }
-          : {}),
+        ...(voiceMedia ? { durationSeconds: voiceMedia.durationSeconds } : {}),
         ...(ttsError ? { error: ttsError } : {}),
       },
     };

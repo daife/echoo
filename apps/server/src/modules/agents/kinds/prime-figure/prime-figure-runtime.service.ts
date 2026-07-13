@@ -222,6 +222,9 @@ export class PrimeFigureRuntimeService {
       reasoningMode: "disabled" as const,
     };
 
+    let rawResponseText = "";
+    let responseProviderId = provider.id;
+    let responseModel = model;
     try {
       const firstResponse = await streamPrimeChatCompletion(
         provider,
@@ -239,6 +242,9 @@ export class PrimeFigureRuntimeService {
         },
         streamSession,
       );
+      rawResponseText = firstResponse.text;
+      responseProviderId = firstResponse.providerId;
+      responseModel = firstResponse.model;
 
       let finalResponse = firstResponse;
       const recallCall = firstResponse.toolCalls?.find(
@@ -271,15 +277,19 @@ export class PrimeFigureRuntimeService {
           },
           streamSession,
         );
+        rawResponseText = finalResponse.text;
+        responseProviderId = finalResponse.providerId;
+        responseModel = finalResponse.model;
       }
 
       const rawOutput = JSON.parse(finalResponse.text) as Record<
         string,
         unknown
       >;
-      const decision = primeFigureDecisionSchema.parse(
-        rawOutput,
-      ) as PrimeFigureDecision;
+      const decision = filterUnavailableReferenceMediaIds(
+        primeFigureDecisionSchema.parse(rawOutput) as PrimeFigureDecision,
+        packet.availableReferenceImages.map((media) => media.id),
+      );
       const mediaAnnotations = normalizeMediaAnnotations(
         rawOutput.mediaAnnotations,
         packet.pendingMedia,
@@ -326,7 +336,11 @@ export class PrimeFigureRuntimeService {
       );
       return decision;
     } catch (error) {
-      streamSession.fail(error);
+      await streamSession.fail(error, {
+        rawResponse: rawResponseText,
+        providerId: responseProviderId,
+        model: responseModel,
+      });
       throw error;
     }
   }
@@ -871,6 +885,29 @@ export function mergePrimeTimeline(
         .map((message) => [message.id, message]),
     ).values(),
   ];
+}
+
+function filterUnavailableReferenceMediaIds(
+  decision: PrimeFigureDecision,
+  availableReferenceImageIds: string[],
+): PrimeFigureDecision {
+  const available = new Set(availableReferenceImageIds);
+  return {
+    ...decision,
+    actions: decision.actions.map((action) =>
+      action.type === "send_message" && action.message.type === "image"
+        ? {
+            ...action,
+            message: {
+              ...action.message,
+              referenceMediaIds: action.message.referenceMediaIds.filter((id) =>
+                available.has(id),
+              ),
+            },
+          }
+        : action,
+    ) as PrimeFigureDecision["actions"],
+  };
 }
 
 function buildSystemPrompt(agent: PrimeFigureAgent) {

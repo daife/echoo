@@ -29,6 +29,10 @@ export type AppWsServerEvent =
       message: Message;
     }
   | {
+      type: "message.updated";
+      message: Message;
+    }
+  | {
       type: "message.audio.started";
       messageId: string;
       conversationId: string;

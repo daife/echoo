@@ -23,6 +23,7 @@ export class WebMessageRuntime implements MessageRuntime {
   private readonly messageCompletedHandlers = new Set<
     (message: Message) => void
   >();
+  private readonly messageUpdatedHandlers = new Set<(message: Message) => void>();
   private readonly agentActivityHandlers = new Set<
     (event: ConversationAgentActivityEvent) => void
   >();
@@ -107,6 +108,10 @@ export class WebMessageRuntime implements MessageRuntime {
         );
         return;
       }
+      if (payload.type === "message.updated") {
+        this.messageUpdatedHandlers.forEach((handler) => handler(payload.message));
+        return;
+      }
       if (payload.type === "message.audio.started")
         this.audioStartedHandlers.forEach((handler) => handler(payload));
       else if (payload.type === "message.audio.chunk")
@@ -140,6 +145,11 @@ export class WebMessageRuntime implements MessageRuntime {
   onMessageCompleted(handler: (message: Message) => void): () => void {
     this.messageCompletedHandlers.add(handler);
     return () => this.messageCompletedHandlers.delete(handler);
+  }
+
+  onMessageUpdated(handler: (message: Message) => void): () => void {
+    this.messageUpdatedHandlers.add(handler);
+    return () => this.messageUpdatedHandlers.delete(handler);
   }
 
   onConversationAgentActivity(

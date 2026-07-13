@@ -23,6 +23,7 @@ export interface SliceFigureDetail {
   personality: string;
   responseStyle: string;
   systemPrompt: string;
+  replyAutoSegment: boolean;
 }
 
 export type PrimeFigureVariableType = "string" | "number" | "boolean" | "json";
@@ -153,11 +154,12 @@ export interface CreateSliceFigureRequest {
   personality: string;
   responseStyle: string;
   systemPrompt: string;
+  replyAutoSegment?: boolean;
 }
 
 export type UpdateSliceFigureRequest = Omit<
   CreateSliceFigureRequest,
-  "type" | "avatar" | "cover"
+  "type"
 >;
 
 export interface CreatePrimeFigureRequest {

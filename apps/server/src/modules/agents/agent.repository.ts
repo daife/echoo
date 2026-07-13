@@ -1,5 +1,6 @@
 import type {
   Agent,
+  AgentResourceUpload,
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
   PrimeFigureAgent,
@@ -100,22 +101,64 @@ export class AgentRepository {
   async update(ownerUserId: string, agentId: string, input: UpdateAgentInput) {
     const existing = await this.findById(ownerUserId, agentId);
     if (!existing) return null;
+    const resourceInput = input as {
+      avatar?: AgentResourceUpload | null;
+      cover?: AgentResourceUpload | null;
+    };
+    const nextAvatar =
+      Object.prototype.hasOwnProperty.call(input, "avatar") && resourceInput.avatar !== undefined
+        ? resourceInput.avatar
+          ? await this.resources.saveImage(ownerUserId, "agent_avatar", resourceInput.avatar)
+          : null
+        : undefined;
+    const nextCover =
+      Object.prototype.hasOwnProperty.call(input, "cover") && resourceInput.cover !== undefined
+        ? resourceInput.cover
+          ? await this.resources.saveImage(ownerUserId, "agent_cover", resourceInput.cover)
+          : null
+        : undefined;
     const definition = {
       ...existing,
       ...baseDefinition(input),
       detail: buildDetail(existing.type, input),
     };
+    if (nextAvatar !== undefined) {
+      if (nextAvatar) definition.avatarResourcePath = nextAvatar.publicPath;
+      else delete definition.avatarResourcePath;
+    }
+    if (nextCover !== undefined) {
+      if (nextCover) definition.coverResourcePath = nextCover.publicPath;
+      else delete definition.coverResourcePath;
+    }
     delete (definition as Partial<Agent>).conversationId;
     delete (definition as Partial<PrimeFigureAgent>).muteUntilMs;
     const now = Date.now();
-    await withTransaction(async (connection) => {
-      await execute(
-        "UPDATE agents SET name = ?, definition = ?, is_public = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?",
-        [input.name, JSON.stringify(definition), input.isPublic, now, agentId, ownerUserId], connection);
-      await execute(
-        "UPDATE conversations SET title = ?, updated_at = ? WHERE agent_id = ? AND owner_user_id = ?",
-        [input.name, now, agentId, ownerUserId], connection);
-    });
+    try {
+      await withTransaction(async (connection) => {
+        await execute(
+          "UPDATE agents SET name = ?, definition = ?, is_public = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?",
+          [input.name, JSON.stringify(definition), input.isPublic, now, agentId, ownerUserId], connection);
+        await execute(
+          "UPDATE conversations SET title = ?, updated_at = ? WHERE agent_id = ? AND owner_user_id = ?",
+          [input.name, now, agentId, ownerUserId], connection);
+      });
+    } catch (error) {
+      await Promise.all([
+        nextAvatar ? this.resources.deleteOwnedByPublicPath(ownerUserId, nextAvatar.publicPath) : Promise.resolve(false),
+        nextCover ? this.resources.deleteOwnedByPublicPath(ownerUserId, nextCover.publicPath) : Promise.resolve(false),
+      ]).catch(() => undefined);
+      throw error;
+    }
+    await Promise.all([
+      nextAvatar !== undefined && existing.avatarResourcePath &&
+      existing.avatarResourcePath !== nextAvatar?.publicPath
+        ? this.resources.deleteOwnedByPublicPath(ownerUserId, existing.avatarResourcePath)
+        : Promise.resolve(false),
+      nextCover !== undefined && existing.coverResourcePath &&
+      existing.coverResourcePath !== nextCover?.publicPath
+        ? this.resources.deleteOwnedByPublicPath(ownerUserId, existing.coverResourcePath)
+        : Promise.resolve(false),
+    ]).catch((error) => console.warn("旧角色资源清理失败。", error));
     return this.findById(ownerUserId, agentId);
   }
 
@@ -146,6 +189,17 @@ function rowToAgent(row: AgentRow): Agent {
       : null;
   return {
     ...stored,
+    ...(row.type === "slice-figure"
+      ? {
+          detail: {
+            ...(stored as Extract<Agent, { type: "slice-figure" }>).detail,
+            replyAutoSegment: Boolean(
+              (stored as Extract<Agent, { type: "slice-figure" }>).detail
+                ?.replyAutoSegment,
+            ),
+          },
+        }
+      : {}),
     id: row.id,
     ownerUserId: row.owner_user_id,
     type: row.type,
@@ -194,6 +248,7 @@ function buildDetail(type: Agent["type"], input: UpdateAgentInput | CreateAgentI
       personality: value.personality,
       responseStyle: value.responseStyle,
       systemPrompt: value.systemPrompt,
+      replyAutoSegment: value.replyAutoSegment ?? false,
     };
   }
   const value = input as CreatePrimeFigureRequest;

@@ -81,6 +81,7 @@ function agent(openingLine = "opening"): SliceFigureAgent {
       personality: "",
       responseStyle: "",
       systemPrompt: "",
+      replyAutoSegment: false,
     },
   };
 }

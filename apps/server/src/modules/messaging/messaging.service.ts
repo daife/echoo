@@ -213,6 +213,58 @@ export class MessagingService {
     return updated;
   }
 
+  async updateAssistantTextMessage(input: {
+    ownerUserId: string;
+    conversationId: string;
+    messageId: string;
+    text: string;
+  }) {
+    const conversation = await this.conversations.findByIdForOwner(
+      input.ownerUserId,
+      input.conversationId,
+    );
+    if (!conversation) return { kind: "not_found" as const };
+    if (conversation.type !== "slice-figure")
+      return { kind: "unsupported_type" as const };
+
+    const message = await this.repository.findByIdInConversation(
+      input.ownerUserId,
+      input.conversationId,
+      input.messageId,
+    );
+    if (!message) return { kind: "message_not_found" as const };
+    if (message.role !== "assistant" || message.contentType !== "text")
+      return { kind: "unsupported_message" as const };
+    if (message.status === "pending") return { kind: "pending" as const };
+
+    const lastMessage = await this.repository.findLastByConversation(
+      input.ownerUserId,
+      input.conversationId,
+    );
+    const now = Date.now();
+    const updated = await this.repository.updateText(
+      input.ownerUserId,
+      input.conversationId,
+      input.messageId,
+      input.text,
+      now,
+    );
+    if (!updated) return { kind: "message_not_found" as const };
+    if (lastMessage?.id === updated.id) {
+      await this.conversations.updatePreview({
+        ownerUserId: input.ownerUserId,
+        conversationId: input.conversationId,
+        preview: input.text,
+        updatedAt: now,
+      });
+    }
+    this.appPush.pushToUser(input.ownerUserId, {
+      type: "message.updated",
+      message: updated,
+    });
+    return { kind: "ok" as const, message: updated };
+  }
+
   async rollbackConversation(
     ownerUserId: string,
     conversationId: string,

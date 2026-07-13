@@ -6,6 +6,8 @@ import {
   sanitizeVoiceTranscript,
   parsePrimeFigureHintCommand,
   shouldShowMessageTime,
+  splitFigureReply,
+  tokenizeParentheticalText,
 } from "./messagePresentation";
 import { estimateMp3DurationSeconds } from "@echoo/shared";
 import type { LocalMessage } from "@echoo/shared";
@@ -62,6 +64,30 @@ describe("conversation message visibility", () => {
         metadata: { audioStreaming: true },
       }),
     ).toBe(true);
+  });
+});
+
+describe("Slice Figure reply presentation", () => {
+  it("splits sentence endings and newlines without splitting decimals", () => {
+    expect(splitFigureReply("你好！真的？\n值是 3.14。 好...可以")).toEqual([
+      "你好！",
+      "真的？",
+      "值是 3.14。",
+      "好...",
+      "可以",
+    ]);
+  });
+
+  it("marks Chinese, English, nested and unfinished parentheses as muted", () => {
+    expect(tokenizeParentheticalText("你好（轻声 (笑)）继续")).toEqual([
+      { text: "你好", muted: false },
+      { text: "（轻声 (笑)）", muted: true },
+      { text: "继续", muted: false },
+    ]);
+    expect(tokenizeParentheticalText("普通（未完").at(-1)).toEqual({
+      text: "（未完",
+      muted: true,
+    });
   });
 });
 

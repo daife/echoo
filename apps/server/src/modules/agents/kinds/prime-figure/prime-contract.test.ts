@@ -4,6 +4,8 @@ import {
   primeFigureDecisionSchema,
   primeFigureScheduleSchema,
 } from "@echoo/shared";
+import type { PrimeFigureDecision } from "@echoo/shared";
+import { PrimeActionExecutor } from "./prime-action-executor.js";
 import { PrimeDecisionStreamParser } from "./prime-decision-stream-parser.js";
 
 test("prime decision parser preserves streamed visible message fields", () => {
@@ -71,4 +73,127 @@ test("prime decision distinguishes one-turn silence from message muting", () => 
       actions: [{ type: "silence", revisitAfterMinutes: 5 }],
     }),
   );
+});
+
+test("prime decision normalizes message-shaped action discriminator mistakes", () => {
+  const prompt = [
+    "【正向提示词】午餐照片",
+    "【负向提示词】畸形",
+    "【机位与身体逻辑检查】手机后摄",
+    "【推荐比例】3:4",
+  ].join("\n");
+  const decision = primeFigureDecisionSchema.parse({
+    rationale: "发送午餐照片",
+    figureMood: "轻松",
+    variables: {},
+    actions: [
+      {
+        type: "image",
+        ignored: "drop me",
+        message: {
+          type: "image",
+          generationPrompt: prompt,
+          ignored: "drop me too",
+        },
+      },
+      {
+        type: "text",
+        message: { type: "text", text: "给你看", ignored: true },
+      },
+    ],
+  });
+
+  assert.deepEqual(decision.actions, [
+    {
+      type: "send_message",
+      message: {
+        type: "image",
+        description: "",
+        generationPrompt: prompt,
+        referenceMediaIds: [],
+      },
+    },
+    {
+      type: "send_message",
+      message: { type: "text", text: "给你看" },
+    },
+  ]);
+});
+
+test("prime decision keeps required outgoing message fields strict", () => {
+  const base = { rationale: "回应", figureMood: "平静", variables: {} };
+  assert.throws(() =>
+    primeFigureDecisionSchema.parse({
+      ...base,
+      actions: [{ type: "voice", message: { type: "voice" } }],
+    }),
+  );
+  assert.throws(() =>
+    primeFigureDecisionSchema.parse({
+      ...base,
+      actions: [{ type: "image", message: { type: "image" } }],
+    }),
+  );
+});
+
+test("prime image without description is failed when generation produced no media", async () => {
+  const saved: Array<Record<string, unknown>> = [];
+  let previewUpdates = 0;
+  const executor = new PrimeActionExecutor(
+    { async save() {} } as never,
+    { async applyRuntimeUpdates() {} } as never,
+    {
+      async save(input: Record<string, unknown>) {
+        saved.push(input);
+        return input;
+      },
+    } as never,
+    { async save() {} } as never,
+    {
+      async updatePreview() {
+        previewUpdates += 1;
+      },
+    } as never,
+    { pushToUser() {} } as never,
+  );
+  const prompt = [
+    "【正向提示词】午餐照片",
+    "【负向提示词】畸形",
+    "【机位与身体逻辑检查】手机后摄",
+    "【推荐比例】3:4",
+  ].join("\n");
+
+  await executor.executeDecision({
+    ownerUserId: "user_1",
+    conversationId: "conversation_1",
+    agent: {
+      id: "agent_1",
+      detail: { variableDefinitions: [] },
+    } as never,
+    state: {
+      variables: {},
+      memories: [],
+      mood: "",
+      moodObservedAtMs: 0,
+      relationshipStatus: "",
+      updatedAt: 0,
+    },
+    decision: primeFigureDecisionSchema.parse({
+      rationale: "发送图片",
+      figureMood: "轻松",
+      variables: {},
+      actions: [
+        {
+          type: "image",
+          message: { type: "image", generationPrompt: prompt },
+        },
+      ],
+    }) as PrimeFigureDecision,
+    providerId: "test-provider",
+    model: "test-model",
+    imageGenerationErrors: new Map([[0, "generation failed"]]),
+  });
+
+  assert.equal(saved[0]?.status, "failed");
+  assert.equal(previewUpdates, 0);
 });

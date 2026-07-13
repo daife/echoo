@@ -60,6 +60,7 @@ export function useConversationMessages({
   const [rollingBackMessageId, setRollingBackMessageId] = useState<
     string | null
   >(null);
+  const [updatingMessageId, setUpdatingMessageId] = useState<string | null>(null);
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesRef = useRef<LocalMessage[]>([]);
@@ -394,6 +395,12 @@ export function useConversationMessages({
         completeStreamedMessage({ ...message, syncStatus: "synced" });
       },
     );
+    const unsubscribeUpdated = runtime.message.onMessageUpdated((message) => {
+      if (message.conversationId !== conversationId) return;
+      setMessages((current) =>
+        mergeLocalMessage(current, { ...message, syncStatus: "synced" }),
+      );
+    });
     const unsubscribeAgentActivity =
       runtime.message.onConversationAgentActivity((event) => {
         if (event.conversationId !== conversationId) return;
@@ -454,6 +461,7 @@ export function useConversationMessages({
       unsubscribeCreated();
       unsubscribeDelta();
       unsubscribeCompleted();
+      unsubscribeUpdated();
       unsubscribeAgentActivity();
       unsubscribeAgentMuteChanged();
       unsubscribeAudioStarted();
@@ -655,6 +663,27 @@ export function useConversationMessages({
     }
   };
 
+  const updateAssistantMessage = async (messageId: string, text: string) => {
+    if (!conversationId || updatingMessageId) return;
+    setError(null);
+    setUpdatingMessageId(messageId);
+    try {
+      const result = await services.messageService.updateAssistantMessage(
+        conversationId,
+        messageId,
+        text,
+      );
+      setMessages((current) =>
+        mergeLocalMessage(current, { ...result.message, syncStatus: "synced" }),
+      );
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "修改消息失败。");
+      throw updateError;
+    } finally {
+      setUpdatingMessageId(null);
+    }
+  };
+
   return {
     messages,
     draft,
@@ -674,6 +703,8 @@ export function useConversationMessages({
     retryFailedMessage,
     deleteConversation,
     rollbackConversation,
+    updateAssistantMessage,
+    updatingMessageId,
   };
 }
 

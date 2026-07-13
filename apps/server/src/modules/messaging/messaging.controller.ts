@@ -16,6 +16,10 @@ const rollbackConversationSchema = z.object({
   messageId: z.string().trim().min(1)
 });
 
+const updateAssistantMessageSchema = z.object({
+  text: z.string().trim().min(1).max(20_000),
+});
+
 const listMessagesQuerySchema = z.object({
   after: z.string().trim().min(1).optional(),
   before: z.string().trim().min(1).optional(),
@@ -141,6 +145,33 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
       retainedThroughMessageId: result.retainedThroughMessageId,
       deletedCount: result.deletedCount
     };
+  });
+
+  app.patch<{
+    Params: { conversationId: string; messageId: string };
+    Body: unknown;
+  }>("/conversations/:conversationId/messages/:messageId", async (request, reply) => {
+    const userId = await request.requireUserId(reply);
+    if (!userId) return;
+    const parsed = updateAssistantMessageSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: "VALIDATION_ERROR",
+        message: parsed.error.issues[0]?.message ?? "消息修改内容无效。",
+      });
+    }
+    const result = await messaging.updateAssistantTextMessage({
+      ownerUserId: userId,
+      conversationId: request.params.conversationId,
+      messageId: request.params.messageId,
+      text: parsed.data.text,
+    });
+    if (result.kind === "not_found") return reply.code(404).send({ error: "CONVERSATION_NOT_FOUND" });
+    if (result.kind === "message_not_found") return reply.code(404).send({ error: "MESSAGE_NOT_FOUND" });
+    if (result.kind === "unsupported_type") return reply.code(409).send({ error: "MESSAGE_EDIT_UNSUPPORTED", message: "只有切片角色会话支持修改回复。" });
+    if (result.kind === "unsupported_message") return reply.code(409).send({ error: "MESSAGE_EDIT_UNSUPPORTED", message: "只能修改角色发送的文字消息。" });
+    if (result.kind === "pending") return reply.code(409).send({ error: "MESSAGE_PENDING", message: "回复完成后才能修改。" });
+    return { message: result.message };
   });
 
   app.post<{ Params: { id: string }; Body?: { readAt?: number } }>("/messages/:id/read", async (request, reply) => {

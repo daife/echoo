@@ -60,4 +60,15 @@ export class MessageApi {
       { messageId }
     );
   }
+
+  updateAssistantMessage(
+    conversationId: string,
+    messageId: string,
+    text: string,
+  ): Promise<{ message: Message }> {
+    return this.client.patch<{ message: Message }>(
+      `/conversations/${conversationId}/messages/${messageId}`,
+      { text },
+    );
+  }
 }

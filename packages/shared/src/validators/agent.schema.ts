@@ -56,6 +56,7 @@ export const createSliceFigureSchema = createAgentBaseSchema.extend({
   personality: requiredText("性格"),
   responseStyle: requiredText("回复风格"),
   systemPrompt: requiredText("系统提示词", 12000),
+  replyAutoSegment: z.boolean().optional().default(false),
 });
 
 const primeVariableValueSchema = z.union([
@@ -310,7 +311,7 @@ export const primeMessageSchema = z.object({
   updatedAt: z.number().nonnegative(),
 });
 
-export const primeFigureActionSchema = z.discriminatedUnion("type", [
+const primeFigureActionOutputSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("send_message"),
     message: z.discriminatedUnion("type", [
@@ -320,7 +321,7 @@ export const primeFigureActionSchema = z.discriminatedUnion("type", [
       }),
       z.object({
         type: z.literal("image"),
-        description: requiredText("图片描述", 4000),
+        description: optionalText(4000),
         generationPrompt: generationPromptSchema,
         referenceMediaIds: z
           .array(z.string().regex(/^media_[1-9]\d*$/))
@@ -328,7 +329,9 @@ export const primeFigureActionSchema = z.discriminatedUnion("type", [
           .refine(
             (ids) => new Set(ids).size === ids.length,
             "参考图片 ID 不得重复",
-          ),
+          )
+          .optional()
+          .default([]),
       }),
       z.object({
         type: z.literal("voice"),
@@ -336,14 +339,68 @@ export const primeFigureActionSchema = z.discriminatedUnion("type", [
       }),
     ]),
   }),
-  z.object({
-    type: z.literal("silence"),
-  }).strict(),
-  z.object({
-    type: z.literal("mute"),
-    revisitAfterMinutes: z.number().int().min(1).max(10080),
-  }).strict(),
+  z
+    .object({
+      type: z.literal("silence"),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("mute"),
+      revisitAfterMinutes: z.number().int().min(1).max(10080),
+    })
+    .strict(),
 ]);
+
+export const primeFigureActionSchema = z.preprocess(
+  normalizePrimeFigureAction,
+  primeFigureActionOutputSchema,
+);
+
+function normalizePrimeFigureAction(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const action = value as Record<string, unknown>;
+  const message =
+    action.message &&
+    typeof action.message === "object" &&
+    !Array.isArray(action.message)
+      ? (action.message as Record<string, unknown>)
+      : null;
+  if (!message || !isPrimeOutgoingMessageType(message.type)) return value;
+
+  const normalizedMessage = { ...message };
+  if (message.type === "image") {
+    if (!("description" in normalizedMessage))
+      normalizedMessage.description = "";
+    normalizedMessage.referenceMediaIds = normalizeReferenceMediaIds(
+      normalizedMessage.referenceMediaIds,
+    );
+  }
+
+  if (
+    action.type === "send_message" ||
+    action.type === "silence" ||
+    action.type === "mute"
+  )
+    return { ...action, message: normalizedMessage };
+  return { ...action, type: "send_message", message: normalizedMessage };
+}
+
+function isPrimeOutgoingMessageType(value: unknown) {
+  return value === "text" || value === "image" || value === "voice";
+}
+
+function normalizeReferenceMediaIds(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value.filter(
+        (item): item is string =>
+          typeof item === "string" && /^media_[1-9]\d*$/.test(item),
+      ),
+    ),
+  ].slice(0, 10);
+}
 
 export const primeFigureDecisionSchema = z.object({
   rationale: requiredText("角色决策依据", 2000),
@@ -390,8 +447,6 @@ export const primeFigureDecisionSchema = z.object({
 
 export const updateSliceFigureSchema = createSliceFigureSchema.omit({
   type: true,
-  avatar: true,
-  cover: true,
 });
 
 export const createPrimeWorldPlaceholderSchema = createAgentBaseSchema.extend({

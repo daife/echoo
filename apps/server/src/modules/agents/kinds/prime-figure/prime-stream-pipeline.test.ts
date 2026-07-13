@@ -61,6 +61,41 @@ test("prime voice transcript is written to streaming TTS before the decision com
   assert.equal(writes.join(""), "你好");
 });
 
+test("prime stream failure stores raw response on only the first failed message", async () => {
+  const saved: Array<Record<string, unknown>> = [];
+  const session = createSession({
+    messages: {
+      async save(input: Record<string, unknown>) {
+        saved.push(input);
+        return input;
+      },
+    },
+  });
+  const parser = new PrimeDecisionStreamParser((event) =>
+    session.handleField(event),
+  );
+  parser.push(
+    '{"actions":[{"message":{"type":"text","text":"一"}},{"message":{"type":"text","text":"二"}}]}',
+  );
+  await session.fail(new Error("invalid decision"), {
+    rawResponse: '{"actions":[]}',
+    providerId: "test-provider",
+    model: "test-model",
+  });
+
+  const failed = saved.filter((item) => item.status === "failed");
+  assert.equal(failed.length, 2);
+  const firstMetadata = failed[0]?.metadata as Record<string, unknown>;
+  const secondMetadata = failed[1]?.metadata as Record<string, unknown>;
+  assert.equal(firstMetadata.rawResponse, '{"actions":[]}');
+  assert.equal(firstMetadata.providerId, "test-provider");
+  assert.equal(secondMetadata.rawResponse, undefined);
+  assert.equal(
+    secondMetadata.rawResponseMessageId,
+    (failed[0] as { id?: string }).id,
+  );
+});
+
 test("prime messages are persisted when revealed and later actions wait for the prior completion", async () => {
   const saved: Array<{ id: string; createdAt: number }> = [];
   const previousTypingSpeed = process.env.PRIME_TYPING_CHARS_PER_MINUTE;

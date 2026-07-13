@@ -73,9 +73,9 @@ export class PrimeMessageRepository {
           limit,
         );
         if (cached)
-          return cached.map((item) =>
-            cachedToPrime(item, ownerUserId, agentId),
-          );
+          return cached
+            .filter((item) => item.message.status !== "failed")
+            .map((item) => cachedToPrime(item, ownerUserId, agentId));
       } catch (error) {
         console.warn(
           "Prime message cache read failed; falling back to MySQL.",
@@ -84,7 +84,8 @@ export class PrimeMessageRepository {
       }
     }
     const rows = await queryRows<PrimeRow>(
-      `${SELECT_PRIME} WHERE messages.role IN ('user', 'assistant') AND messages.owner_user_id = ? AND conversations.agent_id = ?
+      `${SELECT_PRIME} WHERE messages.role IN ('user', 'assistant') AND messages.status != 'failed'
+       AND messages.owner_user_id = ? AND conversations.agent_id = ?
        ORDER BY messages.seq DESC LIMIT ?`,
       [ownerUserId, agentId, Math.min(Math.max(Math.trunc(limit), 1), 500)],
     );
@@ -131,7 +132,7 @@ export class PrimeMessageRepository {
          FROM messages
          JOIN conversations ON conversations.id = messages.conversation_id
          WHERE messages.owner_user_id = ? AND messages.conversation_id = ?
-          AND messages.role IN ('user', 'assistant')
+          AND messages.role IN ('user', 'assistant') AND messages.status != 'failed'
        ), context_messages AS (
          SELECT eligible_messages.*,
           FLOOR(GREATEST(0, context_message_count - ?) / ?) * ?
@@ -170,7 +171,8 @@ export class PrimeMessageRepository {
   ) {
     const row = await queryRows<PrimeRow>(
       `${SELECT_PRIME} WHERE messages.owner_user_id = ? AND messages.conversation_id = ?
-       AND messages.role = 'assistant' ORDER BY messages.seq DESC LIMIT 1`,
+       AND messages.role = 'assistant' AND messages.status != 'failed'
+       ORDER BY messages.seq DESC LIMIT 1`,
       [ownerUserId, conversationId],
     );
     return row[0]?.seq ?? 0;
@@ -205,7 +207,8 @@ export class PrimeMessageRepository {
       .map(() => "messages.search_text LIKE ?")
       .join(" OR ");
     const rows = await queryRows<PrimeRow>(
-      `${SELECT_PRIME} WHERE messages.role IN ('user', 'assistant') AND messages.owner_user_id = ? AND conversations.agent_id = ?
+      `${SELECT_PRIME} WHERE messages.role IN ('user', 'assistant') AND messages.status != 'failed'
+       AND messages.owner_user_id = ? AND conversations.agent_id = ?
        AND (${conditions}) ORDER BY messages.seq DESC LIMIT ?`,
       [
         ownerUserId,

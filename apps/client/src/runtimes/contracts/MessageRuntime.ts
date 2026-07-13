@@ -36,6 +36,7 @@ export interface MessageRuntime {
   onMessageCreated(handler: (message: Message) => void): () => void;
   onMessageDelta(handler: (event: MessageDeltaEvent) => void): () => void;
   onMessageCompleted(handler: (message: Message) => void): () => void;
+  onMessageUpdated(handler: (message: Message) => void): () => void;
   onConversationAgentActivity(
     handler: (event: ConversationAgentActivityEvent) => void,
   ): () => void;

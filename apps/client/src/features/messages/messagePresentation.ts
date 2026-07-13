@@ -1,6 +1,7 @@
 import type { LocalMessage } from "@echoo/shared";
 
 const FIVE_MINUTES_MS = 5 * 60_000;
+const SENTENCE_ENDINGS = new Set(["。", "．", ".", "!", "！", "?", "？", "…"]);
 
 export function parsePrimeFigureHintCommand(value: string) {
   const match = /^\/hint(?:\s+([\s\S]*))?$/i.exec(value.trim());
@@ -40,6 +41,62 @@ export function sanitizeVoiceTranscript(value: string) {
     clean = clean.replace(/\[[^\[\]]*\]|【[^【】]*】/g, " ");
   }
   return clean.replace(/\s+/g, " ").trim();
+}
+
+export function splitFigureReply(value: string) {
+  const segments: string[] = [];
+  let current = "";
+  const chars = Array.from(value);
+  const flush = () => {
+    const text = current.trim();
+    if (text) segments.push(text);
+    current = "";
+  };
+
+  for (let index = 0; index < chars.length; index += 1) {
+    const char = chars[index] ?? "";
+    if (char === "\r") continue;
+    if (char === "\n") {
+      flush();
+      continue;
+    }
+    current += char;
+    if (!SENTENCE_ENDINGS.has(char)) continue;
+    if (
+      char === "." &&
+      /\d/.test(chars[index - 1] ?? "") &&
+      /\d/.test(chars[index + 1] ?? "")
+    )
+      continue;
+    while (SENTENCE_ENDINGS.has(chars[index + 1] ?? "")) {
+      index += 1;
+      current += chars[index];
+    }
+    flush();
+  }
+  flush();
+  return segments;
+}
+
+export interface ParentheticalTextRun {
+  text: string;
+  muted: boolean;
+}
+
+export function tokenizeParentheticalText(value: string): ParentheticalTextRun[] {
+  const runs: ParentheticalTextRun[] = [];
+  let depth = 0;
+  for (const char of Array.from(value)) {
+    const opening = char === "(" || char === "（";
+    const closing = char === ")" || char === "）";
+    const muted = depth > 0 || opening || (closing && depth > 0);
+    const last = runs.at(-1);
+    if (last?.muted === muted) last.text += char;
+    else runs.push({ text: char, muted });
+    if (opening) depth += 1;
+    else if (closing && depth > 0) depth -= 1;
+  }
+  return runs;
 }
 
 export function shouldShowMessageTime(

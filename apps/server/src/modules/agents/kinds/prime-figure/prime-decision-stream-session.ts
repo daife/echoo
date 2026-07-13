@@ -30,6 +30,14 @@ export interface ResolvedPrimeImageMedia extends ResolvedPrimeMedia {
   model: string;
 }
 
+interface PrimeStreamFailureDiagnostics {
+  rawResponse: string;
+  providerId: string;
+  model: string;
+}
+
+const RAW_RESPONSE_METADATA_LIMIT = 65_536;
+
 interface StreamedActionState {
   id: string;
   type?: "text" | "image" | "voice";
@@ -225,14 +233,27 @@ export class PrimeDecisionStreamSession {
     };
   }
 
-  fail(error: unknown) {
+  async fail(error: unknown, diagnostics?: PrimeStreamFailureDiagnostics) {
+    const createdStates = [...this.actions.values()].filter(
+      (state) => state.created,
+    );
+    const rawResponseMessageId = createdStates[0]?.id;
     for (const state of this.actions.values()) {
       this.resolveTextComplete(state);
       this.flushTextDelta(state);
       state.tts?.abort();
-      if (!state.created) continue;
-      void this.failState(state, error);
     }
+    await Promise.all(
+      createdStates.map((state, index) =>
+        this.failState(state, error, {
+          ...(index === 0 && diagnostics
+            ? buildFailureDiagnostics(diagnostics)
+            : diagnostics && rawResponseMessageId
+              ? { rawResponseMessageId }
+              : {}),
+        }),
+      ),
+    );
   }
 
   private getAction(index: number) {
@@ -451,13 +472,18 @@ export class PrimeDecisionStreamSession {
     state.resolveTextComplete();
   }
 
-  private async failState(state: StreamedActionState, error: unknown) {
+  private async failState(
+    state: StreamedActionState,
+    error: unknown,
+    diagnostics: Record<string, unknown> = {},
+  ) {
     await state.revealPromise?.catch(() => undefined);
     if (!state.revealed) return;
     const now = state.createdAt ?? Date.now();
     const message = this.buildPlaceholder(state, now, "failed", {
       kind: "prime_figure_stream_error",
       error: toErrorMessage(error),
+      ...diagnostics,
     });
     await this.messages.save({
       ownerUserId: this.input.ownerUserId,
@@ -522,6 +548,16 @@ export class PrimeDecisionStreamSession {
       updatedAt: now,
     };
   }
+}
+
+function buildFailureDiagnostics(input: PrimeStreamFailureDiagnostics) {
+  const rawResponse = input.rawResponse.slice(0, RAW_RESPONSE_METADATA_LIMIT);
+  return {
+    providerId: input.providerId,
+    model: input.model,
+    rawResponse,
+    rawResponseTruncated: rawResponse.length < input.rawResponse.length,
+  };
 }
 
 function isMessageType(

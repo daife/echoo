@@ -52,6 +52,10 @@ export class TauriMessageRuntime implements MessageRuntime {
     return this.realtime.onMessageCompleted(_handler);
   }
 
+  onMessageUpdated(_handler: (message: Message) => void): () => void {
+    return this.realtime.onMessageUpdated(_handler);
+  }
+
   onConversationAgentActivity(
     _handler: (event: ConversationAgentActivityEvent) => void,
   ): () => void {

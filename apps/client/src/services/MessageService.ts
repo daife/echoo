@@ -44,6 +44,13 @@ export class MessageService {
   rollbackConversation(conversationId: string, messageId: string) {
     return this.api.rollbackConversation(conversationId, messageId);
   }
+  updateAssistantMessage(
+    conversationId: string,
+    messageId: string,
+    text: string,
+  ) {
+    return this.api.updateAssistantMessage(conversationId, messageId, text);
+  }
 }
 
 function toLocalMessage(message: Message): LocalMessage {

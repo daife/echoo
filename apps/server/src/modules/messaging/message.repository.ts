@@ -266,6 +266,23 @@ export class MessageRepository {
     return message;
   }
 
+  async updateText(
+    ownerUserId: string,
+    conversationId: string,
+    messageId: string,
+    text: string,
+    updatedAt: number,
+  ) {
+    const result = await execute(
+      `UPDATE messages SET content = JSON_SET(content, '$.text', ?), updated_at = ?
+       WHERE owner_user_id = ? AND conversation_id = ? AND id = ?`,
+      [text, updatedAt, ownerUserId, conversationId, messageId],
+    );
+    if (!result.affectedRows) return null;
+    await this.invalidateCache(ownerUserId, conversationId);
+    return this.findByIdInConversation(ownerUserId, conversationId, messageId);
+  }
+
   async updateCachedLive(ownerUserId: string, message: Message) {
     try {
       await this.cache.updateLive(ownerUserId, message.conversationId, message);

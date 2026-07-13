@@ -2,6 +2,7 @@ import {
   createReadStream,
   mkdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
@@ -173,6 +174,17 @@ export class ResourceRepository {
         "SELECT * FROM resources WHERE owner_user_id = ? AND public_path = ?",
       [ownerUserId, publicPath]);
     return row ? rowToResource(row) : null;
+  }
+
+  async deleteOwnedByPublicPath(ownerUserId: string, publicPath: string) {
+    const record = await this.findByPublicPath(ownerUserId, publicPath);
+    if (!record) return false;
+    await execute(
+      "DELETE FROM resources WHERE id = ? AND owner_user_id = ?",
+      [record.id, ownerUserId],
+    );
+    rmSync(record.storagePath, { force: true });
+    return true;
   }
 
   async readForOwner(ownerUserId: string, id: string) {
