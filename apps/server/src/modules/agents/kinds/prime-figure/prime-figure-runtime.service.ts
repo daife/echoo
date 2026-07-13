@@ -1070,7 +1070,7 @@ function buildPrimeDecisionResponseFormat(
               {
                 type: "array",
                 description:
-                  "按序发送的一条或多条文本、图片或语音消息。优先 1 至 3 条短消息；情绪激动时可合理增加条数和长度。",
+                  "按序发送的一条或多条文本、图片或语音消息。",
                 minItems: 1,
                 maxItems: 12,
                 items: buildSendMessageActionSchema(availableReferenceImageIds),

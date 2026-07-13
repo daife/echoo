@@ -211,7 +211,7 @@ function SliceFigureCreateForm({ onCreate }: { onCreate: (input: CreateSliceFigu
         <TextField label="人设" required multiline value={form.persona} placeholder="角色是谁，与用户是什么关系" onChange={(value) => setField("persona", value)} />
         <TextField label="背景" required multiline value={form.background} placeholder="经历、环境、世界观与任务背景" onChange={(value) => setField("background", value)} />
         <TextField label="性格" required multiline value={form.personality} placeholder="偏好、边界、缺点和稳定行为模式" onChange={(value) => setField("personality", value)} />
-        <TextField label="回复风格" required multiline value={form.responseStyle} placeholder="语言长度、语气、动作表达和禁忌" onChange={(value) => setField("responseStyle", value)} />
+        <TextField label="回复风格" required multiline value={form.responseStyle} placeholder="语言长度、语气、动作表达和禁忌，图片发送习惯，语音发送习惯...示例回复..." onChange={(value) => setField("responseStyle", value)} />
         <TextField label="当前情景" multiline value={form.currentSituation ?? ""} placeholder="可在模板中通过 {{figure.currentSituation}} 引用" onChange={(value) => setField("currentSituation", value)} />
         <TextField label="开场白" multiline value={form.openingLine ?? ""} placeholder="作为首条助手消息写入会话，因此会进入对话历史" onChange={(value) => setField("openingLine", value)} />
         <TextField label="系统提示词模板" required multiline mono value={form.systemPrompt} placeholder={DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT} onChange={(value) => setField("systemPrompt", value)} />
@@ -335,7 +335,7 @@ function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigu
         <TextField label="人设" required multiline value={form.persona} placeholder="角色是谁，与最终用户是什么关系" onChange={(value) => setField("persona", value)} />
         <TextField label="背景" required multiline value={form.background} placeholder="经历、环境、世界观与长期处境" onChange={(value) => setField("background", value)} />
         <TextField label="性格" required multiline value={form.personality} placeholder="偏好、边界、缺点、矛盾和稳定行为模式" onChange={(value) => setField("personality", value)} />
-        <TextField label="回复风格" required multiline value={form.responseStyle} placeholder="语言长度、语气、动作表达和禁忌" onChange={(value) => setField("responseStyle", value)} />
+        <TextField label="回复风格" required multiline value={form.responseStyle} placeholder="语言长度、语气、动作表达和禁忌，图片发送习惯，语音发送习惯...示例回复..." onChange={(value) => setField("responseStyle", value)} />
         <TextField label="决策风格" multiline value={form.decisionStyle ?? ""} placeholder="如何权衡沉默、回应、记忆和自身边界" onChange={(value) => setField("decisionStyle", value)} />
         <TextField label="当前处境" multiline value={form.currentSituation ?? ""} placeholder="角色此刻正在经历的长期情境" onChange={(value) => setField("currentSituation", value)} />
         <div className="grid gap-4 md:grid-cols-2">
