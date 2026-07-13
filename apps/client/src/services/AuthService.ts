@@ -5,8 +5,7 @@ import type {
   RegisterResponse,
   RegisterRequest,
   ResetPasswordRequest,
-  VerifyEmailRequest,
-  UserProfile
+  VerifyEmailRequest
 } from "@echoo/shared";
 import type { AuthApi } from "@echoo/api-client";
 import type { AuthRuntime } from "../runtimes/contracts";

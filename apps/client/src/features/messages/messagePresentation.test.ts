@@ -25,19 +25,17 @@ const baseMessage: LocalMessage = {
 describe("conversation message visibility", () => {
   it("reveals pending assistant text after its first delta", () => {
     expect(
-      isVisibleConversationMessage(
-        { ...baseMessage, content: { text: "partial" } },
-        "prime-figure",
-      ),
+      isVisibleConversationMessage({
+        ...baseMessage,
+        content: { text: "partial" },
+      }),
     ).toBe(true);
-    expect(isVisibleConversationMessage(baseMessage, "slice-figure")).toBe(
-      false,
-    );
+    expect(isVisibleConversationMessage(baseMessage)).toBe(false);
     expect(
-      isVisibleConversationMessage(
-        { ...baseMessage, content: { text: "partial" } },
-        "slice-figure",
-      ),
+      isVisibleConversationMessage({
+        ...baseMessage,
+        content: { text: "partial" },
+      }),
     ).toBe(true);
   });
 
@@ -47,25 +45,22 @@ describe("conversation message visibility", () => {
       contentType: "image",
       status: "delivered",
     };
-    expect(isVisibleConversationMessage(image, "prime-figure")).toBe(false);
+    expect(isVisibleConversationMessage(image)).toBe(false);
     expect(
-      isVisibleConversationMessage(
-        { ...image, content: { mediaUrl: "/api/resources/image" } },
-        "prime-figure",
-      ),
+      isVisibleConversationMessage({
+        ...image,
+        content: { mediaUrl: "/api/resources/image" },
+      }),
     ).toBe(true);
   });
 
   it("shows a Prime voice placeholder while audio is streaming", () => {
     expect(
-      isVisibleConversationMessage(
-        {
-          ...baseMessage,
-          contentType: "voice",
-          metadata: { audioStreaming: true },
-        },
-        "prime-figure",
-      ),
+      isVisibleConversationMessage({
+        ...baseMessage,
+        contentType: "voice",
+        metadata: { audioStreaming: true },
+      }),
     ).toBe(true);
   });
 });

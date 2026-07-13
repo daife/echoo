@@ -17,10 +17,7 @@ export function getConversationPresenceLabel(input: {
   return `${input.agentTypeLabel}，当前在线`;
 }
 
-export function isVisibleConversationMessage(
-  message: LocalMessage,
-  agentType: "slice-figure" | "prime-figure" | string,
-) {
+export function isVisibleConversationMessage(message: LocalMessage) {
   if (message.contentType === "image" || message.contentType === "voice") {
     if (
       message.contentType === "voice" &&

@@ -2,21 +2,6 @@ import { ChatCircleDots, GearSix, Heart, NotePencil, PencilSimple, Robot } from 
 import type { Agent } from "@echoo/shared";
 import { CharacterCard } from "../../features/conversations/components/CharacterCard";
 
-const creations = [
-  {
-    name: "Aster",
-    kind: "本初角色",
-    description: "推进型角色，擅长长期关系、数值变化、行为和日程推进。",
-    gradient: "from-white/22 via-white/7 to-transparent"
-  },
-  {
-    name: "Mira",
-    kind: "切片角色",
-    description: "轻量角色，适合短对话、片段场景、灵感速记和睡前复盘。",
-    gradient: "from-white/16 via-white/5 to-transparent"
-  }
-];
-
 const posts = [
   {
     title: "关于本初角色记忆的三条边界",

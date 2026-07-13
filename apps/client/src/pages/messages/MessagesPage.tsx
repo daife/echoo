@@ -15,7 +15,6 @@ import {
 } from "@echoo/shared";
 import {
   Fragment,
-  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -96,9 +95,7 @@ export function MessagesPage({
 
   const visibleMessages = useMemo(() => {
     if (!agent) return [];
-    const visible = messages.filter((message) =>
-      isVisibleConversationMessage(message, agent.type),
-    );
+    const visible = messages.filter(isVisibleConversationMessage);
     if (visible.length > 0)
       return visible.map((message) => toBubbleMessage(message, canRollback));
     if (agent?.type === "slice-figure" && agent.detail.openingLine) {
