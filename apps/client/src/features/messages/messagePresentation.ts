@@ -1,7 +1,13 @@
-import type { LocalMessage } from "@echoo/shared";
+import type { Agent, LocalMessage } from "@echoo/shared";
 
 const FIVE_MINUTES_MS = 5 * 60_000;
 const SENTENCE_ENDINGS = new Set(["。", "．", ".", "!", "！", "?", "？", "…"]);
+const PRIME_PRESENCE_PHASE_DURATION_MS = {
+  typing: [1_800, 4_200],
+  online: [900, 2_100],
+} as const;
+
+export type PrimePresencePhase = keyof typeof PRIME_PRESENCE_PHASE_DURATION_MS;
 
 export function parsePrimeFigureHintCommand(value: string) {
   const match = /^\/hint(?:\s+([\s\S]*))?$/i.exec(value.trim());
@@ -18,6 +24,15 @@ export function getConversationPresenceLabel(input: {
   return `${input.agentTypeLabel}，当前在线`;
 }
 
+export function getPrimePresencePhaseDuration(
+  phase: PrimePresencePhase,
+  randomValue = Math.random(),
+) {
+  const [minimum, maximum] = PRIME_PRESENCE_PHASE_DURATION_MS[phase];
+  const normalizedRandomValue = Math.min(Math.max(randomValue, 0), 1);
+  return Math.round(minimum + (maximum - minimum) * normalizedRandomValue);
+}
+
 export function isVisibleConversationMessage(message: LocalMessage) {
   if (message.contentType === "image" || message.contentType === "voice") {
     if (
@@ -31,6 +46,26 @@ export function isVisibleConversationMessage(message: LocalMessage) {
     return Boolean(message.content.text?.trim());
   }
   return Boolean(message.content.text?.trim());
+}
+
+export function getOutgoingDeliveryState(
+  message: LocalMessage,
+): "sending" | "failed" | undefined {
+  if (message.role !== "user") return undefined;
+  if (message.syncStatus === "pending") return "sending";
+  if (message.status === "failed") return "failed";
+  return undefined;
+}
+
+export function shouldShowFigurePendingIndicator(
+  message: LocalMessage,
+  agentType: Agent["type"],
+) {
+  return (
+    agentType !== "prime-figure" &&
+    message.role === "assistant" &&
+    message.status === "pending"
+  );
 }
 
 export function sanitizeVoiceTranscript(value: string) {

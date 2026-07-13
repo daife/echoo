@@ -28,8 +28,12 @@ import {
 } from "../../features/messages/components/MessageBubble";
 import {
   formatConversationTime,
+  getOutgoingDeliveryState,
   isVisibleConversationMessage,
   getConversationPresenceLabel,
+  getPrimePresencePhaseDuration,
+  type PrimePresencePhase,
+  shouldShowFigurePendingIndicator,
   shouldShowMessageTime,
   splitFigureReply,
 } from "../../features/messages/messagePresentation";
@@ -87,11 +91,17 @@ export function MessagesPage({
   const lastConversationRef = useRef<string | undefined>(undefined);
   const lastVisibleMessageIdRef = useRef<string | undefined>(undefined);
   const lastScrollTopRef = useRef(0);
+  const showAgentTyping = useRhythmicPrimePresence({
+    agentId: agent?.id,
+    agentType: agent?.type,
+    isAgentActive,
+    isAgentMuted,
+  });
   const title = agent?.name ?? "选择一个角色";
   const subtitle = agent
     ? getConversationPresenceLabel({
         agentTypeLabel: formatAgentType(agent),
-        isAgentActive,
+        isAgentActive: showAgentTyping,
         isAgentMuted,
       })
     : "打开或创建一个角色以开始聊天";
@@ -112,6 +122,7 @@ export function MessagesPage({
           canRollback,
           agent.type === "slice-figure" && agent.detail.replyAutoSegment,
           agent.type === "slice-figure",
+          agent.type,
         ),
       );
     if (agent?.type === "slice-figure" && agent.detail.openingLine) {
@@ -535,11 +546,50 @@ function formatAgentType(agent: Agent) {
   return "本初角色";
 }
 
+function useRhythmicPrimePresence(input: {
+  agentId?: string;
+  agentType?: Agent["type"];
+  isAgentActive: boolean;
+  isAgentMuted: boolean;
+}) {
+  const [phase, setPhase] = useState<PrimePresencePhase>("typing");
+
+  useEffect(() => {
+    if (
+      input.agentType !== "prime-figure" ||
+      !input.isAgentActive ||
+      input.isAgentMuted
+    ) {
+      setPhase("typing");
+      return;
+    }
+
+    let currentPhase: PrimePresencePhase = "typing";
+    let timerId: number | undefined;
+    setPhase(currentPhase);
+
+    const scheduleNextPhase = () => {
+      timerId = window.setTimeout(() => {
+        currentPhase = currentPhase === "typing" ? "online" : "typing";
+        setPhase(currentPhase);
+        scheduleNextPhase();
+      }, getPrimePresencePhaseDuration(currentPhase));
+    };
+
+    scheduleNextPhase();
+    return () => window.clearTimeout(timerId);
+  }, [input.agentId, input.agentType, input.isAgentActive, input.isAgentMuted]);
+
+  if (input.agentType !== "prime-figure") return input.isAgentActive;
+  return input.isAgentActive && !input.isAgentMuted && phase === "typing";
+}
+
 function toBubbleMessages(
   message: LocalMessage,
   canRollback: boolean,
   autoSegment: boolean,
   canEditFigureMessages: boolean,
+  agentType: Agent["type"],
 ): MessageBubbleModel[] {
   const text = message.contentType === "text" ? (message.content.text ?? "") : "";
   const segments =
@@ -556,12 +606,7 @@ function toBubbleMessages(
     from: message.role === "user" ? "me" : "agent",
     text: segment,
     createdAt: message.createdAt,
-    deliveryState:
-      message.syncStatus === "pending"
-        ? "sending"
-        : message.role === "user" && message.status === "failed"
-          ? "failed"
-          : undefined,
+    deliveryState: getOutgoingDeliveryState(message),
     kind:
       message.contentType === "voice"
         ? "voice"
@@ -583,8 +628,7 @@ function toBubbleMessages(
       message.status !== "pending" &&
       message.status !== "failed",
     isPending:
-      message.role === "assistant" &&
-      message.status === "pending" &&
+      shouldShowFigurePendingIndicator(message, agentType) &&
       index === segments.length - 1,
   }));
 }

@@ -15,6 +15,7 @@ import {
   mergeLocalMessage,
   mergeSentTextMessageResult,
   markLocalMessageFailed,
+  markLocalMessageSending,
 } from "../../services/localMessageState";
 import { parsePrimeFigureHintCommand } from "../../features/messages/messagePresentation";
 
@@ -572,15 +573,8 @@ export function useConversationMessages({
     )
       return;
 
-    const clientMessageId = failedMessage.clientMessageId ?? failedMessage.id;
-    const pending: LocalMessage = {
-      ...failedMessage,
-      id: clientMessageId,
-      clientMessageId,
-      status: "pending",
-      syncStatus: "pending",
-      updatedAt: Date.now(),
-    };
+    const pending = markLocalMessageSending(failedMessage);
+    const clientMessageId = pending.clientMessageId ?? pending.id;
 
     setError(null);
     setRetryingMessageId(messageId);

@@ -297,9 +297,11 @@ function VoiceBubble({
           weight={isPlaying ? "fill" : "duotone"}
           className={isPlaying ? "animate-pulse text-white" : "text-white/75"}
         />
-        <span className="ml-auto text-xs tabular-nums text-white/48">
-          {seconds ? `${seconds}″` : mediaUrl ? "语音" : "生成中"}
-        </span>
+        {seconds || mediaUrl ? (
+          <span className="ml-auto text-xs tabular-nums text-white/48">
+            {seconds ? `${seconds}″` : "语音"}
+          </span>
+        ) : null}
       </button>
       {mediaUrl ? <audio
         ref={audioRef}

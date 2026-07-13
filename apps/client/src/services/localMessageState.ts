@@ -125,6 +125,21 @@ export function markLocalMessageFailed(
   );
 }
 
+export function markLocalMessageSending(
+  message: LocalMessage,
+  updatedAt = Date.now(),
+): LocalMessage {
+  const clientMessageId = message.clientMessageId ?? message.id;
+  return {
+    ...message,
+    id: clientMessageId,
+    clientMessageId,
+    status: "pending",
+    syncStatus: "pending",
+    updatedAt,
+  };
+}
+
 function isSameLogicalMessage(left: LocalMessage, right: LocalMessage) {
   if (left.id === right.id) return true;
   if (!left.clientMessageId || !right.clientMessageId) return false;

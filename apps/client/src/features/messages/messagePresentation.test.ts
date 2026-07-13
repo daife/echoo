@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   formatConversationTime,
+  getOutgoingDeliveryState,
   getConversationPresenceLabel,
+  getPrimePresencePhaseDuration,
   isVisibleConversationMessage,
   sanitizeVoiceTranscript,
   parsePrimeFigureHintCommand,
   shouldShowMessageTime,
+  shouldShowFigurePendingIndicator,
   splitFigureReply,
   tokenizeParentheticalText,
 } from "./messagePresentation";
@@ -64,6 +67,36 @@ describe("conversation message visibility", () => {
         metadata: { audioStreaming: true },
       }),
     ).toBe(true);
+  });
+});
+
+describe("conversation message delivery presentation", () => {
+  it("shows delivery state only on end-user messages", () => {
+    expect(
+      getOutgoingDeliveryState({
+        ...baseMessage,
+        role: "user",
+        syncStatus: "pending",
+      }),
+    ).toBe("sending");
+    expect(
+      getOutgoingDeliveryState({
+        ...baseMessage,
+        role: "user",
+        status: "failed",
+        syncStatus: "failed",
+      }),
+    ).toBe("failed");
+    expect(getOutgoingDeliveryState(baseMessage)).toBeUndefined();
+  });
+
+  it("hides pending indicators on Prime Figure replies only", () => {
+    expect(shouldShowFigurePendingIndicator(baseMessage, "prime-figure")).toBe(
+      false,
+    );
+    expect(shouldShowFigurePendingIndicator(baseMessage, "slice-figure")).toBe(
+      true,
+    );
   });
 });
 
@@ -133,6 +166,13 @@ describe("conversation presence", () => {
         isAgentMuted: false,
       }),
     ).toBe("对方输入中…");
+  });
+
+  it("uses a longer random typing beat and a shorter online beat", () => {
+    expect(getPrimePresencePhaseDuration("typing", 0)).toBe(1_800);
+    expect(getPrimePresencePhaseDuration("typing", 1)).toBe(4_200);
+    expect(getPrimePresencePhaseDuration("online", 0)).toBe(900);
+    expect(getPrimePresencePhaseDuration("online", 1)).toBe(2_100);
   });
 });
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createPendingTextMessage,
   markLocalMessageFailed,
+  markLocalMessageSending,
   mergeSentTextMessageResult,
 } from "./localMessageState";
 
@@ -43,6 +44,16 @@ describe("optimistic outgoing messages", () => {
       content: { text: "keep me" },
       status: "failed",
       syncStatus: "failed",
+    });
+
+    const retrying = markLocalMessageSending(failed, 3);
+    expect(retrying).toMatchObject({
+      id: "client_1",
+      clientMessageId: "client_1",
+      content: { text: "keep me" },
+      status: "pending",
+      syncStatus: "pending",
+      updatedAt: 3,
     });
   });
 });
