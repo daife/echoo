@@ -12,6 +12,14 @@ export class AgentsService {
     return this.repository.listByOwner(userId);
   }
 
+  getPrimeFigureEditSnapshot(userId: string, agentId: string) {
+    return this.repository.getPrimeFigureEditSnapshot(userId, agentId);
+  }
+
+  exportAgent(userId: string, agentId: string) {
+    return this.repository.exportAgent(userId, agentId);
+  }
+
   createSliceFigure(userId: string, input: CreateSliceFigureRequest) {
     const handler = this.kinds.get("slice-figure");
     if (!handler) throw new Error("切片角色处理器未注册。");

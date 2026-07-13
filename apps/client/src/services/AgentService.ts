@@ -23,4 +23,13 @@ export class AgentService {
   updatePrimeFigure(agentId: string, input: UpdatePrimeFigureRequest) {
     return this.api.updatePrimeFigure(agentId, input);
   }
+
+
+  getPrimeFigureEditSnapshot(agentId: string) {
+    return this.api.getPrimeFigureEditSnapshot(agentId);
+  }
+
+  exportAgent(agentId: string) {
+    return this.api.exportAgent(agentId);
+  }
 }

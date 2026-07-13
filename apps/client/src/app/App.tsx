@@ -10,6 +10,7 @@ import type {
   Agent,
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
+  UpdatePrimeFigureRequest,
   UpdateSliceFigureRequest,
 } from "@echoo/shared";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -193,6 +194,31 @@ export function App() {
     }
   };
 
+  const updatePrimeFigure = async (
+    agentId: string,
+    input: UpdatePrimeFigureRequest,
+  ) => {
+    try {
+      const { agent } = await services.agentService.updatePrimeFigure(
+        agentId,
+        input,
+      );
+      setMyAgents((current) =>
+        current.map((item) => (item.id === agent.id ? agent : item)),
+      );
+      setSelectedAgent((current) =>
+        current?.id === agent.id ? agent : current,
+      );
+      return agent;
+    } catch (error) {
+      if (error instanceof Error && error.message === "请重新登录。") {
+        await auth.signOut();
+        setView("auth");
+      }
+      throw error;
+    }
+  };
+
   const ActivePage = useMemo(() => {
     if (auth.isLoading) {
       return (
@@ -232,7 +258,13 @@ export function App() {
       return (
         <MessagesPage
           agent={selectedAgent ?? undefined}
-          updateHandlers={{ "slice-figure": updateSliceFigure }}
+          updateHandlers={{
+            "slice-figure": updateSliceFigure,
+            "prime-figure": updatePrimeFigure,
+            getPrimeFigureEditSnapshot: (agentId) =>
+              services.agentService.getPrimeFigureEditSnapshot(agentId),
+            exportAgent: (agentId) => services.agentService.exportAgent(agentId),
+          }}
           onConversationDeleted={handleConversationDeleted}
         />
       );

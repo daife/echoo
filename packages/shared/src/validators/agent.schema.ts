@@ -12,6 +12,21 @@ const imageUploadSchema = z.object({
   dataBase64: z.string().min(1),
 });
 
+const primeFigureReferenceImageInputSchema = z.union([
+  z
+    .object({
+      resourceId: z.string().trim().min(1).max(120),
+      description: requiredText("图片描述", 4000),
+    })
+    .strict(),
+  z
+    .object({
+      upload: imageUploadSchema,
+      description: requiredText("图片描述", 4000),
+    })
+    .strict(),
+]);
+
 export const agentAttributeSchema = z.object({
   key: requiredText("属性键", 80),
   value: requiredText("属性值", 240),
@@ -187,17 +202,31 @@ export const createPrimeFigureSchema = createAgentBaseSchema.extend({
     })
     .optional()
     .default([]),
+  referenceImages: z
+    .array(primeFigureReferenceImageInputSchema)
+    .max(10)
+    .optional()
+    .default([]),
   initialMood: optionalText(500),
   initialRelationshipStatus: optionalText(500),
 });
 
-export const updatePrimeFigureSchema = createPrimeFigureSchema.omit({
-  type: true,
-  avatar: true,
-  cover: true,
-  initialMood: true,
-  initialRelationshipStatus: true,
-});
+export const updatePrimeFigureSchema = createPrimeFigureSchema
+  .omit({
+    type: true,
+    initialMood: true,
+    initialRelationshipStatus: true,
+    referenceImages: true,
+  })
+  .extend({
+    referenceImages: z
+      .array(primeFigureReferenceImageInputSchema)
+      .max(10)
+      .optional(),
+    currentVariables: z.record(z.string(), primeVariableValueSchema),
+    currentMood: z.string().trim().max(500),
+    currentRelationshipStatus: z.string().trim().max(500),
+  });
 
 const urlLikeSchema = z.string().trim().min(1).max(2048);
 

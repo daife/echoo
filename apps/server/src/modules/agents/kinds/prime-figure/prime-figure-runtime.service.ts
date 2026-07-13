@@ -484,7 +484,7 @@ async function streamPrimeChatCompletion(
   };
 }
 
-async function buildPrimeChatMessages(
+export async function buildPrimeChatMessages(
   agent: PrimeFigureAgent,
   state: PrimeFigureState,
   timeline: PrimeMessage[],
@@ -578,6 +578,21 @@ async function buildPrimeChatMessages(
       mediaType: "image",
       description: "figure角色立绘",
       source: "figure_cover",
+    });
+  }
+  for (const referenceImage of agent.detail.referenceImages) {
+    const resource = await resources.findById(referenceImage.resourceId);
+    if (!resource || resource.ownerUserId !== ownerUserId)
+      throw new Error(
+        `figure 创作者参考图片不存在或不属于当前用户：${referenceImage.resourceId}。`,
+      );
+    await conversationMedia.ensure({
+      ownerUserId,
+      conversationId: agent.conversationId,
+      resourceId: resource.id,
+      mediaType: "image",
+      description: referenceImage.description,
+      source: "figure_reference",
     });
   }
   for (const message of timeline) {

@@ -17,6 +17,8 @@ import {
   type CreatePrimeFigureRequest,
   type CreateSliceFigureRequest,
   type PrimeFigureScheduleSegment,
+  type PrimeFigureReferenceImage,
+  type PrimeFigureReferenceImageInput,
   type PrimeFigureVariableDefinition,
   type PrimeFigureVariableType,
 } from "@echoo/shared";
@@ -281,7 +283,7 @@ type PrimeVariableDraft = Omit<PrimeFigureVariableDefinition, "defaultValue"> & 
   defaultValueText: string;
 };
 
-const initialPrimeForm = (): CreatePrimeFigureRequest => ({
+export const initialPrimeForm = (): CreatePrimeFigureRequest => ({
   type: "prime-figure",
   name: "",
   attributes: [],
@@ -302,6 +304,7 @@ const initialPrimeForm = (): CreatePrimeFigureRequest => ({
   },
   itinerary: "",
   variableDefinitions: [],
+  referenceImages: [],
   initialMood: "",
   initialRelationshipStatus: "",
 });
@@ -312,9 +315,44 @@ const weekdays = [
 ] as const;
 
 function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigureRequest) => Promise<Agent> }) {
-  const [form, setForm] = useState<CreatePrimeFigureRequest>(initialPrimeForm);
-  const [variables, setVariables] = useState<PrimeVariableDraft[]>([]);
-  const [unlockText, setUnlockText] = useState("");
+  return (
+    <PrimeFigureForm
+      mode="create"
+      onSubmit={onCreate}
+    />
+  );
+}
+
+export function PrimeFigureForm({
+  mode,
+  initialForm: initialValue,
+  existingAvatarUrl,
+  existingCoverUrl,
+  existingReferenceImages = [],
+  externalError,
+  onClose,
+  onSubmit,
+}: {
+  mode: "create" | "edit";
+  initialForm?: CreatePrimeFigureRequest;
+  existingAvatarUrl?: string;
+  existingCoverUrl?: string;
+  existingReferenceImages?: PrimeFigureReferenceImage[];
+  externalError?: string | null;
+  onClose?: () => void;
+  onSubmit: (input: CreatePrimeFigureRequest) => Promise<Agent | void>;
+}) {
+  const [form, setForm] = useState<CreatePrimeFigureRequest>(() =>
+    initialValue ?? initialPrimeForm(),
+  );
+  const [variables, setVariables] = useState<PrimeVariableDraft[]>(() =>
+    (initialValue?.variableDefinitions ?? []).map(variableToDraft),
+  );
+  const [unlockText, setUnlockText] = useState(() =>
+    initialValue?.unlockConditions
+      ? JSON.stringify(initialValue.unlockConditions, null, 2)
+      : "",
+  );
   const [jsonInput, setJsonInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -327,17 +365,23 @@ function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigu
   const importJson = () => {
     try {
       const parsed = JSON.parse(jsonInput) as Partial<CreatePrimeFigureRequest>;
+      const base = mode === "edit" ? form : initialPrimeForm();
       const next: CreatePrimeFigureRequest = {
-        ...initialPrimeForm(),
+        ...base,
         ...parsed,
         type: "prime-figure",
-        attributes: parsed.attributes ?? [],
-        tags: parsed.tags ?? [],
-        linkedAgentIds: parsed.linkedAgentIds ?? [],
-        unlockConditions: parsed.unlockConditions ?? null,
-        schedule: parsed.schedule ?? initialPrimeForm().schedule,
-        variableDefinitions: parsed.variableDefinitions ?? [],
-        isPublic: Boolean(parsed.isPublic),
+        attributes: parsed.attributes ?? base.attributes ?? [],
+        tags: parsed.tags ?? base.tags ?? [],
+        linkedAgentIds: parsed.linkedAgentIds ?? base.linkedAgentIds ?? [],
+        unlockConditions:
+          parsed.unlockConditions ?? base.unlockConditions ?? null,
+        schedule: parsed.schedule ?? base.schedule ?? { segments: [] },
+        variableDefinitions:
+          parsed.variableDefinitions ?? base.variableDefinitions ?? [],
+        referenceImages:
+          parsed.referenceImages ?? base.referenceImages ?? [],
+        isPublic:
+          parsed.isPublic === undefined ? base.isPublic : Boolean(parsed.isPublic),
       };
       setForm(next);
       setVariables((next.variableDefinitions ?? []).map(variableToDraft));
@@ -361,9 +405,9 @@ function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigu
     setIsSubmitting(true);
     setError(null);
     try {
-      await onCreate(result);
+      await onSubmit(result);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "本初角色创建失败，请稍后再试。");
+      setError(caught instanceof Error ? caught.message : `本初角色${mode === "create" ? "创建" : "修改"}失败，请稍后再试。`);
     } finally {
       setIsSubmitting(false);
     }
@@ -371,12 +415,26 @@ function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigu
 
   return (
     <form className="glass-panel rounded-2xl p-6 md:p-8" onSubmit={submit}>
-      <FormHeader icon={Brain} title="本初角色" description="持续状态、记忆、日程与自主沉默由本初角色专属运行时处理。" />
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <FormHeader
+            icon={Brain}
+            title={mode === "create" ? "本初角色" : "修改本初角色"}
+            description={mode === "create" ? "持续状态、记忆、日程与自主沉默由本初角色专属运行时处理。" : "表单已合并角色最新的日程、参数、情绪与关系状态。"}
+          />
+        </div>
+        {onClose ? <button aria-label="关闭" className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full text-white/50 transition hover:bg-white/[0.06] hover:text-white" type="button" onClick={onClose}>×</button> : null}
+      </div>
 
       <JsonImport value={jsonInput} onChange={setJsonInput} onApply={importJson} placeholder='{"type":"prime-figure","name":"Mira","persona":"...","schedule":{"segments":[]},...}' />
 
       <FormSection title="展示与关系数据 · 不进入上下文" description="名字、图片、属性、标签、介绍、序引、链接 ID、解锁条件和公开状态不会发送给模型。">
-        <DisplayFields form={form} unlockText={unlockText} onUnlockTextChange={setUnlockText} onChange={setField} />
+        <DisplayFields form={form} unlockText={unlockText} onUnlockTextChange={setUnlockText} onChange={setField} existingAvatarUrl={existingAvatarUrl} existingCoverUrl={existingCoverUrl} />
+        <ReferenceImageEditor
+          items={form.referenceImages ?? []}
+          existingImages={existingReferenceImages}
+          onChange={(items) => setField("referenceImages", items)}
+        />
       </FormSection>
 
       <FormSection title="人格与决策 · 进入上下文" description="这些字段参与本初角色的每一轮结构化决策；带 * 的字段必填。">
@@ -387,8 +445,8 @@ function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigu
         <TextField label="决策风格" multiline value={form.decisionStyle ?? ""} placeholder="如何权衡沉默、回应、记忆和自身边界" onChange={(value) => setField("decisionStyle", value)} />
         <TextField label="当前处境" multiline value={form.currentSituation ?? ""} placeholder="角色此刻正在经历的长期情境" onChange={(value) => setField("currentSituation", value)} />
         <div className="grid gap-4 md:grid-cols-2">
-          <TextField label="初始情绪" value={form.initialMood ?? ""} placeholder="平静，但有些疲惫" onChange={(value) => setField("initialMood", value)} />
-          <TextField label="初始关系状态" value={form.initialRelationshipStatus ?? ""} placeholder="熟悉但仍保持边界" onChange={(value) => setField("initialRelationshipStatus", value)} />
+          <TextField label={mode === "create" ? "初始情绪" : "当前情绪"} value={form.initialMood ?? ""} placeholder="平静，但有些疲惫" onChange={(value) => setField("initialMood", value)} />
+          <TextField label={mode === "create" ? "初始关系状态" : "当前关系状态"} value={form.initialRelationshipStatus ?? ""} placeholder="熟悉但仍保持边界" onChange={(value) => setField("initialRelationshipStatus", value)} />
         </div>
         <TextField label="行程与长期安排" multiline value={form.itinerary ?? ""} placeholder="使用上海时间的易读时间" onChange={(value) => setField("itinerary", value)} />
       </FormSection>
@@ -418,14 +476,14 @@ function PrimeFigureCreateForm({ onCreate }: { onCreate: (input: CreatePrimeFigu
 
       <FormSection title="创作者参数 · 进入上下文" description="参数定义会进入严格结构；每个参数都可以用 null 保留旧值。">
         {variables.map((variable, index) => (
-          <VariableEditor key={index} variable={variable} onChange={(patch) => setVariables((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item))} onRemove={() => setVariables((current) => current.filter((_, itemIndex) => itemIndex !== index))} />
+          <VariableEditor key={index} variable={variable} valueLabel={mode === "create" ? "默认值（可选）" : "当前值（可选）"} onChange={(patch) => setVariables((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item))} onRemove={() => setVariables((current) => current.filter((_, itemIndex) => itemIndex !== index))} />
         ))}
         <button className={secondaryButtonClass} type="button" onClick={() => setVariables((current) => [...current, { key: "", label: "", type: "string", description: "", defaultValueText: "" }])}>
           <Plus size={16} />添加参数
         </button>
       </FormSection>
 
-      <SubmitState error={error} isSubmitting={isSubmitting} label="创建本初角色" />
+      <SubmitState error={error ?? externalError ?? null} isSubmitting={isSubmitting} label={mode === "create" ? "创建本初角色" : "保存修改"} />
     </form>
   );
 }
@@ -491,7 +549,81 @@ function TagEditor({ items, onChange }: { items: string[]; onChange: (items: str
   );
 }
 
-function VariableEditor({ variable, onChange, onRemove }: { variable: PrimeVariableDraft; onChange: (patch: Partial<PrimeVariableDraft>) => void; onRemove: () => void }) {
+function ReferenceImageEditor({
+  items,
+  existingImages,
+  onChange,
+}: {
+  items: PrimeFigureReferenceImageInput[];
+  existingImages: PrimeFigureReferenceImage[];
+  onChange: (items: PrimeFigureReferenceImageInput[]) => void;
+}) {
+  const existingUrls = new Map(
+    existingImages.map((item) => [item.resourceId, item.resourcePath]),
+  );
+  return (
+    <ListPanel
+      title="更多参考图片"
+      description="每张图片必须提供描述，运行时会将其编号加入可参考列表。"
+    >
+      {items.map((item, index) => {
+        const preview = "upload" in item && item.upload
+          ? `data:${item.upload.mimeType};base64,${item.upload.dataBase64}`
+          : "resourceId" in item
+            ? existingUrls.get(item.resourceId)
+            : undefined;
+        return (
+          <div key={"resourceId" in item ? item.resourceId : `${item.upload.fileName}-${index}`} className="grid gap-3 rounded-xl border border-white/10 bg-black/15 p-3 md:grid-cols-[120px_1fr_auto]">
+            <div className="h-24 overflow-hidden rounded-lg bg-white/[0.035]">
+              {preview ? <img className="h-full w-full object-cover" src={preview} alt="参考图片预览" /> : null}
+            </div>
+            <textarea
+              className={`${inputClass} min-h-24 py-3`}
+              value={item.description}
+              placeholder="描述人物外观、服装、场景或图片用途"
+              onChange={(event) =>
+                onChange(
+                  items.map((current, itemIndex) =>
+                    itemIndex === index
+                      ? { ...current, description: event.target.value }
+                      : current,
+                  ),
+                )
+              }
+            />
+            <IconButton
+              label="删除参考图片"
+              onClick={() =>
+                onChange(items.filter((_, itemIndex) => itemIndex !== index))
+              }
+            />
+          </div>
+        );
+      })}
+      <label className={`${secondaryButtonClass} cursor-pointer`}>
+        <UploadSimple size={16} />添加图片
+        <input
+          className="sr-only"
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          disabled={items.length >= 10}
+          onChange={async (event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            onChange([
+              ...items,
+              { upload: await fileToUpload(file), description: "" },
+            ]);
+            event.target.value = "";
+          }}
+        />
+      </label>
+      {items.length >= 10 ? <p className="text-xs text-white/40">最多添加 10 张创作者参考图片。</p> : null}
+    </ListPanel>
+  );
+}
+
+function VariableEditor({ variable, valueLabel, onChange, onRemove }: { variable: PrimeVariableDraft; valueLabel: string; onChange: (patch: Partial<PrimeVariableDraft>) => void; onRemove: () => void }) {
   return (
     <div className="rounded-xl border border-white/10 bg-black/15 p-4">
       <div className="grid gap-3 md:grid-cols-2">
@@ -503,7 +635,7 @@ function VariableEditor({ variable, onChange, onRemove }: { variable: PrimeVaria
         <select className={inputClass} value={variable.type} onChange={(event) => onChange({ type: event.target.value as PrimeFigureVariableType, defaultValueText: "" })}>
           <option value="string">字符串</option><option value="number">数字</option><option value="boolean">布尔值</option><option value="json">JSON</option>
         </select>
-        <input className={inputClass} value={variable.defaultValueText} placeholder="默认值（可选）" onChange={(event) => onChange({ defaultValueText: event.target.value })} />
+        <input className={inputClass} value={variable.defaultValueText} placeholder={valueLabel} onChange={(event) => onChange({ defaultValueText: event.target.value })} />
         <IconButton label="删除参数" onClick={onRemove} />
       </div>
       {variable.type === "number" ? <div className="mt-3 grid gap-3 md:grid-cols-2"><input className={inputClass} type="number" value={variable.min ?? ""} placeholder="最小值" onChange={(event) => onChange({ min: event.target.value === "" ? undefined : Number(event.target.value) })} /><input className={inputClass} type="number" value={variable.max ?? ""} placeholder="最大值" onChange={(event) => onChange({ max: event.target.value === "" ? undefined : Number(event.target.value) })} /></div> : null}
@@ -523,8 +655,8 @@ function TextField({ label, value, placeholder, required, multiline, mono, onCha
   return <label className="block"><span className="text-sm font-medium text-white/78">{label}{required ? " *" : ""}</span>{multiline ? <textarea className={`${inputClass} mt-2 min-h-24 py-3 ${mono ? "font-mono text-xs leading-5" : "leading-6"}`} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /> : <input className={`${inputClass} mt-2`} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />}</label>;
 }
 
-function ListPanel({ title, description, onAdd, children }: { title: string; description: string; onAdd: () => void; children: React.ReactNode }) {
-  return <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4"><div className="flex items-center justify-between"><div><span className="text-sm font-medium text-white/78">{title}</span><p className="mt-1 text-xs text-white/35">{description}</p></div><button className="text-sm text-white/55 hover:text-white" type="button" onClick={onAdd}>添加</button></div><div className="mt-3 grid gap-3">{children}</div></div>;
+function ListPanel({ title, description, onAdd, children }: { title: string; description: string; onAdd?: () => void; children: React.ReactNode }) {
+  return <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4"><div className="flex items-center justify-between"><div><span className="text-sm font-medium text-white/78">{title}</span><p className="mt-1 text-xs text-white/35">{description}</p></div>{onAdd ? <button className="text-sm text-white/55 hover:text-white" type="button" onClick={onAdd}>添加</button> : null}</div><div className="mt-3 grid gap-3">{children}</div></div>;
 }
 
 function JsonImport({ value, placeholder, onChange, onApply }: { value: string; placeholder: string; onChange: (value: string) => void; onApply: () => void }) {
@@ -536,7 +668,7 @@ function PromptPreview({ value }: { value: string }) {
 }
 
 function SubmitState({ error, isSubmitting, label }: { error: string | null; isSubmitting: boolean; label: string }) {
-  return <>{error ? <p className="mt-6 rounded-xl border border-red-400/15 bg-red-400/[0.04] p-4 text-sm text-red-100/80">{error}</p> : null}<button className="mt-7 flex w-full items-center justify-center rounded-full bg-white px-5 py-3 text-sm font-medium text-[#09090b] transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50" disabled={isSubmitting} type="submit">{isSubmitting ? "创建中……" : label}</button></>;
+  return <>{error ? <p className="mt-6 rounded-xl border border-red-400/15 bg-red-400/[0.04] p-4 text-sm text-red-100/80">{error}</p> : null}<button className="mt-7 flex w-full items-center justify-center rounded-full bg-white px-5 py-3 text-sm font-medium text-[#09090b] transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50" disabled={isSubmitting} type="submit">{isSubmitting ? (label.includes("创建") ? "创建中……" : "保存中……") : label}</button></>;
 }
 
 function IconButton({ label, onClick }: { label: string; onClick: () => void }) {
@@ -557,7 +689,7 @@ export function buildSlicePayload(form: CreateSliceFigureRequest, unlockText: st
   return { ...form, ...common, ...required, type: "slice-figure", currentSituation: form.currentSituation?.trim() ?? "", openingLine: form.openingLine?.trim() ?? "" };
 }
 
-function buildPrimePayload(form: CreatePrimeFigureRequest, drafts: PrimeVariableDraft[], unlockText: string): CreatePrimeFigureRequest | string {
+export function buildPrimePayload(form: CreatePrimeFigureRequest, drafts: PrimeVariableDraft[], unlockText: string): CreatePrimeFigureRequest | string {
   const common = normalizeDisplayFields(form, unlockText);
   if (typeof common === "string") return common;
   const required = normalizeRequired({ persona: form.persona, background: form.background, personality: form.personality, responseStyle: form.responseStyle });
@@ -565,7 +697,13 @@ function buildPrimePayload(form: CreatePrimeFigureRequest, drafts: PrimeVariable
   for (const segment of form.schedule?.segments ?? []) if (!segment.label.trim() || !segment.description.trim() || !segment.days.length) return "每个日程时段都需要名称、描述和至少一个星期选项。";
   const definitions = parseVariableDrafts(drafts);
   if (typeof definitions === "string") return definitions;
-  return { ...form, ...common, ...required, type: "prime-figure", decisionStyle: form.decisionStyle?.trim() ?? "", currentSituation: form.currentSituation?.trim() ?? "", itinerary: form.itinerary?.trim() ?? "", initialMood: form.initialMood?.trim() ?? "", initialRelationshipStatus: form.initialRelationshipStatus?.trim() ?? "", schedule: { segments: form.schedule?.segments ?? [] }, variableDefinitions: definitions };
+  const referenceImages = (form.referenceImages ?? []).map((item) => ({
+    ...item,
+    description: item.description.trim(),
+  }));
+  if (referenceImages.some((item) => !item.description))
+    return "每张参考图片都必须提供描述。";
+  return { ...form, ...common, ...required, type: "prime-figure", decisionStyle: form.decisionStyle?.trim() ?? "", currentSituation: form.currentSituation?.trim() ?? "", itinerary: form.itinerary?.trim() ?? "", initialMood: form.initialMood?.trim() ?? "", initialRelationshipStatus: form.initialRelationshipStatus?.trim() ?? "", schedule: { segments: form.schedule?.segments ?? [] }, variableDefinitions: definitions, referenceImages };
 }
 
 function normalizeDisplayFields(form: DisplayForm, unlockText: string) {

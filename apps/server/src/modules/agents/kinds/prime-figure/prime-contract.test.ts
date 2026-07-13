@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  createPrimeFigureSchema,
   primeFigureDecisionSchema,
   primeFigureScheduleSchema,
+  updatePrimeFigureSchema,
 } from "@echoo/shared";
 import type { PrimeFigureDecision } from "@echoo/shared";
 import { PrimeActionExecutor } from "./prime-action-executor.js";
 import { PrimeDecisionStreamParser } from "./prime-decision-stream-parser.js";
+import { buildPrimeChatMessages } from "./prime-figure-runtime.service.js";
 
 test("prime decision parser preserves streamed visible message fields", () => {
   const events: Array<{
@@ -51,6 +54,143 @@ test("prime schedule and decision contracts use fixed server timezone", () => {
   });
   assert.deepEqual(decision.stateUpdates.schedule, { segments: [] });
   assert.equal("timezone" in (decision.stateUpdates.schedule ?? {}), false);
+});
+
+test("prime create and update contracts accept described creator images and current state", () => {
+  const base = {
+    name: "Mira",
+    isPublic: false,
+    persona: "角色人设",
+    background: "角色背景",
+    personality: "角色性格",
+    responseStyle: "回复风格",
+    referenceImages: [
+      {
+        upload: {
+          fileName: "look.png",
+          mimeType: "image/png",
+          dataBase64: "AA==",
+        },
+        description: "角色的日常穿搭",
+      },
+    ],
+  };
+  const created = createPrimeFigureSchema.parse({
+    type: "prime-figure",
+    ...base,
+  });
+  assert.equal(created.referenceImages[0]?.description, "角色的日常穿搭");
+
+  const updated = updatePrimeFigureSchema.parse({
+    ...base,
+    avatar: null,
+    currentVariables: { trust: 72 },
+    currentMood: "轻松",
+    currentRelationshipStatus: "稳定",
+  });
+  assert.equal(updated.avatar, null);
+  assert.deepEqual(updated.currentVariables, { trust: 72 });
+  assert.equal(updated.currentMood, "轻松");
+});
+
+test("prime creator images require descriptions", () => {
+  assert.throws(() =>
+    createPrimeFigureSchema.parse({
+      type: "prime-figure",
+      name: "Mira",
+      isPublic: false,
+      persona: "角色人设",
+      background: "角色背景",
+      personality: "角色性格",
+      responseStyle: "回复风格",
+      referenceImages: [
+        {
+          upload: {
+            fileName: "look.png",
+            mimeType: "image/png",
+            dataBase64: "AA==",
+          },
+          description: "",
+        },
+      ],
+    }),
+  );
+});
+
+test("prime context registers cover and creator images before conversation media", async () => {
+  const ensured: Array<{ resourceId: string; description?: string; source?: string }> = [];
+  await buildPrimeChatMessages(
+    {
+      id: "agent_1",
+      ownerUserId: "user_1",
+      type: "prime-figure",
+      name: "Mira",
+      attributes: [],
+      tags: [],
+      introduction: "",
+      isPublic: false,
+      conversationId: "conv_1",
+      createdAt: 1,
+      updatedAt: 1,
+      coverResourcePath: "/api/resources/cover/file",
+      detail: {
+        prologueHtml: "",
+        linkedAgentIds: [],
+        persona: "人设",
+        background: "背景",
+        personality: "性格",
+        responseStyle: "风格",
+        decisionStyle: "",
+        currentSituation: "",
+        schedule: { segments: [] },
+        itinerary: "",
+        variableDefinitions: [],
+        referenceImages: [
+          {
+            resourceId: "res_reference",
+            resourcePath: "/api/resources/reference/file",
+            description: "日常外观",
+          },
+        ],
+      },
+    },
+    {
+      variables: {},
+      memories: [],
+      mood: "",
+      moodObservedAtMs: 1,
+      relationshipStatus: "",
+      updatedAt: 1,
+    },
+    [],
+    "end_user_message",
+    "user_1",
+    {
+      async findByPublicPath() {
+        return { id: "res_cover", ownerUserId: "user_1", mimeType: "image/png" };
+      },
+      async findById(id: string) {
+        return { id, ownerUserId: "user_1", mimeType: "image/png" };
+      },
+    } as never,
+    {
+      async ensure(input: { resourceId: string; description?: string; source?: string }) {
+        ensured.push(input);
+      },
+      async listAvailableImages() {
+        return [];
+      },
+    } as never,
+    0,
+  );
+
+  assert.deepEqual(
+    ensured.map((item) => [item.resourceId, item.description, item.source]),
+    [
+      ["res_cover", "figure角色立绘", "figure_cover"],
+      ["res_reference", "日常外观", "figure_reference"],
+    ],
+  );
 });
 
 test("prime decision distinguishes one-turn silence from message muting", () => {

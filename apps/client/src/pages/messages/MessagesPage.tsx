@@ -1,4 +1,5 @@
 import {
+  Copy,
   GearSix,
   PaperPlaneRight,
   PencilSimple,
@@ -8,9 +9,14 @@ import {
 } from "@phosphor-icons/react";
 import {
   type Agent,
+  type AgentExportResponse,
+  type CreatePrimeFigureRequest,
   type CreateSliceFigureRequest,
   type LocalMessage,
+  type PrimeFigureEditSnapshot,
+  type PrimeFigureAgent,
   type SliceFigureAgent,
+  type UpdatePrimeFigureRequest,
   type UpdateSliceFigureRequest,
 } from "@echoo/shared";
 import {
@@ -37,7 +43,11 @@ import {
   shouldShowMessageTime,
   splitFigureReply,
 } from "../../features/messages/messagePresentation";
-import { buildSlicePayload, SliceFigureFormFields } from "../create-agent/CreateAgentPage";
+import {
+  buildSlicePayload,
+  PrimeFigureForm,
+  SliceFigureFormFields,
+} from "../create-agent/CreateAgentPage";
 import { useConversationMessages } from "./useConversationMessages";
 
 export type UpdateAgentHandlers = {
@@ -45,6 +55,14 @@ export type UpdateAgentHandlers = {
     agentId: string,
     input: UpdateSliceFigureRequest,
   ) => Promise<Agent>;
+  "prime-figure": (
+    agentId: string,
+    input: UpdatePrimeFigureRequest,
+  ) => Promise<Agent>;
+  getPrimeFigureEditSnapshot: (
+    agentId: string,
+  ) => Promise<PrimeFigureEditSnapshot>;
+  exportAgent: (agentId: string) => Promise<AgentExportResponse>;
 };
 
 export function MessagesPage({
@@ -62,6 +80,8 @@ export function MessagesPage({
   const [editError, setEditError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isUpdatingPreference, setIsUpdatingPreference] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [messageBeingEdited, setMessageBeingEdited] = useState<{ id: string; text: string } | null>(null);
   const settingsRef = useRef<HTMLDivElement | null>(null);
   const {
@@ -109,7 +129,6 @@ export function MessagesPage({
     agent?.type === "slice-figure" || agent?.type === "prime-figure"
       ? agent.detail.prologueHtml
       : "";
-  const editor = agent ? getAgentEditor(agent, updateHandlers) : null;
   const conversationId = agent?.conversationId;
 
   const visibleMessages = useMemo(() => {
@@ -223,9 +242,9 @@ export function MessagesPage({
           </div>
         </div>
         <div className="relative flex items-center gap-1" ref={settingsRef}>
-          {agent.type === "slice-figure" && editor ? (
+          {agent.type === "slice-figure" || agent.type === "prime-figure" ? (
             <button
-              aria-label="切片角色设置"
+              aria-label="角色设置"
               aria-expanded={isSettingsOpen}
               className="grid h-9 w-9 place-items-center rounded-lg text-white/45 transition hover:bg-white/[0.05] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white active:translate-y-px"
               type="button"
@@ -244,15 +263,34 @@ export function MessagesPage({
             <Trash size={17} />
             </button>
           )}
-          {isSettingsOpen && agent.type === "slice-figure" && editor ? (
+          {isSettingsOpen && (agent.type === "slice-figure" || agent.type === "prime-figure") ? (
             <div className="absolute right-0 top-11 z-30 w-64 rounded-xl border border-white/10 bg-[#17171b] p-2 shadow-[0_18px_50px_rgba(0,0,0,0.42)]">
               <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/75 transition hover:bg-white/[0.06] hover:text-white" type="button" onClick={() => { setIsSettingsOpen(false); setEditError(null); setIsEditOpen(true); }}><PencilSimple size={16} />修改角色</button>
-              <label className="mt-1 flex cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 text-sm text-white/75 transition hover:bg-white/[0.06]">
+              <button
+                className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/75 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-45"
+                disabled={isExporting}
+                type="button"
+                onClick={() => {
+                  setIsExporting(true);
+                  setExportNotice(null);
+                  void updateHandlers.exportAgent(agent.id)
+                    .then(async (result) => {
+                      await copyText(JSON.stringify(result.data, null, 2));
+                      setExportNotice("角色 JSON 已复制");
+                    })
+                    .catch((caught) =>
+                      setExportNotice(caught instanceof Error ? caught.message : "导出失败。"),
+                    )
+                    .finally(() => setIsExporting(false));
+                }}
+              ><Copy size={16} />{isExporting ? "正在导出…" : "导出角色"}</button>
+              {agent.type === "slice-figure" ? <label className="mt-1 flex cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 text-sm text-white/75 transition hover:bg-white/[0.06]">
                 <span>回复自动分段</span>
-                <input type="checkbox" checked={agent.detail.replyAutoSegment} disabled={isUpdatingPreference} onChange={async (event) => { const checked = event.target.checked; setIsUpdatingPreference(true); setEditError(null); try { await editor.update({ ...agentToUpdateForm(agent), replyAutoSegment: checked }); } catch (caught) { setEditError(caught instanceof Error ? caught.message : "设置保存失败。"); } finally { setIsUpdatingPreference(false); } }} />
-              </label>
+                <input type="checkbox" checked={agent.detail.replyAutoSegment} disabled={isUpdatingPreference} onChange={async (event) => { const checked = event.target.checked; setIsUpdatingPreference(true); setEditError(null); try { await updateHandlers["slice-figure"](agent.id, { ...agentToUpdateForm(agent), replyAutoSegment: checked }); } catch (caught) { setEditError(caught instanceof Error ? caught.message : "设置保存失败。"); } finally { setIsUpdatingPreference(false); } }} />
+              </label> : null}
               <button className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-red-200/75 transition hover:bg-red-400/10 hover:text-red-100 disabled:opacity-40" disabled={isDeletingConversation} type="button" onClick={() => { setIsSettingsOpen(false); void deleteConversation(); }}><Trash size={16} />删除会话</button>
               {editError ? <p className="px-3 pb-1 pt-2 text-xs leading-5 text-red-200/75">{editError}</p> : null}
+              {exportNotice ? <p className="px-3 pb-1 pt-2 text-xs leading-5 text-white/55">{exportNotice}</p> : null}
             </div>
           ) : null}
         </div>
@@ -336,21 +374,22 @@ export function MessagesPage({
           </button>
         </form>
       </footer>
-      {isEditOpen && editor
-        ? editor.renderDialog({
-            error: editError,
-            isSubmitting: isUpdatingAgent,
-            user,
-            onClose: () => {
+      {isEditOpen && agent.type === "slice-figure" ? (
+        <EditSliceFigureDialog
+          agent={agent}
+          error={editError}
+          isSubmitting={isUpdatingAgent}
+          user={user}
+          onClose={() => {
               if (isUpdatingAgent) return;
               setIsEditOpen(false);
               setEditError(null);
-            },
-            onSubmit: async (payload) => {
+          }}
+          onSubmit={async (payload) => {
               setIsUpdatingAgent(true);
               setEditError(null);
               try {
-                await editor.update(payload);
+                await updateHandlers["slice-figure"](agent.id, payload);
                 setIsEditOpen(false);
               } catch (caught) {
                 setEditError(
@@ -361,9 +400,20 @@ export function MessagesPage({
               } finally {
                 setIsUpdatingAgent(false);
               }
-            },
-          })
-        : null}
+          }}
+        />
+        ) : null}
+      {isEditOpen && agent.type === "prime-figure" ? (
+        <EditPrimeFigureDialog
+          agent={agent}
+          loadSnapshot={() => updateHandlers.getPrimeFigureEditSnapshot(agent.id)}
+          onClose={() => setIsEditOpen(false)}
+          onSubmit={async (payload) => {
+            await updateHandlers["prime-figure"](agent.id, payload);
+            setIsEditOpen(false);
+          }}
+        />
+      ) : null}
       {messageBeingEdited ? (
         <EditMessageDialog
           initialText={messageBeingEdited.text}
@@ -377,33 +427,6 @@ export function MessagesPage({
       ) : null}
     </section>
   );
-}
-
-type AgentEditor = {
-  actionLabel: string;
-  actionDescription: string;
-  update: (payload: UpdateSliceFigureRequest) => Promise<Agent>;
-  renderDialog: (props: {
-    user: { displayName: string } | null;
-    isSubmitting: boolean;
-    error: string | null;
-    onClose: () => void;
-    onSubmit: (payload: UpdateSliceFigureRequest) => Promise<void>;
-  }) => React.ReactNode;
-};
-
-function getAgentEditor(
-  agent: Agent,
-  updateHandlers: UpdateAgentHandlers,
-): AgentEditor | null {
-  if (agent.type !== "slice-figure") return null;
-
-  return {
-    actionLabel: "修改切片角色",
-    actionDescription: "修改姓名、人设、情景、属性和标签。",
-    update: (payload) => updateHandlers["slice-figure"](agent.id, payload),
-    renderDialog: (props) => <EditSliceFigureDialog agent={agent} {...props} />,
-  };
 }
 
 function EditSliceFigureDialog({
@@ -517,6 +540,125 @@ function EditSliceFigureDialog({
       </form>
     </div>
   );
+}
+
+function EditPrimeFigureDialog({
+  agent,
+  loadSnapshot,
+  onClose,
+  onSubmit,
+}: {
+  agent: PrimeFigureAgent;
+  loadSnapshot: () => Promise<PrimeFigureEditSnapshot>;
+  onClose: () => void;
+  onSubmit: (payload: UpdatePrimeFigureRequest) => Promise<void>;
+}) {
+  const [snapshot, setSnapshot] = useState<PrimeFigureEditSnapshot | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadSnapshot()
+      .then((value) => {
+        if (!cancelled) setSnapshot(value);
+      })
+      .catch((caught) => {
+        if (!cancelled)
+          setLoadError(
+            caught instanceof Error ? caught.message : "最新角色状态加载失败。",
+          );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadSnapshot]);
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 px-4 py-8 backdrop-blur-sm">
+      <div className="max-h-[90dvh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-[#101014]">
+        {snapshot ? (
+          <PrimeFigureForm
+            mode="edit"
+            initialForm={primeSnapshotToForm(snapshot)}
+            existingAvatarUrl={snapshot.agent.avatarResourcePath}
+            existingCoverUrl={snapshot.agent.coverResourcePath}
+            existingReferenceImages={snapshot.agent.detail.referenceImages}
+            onClose={onClose}
+            onSubmit={async (form) => onSubmit(primeFormToUpdate(form))}
+          />
+        ) : (
+          <div className="rounded-2xl border border-white/10 p-7">
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="text-xl font-semibold text-white">修改本初角色</h2>
+              <button className="grid h-9 w-9 place-items-center rounded-full text-white/50 hover:bg-white/[0.06] hover:text-white" type="button" onClick={onClose}><X size={17} /></button>
+            </div>
+            <p className={`mt-6 text-sm ${loadError ? "text-red-200/80" : "text-white/48"}`}>
+              {loadError ?? "正在读取最新角色状态……"}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function primeSnapshotToForm(
+  snapshot: PrimeFigureEditSnapshot,
+): CreatePrimeFigureRequest {
+  const { agent, state } = snapshot;
+  return {
+    type: "prime-figure",
+    name: agent.name,
+    attributes: agent.attributes,
+    tags: agent.tags,
+    introduction: agent.introduction,
+    prologueHtml: agent.detail.prologueHtml,
+    linkedAgentIds: agent.detail.linkedAgentIds,
+    unlockConditions: agent.detail.unlockConditions ?? null,
+    isPublic: agent.isPublic,
+    persona: agent.detail.persona,
+    background: agent.detail.background,
+    personality: agent.detail.personality,
+    responseStyle: agent.detail.responseStyle,
+    decisionStyle: agent.detail.decisionStyle,
+    currentSituation: agent.detail.currentSituation,
+    schedule: agent.detail.schedule,
+    itinerary: agent.detail.itinerary,
+    variableDefinitions: agent.detail.variableDefinitions.map((definition) => ({
+      ...definition,
+      ...(state.variables[definition.key] !== undefined
+        ? { defaultValue: state.variables[definition.key] }
+        : { defaultValue: undefined }),
+    })),
+    referenceImages: agent.detail.referenceImages.map((item) => ({
+      resourceId: item.resourceId,
+      description: item.description,
+    })),
+    initialMood: state.mood,
+    initialRelationshipStatus: state.relationshipStatus,
+  };
+}
+
+export function primeFormToUpdate(
+  form: CreatePrimeFigureRequest,
+): UpdatePrimeFigureRequest {
+  const {
+    type: _type,
+    initialMood = "",
+    initialRelationshipStatus = "",
+    ...definition
+  } = form;
+  const currentVariables = Object.fromEntries(
+    (form.variableDefinitions ?? [])
+      .filter((item) => item.defaultValue !== undefined)
+      .map((item) => [item.key, item.defaultValue!]),
+  );
+  return {
+    ...definition,
+    currentVariables,
+    currentMood: initialMood,
+    currentRelationshipStatus: initialRelationshipStatus,
+  };
 }
 
 function agentToUpdateForm(agent: SliceFigureAgent): UpdateSliceFigureRequest {
@@ -713,4 +855,24 @@ function buildPrologueDocument(html: string) {
   </head>
   <body>${html}</body>
 </html>`;
+}
+
+async function copyText(value: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+      // Some desktop WebViews expose Clipboard API without granting write access.
+    }
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("无法访问剪贴板，请检查系统权限。");
 }

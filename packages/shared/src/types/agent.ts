@@ -12,6 +12,24 @@ export interface AgentResourceUpload {
   dataBase64: string;
 }
 
+export interface PrimeFigureReferenceImage {
+  resourceId: string;
+  resourcePath: string;
+  description: string;
+}
+
+export type PrimeFigureReferenceImageInput =
+  | {
+      resourceId: string;
+      description: string;
+      upload?: never;
+    }
+  | {
+      upload: AgentResourceUpload;
+      description: string;
+      resourceId?: never;
+    };
+
 export interface SliceFigureDetail {
   prologueHtml: string;
   currentSituation: string;
@@ -88,6 +106,7 @@ export interface PrimeFigureDetail {
   schedule: PrimeFigureSchedule;
   itinerary: string;
   variableDefinitions: PrimeFigureVariableDefinition[];
+  referenceImages: PrimeFigureReferenceImage[];
 }
 
 export interface PrimeWorldDetail {
@@ -185,14 +204,31 @@ export interface CreatePrimeFigureRequest {
   schedule?: PrimeFigureSchedule;
   itinerary?: string;
   variableDefinitions?: PrimeFigureVariableDefinition[];
+  referenceImages?: PrimeFigureReferenceImageInput[];
   initialMood?: string;
   initialRelationshipStatus?: string;
 }
 
 export type UpdatePrimeFigureRequest = Omit<
   CreatePrimeFigureRequest,
-  "type" | "avatar" | "cover" | "initialMood" | "initialRelationshipStatus"
->;
+  "type" | "initialMood" | "initialRelationshipStatus"
+> & {
+  currentVariables: Record<string, PrimeFigureVariableValue>;
+  currentMood: string;
+  currentRelationshipStatus: string;
+};
+
+export interface PrimeFigureEditSnapshot {
+  agent: PrimeFigureAgent;
+  state: Pick<
+    PrimeFigureState,
+    "variables" | "mood" | "relationshipStatus"
+  >;
+}
+
+export interface AgentExportResponse {
+  data: CreateSliceFigureRequest | CreatePrimeFigureRequest;
+}
 
 export type PrimeMessageSender = "prime_figure" | "end_user";
 export type PrimeMessageContentType =

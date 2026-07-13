@@ -57,7 +57,7 @@ export class ResourceRepository {
 
   async saveImage(
     ownerUserId: string,
-    kind: "agent_avatar" | "agent_cover",
+    kind: "agent_avatar" | "agent_cover" | "prime_figure_reference",
     upload: AgentResourceUpload,
   ): Promise<ResourceRecord> {
     const extension = allowedMimeTypes.get(upload.mimeType);

@@ -1,9 +1,14 @@
 import type {
   Agent,
   AgentResourceUpload,
+  AgentExportResponse,
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
   PrimeFigureAgent,
+  PrimeFigureEditSnapshot,
+  PrimeFigureReferenceImage,
+  PrimeFigureReferenceImageInput,
+  PrimeFigureVariableDefinition,
   PrimeFigureState,
   PrimeFigureVariableValue,
   UpdatePrimeFigureRequest,
@@ -60,67 +65,137 @@ export class AgentRepository {
     const now = Date.now();
     const id = createId("agent");
     const conversationId = createId("conv");
-    const avatar = input.avatar
-      ? await this.resources.saveImage(ownerUserId, "agent_avatar", input.avatar)
-      : null;
-    const cover = input.cover
-      ? await this.resources.saveImage(ownerUserId, "agent_cover", input.cover)
-      : null;
-    const definition = buildDefinition(input, avatar?.publicPath, cover?.publicPath);
-    const runtimeState = buildRuntimeState(input, now);
-    const preview = getInitialPreview(input);
+    let avatar: Awaited<ReturnType<ResourceRepository["saveImage"]>> | null = null;
+    let cover: Awaited<ReturnType<ResourceRepository["saveImage"]>> | null = null;
+    let referenceImages: PrimeFigureReferenceImage[] = [];
+    try {
+      avatar = input.avatar
+        ? await this.resources.saveImage(ownerUserId, "agent_avatar", input.avatar)
+        : null;
+      cover = input.cover
+        ? await this.resources.saveImage(ownerUserId, "agent_cover", input.cover)
+        : null;
+      referenceImages =
+        input.type === "prime-figure"
+          ? await this.resolveReferenceImages(
+              ownerUserId,
+              input.referenceImages ?? [],
+              new Set(),
+            )
+          : [];
+      const definition = buildDefinition(
+        input,
+        avatar?.publicPath,
+        cover?.publicPath,
+        referenceImages,
+      );
+      const runtimeState = buildRuntimeState(input, now);
+      const preview = getInitialPreview(input);
 
-    await withTransaction(async (connection) => {
-      await execute(
-        `INSERT INTO agents
+      await withTransaction(async (connection) => {
+        await execute(
+          `INSERT INTO agents
          (id, owner_user_id, type, name, definition, runtime_state, is_public,
           next_run_at, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
-        [id, ownerUserId, input.type, input.name, JSON.stringify(definition),
-          JSON.stringify(runtimeState), input.isPublic, now, now], connection);
-      await execute(
-        `INSERT INTO conversations
+          [id, ownerUserId, input.type, input.name, JSON.stringify(definition),
+            JSON.stringify(runtimeState), input.isPublic, now, now], connection);
+        await execute(
+          `INSERT INTO conversations
          (id, owner_user_id, agent_id, type, title, last_message_preview,
           unread_count, pinned_at, runtime_state, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, 0, NULL, JSON_OBJECT(), ?, ?)`,
-        [conversationId, ownerUserId, id, input.type, input.name, preview, now, now], connection);
-      if (input.type === "slice-figure" && input.openingLine?.trim()) {
-        await execute(
-          `INSERT INTO messages
+          [conversationId, ownerUserId, id, input.type, input.name, preview, now, now], connection);
+        if (input.type === "slice-figure" && input.openingLine?.trim()) {
+          await execute(
+            `INSERT INTO messages
            (id, owner_user_id, conversation_id, client_message_id, role,
             content_type, content, status, run_metadata, read_at, created_at, updated_at)
            VALUES (?, ?, ?, NULL, 'assistant', 'text', ?, 'delivered', ?, NULL, ?, ?)`,
-          [createId("msg"), ownerUserId, conversationId,
-            JSON.stringify({ text: input.openingLine.trim() }),
-            JSON.stringify({ kind: "opening_line" }), now, now], connection);
-      }
-    });
-    return (await this.findById(ownerUserId, id))!;
+            [createId("msg"), ownerUserId, conversationId,
+              JSON.stringify({ text: input.openingLine.trim() }),
+              JSON.stringify({ kind: "opening_line" }), now, now], connection);
+        }
+      });
+      return (await this.findById(ownerUserId, id))!;
+    } catch (error) {
+      await this.deletePreparedResources(ownerUserId, [
+        avatar?.publicPath,
+        cover?.publicPath,
+        ...referenceImages.map((item) => item.resourcePath),
+      ]);
+      throw error;
+    }
   }
 
   async update(ownerUserId: string, agentId: string, input: UpdateAgentInput) {
     const existing = await this.findById(ownerUserId, agentId);
     if (!existing) return null;
+    const now = Date.now();
+    const nextRuntimeState =
+      existing.type === "prime-figure" && "currentVariables" in input
+        ? buildUpdatedPrimeState(
+            await this.getRuntimeState<PrimeFigureState>(ownerUserId, agentId),
+            input,
+            now,
+          )
+        : undefined;
     const resourceInput = input as {
       avatar?: AgentResourceUpload | null;
       cover?: AgentResourceUpload | null;
     };
-    const nextAvatar =
-      Object.prototype.hasOwnProperty.call(input, "avatar") && resourceInput.avatar !== undefined
-        ? resourceInput.avatar
-          ? await this.resources.saveImage(ownerUserId, "agent_avatar", resourceInput.avatar)
-          : null
-        : undefined;
-    const nextCover =
-      Object.prototype.hasOwnProperty.call(input, "cover") && resourceInput.cover !== undefined
-        ? resourceInput.cover
-          ? await this.resources.saveImage(ownerUserId, "agent_cover", resourceInput.cover)
-          : null
-        : undefined;
+    let nextAvatar:
+      | Awaited<ReturnType<ResourceRepository["saveImage"]>>
+      | null
+      | undefined;
+    let nextCover:
+      | Awaited<ReturnType<ResourceRepository["saveImage"]>>
+      | null
+      | undefined;
+    let nextReferenceImages: PrimeFigureReferenceImage[] | undefined;
+    try {
+      nextAvatar =
+        Object.prototype.hasOwnProperty.call(input, "avatar") && resourceInput.avatar !== undefined
+          ? resourceInput.avatar
+            ? await this.resources.saveImage(ownerUserId, "agent_avatar", resourceInput.avatar)
+            : null
+          : undefined;
+      nextCover =
+        Object.prototype.hasOwnProperty.call(input, "cover") && resourceInput.cover !== undefined
+          ? resourceInput.cover
+            ? await this.resources.saveImage(ownerUserId, "agent_cover", resourceInput.cover)
+            : null
+          : undefined;
+      nextReferenceImages =
+        existing.type === "prime-figure" &&
+        "referenceImages" in input &&
+        input.referenceImages !== undefined
+          ? await this.resolveReferenceImages(
+              ownerUserId,
+              input.referenceImages,
+              new Set(
+                existing.detail.referenceImages.map((item) => item.resourceId),
+              ),
+            )
+          : undefined;
+    } catch (error) {
+      await this.deletePreparedResources(ownerUserId, [
+        nextAvatar?.publicPath,
+        nextCover?.publicPath,
+      ]);
+      throw error;
+    }
     const definition = {
       ...existing,
       ...baseDefinition(input),
-      detail: buildDetail(existing.type, input),
+      detail: buildDetail(
+        existing.type,
+        input,
+        nextReferenceImages ??
+          (existing.type === "prime-figure"
+            ? existing.detail.referenceImages
+            : []),
+      ),
     };
     if (nextAvatar !== undefined) {
       if (nextAvatar) definition.avatarResourcePath = nextAvatar.publicPath;
@@ -132,12 +207,27 @@ export class AgentRepository {
     }
     delete (definition as Partial<Agent>).conversationId;
     delete (definition as Partial<PrimeFigureAgent>).muteUntilMs;
-    const now = Date.now();
     try {
       await withTransaction(async (connection) => {
-        await execute(
-          "UPDATE agents SET name = ?, definition = ?, is_public = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?",
-          [input.name, JSON.stringify(definition), input.isPublic, now, agentId, ownerUserId], connection);
+        if (nextRuntimeState) {
+          await execute(
+            "UPDATE agents SET name = ?, definition = ?, runtime_state = ?, is_public = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?",
+            [
+              input.name,
+              JSON.stringify(definition),
+              JSON.stringify(nextRuntimeState),
+              input.isPublic,
+              now,
+              agentId,
+              ownerUserId,
+            ],
+            connection,
+          );
+        } else {
+          await execute(
+            "UPDATE agents SET name = ?, definition = ?, is_public = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?",
+            [input.name, JSON.stringify(definition), input.isPublic, now, agentId, ownerUserId], connection);
+        }
         await execute(
           "UPDATE conversations SET title = ?, updated_at = ? WHERE agent_id = ? AND owner_user_id = ?",
           [input.name, now, agentId, ownerUserId], connection);
@@ -146,6 +236,16 @@ export class AgentRepository {
       await Promise.all([
         nextAvatar ? this.resources.deleteOwnedByPublicPath(ownerUserId, nextAvatar.publicPath) : Promise.resolve(false),
         nextCover ? this.resources.deleteOwnedByPublicPath(ownerUserId, nextCover.publicPath) : Promise.resolve(false),
+        ...(nextReferenceImages ?? [])
+          .filter((item) =>
+            !(existing.type === "prime-figure" &&
+              existing.detail.referenceImages.some(
+                (current) => current.resourceId === item.resourceId,
+              )),
+          )
+          .map((item) =>
+            this.resources.deleteOwnedByPublicPath(ownerUserId, item.resourcePath),
+          ),
       ]).catch(() => undefined);
       throw error;
     }
@@ -158,8 +258,123 @@ export class AgentRepository {
       existing.coverResourcePath !== nextCover?.publicPath
         ? this.resources.deleteOwnedByPublicPath(ownerUserId, existing.coverResourcePath)
         : Promise.resolve(false),
+      ...(existing.type === "prime-figure" && nextReferenceImages !== undefined
+        ? existing.detail.referenceImages
+            .filter(
+              (current) =>
+                !nextReferenceImages.some(
+                  (next) => next.resourceId === current.resourceId,
+                ),
+            )
+            .map((current) =>
+              this.resources.deleteOwnedByPublicPath(
+                ownerUserId,
+                current.resourcePath,
+              ),
+            )
+        : []),
     ]).catch((error) => console.warn("旧角色资源清理失败。", error));
     return this.findById(ownerUserId, agentId);
+  }
+
+  async getPrimeFigureEditSnapshot(
+    ownerUserId: string,
+    agentId: string,
+  ): Promise<PrimeFigureEditSnapshot | null> {
+    const agent = await this.findById(ownerUserId, agentId);
+    if (!agent || agent.type !== "prime-figure") return null;
+    const state = await this.getRuntimeState<PrimeFigureState>(ownerUserId, agentId);
+    if (!state) return null;
+    return {
+      agent,
+      state: {
+        variables: state.variables ?? {},
+        mood: state.mood ?? "",
+        relationshipStatus: state.relationshipStatus ?? "",
+      },
+    };
+  }
+
+  async exportAgent(
+    ownerUserId: string,
+    agentId: string,
+  ): Promise<AgentExportResponse | null> {
+    const agent = await this.findById(ownerUserId, agentId);
+    if (!agent || agent.type === "prime-world") return null;
+    const avatar = await this.readUploadByPublicPath(
+      ownerUserId,
+      agent.avatarResourcePath,
+    );
+    const cover = await this.readUploadByPublicPath(
+      ownerUserId,
+      agent.coverResourcePath,
+    );
+    const base = {
+      ...(avatar ? { avatar } : {}),
+      ...(cover ? { cover } : {}),
+      name: agent.name,
+      attributes: agent.attributes,
+      tags: agent.tags,
+      introduction: agent.introduction,
+      prologueHtml: agent.detail.prologueHtml,
+      linkedAgentIds: agent.detail.linkedAgentIds,
+      unlockConditions: agent.detail.unlockConditions ?? null,
+      isPublic: agent.isPublic,
+      persona: agent.detail.persona,
+      background: agent.detail.background,
+      personality: agent.detail.personality,
+      responseStyle: agent.detail.responseStyle,
+    };
+    if (agent.type === "slice-figure") {
+      return {
+        data: {
+          type: "slice-figure",
+          ...base,
+          currentSituation: agent.detail.currentSituation,
+          openingLine: agent.detail.openingLine,
+          systemPrompt: agent.detail.systemPrompt,
+          memorySummaryPrompt: agent.detail.memorySummaryPrompt,
+          replyAutoSegment: agent.detail.replyAutoSegment,
+        },
+      };
+    }
+    const state = await this.getRuntimeState<PrimeFigureState>(ownerUserId, agentId);
+    if (!state) return null;
+    const referenceImages = await Promise.all(
+      agent.detail.referenceImages.map(async (item) => {
+        const resource = await this.resources.readForOwner(
+          ownerUserId,
+          item.resourceId,
+        );
+        if (!resource)
+          throw new Error(`角色参考图片资源不存在：${item.resourceId}。`);
+        return {
+          description: item.description,
+          upload: toResourceUpload(resource.record, resource.data),
+        };
+      }),
+    );
+    return {
+      data: {
+        type: "prime-figure",
+        ...base,
+        decisionStyle: agent.detail.decisionStyle,
+        currentSituation: agent.detail.currentSituation,
+        schedule: agent.detail.schedule,
+        itinerary: agent.detail.itinerary,
+        variableDefinitions: agent.detail.variableDefinitions.map(
+          (definition) => ({
+            ...definition,
+            ...(state.variables[definition.key] !== undefined
+              ? { defaultValue: state.variables[definition.key] }
+              : { defaultValue: undefined }),
+          }),
+        ),
+        referenceImages,
+        initialMood: state.mood,
+        initialRelationshipStatus: state.relationshipStatus,
+      },
+    };
   }
 
   async getRuntimeState<T>(ownerUserId: string, agentId: string) {
@@ -175,6 +390,80 @@ export class AgentRepository {
       "UPDATE agents SET runtime_state = ?, next_run_at = ?, updated_at = ? WHERE owner_user_id = ? AND id = ?",
       [JSON.stringify(state), nextRunAt ?? null, Date.now(), ownerUserId, agentId],
     );
+  }
+
+  private async resolveReferenceImages(
+    ownerUserId: string,
+    inputs: PrimeFigureReferenceImageInput[],
+    allowedExistingIds: Set<string>,
+  ): Promise<PrimeFigureReferenceImage[]> {
+    const result: PrimeFigureReferenceImage[] = [];
+    const newlySavedPaths: string[] = [];
+    try {
+      for (const input of inputs) {
+        if ("upload" in input && input.upload) {
+          const saved = await this.resources.saveImage(
+            ownerUserId,
+            "prime_figure_reference",
+            input.upload,
+          );
+          newlySavedPaths.push(saved.publicPath);
+          result.push({
+            resourceId: saved.id,
+            resourcePath: saved.publicPath,
+            description: input.description.trim(),
+          });
+          continue;
+        }
+        if (!allowedExistingIds.has(input.resourceId))
+          throw new Error("不能引用其他角色的创作者图片资源。");
+        const resource = await this.resources.findById(input.resourceId);
+        if (
+          !resource ||
+          resource.ownerUserId !== ownerUserId ||
+          resource.kind !== "prime_figure_reference" ||
+          !resource.mimeType.startsWith("image/")
+        )
+          throw new Error("本初角色参考图片不存在或不属于当前用户。");
+        result.push({
+          resourceId: resource.id,
+          resourcePath: resource.publicPath,
+          description: input.description.trim(),
+        });
+      }
+      return result;
+    } catch (error) {
+      await Promise.all(
+        newlySavedPaths.map((path) =>
+          this.resources.deleteOwnedByPublicPath(ownerUserId, path),
+        ),
+      ).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async deletePreparedResources(
+    ownerUserId: string,
+    paths: Array<string | null | undefined>,
+  ) {
+    await Promise.all(
+      paths
+        .filter((path): path is string => Boolean(path))
+        .map((path) =>
+          this.resources.deleteOwnedByPublicPath(ownerUserId, path),
+        ),
+    ).catch(() => undefined);
+  }
+
+  private async readUploadByPublicPath(
+    ownerUserId: string,
+    publicPath?: string,
+  ) {
+    if (!publicPath) return null;
+    const record = await this.resources.findByPublicPath(ownerUserId, publicPath);
+    if (!record) throw new Error("角色图片资源不存在。");
+    const resource = await this.resources.readForOwner(ownerUserId, record.id);
+    return resource ? toResourceUpload(resource.record, resource.data) : null;
   }
 }
 
@@ -214,13 +503,18 @@ function rowToAgent(row: AgentRow): Agent {
   } as Agent;
 }
 
-function buildDefinition(input: CreateAgentInput, avatar?: string, cover?: string) {
+function buildDefinition(
+  input: CreateAgentInput,
+  avatar?: string,
+  cover?: string,
+  referenceImages: PrimeFigureReferenceImage[] = [],
+) {
   return {
     type: input.type,
     ...baseDefinition(input),
     ...(avatar ? { avatarResourcePath: avatar } : {}),
     ...(cover ? { coverResourcePath: cover } : {}),
-    detail: buildDetail(input.type, input),
+    detail: buildDetail(input.type, input, referenceImages),
   };
 }
 
@@ -234,7 +528,11 @@ function baseDefinition(input: UpdateAgentInput | CreateAgentInput) {
   };
 }
 
-function buildDetail(type: Agent["type"], input: UpdateAgentInput | CreateAgentInput) {
+function buildDetail(
+  type: Agent["type"],
+  input: UpdateAgentInput | CreateAgentInput,
+  referenceImages: PrimeFigureReferenceImage[],
+) {
   if (type === "slice-figure") {
     const value = input as CreateSliceFigureRequest;
     return {
@@ -266,6 +564,7 @@ function buildDetail(type: Agent["type"], input: UpdateAgentInput | CreateAgentI
     schedule: { segments: value.schedule?.segments ?? [] },
     itinerary: value.itinerary ?? "",
     variableDefinitions: value.variableDefinitions ?? [],
+    referenceImages,
   };
 }
 
@@ -296,4 +595,59 @@ function parseJson<T>(value: unknown, fallback: T): T {
   if (value && typeof value === "object") return value as T;
   if (typeof value !== "string") return fallback;
   try { return JSON.parse(value) as T; } catch { return fallback; }
+}
+
+function buildUpdatedPrimeState(
+  current: PrimeFigureState | null,
+  input: UpdatePrimeFigureRequest,
+  now: number,
+): PrimeFigureState {
+  if (!current) throw new Error("本初角色运行状态不存在。");
+  return {
+    ...current,
+    variables: validateCurrentVariables(
+      input.variableDefinitions ?? [],
+      input.currentVariables,
+    ),
+    mood: input.currentMood,
+    moodObservedAtMs:
+      input.currentMood === current.mood ? current.moodObservedAtMs : now,
+    relationshipStatus: input.currentRelationshipStatus,
+    updatedAt: now,
+  };
+}
+
+function validateCurrentVariables(
+  definitions: PrimeFigureVariableDefinition[],
+  values: Record<string, PrimeFigureVariableValue>,
+) {
+  const result: Record<string, PrimeFigureVariableValue> = {};
+  for (const definition of definitions) {
+    const value = values[definition.key];
+    if (value === undefined) continue;
+    const valid =
+      (definition.type === "string" && typeof value === "string") ||
+      (definition.type === "number" &&
+        typeof value === "number" &&
+        Number.isFinite(value) &&
+        (definition.min === undefined || value >= definition.min) &&
+        (definition.max === undefined || value <= definition.max)) ||
+      (definition.type === "boolean" && typeof value === "boolean") ||
+      (definition.type === "json" &&
+        (value === null || typeof value === "object"));
+    if (!valid) throw new Error(`参数 ${definition.key} 的当前值无效。`);
+    result[definition.key] = value;
+  }
+  return result;
+}
+
+function toResourceUpload(
+  record: { originalFileName: string; mimeType: string },
+  data: Buffer,
+): AgentResourceUpload {
+  return {
+    fileName: record.originalFileName,
+    mimeType: record.mimeType,
+    dataBase64: data.toString("base64"),
+  };
 }

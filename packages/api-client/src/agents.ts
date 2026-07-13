@@ -1,8 +1,10 @@
 import type {
   Agent,
+  AgentExportResponse,
   CreateAgentResponse,
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
+  PrimeFigureEditSnapshot,
   UpdatePrimeFigureRequest,
   UpdateSliceFigureRequest
 } from "@echoo/shared";
@@ -38,12 +40,38 @@ export class AgentsApi {
       .patch<CreateAgentResponse>(`/agents/${agentId}/prime-figure`, body)
       .then((response) => ({ agent: normalizeAgentResources(this.client, response.agent) }));
   }
+
+  getPrimeFigureEditSnapshot(agentId: string): Promise<PrimeFigureEditSnapshot> {
+    return this.client
+      .get<PrimeFigureEditSnapshot>(`/agents/${agentId}/prime-figure/edit`)
+      .then((response) => ({
+        ...response,
+        agent: normalizeAgentResources(this.client, response.agent) as Extract<Agent, { type: "prime-figure" }>,
+      }));
+  }
+
+  exportAgent(agentId: string): Promise<AgentExportResponse> {
+    return this.client.get<AgentExportResponse>(`/agents/${agentId}/export`);
+  }
 }
 
 function normalizeAgentResources(client: ApiClient, agent: Agent): Agent {
-  return {
+  const normalized = {
     ...agent,
     ...(agent.avatarResourcePath ? { avatarResourcePath: client.resolveServerPath(agent.avatarResourcePath) } : {}),
-    ...(agent.coverResourcePath ? { coverResourcePath: client.resolveServerPath(agent.coverResourcePath) } : {})
+    ...(agent.coverResourcePath ? { coverResourcePath: client.resolveServerPath(agent.coverResourcePath) } : {}),
   };
+  if (agent.type !== "prime-figure") return normalized as Agent;
+  return {
+    ...normalized,
+    type: "prime-figure",
+    detail: {
+      ...agent.detail,
+      referenceImages: agent.detail.referenceImages.map((item) => ({
+        ...item,
+        resourcePath:
+          client.resolveServerPath(item.resourcePath) ?? item.resourcePath,
+      })),
+    },
+  } as Agent;
 }

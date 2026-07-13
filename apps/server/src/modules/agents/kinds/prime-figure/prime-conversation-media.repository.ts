@@ -3,7 +3,11 @@ import { execute, queryOne, withTransaction } from "../../../../infra/database/m
 import { ResourceRepository } from "../../../resources/resource.repository.js";
 
 export type PrimeConversationMediaType = "image" | "video" | "voice";
-export type PrimeConversationMediaSource = "message" | "figure_cover" | "generated";
+export type PrimeConversationMediaSource =
+  | "message"
+  | "figure_cover"
+  | "figure_reference"
+  | "generated";
 export interface PrimeConversationMedia {
   conversationId: string; ownerUserId: string; mediaIndex: number; mediaId: string;
   mediaType: PrimeConversationMediaType; resourceId: string; description?: string;
@@ -32,7 +36,10 @@ export class PrimeConversationMediaRepository {
       const description = input.description?.trim() || stored?.description;
       if (stored) {
         stored = { ...stored, ...(description ? { description } : {}),
-          source: input.source === "figure_cover" ? "figure_cover" : stored.source };
+          source:
+            input.source === "figure_cover" || input.source === "figure_reference"
+              ? input.source
+              : stored.source };
         media.splice(media.findIndex((item) => item.resourceId === input.resourceId), 1, stored);
       } else {
         const mediaIndex = media.length + 1;
