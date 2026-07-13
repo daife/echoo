@@ -1,5 +1,12 @@
-import type { Message, MessageContent, MessageContentType, MessageRole, MessageStatus } from "@echoo/shared";
+import type {
+  Message,
+  MessageContent,
+  MessageContentType,
+  MessageRole,
+  MessageStatus,
+} from "@echoo/shared";
 import type { RowDataPacket } from "mysql2";
+import { calculateStableContextEvictionStep } from "../../infra/config/context-window-config.js";
 import { execute, queryOne, queryRows } from "../../infra/database/mysql.js";
 import { MessageCache } from "../../infra/redis/message-cache.js";
 
@@ -28,7 +35,12 @@ export type SaveMessageInput = Message & { ownerUserId: string };
 export class MessageRepository {
   constructor(private readonly cache = new MessageCache()) {}
 
-  async listAfter(ownerUserId: string, after?: string | null, conversationId?: string | null, limit = 500) {
+  async listAfter(
+    ownerUserId: string,
+    after?: string | null,
+    conversationId?: string | null,
+    limit = 500,
+  ) {
     const rows = await queryRows<MessageRow>(
       `SELECT messages.* FROM messages
        LEFT JOIN messages cursor_message ON cursor_message.id = ? AND cursor_message.owner_user_id = ?
@@ -36,14 +48,23 @@ export class MessageRepository {
          AND (? IS NULL OR messages.conversation_id = ?)
          AND (cursor_message.seq IS NULL OR messages.seq > cursor_message.seq)
        ORDER BY messages.seq ASC LIMIT ?`,
-      [after ?? null, ownerUserId, ownerUserId, conversationId ?? null,
-        conversationId ?? null, clampLimit(limit, 500)],
+      [
+        after ?? null,
+        ownerUserId,
+        ownerUserId,
+        conversationId ?? null,
+        conversationId ?? null,
+        clampLimit(limit, 500),
+      ],
     );
     return rows.map(rowToMessage);
   }
 
-  async listByConversation(ownerUserId: string, conversationId: string,
-    options?: { after?: string | null; before?: string | null; limit?: number }) {
+  async listByConversation(
+    ownerUserId: string,
+    conversationId: string,
+    options?: { after?: string | null; before?: string | null; limit?: number },
+  ) {
     const limit = clampLimit(options?.limit, 100);
     if (!options?.after && !options?.before) {
       const cached = await this.readCached(ownerUserId, conversationId, limit);
@@ -62,7 +83,14 @@ export class MessageRepository {
          AND messages.status != 'failed'
          AND (? IS NULL OR cursor_message.seq IS NULL OR messages.seq ${direction} cursor_message.seq)
        ORDER BY messages.seq ${order} LIMIT ?`,
-      [cursor ?? null, conversationId, ownerUserId, conversationId, cursor ?? null, limit],
+      [
+        cursor ?? null,
+        conversationId,
+        ownerUserId,
+        conversationId,
+        cursor ?? null,
+        limit,
+      ],
     );
     if (order === "DESC") rows.reverse();
     const messages = rows.map(rowToMessage);
@@ -75,9 +103,18 @@ export class MessageRepository {
   async listSliceFigureContextWindow(
     ownerUserId: string,
     conversationId: string,
-    roundStep = 100,
+    minimumRounds = 100,
+    maximumRounds = 199,
   ) {
-    const normalizedRoundStep = Math.max(1, Math.trunc(roundStep));
+    const normalizedMinimum = Math.max(1, Math.trunc(minimumRounds));
+    const normalizedMaximum = Math.max(
+      normalizedMinimum,
+      Math.trunc(maximumRounds),
+    );
+    const evictionStep = calculateStableContextEvictionStep({
+      minimum: normalizedMinimum,
+      maximum: normalizedMaximum,
+    });
     const rows = await queryRows<SliceFigureContextRow>(
       `WITH eligible_messages AS (
          SELECT messages.*,
@@ -96,23 +133,27 @@ export class MessageRepository {
          FROM eligible_messages
        )
        SELECT * FROM context_messages
-       WHERE user_round >= context_start_round
+       WHERE context_start_round = 0 OR user_round > context_start_round
        ORDER BY seq ASC`,
       [
         ownerUserId,
         conversationId,
-        normalizedRoundStep,
-        normalizedRoundStep,
-        normalizedRoundStep,
+        normalizedMinimum,
+        evictionStep,
+        evictionStep,
       ],
     );
     return {
       messages: rows.map(rowToMessage),
-      isInitialWindow: rows.length === 0 || Number(rows[0].context_start_round) === 0,
+      isInitialWindow:
+        rows.length === 0 || Number(rows[0].context_start_round) === 0,
     };
   }
 
-  async findByClientMessageId(ownerUserId: string, clientMessageId?: string | null) {
+  async findByClientMessageId(
+    ownerUserId: string,
+    clientMessageId?: string | null,
+  ) {
     if (!clientMessageId) return null;
     const row = await queryOne<MessageRow>(
       "SELECT * FROM messages WHERE owner_user_id = ? AND client_message_id = ?",
@@ -121,7 +162,11 @@ export class MessageRepository {
     return row ? rowToMessage(row) : null;
   }
 
-  async findByIdInConversation(ownerUserId: string, conversationId: string, messageId: string) {
+  async findByIdInConversation(
+    ownerUserId: string,
+    conversationId: string,
+    messageId: string,
+  ) {
     const row = await queryOne<MessageRow>(
       "SELECT * FROM messages WHERE owner_user_id = ? AND conversation_id = ? AND id = ?",
       [ownerUserId, conversationId, messageId],
@@ -129,7 +174,11 @@ export class MessageRepository {
     return row ? rowToMessage(row) : null;
   }
 
-  async findNextAssistantMessage(ownerUserId: string, conversationId: string, after: Message) {
+  async findNextAssistantMessage(
+    ownerUserId: string,
+    conversationId: string,
+    after: Message,
+  ) {
     const row = await queryOne<MessageRow>(
       `SELECT messages.* FROM messages JOIN messages cursor_message ON cursor_message.id = ?
        WHERE messages.owner_user_id = ? AND messages.conversation_id = ?
@@ -148,7 +197,11 @@ export class MessageRepository {
     return row ? rowToMessage(row) : null;
   }
 
-  async deleteAfterMessage(ownerUserId: string, conversationId: string, retainedThrough: Message) {
+  async deleteAfterMessage(
+    ownerUserId: string,
+    conversationId: string,
+    retainedThrough: Message,
+  ) {
     const result = await execute(
       `DELETE messages FROM messages JOIN messages cursor_message ON cursor_message.id = ?
        WHERE messages.owner_user_id = ? AND messages.conversation_id = ? AND messages.seq > cursor_message.seq`,
@@ -171,10 +224,20 @@ export class MessageRepository {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE seq = LAST_INSERT_ID(seq), content = VALUES(content), status = VALUES(status),
         run_metadata = VALUES(run_metadata), read_at = VALUES(read_at), updated_at = VALUES(updated_at)`,
-      [input.id, input.ownerUserId, input.conversationId, input.clientMessageId ?? null,
-        input.role, input.contentType, JSON.stringify(input.content), input.status,
+      [
+        input.id,
+        input.ownerUserId,
+        input.conversationId,
+        input.clientMessageId ?? null,
+        input.role,
+        input.contentType,
+        JSON.stringify(input.content),
+        input.status,
         Object.keys(runMetadata).length ? JSON.stringify(runMetadata) : null,
-        input.readAt ?? null, input.createdAt, input.updatedAt],
+        input.readAt ?? null,
+        input.createdAt,
+        input.updatedAt,
+      ],
     );
     const { ownerUserId: _ownerUserId, ...message } = input;
     await this.upsertCache(input.ownerUserId, input.conversationId, {
@@ -191,7 +254,9 @@ export class MessageRepository {
     );
     if (!result.affectedRows) return null;
     const row = await queryOne<MessageRow>(
-      "SELECT * FROM messages WHERE owner_user_id = ? AND id = ?", [ownerUserId, messageId]);
+      "SELECT * FROM messages WHERE owner_user_id = ? AND id = ?",
+      [ownerUserId, messageId],
+    );
     if (!row) return null;
     const message = rowToMessage(row);
     await this.upsertCache(ownerUserId, row.conversation_id, {
@@ -209,7 +274,11 @@ export class MessageRepository {
     }
   }
 
-  private async readCached(ownerUserId: string, conversationId: string, limit: number) {
+  private async readCached(
+    ownerUserId: string,
+    conversationId: string,
+    limit: number,
+  ) {
     try {
       return await this.cache.getRecent(ownerUserId, conversationId, limit);
     } catch (error) {
@@ -262,7 +331,9 @@ function rowToMessage(row: MessageRow): Message {
   const { providerId, model, ...metadata } = run;
   return {
     id: row.id,
-    ...(row.client_message_id ? { clientMessageId: row.client_message_id } : {}),
+    ...(row.client_message_id
+      ? { clientMessageId: row.client_message_id }
+      : {}),
     conversationId: row.conversation_id,
     role: row.role,
     contentType: row.content_type,
@@ -284,5 +355,9 @@ function clampLimit(limit: number | undefined, fallback: number) {
 function parseJson<T>(value: unknown, fallback: T): T {
   if (value && typeof value === "object") return value as T;
   if (typeof value !== "string") return fallback;
-  try { return JSON.parse(value) as T; } catch { return fallback; }
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
 }

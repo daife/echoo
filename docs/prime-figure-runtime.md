@@ -86,7 +86,7 @@ flowchart TD
 12:00:03.500  B 之后已连续静默 2000 ms，窗口结束
 ```
 
-窗口结束后才读取 `recentTimeline` 和 `lastHandledEndUserSeq` 之后的用户消息。若没有未处理用户消息，本轮返回 `null`，不会请求 LLM；否则会记录本轮输入所覆盖的最大用户消息序号，构造稳定的输入快照：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L132-L196)。
+窗口结束后才读取稳定上下文窗口和 `lastHandledEndUserSeq` 之后的用户消息。稳定窗口按单条 `user`/`assistant` 消息计数（不是问答轮次），默认保留 150–249 条；达到 250 条时批量淘汰最早的 100 条，使后续 100 次增长中的前缀保持不变。上下限可通过 `PRIME_FIGURE_CONTEXT_MIN_MESSAGES` 和 `PRIME_FIGURE_CONTEXT_MAX_MESSAGES` 配置。未处理用户消息会在窗口之外优先完整并入，因此极端积压时本轮输入可以临时超过最大值。若没有未处理用户消息，本轮返回 `null`，不会请求 LLM；否则会记录本轮输入所覆盖的最大用户消息序号，构造稳定的输入快照：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L132-L196)。
 
 静默窗口内到达且在快照查询前已写入的消息，通常会合并进同一次 LLM 决策。快照形成后、LLM 或动作执行期间到达的消息不会被强行塞进已经发出的请求；它们会通过新的队列任务设置 `run-dirty`，当前轮结束后再以 `coalesced_messages` 触发下一轮。下一轮仍会先等待最新用户消息满足静默窗口。决策成功后，只有本轮快照覆盖到的最大用户消息序号会写入 `lastHandledEndUserSeq`，因此快照之后的新消息仍保持未处理状态：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L164-L196)、[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L289-L314)。
 

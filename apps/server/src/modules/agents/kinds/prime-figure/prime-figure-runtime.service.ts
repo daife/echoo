@@ -14,6 +14,7 @@ import type {
 } from "@echoo/shared";
 import { AiProviderRegistry } from "../../../ai/ai-provider.registry.js";
 import { APP_TIME_ZONE } from "../../../../shared/constants/time.js";
+import { getFigureContextWindowConfig } from "../../../../infra/config/context-window-config.js";
 import type {
   AiTextProvider,
   ChatCompletionInput,
@@ -40,15 +41,11 @@ import {
   formatWeekdayCode,
 } from "./prime-time.js";
 
-const PRIME_CONTEXT_MESSAGE_LIMIT = 18;
 const PRIME_VISIBLE_MEMORY_LIMIT = 10;
 const RECALL_HINT_PATTERN = /记得|不记得|忘了|还记得|remember|forgot|recal+l/i;
 
 export type PrimeDecisionTrigger =
-  | "end_user_message"
-  | "mute_ended"
-  | "coalesced_messages"
-  | "debug_hint";
+  "end_user_message" | "mute_ended" | "coalesced_messages" | "debug_hint";
 
 interface PendingMediaAnnotation {
   id: string;
@@ -158,16 +155,18 @@ export class PrimeFigureRuntimeService {
         input.ownerUserId,
         input.conversationId,
       ));
+    const contextWindowConfig =
+      getFigureContextWindowConfig().primeFigureMessages;
     const [recentTimeline, unhandledEndUserMessages] = await Promise.all([
-      this.messages.listRecent(
+      this.messages.listContextWindow(
         input.ownerUserId,
-        input.agent.id,
-        PRIME_CONTEXT_MESSAGE_LIMIT,
         input.conversationId,
+        contextWindowConfig.minimum,
+        contextWindowConfig.maximum,
       ),
       this.messages.listEndUserAfterSequence(
         input.ownerUserId,
-        input.agent.id,
+        input.conversationId,
         lastHandledEndUserSeq,
       ),
     ]);
@@ -176,13 +175,10 @@ export class PrimeFigureRuntimeService {
       !(input.trigger === "debug_hint" && input.debugInstruction?.trim())
     )
       return null;
-    const timeline = [
-      ...new Map(
-        [...recentTimeline, ...unhandledEndUserMessages]
-          .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
-          .map((message) => [message.id, message]),
-      ).values(),
-    ];
+    const timeline = mergePrimeTimeline(
+      recentTimeline,
+      unhandledEndUserMessages,
+    );
     const inputThroughEndUserSeq = timeline.reduce(
       (latest, message) =>
         message.sender === "end_user"
@@ -864,6 +860,19 @@ async function buildRawMediaPart(
   };
 }
 
+export function mergePrimeTimeline(
+  recentTimeline: PrimeMessage[],
+  unhandledEndUserMessages: PrimeMessage[],
+) {
+  return [
+    ...new Map(
+      [...recentTimeline, ...unhandledEndUserMessages]
+        .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
+        .map((message) => [message.id, message]),
+    ).values(),
+  ];
+}
+
 function buildSystemPrompt(agent: PrimeFigureAgent) {
   const timezone = APP_TIME_ZONE;
   const schedule = agent.detail.schedule.segments.map(
@@ -1069,8 +1078,7 @@ function buildPrimeDecisionResponseFormat(
             anyOf: [
               {
                 type: "array",
-                description:
-                  "按序发送的一条或多条文本、图片或语音消息。",
+                description: "按序发送的一条或多条文本、图片或语音消息。",
                 minItems: 1,
                 maxItems: 12,
                 items: buildSendMessageActionSchema(availableReferenceImageIds),

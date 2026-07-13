@@ -1,12 +1,17 @@
 import { buildFigureSystemPrompt } from "@echoo/shared";
 import type { Message, SliceFigureAgent, UserProfile } from "@echoo/shared";
-import type { ChatCompletionInput, ChatCompletionMessage } from "../../../ai/ai-provider.interface.js";
+import type {
+  ChatCompletionInput,
+  ChatCompletionMessage,
+} from "../../../ai/ai-provider.interface.js";
 import { AiProviderRegistry } from "../../../ai/ai-provider.registry.js";
-import { UserRepository, toUserProfile } from "../../../auth/user.repository.js";
+import {
+  UserRepository,
+  toUserProfile,
+} from "../../../auth/user.repository.js";
+import { getFigureContextWindowConfig } from "../../../../infra/config/context-window-config.js";
 import { MessageRepository } from "../../../messaging/message.repository.js";
 import { AgentRepository } from "../../agent.repository.js";
-
-const CONTEXT_ROUND_STEP = 100;
 
 export interface SliceFigureRuntimeResult {
   text: string;
@@ -47,7 +52,11 @@ export class SliceFigureRuntimeService {
       reasoningMode: "disabled",
     });
 
-    return { text: result.text, providerId: result.providerId, model: result.model };
+    return {
+      text: result.text,
+      providerId: result.providerId,
+      model: result.model,
+    };
   }
 
   async createStreamingReply(
@@ -88,22 +97,33 @@ export class SliceFigureRuntimeService {
       onDelta({ text: delta.text });
     }
     if (!text.trim())
-      throw new Error(`${provider.id} chat completion returned an empty streamed response.`);
+      throw new Error(
+        `${provider.id} chat completion returned an empty streamed response.`,
+      );
 
     return { text, providerId: provider.id, model };
   }
 
-  private async loadContext(input: { ownerUserId: string; conversationId: string }) {
-    const agent = await this.agents.findByConversation(input.ownerUserId, input.conversationId);
+  private async loadContext(input: {
+    ownerUserId: string;
+    conversationId: string;
+  }) {
+    const agent = await this.agents.findByConversation(
+      input.ownerUserId,
+      input.conversationId,
+    );
     if (!agent) return null;
     if (agent.type !== "slice-figure")
       throw new Error(`切片角色运行时收到了错误的角色类型：${agent.type}。`);
 
     const user = await this.users.findById(input.ownerUserId);
+    const contextWindowConfig =
+      getFigureContextWindowConfig().sliceFigureRounds;
     const contextWindow = await this.messages.listSliceFigureContextWindow(
       input.ownerUserId,
       input.conversationId,
-      CONTEXT_ROUND_STEP,
+      contextWindowConfig.minimum,
+      contextWindowConfig.maximum,
     );
     return {
       agent,
@@ -135,20 +155,32 @@ export function selectSliceFigureContextMessages(
   isInitialWindow: boolean,
 ): ChatCompletionMessage[] {
   const textHistory = history.filter((message) => {
-    if (message.contentType !== "text" || message.status === "failed") return false;
+    if (message.contentType !== "text" || message.status === "failed")
+      return false;
     if (message.role !== "user" && message.role !== "assistant") return false;
     return Boolean(message.content.text?.trim());
   });
   const hasPersistedOpeningLine = textHistory.some(
-    (message) => message.role === "assistant" && message.metadata?.kind === "opening_line",
+    (message) =>
+      message.role === "assistant" && message.metadata?.kind === "opening_line",
   );
   const selected: ChatCompletionMessage[] = [];
 
-  if (isInitialWindow && agent.detail.openingLine.trim() && !hasPersistedOpeningLine)
-    selected.push({ role: "assistant", content: agent.detail.openingLine.trim() });
+  if (
+    isInitialWindow &&
+    agent.detail.openingLine.trim() &&
+    !hasPersistedOpeningLine
+  )
+    selected.push({
+      role: "assistant",
+      content: agent.detail.openingLine.trim(),
+    });
 
   for (const message of textHistory) {
-    selected.push({ role: message.role, content: message.content.text?.trim() ?? "" });
+    selected.push({
+      role: message.role,
+      content: message.content.text?.trim() ?? "",
+    });
   }
   return selected;
 }

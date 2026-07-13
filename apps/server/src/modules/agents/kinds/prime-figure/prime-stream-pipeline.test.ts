@@ -321,7 +321,7 @@ test("a stale dirty wakeup cannot call the LLM after all end-user messages were 
       async findLatestEndUserCreatedAt() {
         return Date.now() - 5_000;
       },
-      async listRecent() {
+      async listContextWindow() {
         return [];
       },
       async listEndUserAfterSequence() {
