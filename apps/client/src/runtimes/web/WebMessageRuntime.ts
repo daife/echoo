@@ -14,6 +14,13 @@ import type {
 export class WebMessageRuntime implements MessageRuntime {
   private socket: WebSocket | null = null;
   private connectPromise: Promise<void> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempt = 0;
+  private shouldReconnect = false;
+  private readonly activeConversations = new Map<
+    string,
+    ConversationAgentActivityEvent
+  >();
   private readonly messageCreatedHandlers = new Set<
     (message: Message) => void
   >();
@@ -46,6 +53,8 @@ export class WebMessageRuntime implements MessageRuntime {
   constructor(private readonly auth: AuthRuntime) {}
 
   async startRealtime(): Promise<void> {
+    this.shouldReconnect = true;
+    this.clearReconnectTimer();
     if (this.socket && this.socket.readyState <= WebSocket.OPEN)
       return this.connectPromise ?? Promise.resolve();
     if (this.connectPromise) return this.connectPromise;
@@ -64,6 +73,7 @@ export class WebMessageRuntime implements MessageRuntime {
   private async openSocket(): Promise<void> {
     const url = import.meta.env.VITE_WS_URL ?? "ws://localhost:8787/ws";
     const token = await this.auth.getAccessToken();
+    if (!this.shouldReconnect) return;
     if (this.socket && this.socket.readyState <= WebSocket.OPEN) return;
 
     const socketUrl = new URL(url);
@@ -71,12 +81,21 @@ export class WebMessageRuntime implements MessageRuntime {
 
     const socket = new WebSocket(socketUrl);
     this.socket = socket;
+    socket.onopen = () => {
+      if (this.socket === socket) this.reconnectAttempt = 0;
+    };
     socket.onclose = () => {
-      if (this.socket === socket) this.socket = null;
+      if (this.socket !== socket) return;
+      this.socket = null;
+      this.clearActiveConversations();
+      this.scheduleReconnect();
     };
     socket.onmessage = (event) => {
       const payload = JSON.parse(event.data as string) as AppWsServerEvent;
       if (payload.type === "conversation.agent_activity") {
+        if (payload.active)
+          this.activeConversations.set(payload.conversationId, payload);
+        else this.activeConversations.delete(payload.conversationId);
         this.agentActivityHandlers.forEach((handler) => handler(payload));
         return;
       }
@@ -124,8 +143,45 @@ export class WebMessageRuntime implements MessageRuntime {
   }
 
   async stopRealtime(): Promise<void> {
+    this.shouldReconnect = false;
+    this.clearReconnectTimer();
+    this.clearActiveConversations();
     this.socket?.close(1000, "client stop");
     this.socket = null;
+  }
+
+  private scheduleReconnect() {
+    if (
+      !this.shouldReconnect ||
+      this.reconnectTimer !== null ||
+      this.socket
+    )
+      return;
+    const delay = Math.min(500 * 2 ** this.reconnectAttempt, 10_000);
+    this.reconnectAttempt += 1;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.startRealtime().catch(() => this.scheduleReconnect());
+    }, delay);
+  }
+
+  private clearReconnectTimer() {
+    if (this.reconnectTimer === null) return;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+  }
+
+  private clearActiveConversations() {
+    const updatedAt = Date.now();
+    for (const event of this.activeConversations.values()) {
+      const inactiveEvent: ConversationAgentActivityEvent = {
+        ...event,
+        active: false,
+        updatedAt,
+      };
+      this.agentActivityHandlers.forEach((handler) => handler(inactiveEvent));
+    }
+    this.activeConversations.clear();
   }
 
   async getStatus(): Promise<"running" | "stopped" | "unsupported"> {

@@ -17,6 +17,10 @@ import {
   markLocalMessageFailed,
   markLocalMessageSending,
 } from "../../services/localMessageState";
+import {
+  activityAfterMessageCompleted,
+  activityAfterMessageCreated,
+} from "../../features/messages/conversationActivity";
 import { parsePrimeFigureHintCommand } from "../../features/messages/messagePresentation";
 
 const MESSAGE_PAGE_SIZE = 50;
@@ -363,9 +367,9 @@ export function useConversationMessages({
     void runtime.message.startRealtime();
     const unsubscribeCreated = runtime.message.onMessageCreated((message) => {
       if (message.conversationId !== conversationId) return;
-      if (message.role === "assistant" && message.status === "pending") {
-        setIsAgentActive(true);
-      }
+      setIsAgentActive((current) =>
+        activityAfterMessageCreated(current, message),
+      );
       setMessages((current) =>
         mergeIncomingMessage(current, { ...message, syncStatus: "synced" }),
       );
@@ -377,6 +381,9 @@ export function useConversationMessages({
     const unsubscribeCompleted = runtime.message.onMessageCompleted(
       (message) => {
         if (message.conversationId !== conversationId) return;
+        setIsAgentActive((current) =>
+          activityAfterMessageCompleted(current, message),
+        );
         if (agent?.type === "prime-figure") {
           setMessages((current) => {
             const existing = current.find((item) => item.id === message.id);
@@ -494,7 +501,6 @@ export function useConversationMessages({
       setDraft("");
       setError(null);
       setIsSending(true);
-      setIsAgentActive(true);
       try {
         await services.messageService.triggerPrimeFigureHint(
           conversationId,
@@ -524,7 +530,7 @@ export function useConversationMessages({
     setDraft("");
     setError(null);
     setIsSending(true);
-    setIsAgentActive(true);
+    if (agent?.type !== "prime-figure") setIsAgentActive(true);
     setMessages((current) => [
       ...current.filter(
         (message) =>
@@ -578,7 +584,7 @@ export function useConversationMessages({
 
     setError(null);
     setRetryingMessageId(messageId);
-    setIsAgentActive(true);
+    if (agent?.type !== "prime-figure") setIsAgentActive(true);
     setMessages((current) =>
       mergeLocalMessage(
         current.filter((message) => message.id !== messageId),
