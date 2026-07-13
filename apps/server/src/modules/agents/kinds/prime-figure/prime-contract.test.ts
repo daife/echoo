@@ -118,7 +118,11 @@ test("prime creator images require descriptions", () => {
 });
 
 test("prime context registers cover and creator images before conversation media", async () => {
-  const ensured: Array<{ resourceId: string; description?: string; source?: string }> = [];
+  const ensured: Array<{
+    resourceId: string;
+    description?: string;
+    source?: string;
+  }> = [];
   await buildPrimeChatMessages(
     {
       id: "agent_1",
@@ -167,14 +171,22 @@ test("prime context registers cover and creator images before conversation media
     "user_1",
     {
       async findByPublicPath() {
-        return { id: "res_cover", ownerUserId: "user_1", mimeType: "image/png" };
+        return {
+          id: "res_cover",
+          ownerUserId: "user_1",
+          mimeType: "image/png",
+        };
       },
       async findById(id: string) {
         return { id, ownerUserId: "user_1", mimeType: "image/png" };
       },
     } as never,
     {
-      async ensure(input: { resourceId: string; description?: string; source?: string }) {
+      async ensure(input: {
+        resourceId: string;
+        description?: string;
+        source?: string;
+      }) {
         ensured.push(input);
       },
       async listAvailableImages() {
@@ -191,6 +203,64 @@ test("prime context registers cover and creator images before conversation media
       ["res_reference", "日常外观", "figure_reference"],
     ],
   );
+});
+
+test("prime debug hints are injected as a dedicated highest-priority system message", async () => {
+  const instruction = "发送语音消息：请留下来。";
+  const packet = await buildPrimeChatMessages(
+    {
+      id: "agent_1",
+      ownerUserId: "user_1",
+      type: "prime-figure",
+      name: "Mira",
+      attributes: [],
+      tags: [],
+      introduction: "",
+      isPublic: false,
+      conversationId: "conv_1",
+      createdAt: 1,
+      updatedAt: 1,
+      detail: {
+        prologueHtml: "",
+        linkedAgentIds: [],
+        persona: "人设",
+        background: "背景",
+        personality: "性格",
+        responseStyle: "风格",
+        decisionStyle: "",
+        currentSituation: "",
+        schedule: { segments: [] },
+        itinerary: "",
+        variableDefinitions: [],
+        referenceImages: [],
+      },
+    },
+    {
+      variables: {},
+      memories: [],
+      mood: "",
+      moodObservedAtMs: 1,
+      relationshipStatus: "",
+      updatedAt: 1,
+    },
+    [],
+    "debug_hint",
+    "user_1",
+    {} as never,
+    {
+      async listAvailableImages() {
+        return [];
+      },
+    } as never,
+    0,
+    instruction,
+  );
+
+  assert.equal(packet.messages[1]?.role, "system");
+  assert.equal(typeof packet.messages[1]?.content, "string");
+  assert.match(String(packet.messages[1]?.content), /最高优先级系统调试指令/);
+  assert.match(String(packet.messages[1]?.content), /禁止改用 silence 或 mute/);
+  assert.match(String(packet.messages[1]?.content), /请留下来/);
 });
 
 test("prime decision distinguishes one-turn silence from message muting", () => {

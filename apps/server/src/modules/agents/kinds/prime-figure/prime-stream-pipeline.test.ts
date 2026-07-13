@@ -31,23 +31,24 @@ test("prime stream starts image generation as soon as prompt and references are 
   assert.equal(generatedPrompt, "cinematic beach");
 });
 
-test("prime voice transcript is written to streaming TTS before the decision completes", () => {
-  const writes: string[] = [];
+test("prime voice sends one complete transcript while keeping audio chunks streamed", async () => {
+  const transcripts: string[] = [];
+  const pushed: Array<Record<string, unknown>> = [];
   const session = createSession({
+    appPush: {
+      pushToUser(_ownerUserId: string, event: Record<string, unknown>) {
+        pushed.push(event);
+      },
+    },
     tts: {
-      createStream() {
+      async synthesize(transcript: string, onAudio: (chunk: Buffer) => void) {
+        transcripts.push(transcript);
+        onAudio(Buffer.from("voice-1"));
+        onAudio(Buffer.from("voice-2"));
         return {
-          write(text: string) {
-            writes.push(text);
-          },
-          async finish() {
-            return {
-              audio: Buffer.from("voice"),
-              mimeType: "audio/mpeg",
-              format: "mp3",
-            };
-          },
-          abort() {},
+          audio: Buffer.from("voice-1voice-2"),
+          mimeType: "audio/mpeg",
+          format: "mp3",
         };
       },
     },
@@ -58,7 +59,73 @@ test("prime voice transcript is written to streaming TTS before the decision com
 
   parser.push('{"actions":[{"message":{"type":"voice","transcript":"你好');
 
-  assert.equal(writes.join(""), "你好");
+  assert.deepEqual(transcripts, []);
+
+  const decision = {
+    rationale: "test",
+    figureMood: "calm",
+    variables: {},
+    actions: [
+      {
+        type: "send_message",
+        message: { type: "voice", transcript: "你好，世界" },
+      },
+    ],
+  } as PrimeFigureDecision;
+  await session.finalize(decision);
+
+  assert.deepEqual(transcripts, ["你好，世界"]);
+  assert.deepEqual(
+    pushed
+      .filter((event) => String(event.type).startsWith("message.audio."))
+      .map((event) => [event.type, event.sequence]),
+    [
+      ["message.audio.started", undefined],
+      ["message.audio.chunk", 0],
+      ["message.audio.chunk", 1],
+      ["message.audio.completed", undefined],
+    ],
+  );
+});
+
+test("prime voice exposes HTTP TTS failures through audio events and metadata", async () => {
+  const pushed: Array<Record<string, unknown>> = [];
+  const session = createSession({
+    appPush: {
+      pushToUser(_ownerUserId: string, event: Record<string, unknown>) {
+        pushed.push(event);
+      },
+    },
+    tts: {
+      async synthesize() {
+        throw new Error("Fish Audio unavailable");
+      },
+    },
+  });
+  const decision = {
+    rationale: "test",
+    figureMood: "calm",
+    variables: {},
+    actions: [
+      {
+        type: "send_message",
+        message: { type: "voice", transcript: "完整文本" },
+      },
+    ],
+  } as PrimeFigureDecision;
+
+  const result = await session.finalize(decision);
+
+  assert.equal(result.ttsErrors.get(0), "Fish Audio unavailable");
+  assert.equal(result.voiceMedia.size, 0);
+  assert.equal(
+    pushed.some(
+      (event) =>
+        event.type === "message.audio.failed" &&
+        event.error === "Fish Audio unavailable",
+    ),
+    true,
+  );
 });
 
 test("prime stream failure stores raw response on only the first failed message", async () => {
@@ -244,13 +311,8 @@ test("prime voice messages use transcript length minus elapsed time", async () =
   try {
     const session = createSession({
       tts: {
-        createStream() {
-          return {
-            write() {},
-            async finish() {
-              return { audio: Buffer.from("voice"), mimeType: "audio/mpeg" };
-            },
-          };
+        async synthesize() {
+          return { audio: Buffer.from("voice"), mimeType: "audio/mpeg" };
         },
       },
       messages: {
@@ -391,15 +453,16 @@ test("a stale dirty wakeup cannot call the LLM after all end-user messages were 
 });
 
 function createSession(overrides?: {
+  appPush?: object;
   tts?: object;
   imageGeneration?: object;
   messages?: object;
 }) {
   return new PrimeDecisionStreamSession(
     { ownerUserId: "user_1", conversationId: "conversation_1" },
-    { pushToUser() {} } as never,
+    (overrides?.appPush ?? { pushToUser() {} }) as never,
     (overrides?.tts ?? {
-      createStream() {
+      synthesize() {
         throw new Error("unused");
       },
     }) as never,

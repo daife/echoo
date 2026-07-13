@@ -8,10 +8,7 @@ import { estimateMp3DurationSeconds } from "@echoo/shared";
 import { AppPushService } from "../../../realtime/delivery.service.js";
 import { ResourceRepository } from "../../../resources/resource.repository.js";
 import { OpenRouterImageGenerationService } from "../../../image-generation/openrouter-image-generation.service.js";
-import {
-  FishAudioTtsService,
-  type FishAudioTtsStream,
-} from "../../../tts/fish-audio-tts.service.js";
+import { FishAudioTtsService } from "../../../tts/fish-audio-tts.service.js";
 import type { PrimeDecisionStreamFieldDelta } from "./prime-decision-stream-parser.js";
 import { PrimeConversationMediaRepository } from "./prime-conversation-media.repository.js";
 import { MessageRepository } from "../../../messaging/message.repository.js";
@@ -52,9 +49,9 @@ interface StreamedActionState {
   deliveryDone: Promise<number>;
   resolveDeliveryDone: (completedAt: number) => void;
   deliveryResolved: boolean;
-  tts?: FishAudioTtsStream;
   voicePromise?: Promise<ResolvedPrimeVoiceMedia>;
   ttsError?: string;
+  audioStarted: boolean;
   audioSequence: number;
   pendingAudio: Buffer[];
   referenceMediaIds: string[];
@@ -111,7 +108,6 @@ export class PrimeDecisionStreamSession {
     }
 
     state.fields[event.field] = append(state.fields[event.field], event.delta);
-    if (event.field === "transcript" && event.delta) this.ensureTts(state);
     if (event.field === "generationPrompt" && event.complete) {
       state.generationPromptComplete = true;
       this.maybeStartImage(state);
@@ -132,8 +128,6 @@ export class PrimeDecisionStreamSession {
       if (state.type === "text")
         void this.completeTextDelivery(state).catch(() => undefined);
     }
-    if (event.complete && event.field === "transcript")
-      this.maybeFinishVoice(state);
   }
 
   async finalize(decision: PrimeFigureDecision) {
@@ -162,9 +156,9 @@ export class PrimeDecisionStreamSession {
         state.referenceMediaIdsComplete = true;
         this.maybeStartImage(state);
       } else if (action.message.type === "voice") {
+        state.fields.transcript = action.message.transcript;
         this.resolveTextComplete(state);
-        this.ensureTts(state);
-        this.maybeFinishVoice(state);
+        this.startVoiceSynthesis(state, action.message.transcript);
       } else {
         this.resolveTextComplete(state);
         void this.completeTextDelivery(state).catch(() => undefined);
@@ -241,7 +235,6 @@ export class PrimeDecisionStreamSession {
     for (const state of this.actions.values()) {
       this.resolveTextComplete(state);
       this.flushTextDelta(state);
-      state.tts?.abort();
     }
     await Promise.all(
       createdStates.map((state, index) =>
@@ -276,6 +269,7 @@ export class PrimeDecisionStreamSession {
       deliveryDone,
       resolveDeliveryDone,
       deliveryResolved: false,
+      audioStarted: false,
       audioSequence: 0,
       pendingAudio: [],
       referenceMediaIds: [],
@@ -321,40 +315,9 @@ export class PrimeDecisionStreamSession {
         type: "message.created",
         message: placeholder,
       });
-      if (state.type === "voice" && state.tts) {
-        this.appPush.pushToUser(this.input.ownerUserId, {
-          type: "message.audio.started",
-          messageId: state.id,
-          conversationId: this.input.conversationId,
-          mimeType: "audio/mpeg",
-        });
-        for (const chunk of state.pendingAudio)
-          this.pushAudioChunk(state, chunk);
-        state.pendingAudio = [];
-      }
       this.flushTextDelta(state);
     })();
     this.deliveryTail = state.deliveryDone;
-  }
-
-  private ensureTts(state: StreamedActionState) {
-    if (state.tts || state.ttsError || state.type !== "voice") return;
-    try {
-      state.tts = this.tts.createStream((chunk) => {
-        if (state.revealed) this.pushAudioChunk(state, chunk);
-        else state.pendingAudio.push(chunk);
-      });
-    } catch (error) {
-      state.ttsError = toErrorMessage(error);
-      void state.revealPromise?.then(() => {
-        this.appPush.pushToUser(this.input.ownerUserId, {
-          type: "message.audio.failed",
-          messageId: state.id,
-          conversationId: this.input.conversationId,
-          error: state.ttsError as string,
-        });
-      });
-    }
   }
 
   private pushAudioChunk(state: StreamedActionState, chunk: Buffer) {
@@ -367,11 +330,25 @@ export class PrimeDecisionStreamSession {
     });
   }
 
-  private maybeFinishVoice(state: StreamedActionState) {
-    this.ensureTts(state);
-    if (state.voicePromise || !state.tts) return;
+  private startVoiceSynthesis(state: StreamedActionState, transcript: string) {
+    if (state.voicePromise || state.type !== "voice") return;
+    const audioStarted = state.revealPromise!.then(() => {
+      this.appPush.pushToUser(this.input.ownerUserId, {
+        type: "message.audio.started",
+        messageId: state.id,
+        conversationId: this.input.conversationId,
+        mimeType: "audio/mpeg",
+      });
+      state.audioStarted = true;
+      for (const chunk of state.pendingAudio) this.pushAudioChunk(state, chunk);
+      state.pendingAudio = [];
+    });
+    void audioStarted.catch(() => undefined);
     state.voicePromise = (async () => {
-      const result = await state.tts!.finish();
+      const result = await this.tts.synthesize(transcript, (chunk) => {
+        if (state.audioStarted) this.pushAudioChunk(state, chunk);
+        else state.pendingAudio.push(chunk);
+      });
       const resource = await this.resources.saveGeneratedMedia(
         this.input.ownerUserId,
         "prime_figure_voice",
@@ -383,10 +360,10 @@ export class PrimeDecisionStreamSession {
         conversationId: this.input.conversationId,
         resourceId: resource.id,
         mediaType: "voice",
-        description: state.fields.transcript ?? "",
+        description: transcript,
         source: "generated",
       });
-      await state.revealPromise;
+      await audioStarted;
       this.appPush.pushToUser(this.input.ownerUserId, {
         type: "message.audio.completed",
         messageId: state.id,
@@ -497,7 +474,6 @@ export class PrimeDecisionStreamSession {
   }
 
   private queueTextDelta(state: StreamedActionState, delta: string) {
-    if (state.type === "voice") state.tts?.write(delta);
     state.pendingText += delta;
     if (state.textFlushScheduled) return;
     state.textFlushScheduled = true;

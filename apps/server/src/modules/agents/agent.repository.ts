@@ -478,6 +478,17 @@ function rowToAgent(row: AgentRow): Agent {
       : null;
   return {
     ...stored,
+    ...(row.type === "prime-figure"
+      ? {
+          detail: {
+            ...(stored as Extract<Agent, { type: "prime-figure" }>).detail,
+            // Definitions created before reference-image support omitted this key.
+            referenceImages:
+              (stored as Extract<Agent, { type: "prime-figure" }>).detail
+                ?.referenceImages ?? [],
+          },
+        }
+      : {}),
     ...(row.type === "slice-figure"
       ? {
           detail: {

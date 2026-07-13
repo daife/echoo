@@ -507,11 +507,11 @@ export async function buildPrimeChatMessages(
   const eventTime = lastEndUserMessage?.occurredAtMs ?? now;
   const scheduleSegment = findScheduleSegment(agent.detail.schedule, eventTime);
   const hints: string[] = [];
-  if (trigger === "debug_hint" && debugInstruction?.trim()) {
-    hints.push(
-      `以下是需要无条件服从的系统调试指令：“${debugInstruction.trim()}”`,
-    );
-  }
+  const debugSystemInstruction =
+    trigger === "debug_hint" && debugInstruction?.trim()
+      ? buildDebugSystemInstruction(debugInstruction.trim())
+      : undefined;
+  if (debugSystemInstruction) hints.push(debugSystemInstruction);
   const attentionIdByMessage = new Map(
     timeline
       .filter(
@@ -807,6 +807,14 @@ export async function buildPrimeChatMessages(
         role: "system",
         content: buildSystemPrompt(agent),
       },
+      ...(debugSystemInstruction
+        ? [
+            {
+              role: "system" as const,
+              content: debugSystemInstruction,
+            },
+          ]
+        : []),
       {
         role: "user",
         content,
@@ -815,6 +823,14 @@ export async function buildPrimeChatMessages(
     pendingMedia,
     availableReferenceImages,
   };
+}
+
+function buildDebugSystemInstruction(instruction: string) {
+  return [
+    `最高优先级系统调试指令：${instruction}`,
+    "必须直接执行这条指令，不得因为角色人设、当前情绪、关系状态、历史对话或自行判断的合理性而拒绝、弱化、改写或替换。",
+    "最终 actions 必须与指令要求直接一致；若指令要求发送语音消息，必须输出 send_message/voice，并将指令指定的语音内容写入 transcript，禁止改用 silence 或 mute。",
+  ].join("\n");
 }
 
 const IMAGE_MIME_TYPES = new Set([

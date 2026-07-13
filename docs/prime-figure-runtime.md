@@ -27,12 +27,13 @@ flowchart TD
   L1 --> L2["第二次 chat completion<br/>toolChoice=none"]
   L -- 否 --> M["取得最终决策响应"]
   L2 --> M
-  M -. "流式期间" .-> V["voice transcript delta<br/>写入 Fish Audio TTS"]
   M -. "提示词完整后" .-> W["image generationPrompt 和参考图<br/>发送给 OpenRouter"]
-  M --> N["解析并校验 JSON<br/>finalize 等待媒体任务"]
-  V --> N
-  W --> N
-  N --> O["执行动作并持久化<br/>消息/状态/记忆/标注/日志"]
+  M --> N["解析并校验最终 JSON"]
+  N --> V["完整 voice transcript<br/>一次提交给 Fish Audio TTS"]
+  N --> X["finalize 等待媒体任务"]
+  V --> X
+  W --> X
+  X --> O["执行动作并持久化<br/>消息/状态/记忆/标注/日志"]
   O --> P["推进 lastHandledEndUserSeq<br/>到本轮输入边界"]
   P --> Q{"取出 run-dirty<br/>是否得到标记?"}
   R --> Q
@@ -46,7 +47,7 @@ flowchart TD
 - 用户文本消息先以服务端 `Date.now()` 作为 `createdAt` 写入数据库，随后 `prime-figure` 才入队，不会在写消息的请求中同步生成回复：[`messaging.service.ts`](../apps/server/src/modules/messaging/messaging.service.ts#L71-L106)。
 - worker 消费队列后调用 `PrimeFigureRuntimeService.requestDecision`：[`messaging.service.ts`](../apps/server/src/modules/messaging/messaging.service.ts#L126-L130)。
 - mute 到期时，如果屏蔽期间有排队消息，scheduler 会以 `trigger: "mute_ended"` 入队：[`prime-figure-silence.scheduler.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-silence.scheduler.ts#L37-L52)。
-- 在本初角色会话输入 `/hint 调试内容` 会通过独立调试端点以 `trigger: "debug_hint"` 入队，不写入普通聊天消息；调试内容会作为“需要无条件服从的系统调试指令”加入本轮 `hints`。该触发不等待新用户消息，也不受当前消息屏蔽期阻止。
+- 在本初角色会话输入 `/hint 调试内容` 会通过独立调试端点以 `trigger: "debug_hint"` 入队，不写入普通聊天消息；调试内容会作为独立的最高优先级 system message 注入，同时保留在本轮 `hints` 中。该触发不等待新用户消息，也不受当前消息屏蔽期阻止。
 - 队列以 `conversationId` 获取租约为 10 分钟、每 30 秒续期的 Redis 锁。同一会话已有任务运行时，新任务不会并行执行，而是设置有效期 10 分钟的 `run-dirty` 标记：[`run-queue.ts`](../apps/server/src/infra/redis/run-queue.ts#L97-L125)。
 - 持锁任务每轮开始前删除旧 dirty 标记；一轮结束后原子取出 dirty。如果运行期间有新任务设置过 dirty，就以 `trigger: "coalesced_messages"` 在同一把锁内再运行一轮；否则释放锁：[`run-queue.ts`](../apps/server/src/infra/redis/run-queue.ts#L116-L125)。
 
@@ -112,7 +113,7 @@ flowchart LR
 
 `system` 内容由 `buildSystemPrompt(agent)` 注入：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L845-L879)。
 
-system prompt 顶部要求：当 `hints` 中出现系统调试指令时，将其视为最高优先级系统要求并无条件服从。
+system prompt 顶部要求：当 `hints` 中出现系统调试指令时，将其视为最高优先级系统要求并无条件服从。`debug_hint` 触发时还会在基础 system message 之后追加一条独立 system message，明确调试动作不得被角色人设、情绪、关系状态或历史上下文替换；要求发送语音时禁止改用 `silence` 或 `mute`。
 
 它包含三类信息。固定规则在代码中按职责拆成多个常量后，再按固定顺序拼入同一条 system message；拆分常量不会产生多条 system message：
 
@@ -224,12 +225,12 @@ system prompt 顶部要求：当 `hints` 中出现系统调试指令时，将其
 
 ## 语音 TTS 请求
 
-语音 action 的 `transcript` 会在流式解析期间写入 Fish Audio WebSocket：[`prime-decision-stream-session.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-decision-stream-session.ts#L286-L344)、[`prime-decision-stream-session.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-decision-stream-session.ts#L427-L429)。
+语音 action 的 `transcript` delta 在 LLM 流式响应期间仍用于消息文字增量展示和实时缓存，但不会发送给 Fish Audio。只有最终响应完成、JSON 解析并通过 `primeFigureDecisionSchema` 校验后，stream session 才会用最终 voice action 中的完整 `transcript` 启动 TTS：[`prime-decision-stream-session.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-decision-stream-session.ts)。
 
-Fish Audio 请求不是 LLM 决策请求，但外部 TTS 服务会看到。运行时不会把自由文本 tag 转换为旧的固定英文标签；模型产出的 `transcript` delta 会原样进入 TTS 文本流：
+Fish Audio 请求不是 LLM 决策请求，但外部 TTS 服务会看到。运行时不会转换自由文本 tag；最终 `transcript` 会原样进入一次 HTTP 请求：
 
-- start payload 中的空 `text`、`format`、`latency`、`chunk_length`、`reference_id`：[`fish-audio-tts.service.ts`](../apps/server/src/modules/tts/fish-audio-tts.service.ts#L66-L79)。
-- 后续 `event: "text"` payload 中的 `text`，也就是模型输出的 `transcript` delta：[`fish-audio-tts.service.ts`](../apps/server/src/modules/tts/fish-audio-tts.service.ts#L95-L104)。
+- `POST /v1/tts` 请求体一次包含完整 `text`、`format`、`latency`、`chunk_length` 和 `reference_id`：[`fish-audio-tts.service.ts`](../apps/server/src/modules/tts/fish-audio-tts.service.ts)。
+- HTTP 响应体仍按音频 chunk 读取并通过现有 `message.audio.*` 事件推送客户端，同时聚合成完整 MP3 用于资源持久化。
 
 ## 执行与持久化
 

@@ -322,7 +322,7 @@ export function App() {
       <div
         className={`relative z-10 mx-auto grid max-w-[1440px] grid-cols-1 px-5 pb-28 pt-24 md:gap-6 md:px-16 md:pb-8 ${
           view === "messages"
-            ? "h-[100dvh] min-h-0 overflow-hidden"
+            ? "h-[100dvh] min-h-0"
             : "min-h-[100dvh]"
         } ${
           showConversationRail

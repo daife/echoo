@@ -27,7 +27,7 @@ export function ConversationRail({
           {visibleConversations.map((conversation) => {
             return (
               <button
-                key={conversation.name}
+                key={conversation.agent.id}
                 className="flex w-full items-center gap-3 rounded-lg p-3 text-left transition hover:bg-white/[0.055] active:translate-y-px"
                 onClick={() => (conversation.agent ? onOpenAgent(conversation.agent) : onOpenChat())}
               >
