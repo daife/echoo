@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { LocalMessage } from "@echoo/shared";
 import {
   createPendingTextMessage,
   markLocalMessageFailed,
   markLocalMessageSending,
+  mergeIncomingMessage,
+  mergeLocalMessage,
   mergeSentTextMessageResult,
 } from "./localMessageState";
 
@@ -55,5 +58,54 @@ describe("optimistic outgoing messages", () => {
       syncStatus: "pending",
       updatedAt: 3,
     });
+  });
+
+  it("places a memory summary after its covered reply and clears it while rebuilding", () => {
+    const base = {
+      conversationId: "conversation_1",
+      content: { text: "reply" },
+      status: "delivered" as const,
+      syncStatus: "synced" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const reply = {
+      ...base,
+      id: "reply",
+      sequence: 10,
+      role: "assistant" as const,
+      contentType: "text" as const,
+    };
+    const later = {
+      ...base,
+      id: "later",
+      sequence: 11,
+      role: "user" as const,
+      contentType: "text" as const,
+    };
+    const summary = {
+      ...base,
+      id: "summary",
+      sequence: 20,
+      role: "system" as const,
+      contentType: "system" as const,
+      metadata: { kind: "memory_summary", coveredThroughSequence: 10 },
+    };
+    const ordered = [later, summary, reply].reduce(
+      (messages, message) => mergeLocalMessage(messages, message),
+      [] as LocalMessage[],
+    );
+    expect(ordered.map((message) => message.id)).toEqual([
+      "reply",
+      "summary",
+      "later",
+    ]);
+
+    const rebuilt = mergeIncomingMessage(ordered, {
+      ...summary,
+      content: { text: "" },
+      status: "pending",
+    });
+    expect(rebuilt.find((message) => message.id === "summary")?.content.text).toBe("");
   });
 });

@@ -106,6 +106,11 @@ export class MessageRepository {
     minimumRounds = 100,
     maximumRounds = 199,
   ) {
+    const summary = await this.findLatestMemorySummary(
+      ownerUserId,
+      conversationId,
+    );
+    const summaryBoundary = getCoveredThroughSequence(summary) ?? 0;
     const normalizedMinimum = Math.max(1, Math.trunc(minimumRounds));
     const normalizedMaximum = Math.max(
       normalizedMinimum,
@@ -123,7 +128,8 @@ export class MessageRepository {
           SUM(CASE WHEN messages.role = 'user' THEN 1 ELSE 0 END)
             OVER () AS user_round_count
          FROM messages
-         WHERE messages.owner_user_id = ? AND messages.conversation_id = ?
+          WHERE messages.owner_user_id = ? AND messages.conversation_id = ?
+           AND messages.seq > ?
           AND messages.content_type = 'text' AND messages.status != 'failed'
           AND messages.role IN ('user', 'assistant')
           AND messages.search_text REGEXP '[^[:space:]]'
@@ -138,16 +144,138 @@ export class MessageRepository {
       [
         ownerUserId,
         conversationId,
+        summaryBoundary,
         normalizedMinimum,
         evictionStep,
         evictionStep,
       ],
     );
     return {
-      messages: rows.map(rowToMessage),
+      messages: [...(summary ? [summary] : []), ...rows.map(rowToMessage)],
       isInitialWindow:
-        rows.length === 0 || Number(rows[0].context_start_round) === 0,
+        !summary &&
+        (rows.length === 0 || Number(rows[0].context_start_round) === 0),
     };
+  }
+
+  async findLatestMemorySummary(
+    ownerUserId: string,
+    conversationId: string,
+  ) {
+    const row = await queryOne<MessageRow>(
+      `SELECT * FROM messages
+       WHERE owner_user_id = ? AND conversation_id = ?
+        AND role = 'system' AND content_type = 'system'
+        AND status IN ('delivered', 'read')
+        AND JSON_UNQUOTE(JSON_EXTRACT(run_metadata, '$.kind')) = 'memory_summary'
+       ORDER BY CAST(JSON_UNQUOTE(JSON_EXTRACT(run_metadata, '$.coveredThroughSequence')) AS UNSIGNED) DESC
+       LIMIT 1`,
+      [ownerUserId, conversationId],
+    );
+    return row ? rowToMessage(row) : null;
+  }
+
+  async findPendingMemorySummary(
+    ownerUserId: string,
+    conversationId: string,
+    coveredThroughSequence: number,
+  ) {
+    const row = await queryOne<MessageRow>(
+      `SELECT * FROM messages
+       WHERE owner_user_id = ? AND conversation_id = ?
+        AND role = 'system' AND content_type = 'system' AND status = 'pending'
+        AND JSON_UNQUOTE(JSON_EXTRACT(run_metadata, '$.kind')) = 'memory_summary'
+        AND CAST(JSON_UNQUOTE(JSON_EXTRACT(run_metadata, '$.coveredThroughSequence')) AS UNSIGNED) = ?
+       ORDER BY seq DESC LIMIT 1`,
+      [ownerUserId, conversationId, coveredThroughSequence],
+    );
+    return row ? rowToMessage(row) : null;
+  }
+
+  async findSliceMemorySummaryBoundary(
+    ownerUserId: string,
+    conversationId: string,
+    afterSequence: number,
+    rounds: number,
+  ) {
+    const row = await queryOne<MessageRow>(
+      `SELECT * FROM messages
+       WHERE owner_user_id = ? AND conversation_id = ? AND seq > ?
+        AND role = 'assistant' AND content_type = 'text'
+        AND status IN ('delivered', 'read')
+        AND search_text REGEXP '[^[:space:]]'
+        AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(run_metadata, '$.kind')), '') NOT IN ('opening_line', 'memory_summary')
+       ORDER BY seq ASC LIMIT 1 OFFSET ?`,
+      [ownerUserId, conversationId, afterSequence, Math.max(0, rounds - 1)],
+    );
+    return row ? rowToMessage(row) : null;
+  }
+
+  async listSliceMemorySummarySource(
+    ownerUserId: string,
+    conversationId: string,
+    afterSequence: number,
+    throughSequence: number,
+  ) {
+    const rows = await queryRows<MessageRow>(
+      `SELECT * FROM messages
+       WHERE owner_user_id = ? AND conversation_id = ?
+        AND seq > ? AND seq <= ? AND content_type = 'text'
+        AND role IN ('user', 'assistant')
+        AND status != 'failed' AND search_text REGEXP '[^[:space:]]'
+       ORDER BY seq ASC`,
+      [ownerUserId, conversationId, afterSequence, throughSequence],
+    );
+    return rows.map(rowToMessage);
+  }
+
+  async completeMemorySummary(input: {
+    ownerUserId: string;
+    conversationId: string;
+    messageId: string;
+    text: string;
+    providerId: string;
+    model: string;
+    updatedAt: number;
+  }) {
+    const result = await execute(
+      `UPDATE messages SET content = JSON_SET(content, '$.text', ?), status = 'delivered',
+        run_metadata = JSON_SET(COALESCE(run_metadata, JSON_OBJECT()), '$.providerId', ?, '$.model', ?), updated_at = ?
+       WHERE owner_user_id = ? AND conversation_id = ? AND id = ? AND status = 'pending'`,
+      [input.text, input.providerId, input.model, input.updatedAt, input.ownerUserId,
+        input.conversationId, input.messageId],
+    );
+    if (!result.affectedRows) return null;
+    await this.invalidateCache(input.ownerUserId, input.conversationId);
+    return this.findByIdInConversation(
+      input.ownerUserId,
+      input.conversationId,
+      input.messageId,
+    );
+  }
+
+  async invalidateMemorySummariesCovering(
+    ownerUserId: string,
+    conversationId: string,
+    sequence: number,
+  ) {
+    await execute(
+      `UPDATE messages SET status = 'pending', content = JSON_SET(content, '$.text', ''),
+        run_metadata = JSON_SET(run_metadata, '$.rebuild', true), updated_at = ?
+       WHERE owner_user_id = ? AND conversation_id = ?
+       AND JSON_UNQUOTE(JSON_EXTRACT(run_metadata, '$.kind')) = 'memory_summary'
+       AND CAST(JSON_UNQUOTE(JSON_EXTRACT(run_metadata, '$.coveredThroughSequence')) AS UNSIGNED) >= ?`,
+      [Date.now(), ownerUserId, conversationId, sequence],
+    );
+    await this.invalidateCache(ownerUserId, conversationId);
+    const rows = await queryRows<MessageRow>(
+      `SELECT * FROM messages WHERE owner_user_id = ? AND conversation_id = ?
+       AND status = 'pending'
+       AND JSON_UNQUOTE(JSON_EXTRACT(run_metadata, '$.kind')) = 'memory_summary'
+       ORDER BY seq ASC`,
+      [ownerUserId, conversationId],
+    );
+    return rows.map(rowToMessage);
   }
 
   async findByClientMessageId(
@@ -197,6 +325,16 @@ export class MessageRepository {
     return row ? rowToMessage(row) : null;
   }
 
+  async findLastPreviewMessage(ownerUserId: string, conversationId: string) {
+    const row = await queryOne<MessageRow>(
+      `SELECT * FROM messages WHERE owner_user_id = ? AND conversation_id = ?
+       AND role IN ('user', 'assistant') AND status != 'failed'
+       ORDER BY seq DESC LIMIT 1`,
+      [ownerUserId, conversationId],
+    );
+    return row ? rowToMessage(row) : null;
+  }
+
   async deleteAfterMessage(
     ownerUserId: string,
     conversationId: string,
@@ -240,11 +378,12 @@ export class MessageRepository {
       ],
     );
     const { ownerUserId: _ownerUserId, ...message } = input;
+    const saved = { ...message, sequence: result.insertId };
     await this.upsertCache(input.ownerUserId, input.conversationId, {
       sequence: result.insertId,
-      message,
+      message: saved,
     });
-    return message;
+    return saved;
   }
 
   async markRead(ownerUserId: string, messageId: string, readAt: number) {
@@ -348,6 +487,7 @@ function rowToMessage(row: MessageRow): Message {
   const { providerId, model, ...metadata } = run;
   return {
     id: row.id,
+    sequence: row.seq,
     ...(row.client_message_id
       ? { clientMessageId: row.client_message_id }
       : {}),
@@ -363,6 +503,11 @@ function rowToMessage(row: MessageRow): Message {
     updatedAt: row.updated_at,
     ...(row.read_at ? { readAt: row.read_at } : {}),
   };
+}
+
+function getCoveredThroughSequence(message: Message | null) {
+  const value = message?.metadata?.coveredThroughSequence;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function clampLimit(limit: number | undefined, fallback: number) {

@@ -19,7 +19,7 @@ export interface MessageBubbleModel {
   text: string;
   createdAt: number;
   deliveryState?: "sending" | "failed";
-  kind?: "text" | "image" | "voice";
+  kind?: "text" | "image" | "voice" | "memory-summary";
   mediaUrl?: string;
   transcript?: string;
   durationSeconds?: number;
@@ -156,6 +156,13 @@ export function MessageBubble({
       ) : null}
     </div>
   ) : null;
+
+  if (message.kind === "memory-summary")
+    return (
+      <div className="self-center text-[11px] text-white/32">
+        已自动总结对话
+      </div>
+    );
 
   if (message.kind === "image") {
     const mediaUrl = resolveMediaUrl(message.mediaUrl);

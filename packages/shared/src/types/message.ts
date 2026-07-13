@@ -10,6 +10,8 @@ export interface MessageContent {
 
 export interface Message {
   id: string;
+  /** Stable database timeline sequence. */
+  sequence?: number;
   clientMessageId?: string;
   /**
    * Persistent session id for the conversation this message belongs to.

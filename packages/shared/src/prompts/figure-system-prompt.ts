@@ -23,8 +23,23 @@ export const DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT = `你的人设：
 严格遵守以下回复风格：
 {{figure.responseStyle}}`;
 
+export const DEFAULT_SLICE_FIGURE_MEMORY_SUMMARY_PROMPT = `请将提供的对话整理为供后续对话使用的长期记忆总结。
+保留角色与用户的重要事实、关系变化、偏好与边界、承诺与约定、关键事件、情绪变化以及未完成事项；合并重复信息，忽略寒暄和无关细节。
+不要续写或回复对话，只输出清晰、紧凑、可直接作为后续上下文的总结。`;
+
 export function buildFigureSystemPrompt(figure: FigureSystemPromptInput, context: FigurePromptContext = {}) {
   return resolvePromptPlaceholders(figure.systemPrompt, figure, context);
+}
+
+export function buildFigureMemorySummaryPrompt(
+  figure: FigureSystemPromptInput & { memorySummaryPrompt: string },
+  context: FigurePromptContext = {},
+) {
+  return resolvePromptPlaceholders(
+    figure.memorySummaryPrompt,
+    figure,
+    context,
+  );
 }
 
 function resolvePromptPlaceholders(

@@ -1,4 +1,7 @@
-import { buildFigureSystemPrompt } from "@echoo/shared";
+import {
+  buildFigureMemorySummaryPrompt,
+  buildFigureSystemPrompt,
+} from "@echoo/shared";
 import type { Message, SliceFigureAgent, UserProfile } from "@echoo/shared";
 import type {
   ChatCompletionInput,
@@ -12,6 +15,7 @@ import {
 import { getFigureContextWindowConfig } from "../../../../infra/config/context-window-config.js";
 import { MessageRepository } from "../../../messaging/message.repository.js";
 import { AgentRepository } from "../../agent.repository.js";
+import { randomUUID } from "node:crypto";
 
 export interface SliceFigureRuntimeResult {
   text: string;
@@ -26,6 +30,93 @@ export class SliceFigureRuntimeService {
     private readonly providers = new AiProviderRegistry(),
     private readonly users = new UserRepository(),
   ) {}
+
+  async createPendingMemorySummaries(input: {
+    ownerUserId: string;
+    conversationId: string;
+  }): Promise<Message[]> {
+    const agent = await this.agents.findByConversation(
+      input.ownerUserId,
+      input.conversationId,
+    );
+    if (!agent || agent.type !== "slice-figure") return [];
+    const userRecord = await this.users.findById(input.ownerUserId);
+    const user = userRecord ? toUserProfile(userRecord) : null;
+    const provider = this.providers.getDefaultProvider();
+    const model = this.providers.getDefaultModel();
+    const rounds = getFigureContextWindowConfig().sliceFigureMemorySummaryRounds;
+    const completed: Message[] = [];
+
+    for (;;) {
+      const previous = await this.messages.findLatestMemorySummary(
+        input.ownerUserId,
+        input.conversationId,
+      );
+      const previousBoundary = memorySummaryBoundary(previous);
+      const startSequence = previousBoundary ?? 0;
+      const boundary = await this.messages.findSliceMemorySummaryBoundary(
+        input.ownerUserId,
+        input.conversationId,
+        startSequence,
+        rounds,
+      );
+      if (!boundary?.sequence) break;
+
+      const source = await this.messages.listSliceMemorySummarySource(
+        input.ownerUserId,
+        input.conversationId,
+        startSequence,
+        boundary.sequence,
+      );
+      const now = Date.now();
+      const pending =
+        (await this.messages.findPendingMemorySummary(
+          input.ownerUserId,
+          input.conversationId,
+          boundary.sequence,
+        )) ??
+        (await this.messages.save({
+          ownerUserId: input.ownerUserId,
+          id: `msg_${randomUUID()}`,
+          conversationId: input.conversationId,
+          role: "system",
+          contentType: "system",
+          content: { text: "" },
+          status: "pending",
+          metadata: {
+            kind: "memory_summary",
+            version: 1,
+            coveredFromSequence: startSequence + 1,
+            coveredThroughSequence: boundary.sequence,
+            coveredRoundCount: rounds,
+            ...(previous ? { previousSummaryId: previous.id } : {}),
+          },
+          createdAt: now,
+          updatedAt: now,
+        }));
+
+      const prompt = buildFigureMemorySummaryPrompt(agent.detail, { user });
+      const entries = [
+        ...(previous?.content.text?.trim()
+          ? [`【上一份记忆总结】\n${previous.content.text.trim()}`]
+          : []),
+        ...source.map(formatMemorySourceMessage),
+      ];
+      const result = await summarizeEntries({ provider, model, prompt, entries });
+      const message = await this.messages.completeMemorySummary({
+        ownerUserId: input.ownerUserId,
+        conversationId: input.conversationId,
+        messageId: pending.id,
+        text: result.text,
+        providerId: result.providerId,
+        model: result.model,
+        updatedAt: Date.now(),
+      });
+      if (!message) break;
+      completed.push(message);
+    }
+    return completed;
+  }
 
   async createReply(input: {
     ownerUserId: string;
@@ -154,6 +245,13 @@ export function selectSliceFigureContextMessages(
   history: Message[],
   isInitialWindow: boolean,
 ): ChatCompletionMessage[] {
+  const memorySummary = history.find(
+    (message) =>
+      message.role === "system" &&
+      message.contentType === "system" &&
+      message.metadata?.kind === "memory_summary" &&
+      Boolean(message.content.text?.trim()),
+  );
   const textHistory = history.filter((message) => {
     if (message.contentType !== "text" || message.status === "failed")
       return false;
@@ -165,6 +263,12 @@ export function selectSliceFigureContextMessages(
       message.role === "assistant" && message.metadata?.kind === "opening_line",
   );
   const selected: ChatCompletionMessage[] = [];
+
+  if (memorySummary)
+    selected.push({
+      role: "system",
+      content: `此前对话的滚动记忆总结：\n${memorySummary.content.text?.trim() ?? ""}`,
+    });
 
   if (
     isInitialWindow &&
@@ -183,4 +287,66 @@ export function selectSliceFigureContextMessages(
     });
   }
   return selected;
+}
+
+function memorySummaryBoundary(message: Message | null) {
+  const value = message?.metadata?.coveredThroughSequence;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatMemorySourceMessage(message: Message) {
+  const opening = message.metadata?.kind === "opening_line";
+  const sender = message.role === "user" ? "用户" : opening ? "角色开场白" : "角色";
+  return `【${sender}】${message.content.text?.trim() ?? ""}`;
+}
+
+async function summarizeEntries(input: {
+  provider: ReturnType<AiProviderRegistry["getDefaultProvider"]>;
+  model: string;
+  prompt: string;
+  entries: string[];
+}) {
+  const chunks = chunkEntries(input.entries, 60_000);
+  const partials = [];
+  for (let index = 0; index < chunks.length; index += 1) {
+    const result = await input.provider.createChatCompletion({
+      model: input.model,
+      messages: [
+        { role: "system", content: input.prompt },
+        {
+          role: "user",
+          content: chunks.length === 1
+            ? chunks[index]!
+            : `这是当前总结周期的第 ${index + 1}/${chunks.length} 个片段。请先总结这一片段：\n\n${chunks[index]}`,
+        },
+      ],
+      temperature: 0.2,
+      maxTokens: process.env.DEFAULT_TEXT_MAX_TOKENS
+        ? Number(process.env.DEFAULT_TEXT_MAX_TOKENS)
+        : undefined,
+      reasoningMode: "disabled",
+    });
+    partials.push(result);
+  }
+  if (partials.length === 1) return partials[0]!;
+  return summarizeEntries({
+    ...input,
+    entries: partials.map(
+      (partial, index) => `【片段总结 ${index + 1}】\n${partial.text}`,
+    ),
+  });
+}
+
+function chunkEntries(entries: string[], maximumCharacters: number) {
+  const chunks: string[] = [];
+  let current = "";
+  for (const entry of entries) {
+    const next = current ? `${current}\n\n${entry}` : entry;
+    if (current && next.length > maximumCharacters) {
+      chunks.push(current);
+      current = entry;
+    } else current = next;
+  }
+  if (current) chunks.push(current);
+  return chunks.length ? chunks : ["没有可总结的对话内容。"];
 }

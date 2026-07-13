@@ -667,9 +667,21 @@ export function useConversationMessages({
         messageId,
         text,
       );
-      setMessages((current) =>
-        mergeLocalMessage(current, { ...result.message, syncStatus: "synced" }),
-      );
+      setMessages((current) => {
+        const sequence = result.message.sequence;
+        const withoutInvalidSummaries =
+          typeof sequence === "number"
+            ? current.filter((message) => {
+                if (message.metadata?.kind !== "memory_summary") return true;
+                const covered = message.metadata.coveredThroughSequence;
+                return typeof covered !== "number" || covered < sequence;
+              })
+            : current;
+        return mergeLocalMessage(withoutInvalidSummaries, {
+          ...result.message,
+          syncStatus: "synced",
+        });
+      });
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : "修改消息失败。");
       throw updateError;

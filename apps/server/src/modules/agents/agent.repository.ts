@@ -248,6 +248,7 @@ function buildDetail(type: Agent["type"], input: UpdateAgentInput | CreateAgentI
       personality: value.personality,
       responseStyle: value.responseStyle,
       systemPrompt: value.systemPrompt,
+      memorySummaryPrompt: value.memorySummaryPrompt,
       replyAutoSegment: value.replyAutoSegment ?? false,
     };
   }

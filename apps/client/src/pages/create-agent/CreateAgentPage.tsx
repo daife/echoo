@@ -8,6 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import {
   buildFigureSystemPrompt,
+  DEFAULT_SLICE_FIGURE_MEMORY_SUMMARY_PROMPT,
   DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT,
   type Agent,
   type AgentAttribute,
@@ -133,6 +134,7 @@ const initialSliceForm: CreateSliceFigureRequest = {
   currentSituation: "",
   openingLine: "",
   systemPrompt: DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT,
+  memorySummaryPrompt: DEFAULT_SLICE_FIGURE_MEMORY_SUMMARY_PROMPT,
   replyAutoSegment: false,
 };
 
@@ -163,6 +165,9 @@ function SliceFigureCreateForm({ onCreate }: { onCreate: (input: CreateSliceFigu
         linkedAgentIds: parsed.linkedAgentIds ?? [],
         unlockConditions: parsed.unlockConditions ?? null,
         systemPrompt: parsed.systemPrompt ?? DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT,
+        memorySummaryPrompt:
+          parsed.memorySummaryPrompt ??
+          DEFAULT_SLICE_FIGURE_MEMORY_SUMMARY_PROMPT,
         isPublic: Boolean(parsed.isPublic),
       };
       setForm(next);
@@ -263,6 +268,7 @@ export function SliceFigureFormFields({
         <TextField label="当前情景" multiline value={form.currentSituation ?? ""} placeholder="可在模板中通过 {{figure.currentSituation}} 引用" onChange={(value) => onChange("currentSituation", value)} />
         <TextField label="开场白" multiline value={form.openingLine ?? ""} placeholder="作为首条助手消息写入会话，因此会进入对话历史" onChange={(value) => onChange("openingLine", value)} />
         <TextField label="系统提示词模板" required multiline mono value={form.systemPrompt} placeholder={DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT} onChange={(value) => onChange("systemPrompt", value)} />
+        <TextField label="记忆总结提示词" required multiline mono value={form.memorySummaryPrompt ?? ""} placeholder={DEFAULT_SLICE_FIGURE_MEMORY_SUMMARY_PROMPT} onChange={(value) => onChange("memorySummaryPrompt", value)} />
         <p className="text-xs leading-5 text-white/42">可用：{"{{user.name}}"}、{"{{figure.persona}}"}、{"{{figure.background}}"}、{"{{figure.personality}}"}、{"{{figure.responseStyle}}"}、{"{{figure.currentSituation}}"}。不提供用户 ID、邮箱等字段。</p>
         <button className="w-fit rounded-full border border-white/12 px-4 py-2 text-sm text-white/65 transition hover:border-white/25 hover:text-white" type="button" onClick={() => onPromptPreviewChange(buildFigureSystemPrompt(form, { user }))}>预览解析后的完整系统提示词</button>
         {promptPreview !== null ? <PromptPreview value={promptPreview} /> : null}
@@ -546,7 +552,7 @@ function ImageInput({ label, value, existingUrl, onChange }: { label: string; va
 export function buildSlicePayload(form: CreateSliceFigureRequest, unlockText: string): CreateSliceFigureRequest | string {
   const common = normalizeDisplayFields(form, unlockText);
   if (typeof common === "string") return common;
-  const required = normalizeRequired({ persona: form.persona, background: form.background, personality: form.personality, responseStyle: form.responseStyle, systemPrompt: form.systemPrompt });
+  const required = normalizeRequired({ persona: form.persona, background: form.background, personality: form.personality, responseStyle: form.responseStyle, systemPrompt: form.systemPrompt, memorySummaryPrompt: form.memorySummaryPrompt ?? DEFAULT_SLICE_FIGURE_MEMORY_SUMMARY_PROMPT });
   if (typeof required === "string") return required;
   return { ...form, ...common, ...required, type: "slice-figure", currentSituation: form.currentSituation?.trim() ?? "", openingLine: form.openingLine?.trim() ?? "" };
 }
@@ -575,7 +581,7 @@ function normalizeDisplayFields(form: DisplayForm, unlockText: string) {
 }
 
 function normalizeRequired(values: Record<string, string>) {
-  const labels: Record<string, string> = { persona: "人设", background: "背景", personality: "性格", responseStyle: "回复风格", systemPrompt: "系统提示词" };
+  const labels: Record<string, string> = { persona: "人设", background: "背景", personality: "性格", responseStyle: "回复风格", systemPrompt: "系统提示词", memorySummaryPrompt: "记忆总结提示词" };
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(values)) { const trimmed = value.trim(); if (!trimmed) return `${labels[key] ?? key}不能为空。`; result[key] = trimmed; }
   return result;

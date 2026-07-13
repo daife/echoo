@@ -16,8 +16,9 @@ export interface AgentRunJob {
   trigger?:
     | "end_user_message"
     | "mute_ended"
-    | "coalesced_messages"
-    | "debug_hint";
+     | "coalesced_messages"
+      | "debug_hint"
+      | "memory_summary";
   debugInstruction?: string;
 }
 

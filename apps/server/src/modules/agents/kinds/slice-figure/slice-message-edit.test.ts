@@ -11,7 +11,7 @@ test("slice message edit keeps later history and only refreshes the last-message
   let lastMessage = later;
   const repository = {
     findByIdInConversation: async () => target,
-    findLastByConversation: async () => lastMessage,
+    findLastPreviewMessage: async () => lastMessage,
     updateText: async (_owner: string, _conversation: string, _id: string, text: string, updatedAt: number) => ({
       ...target,
       content: { text },

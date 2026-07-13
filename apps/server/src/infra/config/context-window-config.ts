@@ -6,6 +6,7 @@ export interface StableContextWindow {
 export interface FigureContextWindowConfig {
   sliceFigureRounds: StableContextWindow;
   primeFigureMessages: StableContextWindow;
+  sliceFigureMemorySummaryRounds: number;
 }
 
 export function getFigureContextWindowConfig(): FigureContextWindowConfig {
@@ -21,6 +22,10 @@ export function getFigureContextWindowConfig(): FigureContextWindowConfig {
       "PRIME_FIGURE_CONTEXT_MAX_MESSAGES",
       150,
       249,
+    ),
+    sliceFigureMemorySummaryRounds: readPositiveInteger(
+      "SLICE_FIGURE_MEMORY_SUMMARY_ROUNDS",
+      500,
     ),
   };
 }

@@ -31,6 +31,7 @@ test("figure context configuration uses defaults and accepts overrides", () => {
     "SLICE_FIGURE_CONTEXT_MAX_ROUNDS",
     "PRIME_FIGURE_CONTEXT_MIN_MESSAGES",
     "PRIME_FIGURE_CONTEXT_MAX_MESSAGES",
+    "SLICE_FIGURE_MEMORY_SUMMARY_ROUNDS",
   ] as const;
   const previous = new Map(names.map((name) => [name, process.env[name]]));
 
@@ -39,15 +40,18 @@ test("figure context configuration uses defaults and accepts overrides", () => {
     assert.deepEqual(getFigureContextWindowConfig(), {
       sliceFigureRounds: { minimum: 100, maximum: 199 },
       primeFigureMessages: { minimum: 150, maximum: 249 },
+      sliceFigureMemorySummaryRounds: 500,
     });
 
     process.env.SLICE_FIGURE_CONTEXT_MIN_ROUNDS = "80";
     process.env.SLICE_FIGURE_CONTEXT_MAX_ROUNDS = "179";
     process.env.PRIME_FIGURE_CONTEXT_MIN_MESSAGES = "120";
     process.env.PRIME_FIGURE_CONTEXT_MAX_MESSAGES = "219";
+    process.env.SLICE_FIGURE_MEMORY_SUMMARY_ROUNDS = "300";
     assert.deepEqual(getFigureContextWindowConfig(), {
       sliceFigureRounds: { minimum: 80, maximum: 179 },
       primeFigureMessages: { minimum: 120, maximum: 219 },
+      sliceFigureMemorySummaryRounds: 300,
     });
   } finally {
     for (const name of names) {

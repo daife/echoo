@@ -23,6 +23,7 @@ export interface SliceFigureDetail {
   personality: string;
   responseStyle: string;
   systemPrompt: string;
+  memorySummaryPrompt: string;
   replyAutoSegment: boolean;
 }
 
@@ -154,6 +155,7 @@ export interface CreateSliceFigureRequest {
   personality: string;
   responseStyle: string;
   systemPrompt: string;
+  memorySummaryPrompt: string;
   replyAutoSegment?: boolean;
 }
 

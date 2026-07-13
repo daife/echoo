@@ -121,6 +121,7 @@ export class MessagingService {
     const assistantMessage = await this.createAssistantPlaceholder(
       input.ownerUserId,
       input.conversationId,
+      message.id,
     );
     this.appPush.pushToUser(input.ownerUserId, {
       type: "message.created",
@@ -164,9 +165,21 @@ export class MessagingService {
       await this.primeRuntime.requestDecision({
         ownerUserId: job.ownerUserId,
         conversationId: job.conversationId,
-        trigger: job.trigger,
+        trigger: job.trigger === "memory_summary" ? undefined : job.trigger,
         debugInstruction: job.debugInstruction,
       });
+      return;
+    }
+    if (job.trigger === "memory_summary") {
+      const summaries = await this.sliceRuntime.createPendingMemorySummaries({
+        ownerUserId: job.ownerUserId,
+        conversationId: job.conversationId,
+      });
+      for (const message of summaries)
+        this.appPush.pushToUser(job.ownerUserId, {
+          type: "message.completed",
+          message,
+        });
       return;
     }
     if (!job.assistantMessageId) return;
@@ -237,7 +250,7 @@ export class MessagingService {
       return { kind: "unsupported_message" as const };
     if (message.status === "pending") return { kind: "pending" as const };
 
-    const lastMessage = await this.repository.findLastByConversation(
+    const lastMessage = await this.repository.findLastPreviewMessage(
       input.ownerUserId,
       input.conversationId,
     );
@@ -262,6 +275,22 @@ export class MessagingService {
       type: "message.updated",
       message: updated,
     });
+    if (message.sequence) {
+      const invalidated = await this.repository.invalidateMemorySummariesCovering(
+        input.ownerUserId,
+        input.conversationId,
+        message.sequence,
+      );
+      for (const summary of invalidated)
+        this.appPush.pushToUser(input.ownerUserId, {
+          type: "message.updated",
+          message: summary,
+        });
+      await this.enqueueSliceMemorySummary(
+        input.ownerUserId,
+        input.conversationId,
+      );
+    }
     return { kind: "ok" as const, message: updated };
   }
 
@@ -298,7 +327,7 @@ export class MessagingService {
       conversationId,
       retainedThrough,
     );
-    const lastMessage = await this.repository.findLastByConversation(
+    const lastMessage = await this.repository.findLastPreviewMessage(
       ownerUserId,
       conversationId,
     );
@@ -310,6 +339,7 @@ export class MessagingService {
       preview: lastMessage?.content.text ?? null,
       updatedAt: now,
     });
+    await this.enqueueSliceMemorySummary(ownerUserId, conversationId);
 
     return {
       kind: "ok" as const,
@@ -321,6 +351,7 @@ export class MessagingService {
   private async createAssistantPlaceholder(
     ownerUserId: string,
     conversationId: string,
+    replyToMessageId?: string,
   ) {
     const now = Date.now();
 
@@ -332,6 +363,9 @@ export class MessagingService {
       contentType: "text",
       content: { text: "" },
       status: "pending",
+      ...(replyToMessageId
+        ? { metadata: { replyToMessageId } }
+        : {}),
       createdAt: now,
       updatedAt: now,
     });
@@ -391,6 +425,7 @@ export class MessagingService {
         status: "delivered",
         providerId: reply.providerId,
         model: reply.model,
+        metadata: pendingMessage.metadata,
         createdAt: pendingMessage.createdAt,
         updatedAt: now,
       });
@@ -406,6 +441,24 @@ export class MessagingService {
         type: "message.completed",
         message,
       });
+      try {
+        const summaries = await this.sliceRuntime.createPendingMemorySummaries({
+          ownerUserId,
+          conversationId,
+        });
+        for (const summary of summaries)
+          this.appPush.pushToUser(ownerUserId, {
+            type: "message.completed",
+            message: summary,
+          });
+      } catch (error) {
+        console.warn("Slice figure memory summary failed; queued for retry.", error);
+        try {
+          await this.enqueueSliceMemorySummary(ownerUserId, conversationId);
+        } catch (queueError) {
+          console.warn("Slice figure memory summary retry enqueue failed.", queueError);
+        }
+      }
       return message;
     } catch (error) {
       await liveCacheWrite;
@@ -448,5 +501,17 @@ export class MessagingService {
       });
       return message;
     }
+  }
+
+  private async enqueueSliceMemorySummary(
+    ownerUserId: string,
+    conversationId: string,
+  ) {
+    await this.runQueue.enqueue({
+      ownerUserId,
+      conversationId,
+      kind: "slice-figure",
+      trigger: "memory_summary",
+    });
   }
 }

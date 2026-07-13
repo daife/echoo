@@ -29,11 +29,27 @@ export function mergeLocalMessage(
   message: LocalMessage,
 ) {
   return [...messages.filter((item) => item.id !== message.id), message].sort(
-    (left, right) =>
-      left.createdAt === right.createdAt
-        ? left.id.localeCompare(right.id)
-        : left.createdAt - right.createdAt,
+    compareTimelineMessages,
   );
+}
+
+export function compareTimelineMessages(left: Message, right: Message) {
+  const leftOrder = getLogicalSequence(left);
+  const rightOrder = getLogicalSequence(right);
+  if (leftOrder !== null && rightOrder !== null && leftOrder !== rightOrder)
+    return leftOrder - rightOrder;
+  return left.createdAt === right.createdAt
+    ? left.id.localeCompare(right.id)
+    : left.createdAt - right.createdAt;
+}
+
+function getLogicalSequence(message: Message) {
+  if (message.metadata?.kind === "memory_summary") {
+    const covered = message.metadata.coveredThroughSequence;
+    if (typeof covered === "number" && Number.isFinite(covered))
+      return covered + 0.5;
+  }
+  return typeof message.sequence === "number" ? message.sequence : null;
 }
 
 export function mergeIncomingMessage(
@@ -49,6 +65,7 @@ export function mergeIncomingMessage(
 
   if (
     existing &&
+    message.role === "assistant" &&
     message.status === "pending" &&
     !incomingText &&
     existingText

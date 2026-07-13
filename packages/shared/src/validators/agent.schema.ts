@@ -47,6 +47,7 @@ export const createSliceFigureSchema = createAgentBaseSchema.extend({
   personality: requiredText("性格"),
   responseStyle: requiredText("回复风格"),
   systemPrompt: requiredText("系统提示词", 12000),
+  memorySummaryPrompt: requiredText("记忆总结提示词", 12000),
   replyAutoSegment: z.boolean().optional().default(false),
 });
 

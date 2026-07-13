@@ -279,7 +279,7 @@ export function MessagesPage({
         <div className="flex flex-col gap-5">
           {visibleMessages.map((message, index) => {
             const previous = visibleMessages[index - 1];
-              const showTime = message.isSourceStart !== false && shouldShowMessageTime(
+              const showTime = message.kind !== "memory-summary" && message.isSourceStart !== false && shouldShowMessageTime(
               message.createdAt,
               previous?.createdAt,
             );
@@ -536,6 +536,7 @@ function agentToUpdateForm(agent: SliceFigureAgent): UpdateSliceFigureRequest {
     personality: agent.detail.personality,
     responseStyle: agent.detail.responseStyle,
     systemPrompt: agent.detail.systemPrompt,
+    memorySummaryPrompt: agent.detail.memorySummaryPrompt,
     replyAutoSegment: agent.detail.replyAutoSegment,
   };
 }
@@ -591,6 +592,17 @@ function toBubbleMessages(
   canEditFigureMessages: boolean,
   agentType: Agent["type"],
 ): MessageBubbleModel[] {
+  if (message.metadata?.kind === "memory_summary")
+    return [{
+      id: message.id,
+      sourceMessageId: message.id,
+      from: "system",
+      text: "已自动总结对话",
+      createdAt: message.createdAt,
+      kind: "memory-summary",
+      canRollback: false,
+      canEdit: false,
+    }];
   const text = message.contentType === "text" ? (message.content.text ?? "") : "";
   const segments =
     autoSegment && message.role === "assistant" && message.contentType === "text"
