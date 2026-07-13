@@ -351,13 +351,7 @@ export interface PrimeFigureDecision {
     eventAt: string | null;
   }>;
   stateUpdates?: PrimeFigureStateUpdates;
-  actions:
-    | [
-        Extract<PrimeFigureAction, { type: "send_message" }>,
-        ...Array<Extract<PrimeFigureAction, { type: "send_message" }>>,
-      ]
-    | [Extract<PrimeFigureAction, { type: "silence" }>]
-    | [Extract<PrimeFigureAction, { type: "mute" }>];
+  actions: [PrimeFigureAction, ...PrimeFigureAction[]];
 }
 
 export interface CreateAgentResponse {

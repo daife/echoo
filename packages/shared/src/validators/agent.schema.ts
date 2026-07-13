@@ -456,21 +456,7 @@ export const primeFigureDecisionSchema = z.object({
     })
     .optional()
     .default({}),
-  actions: z
-    .array(primeFigureActionSchema)
-    .min(1)
-    .max(12)
-    .superRefine((actions, context) => {
-      const containsExclusiveAction = actions.some(
-        (action) => action.type === "silence" || action.type === "mute",
-      );
-      if (containsExclusiveAction && actions.length !== 1) {
-        context.addIssue({
-          code: "custom",
-          message: "silence 或 mute 必须是一次决定中的唯一动作。",
-        });
-      }
-    }),
+  actions: z.array(primeFigureActionSchema).min(1).max(12),
 });
 
 export const updateSliceFigureSchema = createSliceFigureSchema.omit({

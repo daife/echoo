@@ -69,84 +69,86 @@ export class PrimeActionExecutor {
         input.state.relationshipStatus,
       updatedAt: now,
     };
-    const createdMessages: Array<{ message: Message; streamed: boolean }> = [];
+    const createdMessages: Array<{
+      actionIndex: number;
+      message: Message;
+      streamed: boolean;
+    }> = [];
 
     try {
       const muteAction = decision.actions.find(
         (action) => action.type === "mute",
       );
-      if (!muteAction) {
+      if (muteAction) {
+        state.silenceStartedAtMs = input.muteMessageCutoffAtMs ?? now;
+        state.silenceUntilMs = now + muteAction.revisitAfterMinutes * 60_000;
+      } else {
         delete state.silenceStartedAtMs;
         delete state.silenceUntilMs;
+      }
 
-        for (const [index, action] of decision.actions.entries()) {
-          if (action.type !== "send_message") continue;
-          const occurredAtMs =
-            input.messageCreatedAt?.get(index) ?? now + index;
-          const voiceMedia = input.voiceMedia?.get(index);
-          const imageMedia = input.imageMedia?.get(index);
-          const status =
-            action.message.type === "image" &&
-            !action.message.description.trim() &&
-            !imageMedia
-              ? "failed"
-              : "delivered";
-          const primeContent = toPrimeMessageContent(
-            action.message,
-            voiceMedia,
-            imageMedia,
-          );
-          const streamedMessageId = input.streamedMessageIds?.get(index);
-          createdMessages.push({
-            streamed: Boolean(streamedMessageId),
-            message: await this.messages.save({
-              ownerUserId: input.ownerUserId,
-              id: streamedMessageId ?? createId("msg"),
-              conversationId: input.conversationId,
-              role: "assistant",
-              contentType: toMessageContentType(action.message),
-              content: toMessageContent(action.message, voiceMedia, imageMedia),
-              status,
-              providerId: input.providerId,
-              model: input.model,
-              metadata: {
-                kind: "prime_figure",
-                primeContent,
-                ...toMediaIntentMetadata(
-                  action.message,
-                  voiceMedia,
-                  input.ttsErrors?.get(index),
-                  imageMedia,
-                  input.imageGenerationErrors?.get(index),
-                ),
-              },
-              createdAt: occurredAtMs,
-              updatedAt: occurredAtMs,
-            }),
-          });
-        }
-        const deliveredMessages = createdMessages.filter(
-          (created) => created.message.status !== "failed",
+      for (const [index, action] of decision.actions.entries()) {
+        if (action.type !== "send_message") continue;
+        const occurredAtMs = input.messageCreatedAt?.get(index) ?? now + index;
+        const voiceMedia = input.voiceMedia?.get(index);
+        const imageMedia = input.imageMedia?.get(index);
+        const status =
+          action.message.type === "image" &&
+          !action.message.description.trim() &&
+          !imageMedia
+            ? "failed"
+            : "delivered";
+        const primeContent = toPrimeMessageContent(
+          action.message,
+          voiceMedia,
+          imageMedia,
         );
-        const lastMessage = [...decision.actions]
-          .reverse()
-          .find((action, reverseIndex) => {
-            if (action.type !== "send_message") return false;
-            const index = decision.actions.length - reverseIndex - 1;
-            return createdMessages[index]?.message.status !== "failed";
-          });
-        if (lastMessage?.type === "send_message") {
+        const streamedMessageId = input.streamedMessageIds?.get(index);
+        createdMessages.push({
+          actionIndex: index,
+          streamed: Boolean(streamedMessageId),
+          message: await this.messages.save({
+            ownerUserId: input.ownerUserId,
+            id: streamedMessageId ?? createId("msg"),
+            conversationId: input.conversationId,
+            role: "assistant",
+            contentType: toMessageContentType(action.message),
+            content: toMessageContent(action.message, voiceMedia, imageMedia),
+            status,
+            providerId: input.providerId,
+            model: input.model,
+            metadata: {
+              kind: "prime_figure",
+              primeContent,
+              ...toMediaIntentMetadata(
+                action.message,
+                voiceMedia,
+                input.ttsErrors?.get(index),
+                imageMedia,
+                input.imageGenerationErrors?.get(index),
+              ),
+            },
+            createdAt: occurredAtMs,
+            updatedAt: occurredAtMs,
+          }),
+        });
+      }
+      const deliveredMessages = createdMessages.filter(
+        (created) => created.message.status !== "failed",
+      );
+      const lastDeliveredMessage = deliveredMessages.at(-1);
+      if (lastDeliveredMessage) {
+        const lastMessageAction =
+          decision.actions[lastDeliveredMessage.actionIndex];
+        if (lastMessageAction?.type === "send_message") {
           await this.conversations.updatePreview({
             ownerUserId: input.ownerUserId,
             conversationId: input.conversationId,
-            preview: toConversationPreview(lastMessage.message),
-            updatedAt: now + decision.actions.length - 1,
+            preview: toConversationPreview(lastMessageAction.message),
+            updatedAt: now + lastDeliveredMessage.actionIndex,
             unreadIncrement: deliveredMessages.length,
           });
         }
-      } else {
-        state.silenceStartedAtMs = input.muteMessageCutoffAtMs ?? now;
-        state.silenceUntilMs = now + muteAction.revisitAfterMinutes * 60_000;
       }
 
       await this.figures.applyRuntimeUpdates(

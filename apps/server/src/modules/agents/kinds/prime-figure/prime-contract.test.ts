@@ -6,7 +6,7 @@ import {
   primeFigureScheduleSchema,
   updatePrimeFigureSchema,
 } from "@echoo/shared";
-import type { PrimeFigureDecision } from "@echoo/shared";
+import type { PrimeFigureDecision, PrimeFigureState } from "@echoo/shared";
 import { PrimeActionExecutor } from "./prime-action-executor.js";
 import { PrimeDecisionStreamParser } from "./prime-decision-stream-parser.js";
 import { buildPrimeChatMessages } from "./prime-figure-runtime.service.js";
@@ -289,6 +289,29 @@ test("prime decision distinguishes one-turn silence from message muting", () => 
   );
 });
 
+test("prime decision accepts advisory-only action exclusivity", () => {
+  const base = {
+    rationale: "先回应再暂时屏蔽",
+    figureMood: "平静",
+    variables: {},
+  };
+  assert.deepEqual(
+    primeFigureDecisionSchema.parse({
+      ...base,
+      actions: [
+        { type: "silence" },
+        { type: "send_message", message: { type: "text", text: "稍后见" } },
+        { type: "mute", revisitAfterMinutes: 5 },
+      ],
+    }).actions,
+    [
+      { type: "silence" },
+      { type: "send_message", message: { type: "text", text: "稍后见" } },
+      { type: "mute", revisitAfterMinutes: 5 },
+    ],
+  );
+});
+
 test("prime decision normalizes message-shaped action discriminator mistakes", () => {
   const prompt = [
     "【正向提示词】午餐照片",
@@ -437,4 +460,72 @@ test("prime image without description is failed when generation produced no medi
 
   assert.equal(saved[0]?.status, "failed");
   assert.equal(previewUpdates, 0);
+});
+
+test("prime executor sends messages and starts mute when actions coexist", async () => {
+  const savedMessages: Array<Record<string, unknown>> = [];
+  let savedState: PrimeFigureState | undefined;
+  let previewUpdates = 0;
+  const executor = new PrimeActionExecutor(
+    {
+      async save(
+        _ownerUserId: string,
+        _agentId: string,
+        state: PrimeFigureState,
+      ) {
+        savedState = state;
+      },
+    } as never,
+    { async applyRuntimeUpdates() {} } as never,
+    {
+      async save(input: Record<string, unknown>) {
+        savedMessages.push(input);
+        return input;
+      },
+    } as never,
+    { async save() {} } as never,
+    {
+      async updatePreview() {
+        previewUpdates += 1;
+      },
+    } as never,
+    { pushToUser() {} } as never,
+  );
+  const muteMessageCutoffAtMs = 1_700_000_000_000;
+
+  await executor.executeDecision({
+    ownerUserId: "user_1",
+    conversationId: "conversation_1",
+    agent: {
+      id: "agent_1",
+      detail: { variableDefinitions: [] },
+    } as never,
+    state: {
+      variables: {},
+      memories: [],
+      mood: "",
+      moodObservedAtMs: 0,
+      relationshipStatus: "",
+      updatedAt: 0,
+    },
+    decision: primeFigureDecisionSchema.parse({
+      rationale: "回应后暂时屏蔽",
+      figureMood: "平静",
+      variables: {},
+      actions: [
+        { type: "silence" },
+        { type: "send_message", message: { type: "text", text: "稍后见" } },
+        { type: "mute", revisitAfterMinutes: 5 },
+      ],
+    }) as PrimeFigureDecision,
+    providerId: "test-provider",
+    model: "test-model",
+    muteMessageCutoffAtMs,
+  });
+
+  assert.equal(savedMessages.length, 1);
+  assert.deepEqual(savedMessages[0]?.content, { text: "稍后见" });
+  assert.equal(previewUpdates, 1);
+  assert.equal(savedState?.silenceStartedAtMs, muteMessageCutoffAtMs);
+  assert.ok((savedState?.silenceUntilMs ?? 0) > Date.now());
 });
