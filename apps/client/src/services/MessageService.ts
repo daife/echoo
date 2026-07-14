@@ -26,7 +26,6 @@ export class MessageService {
     conversationId: string;
     text: string;
     clientMessageId?: string;
-    stream?: boolean;
   }) {
     return this.api.createTextMessage(input);
   }
@@ -35,12 +34,6 @@ export class MessageService {
   }
   triggerPrimeFigureHint(conversationId: string, instruction: string) {
     return this.api.triggerPrimeFigureHint(conversationId, instruction);
-  }
-  ingestRealtimeMessage(_message: Message) {
-    return Promise.resolve();
-  }
-  ingestRealtimeCompleted(_message: Message) {
-    return Promise.resolve();
   }
   markRead(messageId: string) {
     return this.api.markRead(messageId, Date.now());

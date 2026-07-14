@@ -13,16 +13,14 @@ import {
   ResourceRepository,
 } from "../resources/resource.repository.js";
 import { MessageRepository } from "./message.repository.js";
-
-const PRIME_ACTIVITY_HEARTBEAT_MS = 15_000;
-const PRIME_ACTIVITY_LEASE_MS = 45_000;
+import { PrimeRunProcessor } from "./prime-run.processor.js";
+import { SliceReplyProcessor } from "./slice-reply.processor.js";
 
 export interface CreateUserTextMessageInput {
   ownerUserId: string;
   conversationId: string;
   text: string;
   clientMessageId?: string | null;
-  stream?: boolean;
 }
 
 export interface CreateUserTextMessageResult {
@@ -57,17 +55,27 @@ export type TriggerPrimeFigureHintResult =
   { kind: "ok" } | { kind: "not_found" } | { kind: "unsupported_type" };
 
 export class MessagingService {
-  private readonly activityUpdatedAt = new Map<string, number>();
+  private readonly primeRuns: PrimeRunProcessor;
+  private readonly sliceReplies: SliceReplyProcessor;
 
   constructor(
     private readonly repository = new MessageRepository(),
     private readonly conversations = new ConversationRepository(),
     private readonly appPush = new AppPushService(),
-    private readonly sliceRuntime = new SliceFigureRuntimeService(),
-    private readonly primeRuntime = new PrimeFigureRuntimeService(),
+    sliceRuntime = new SliceFigureRuntimeService(),
+    primeRuntime = new PrimeFigureRuntimeService(),
     private readonly runQueue = new AgentRunQueue(),
     private readonly resources = new ResourceRepository(),
-  ) {}
+  ) {
+    this.primeRuns = new PrimeRunProcessor(primeRuntime, this.appPush);
+    this.sliceReplies = new SliceReplyProcessor(
+      this.repository,
+      this.conversations,
+      this.appPush,
+      sliceRuntime,
+      this.runQueue,
+    );
+  }
 
   listMessages(
     ownerUserId: string,
@@ -149,7 +157,7 @@ export class MessagingService {
 
     if (conversation.type !== "slice-figure") return { message };
 
-    const assistantMessage = await this.createAssistantPlaceholder(
+    const assistantMessage = await this.sliceReplies.createPlaceholder(
       input.ownerUserId,
       input.conversationId,
       message.id,
@@ -288,75 +296,9 @@ export class MessagingService {
   }
 
   async processQueuedRun(job: AgentRunJob) {
-    if (job.kind === "prime-figure") {
-      let heartbeat: ReturnType<typeof setInterval> | undefined;
-      let active = false;
-      const publishActiveLease = () =>
-        this.publishAgentActivity({
-          ownerUserId: job.ownerUserId,
-          conversationId: job.conversationId,
-          active: true,
-          expiresAt: Date.now() + PRIME_ACTIVITY_LEASE_MS,
-        });
-      const setModelActivity = (nextActive: boolean) => {
-        if (nextActive) {
-          if (active) return;
-          active = true;
-          publishActiveLease();
-          heartbeat = setInterval(
-            publishActiveLease,
-            PRIME_ACTIVITY_HEARTBEAT_MS,
-          );
-          heartbeat.unref?.();
-          return;
-        }
-        if (!active) return;
-        active = false;
-        if (heartbeat) clearInterval(heartbeat);
-        heartbeat = undefined;
-        this.publishAgentActivity({
-          ownerUserId: job.ownerUserId,
-          conversationId: job.conversationId,
-          active: false,
-        });
-      };
-      try {
-        await this.primeRuntime.requestDecision({
-          ownerUserId: job.ownerUserId,
-          conversationId: job.conversationId,
-          trigger: job.trigger === "memory_summary" ? undefined : job.trigger,
-          debugInstruction: job.debugInstruction,
-          onModelActivityChange: setModelActivity,
-        });
-      } finally {
-        setModelActivity(false);
-      }
-      return;
-    }
-    if (job.trigger === "memory_summary") {
-      const summaries = await this.sliceRuntime.createPendingMemorySummaries({
-        ownerUserId: job.ownerUserId,
-        conversationId: job.conversationId,
-      });
-      for (const message of summaries)
-        this.appPush.pushToUser(job.ownerUserId, {
-          type: "message.completed",
-          message,
-        });
-      return;
-    }
-    if (!job.assistantMessageId) return;
-    const pending = await this.repository.findByIdInConversation(
-      job.ownerUserId,
-      job.conversationId,
-      job.assistantMessageId,
-    );
-    if (!pending || pending.status !== "pending") return;
-    await this.streamAssistantReply(
-      job.ownerUserId,
-      job.conversationId,
-      pending,
-    );
+    return job.kind === "prime-figure"
+      ? this.primeRuns.process(job)
+      : this.sliceReplies.process(job);
   }
 
   publishAgentActivity(input: {
@@ -365,18 +307,7 @@ export class MessagingService {
     active: boolean;
     expiresAt?: number;
   }) {
-    const updatedAt = Math.max(
-      Date.now(),
-      (this.activityUpdatedAt.get(input.conversationId) ?? 0) + 1,
-    );
-    this.activityUpdatedAt.set(input.conversationId, updatedAt);
-    this.appPush.pushToUser(input.ownerUserId, {
-      type: "conversation.agent_activity",
-      conversationId: input.conversationId,
-      active: input.active,
-      updatedAt,
-      ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
-    });
+    this.primeRuns.publishActivity(input);
   }
 
   async markRead(ownerUserId: string, messageId: string, readAt: number) {
@@ -457,7 +388,7 @@ export class MessagingService {
           type: "message.updated",
           message: summary,
         });
-      await this.enqueueSliceMemorySummary(
+      await this.sliceReplies.enqueueMemorySummary(
         input.ownerUserId,
         input.conversationId,
       );
@@ -510,183 +441,12 @@ export class MessagingService {
       preview: lastMessage?.content.text ?? null,
       updatedAt: now,
     });
-    await this.enqueueSliceMemorySummary(ownerUserId, conversationId);
+    await this.sliceReplies.enqueueMemorySummary(ownerUserId, conversationId);
 
     return {
       kind: "ok" as const,
       retainedThroughMessageId: retainedThrough.id,
       deletedCount,
     };
-  }
-
-  private async createAssistantPlaceholder(
-    ownerUserId: string,
-    conversationId: string,
-    replyToMessageId?: string,
-  ) {
-    const now = Date.now();
-
-    return this.repository.save({
-      ownerUserId,
-      id: `msg_${randomUUID()}`,
-      conversationId,
-      role: "assistant",
-      contentType: "text",
-      content: { text: "" },
-      status: "pending",
-      ...(replyToMessageId ? { metadata: { replyToMessageId } } : {}),
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
-
-  private async streamAssistantReply(
-    ownerUserId: string,
-    conversationId: string,
-    pendingMessage: Message,
-  ) {
-    let streamedText = "";
-    let liveCacheWrite = Promise.resolve();
-
-    try {
-      const reply = await this.sliceRuntime.createStreamingReply(
-        { ownerUserId, conversationId },
-        (delta) => {
-          streamedText += delta.text;
-          const liveText = streamedText;
-          const updatedAt = Date.now();
-          this.appPush.pushToUser(ownerUserId, {
-            type: "message.delta",
-            messageId: pendingMessage.id,
-            conversationId,
-            delta: delta.text,
-            updatedAt,
-          });
-          liveCacheWrite = liveCacheWrite.then(() =>
-            this.repository.updateCachedLive(ownerUserId, {
-              ...pendingMessage,
-              content: { text: liveText },
-              updatedAt,
-            }),
-          );
-        },
-      );
-
-      if (!reply) return undefined;
-      await liveCacheWrite;
-      const now = Date.now();
-      if (
-        !(await this.repository.findByIdInConversation(
-          ownerUserId,
-          conversationId,
-          pendingMessage.id,
-        ))
-      )
-        return undefined;
-
-      const message = await this.repository.save({
-        ownerUserId,
-        id: pendingMessage.id,
-        conversationId,
-        role: "assistant",
-        contentType: "text",
-        content: { text: reply.text },
-        status: "delivered",
-        providerId: reply.providerId,
-        model: reply.model,
-        metadata: pendingMessage.metadata,
-        createdAt: pendingMessage.createdAt,
-        updatedAt: now,
-      });
-
-      await this.conversations.updatePreview({
-        ownerUserId,
-        conversationId,
-        preview: reply.text,
-        updatedAt: now,
-        incrementUnread: true,
-      });
-      this.appPush.pushToUser(ownerUserId, {
-        type: "message.completed",
-        message,
-      });
-      try {
-        const summaries = await this.sliceRuntime.createPendingMemorySummaries({
-          ownerUserId,
-          conversationId,
-        });
-        for (const summary of summaries)
-          this.appPush.pushToUser(ownerUserId, {
-            type: "message.completed",
-            message: summary,
-          });
-      } catch (error) {
-        console.warn(
-          "Slice figure memory summary failed; queued for retry.",
-          error,
-        );
-        try {
-          await this.enqueueSliceMemorySummary(ownerUserId, conversationId);
-        } catch (queueError) {
-          console.warn(
-            "Slice figure memory summary retry enqueue failed.",
-            queueError,
-          );
-        }
-      }
-      return message;
-    } catch (error) {
-      await liveCacheWrite;
-      const now = Date.now();
-      if (
-        !(await this.repository.findByIdInConversation(
-          ownerUserId,
-          conversationId,
-          pendingMessage.id,
-        ))
-      )
-        return undefined;
-      const message = await this.repository.save({
-        ownerUserId,
-        id: pendingMessage.id,
-        conversationId,
-        role: "assistant",
-        contentType: "text",
-        content: {
-          text:
-            streamedText ||
-            "AI reply is temporarily unavailable. Check the server provider configuration and try again.",
-        },
-        status: "failed",
-        metadata: { kind: "ai_error" },
-        createdAt: pendingMessage.createdAt,
-        updatedAt: now,
-      });
-
-      await this.conversations.updatePreview({
-        ownerUserId,
-        conversationId,
-        preview: "AI reply failed.",
-        updatedAt: now,
-        incrementUnread: true,
-      });
-      this.appPush.pushToUser(ownerUserId, {
-        type: "message.completed",
-        message,
-      });
-      return message;
-    }
-  }
-
-  private async enqueueSliceMemorySummary(
-    ownerUserId: string,
-    conversationId: string,
-  ) {
-    await this.runQueue.enqueue({
-      ownerUserId,
-      conversationId,
-      kind: "slice-figure",
-      trigger: "memory_summary",
-    });
   }
 }

@@ -1,4 +1,3 @@
-import { primeFigureDecisionSchema } from "@echoo/shared";
 import type {
   Message,
   MessageContent,
@@ -50,9 +49,7 @@ export class PrimeActionExecutor {
     imageMedia?: Map<number, ResolvedPrimeImageMedia>;
     imageGenerationErrors?: Map<number, string>;
   }) {
-    const decision = primeFigureDecisionSchema.parse(
-      input.decision,
-    ) as PrimeFigureDecision;
+    const decision = input.decision;
     const now = Date.now();
     const state: PrimeFigureState = {
       ...input.state,

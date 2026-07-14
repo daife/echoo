@@ -44,7 +44,8 @@ export class SliceFigureRuntimeService {
     const user = userRecord ? toUserProfile(userRecord) : null;
     const provider = this.providers.getDefaultProvider();
     const model = this.providers.getDefaultModel();
-    const rounds = getFigureContextWindowConfig().sliceFigureMemorySummaryRounds;
+    const rounds =
+      getFigureContextWindowConfig().sliceFigureMemorySummaryRounds;
     const completed: Message[] = [];
 
     for (;;) {
@@ -102,7 +103,12 @@ export class SliceFigureRuntimeService {
           : []),
         ...source.map(formatMemorySourceMessage),
       ];
-      const result = await summarizeEntries({ provider, model, prompt, entries });
+      const result = await summarizeEntries({
+        provider,
+        model,
+        prompt,
+        entries,
+      });
       const message = await this.messages.completeMemorySummary({
         ownerUserId: input.ownerUserId,
         conversationId: input.conversationId,
@@ -116,38 +122,6 @@ export class SliceFigureRuntimeService {
       completed.push(message);
     }
     return completed;
-  }
-
-  async createReply(input: {
-    ownerUserId: string;
-    conversationId: string;
-  }): Promise<SliceFigureRuntimeResult | null> {
-    const context = await this.loadContext(input);
-    if (!context) return null;
-
-    const provider = this.providers.getDefaultProvider();
-    const model = this.providers.getDefaultModel();
-    const result = await provider.createChatCompletion({
-      model,
-      sessionId: input.conversationId,
-      messages: buildChatMessages(
-        context.agent,
-        context.user,
-        context.history,
-        context.isInitialWindow,
-      ),
-      temperature: Number(process.env.DEFAULT_TEXT_TEMPERATURE ?? 0.8),
-      maxTokens: process.env.DEFAULT_TEXT_MAX_TOKENS
-        ? Number(process.env.DEFAULT_TEXT_MAX_TOKENS)
-        : undefined,
-      reasoningMode: "disabled",
-    });
-
-    return {
-      text: result.text,
-      providerId: result.providerId,
-      model: result.model,
-    };
   }
 
   async createStreamingReply(
@@ -296,7 +270,8 @@ function memorySummaryBoundary(message: Message | null) {
 
 function formatMemorySourceMessage(message: Message) {
   const opening = message.metadata?.kind === "opening_line";
-  const sender = message.role === "user" ? "用户" : opening ? "角色开场白" : "角色";
+  const sender =
+    message.role === "user" ? "用户" : opening ? "角色开场白" : "角色";
   return `【${sender}】${message.content.text?.trim() ?? ""}`;
 }
 
@@ -315,9 +290,10 @@ async function summarizeEntries(input: {
         { role: "system", content: input.prompt },
         {
           role: "user",
-          content: chunks.length === 1
-            ? chunks[index]!
-            : `这是当前总结周期的第 ${index + 1}/${chunks.length} 个片段。请先总结这一片段：\n\n${chunks[index]}`,
+          content:
+            chunks.length === 1
+              ? chunks[index]!
+              : `这是当前总结周期的第 ${index + 1}/${chunks.length} 个片段。请先总结这一片段：\n\n${chunks[index]}`,
         },
       ],
       temperature: 0.2,

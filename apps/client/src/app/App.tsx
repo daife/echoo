@@ -108,15 +108,23 @@ export function App() {
   useEffect(() => {
     if (!auth.user) return;
     void runtime.message.startRealtime();
-    return runtime.message.onConversationAgentMuteChanged((event) => {
-      const updateAgent = (agent: Agent) =>
-        agent.conversationId === event.conversationId &&
-        agent.type === "prime-figure"
-          ? withPrimeFigureMute(agent, event.muteUntilMs)
-          : agent;
-      setMyAgents((current) => current.map(updateAgent));
-      setSelectedAgent((current) => (current ? updateAgent(current) : current));
-    });
+    const unsubscribe = runtime.message.onConversationAgentMuteChanged(
+      (event) => {
+        const updateAgent = (agent: Agent) =>
+          agent.conversationId === event.conversationId &&
+          agent.type === "prime-figure"
+            ? withPrimeFigureMute(agent, event.muteUntilMs)
+            : agent;
+        setMyAgents((current) => current.map(updateAgent));
+        setSelectedAgent((current) =>
+          current ? updateAgent(current) : current,
+        );
+      },
+    );
+    return () => {
+      unsubscribe();
+      void runtime.message.stopRealtime();
+    };
   }, [auth.user, runtime.message]);
 
   const openAgent = (agent: Agent) => {
@@ -226,7 +234,10 @@ export function App() {
   ) => {
     try {
       const { agent } =
-        await services.agentService.updatePrimeFigurePreferences(agentId, input);
+        await services.agentService.updatePrimeFigurePreferences(
+          agentId,
+          input,
+        );
       setMyAgents((current) =>
         current.map((item) => (item.id === agent.id ? agent : item)),
       );
@@ -288,7 +299,8 @@ export function App() {
             updatePrimeFigurePreferences,
             getPrimeFigureEditSnapshot: (agentId) =>
               services.agentService.getPrimeFigureEditSnapshot(agentId),
-            exportAgent: (agentId) => services.agentService.exportAgent(agentId),
+            exportAgent: (agentId) =>
+              services.agentService.exportAgent(agentId),
           }}
           onConversationDeleted={handleConversationDeleted}
         />
@@ -346,9 +358,7 @@ export function App() {
 
       <div
         className={`relative z-10 mx-auto grid max-w-[1440px] grid-cols-1 px-5 pb-28 pt-24 md:gap-6 md:px-16 md:pb-8 ${
-          view === "messages"
-            ? "h-[100dvh] min-h-0"
-            : "min-h-[100dvh]"
+          view === "messages" ? "h-[100dvh] min-h-0" : "min-h-[100dvh]"
         } ${
           showConversationRail
             ? "md:grid-cols-[64px_300px_1fr]"

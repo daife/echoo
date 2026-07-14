@@ -54,6 +54,22 @@ interface PendingMediaAnnotation {
   resourceId: string;
 }
 
+interface PrimeDecisionRequest {
+  ownerUserId: string;
+  conversationId: string;
+  trigger: PrimeDecisionTrigger;
+  debugInstruction?: string;
+  onModelActivityChange?: (active: boolean) => void;
+  agent: PrimeFigureAgent;
+  state: PrimeFigureState;
+}
+
+interface PrimeCompletionDiagnostics {
+  rawResponse: string;
+  providerId: string;
+  model: string;
+}
+
 export class PrimeFigureRuntimeService {
   constructor(
     private readonly agents = new AgentRepository(),
@@ -137,79 +153,22 @@ export class PrimeFigureRuntimeService {
     }
   }
 
-  private async createDecisionOnce(input: {
-    ownerUserId: string;
-    conversationId: string;
-    trigger: PrimeDecisionTrigger;
-    debugInstruction?: string;
-    onModelActivityChange?: (active: boolean) => void;
-    agent: PrimeFigureAgent;
-    state: PrimeFigureState;
-  }) {
-    const storedHandledEndUserSeq =
-      await this.conversations.getPrimeHandledEndUserSequence(
-        input.ownerUserId,
-        input.conversationId,
-      );
-    const lastHandledEndUserSeq =
-      storedHandledEndUserSeq ??
-      (await this.messages.findLatestAssistantSequence(
-        input.ownerUserId,
-        input.conversationId,
-      ));
-    const contextWindowConfig =
-      getFigureContextWindowConfig().primeFigureMessages;
-    const [recentTimeline, unhandledEndUserMessages] = await Promise.all([
-      this.messages.listContextWindow(
-        input.ownerUserId,
-        input.conversationId,
-        contextWindowConfig.minimum,
-        contextWindowConfig.maximum,
-      ),
-      this.messages.listEndUserAfterSequence(
-        input.ownerUserId,
-        input.conversationId,
-        lastHandledEndUserSeq,
-      ),
-    ]);
-    if (
-      !unhandledEndUserMessages.length &&
-      !(input.trigger === "debug_hint" && input.debugInstruction?.trim())
-    )
-      return null;
-    const timeline = mergePrimeTimeline(
-      recentTimeline,
-      unhandledEndUserMessages,
-    );
-    const inputThroughEndUserSeq = timeline.reduce(
-      (latest, message) =>
-        message.sender === "end_user"
-          ? Math.max(latest, message.sequence ?? 0)
-          : latest,
-      lastHandledEndUserSeq,
-    );
-    const inputThroughEndUserAtMs = timeline.reduce(
-      (latest, message) =>
-        message.sender === "end_user"
-          ? Math.max(latest, message.occurredAtMs)
-          : latest,
-      0,
-    );
+  private async createDecisionOnce(input: PrimeDecisionRequest) {
+    const context = await this.loadDecisionContext(input);
+    if (!context) return null;
     const provider = this.providers.getDefaultProvider();
     const model = this.providers.getDefaultModel();
     const packet = await buildPrimeChatMessages(
       input.agent,
       input.state,
-      timeline,
+      context.timeline,
       input.trigger,
       input.ownerUserId,
       this.resources,
       this.conversationMedia,
-      lastHandledEndUserSeq,
+      context.lastHandledEndUserSeq,
       input.debugInstruction,
     );
-    const chatMessages = packet.messages;
-
     const streamSession = new PrimeDecisionStreamSession({
       ownerUserId: input.ownerUserId,
       conversationId: input.conversationId,
@@ -225,84 +184,32 @@ export class PrimeFigureRuntimeService {
       reasoningMode: "disabled" as const,
     };
 
-    let rawResponseText = "";
-    let responseProviderId = provider.id;
-    let responseModel = model;
-    let modelActive = false;
+    const diagnostics: PrimeCompletionDiagnostics = {
+      rawResponse: "",
+      providerId: provider.id,
+      model,
+    };
     try {
       input.onModelActivityChange?.(true);
-      modelActive = true;
-      const firstResponse = await streamPrimeChatCompletion(
-        provider,
-        {
-          ...completionBase,
-          messages: chatMessages,
-          tools: [SEARCH_RECALL_TOOL],
-          toolChoice: "auto",
-          responseFormat: buildPrimeDecisionResponseFormat(
-            input.agent,
-            false,
-            packet.pendingMedia,
-            packet.availableReferenceImages.map((media) => media.id),
-          ),
-        },
-        streamSession,
-      );
-      rawResponseText = firstResponse.text;
-      responseProviderId = firstResponse.providerId;
-      responseModel = firstResponse.model;
-
-      let finalResponse = firstResponse;
-      const recallCall = firstResponse.toolCalls?.find(
-        (call) => call.function.name === "search_recall",
-      );
-      if (recallCall) {
-        chatMessages.push({
-          role: "assistant",
-          content: firstResponse.text,
-          toolCalls: firstResponse.toolCalls,
-        });
-        chatMessages.push({
-          role: "tool",
-          toolCallId: recallCall.id,
-          name: recallCall.function.name,
-          content: await this.executeRecallTool(recallCall, input),
-        });
-        finalResponse = await streamPrimeChatCompletion(
+      let finalResponse: ChatCompletionResult;
+      try {
+        finalResponse = await this.completeWithOptionalRecall({
+          request: input,
           provider,
-          {
-            ...completionBase,
-            messages: chatMessages,
-            responseFormat: buildPrimeDecisionResponseFormat(
-              input.agent,
-              true,
-              packet.pendingMedia,
-              packet.availableReferenceImages.map((media) => media.id),
-            ),
-            toolChoice: "none",
-          },
+          completionBase,
+          packet,
           streamSession,
-        );
-        rawResponseText = finalResponse.text;
-        responseProviderId = finalResponse.providerId;
-        responseModel = finalResponse.model;
+          diagnostics,
+        });
+      } finally {
+        input.onModelActivityChange?.(false);
       }
-
-      input.onModelActivityChange?.(false);
-      modelActive = false;
-
-      const rawOutput = JSON.parse(finalResponse.text) as Record<
-        string,
-        unknown
-      >;
-      const decision = filterUnavailableReferenceMediaIds(
-        primeFigureDecisionSchema.parse(rawOutput) as PrimeFigureDecision,
+      const envelope = parsePrimeDecisionEnvelope(
+        finalResponse.text,
+        packet.pendingMedia,
         packet.availableReferenceImages.map((media) => media.id),
       );
-      const mediaAnnotations = normalizeMediaAnnotations(
-        rawOutput.mediaAnnotations,
-        packet.pendingMedia,
-      );
+      const { decision, mediaAnnotations } = envelope;
       const streamed = await streamSession.finalize(decision);
       for (const [
         actionIndex,
@@ -325,7 +232,7 @@ export class PrimeFigureRuntimeService {
         decision,
         providerId: finalResponse.providerId,
         model: finalResponse.model,
-        muteMessageCutoffAtMs: inputThroughEndUserAtMs,
+        muteMessageCutoffAtMs: context.inputThroughEndUserAtMs,
         streamedMessageIds: streamed.messageIds,
         messageCreatedAt: streamed.messageCreatedAt,
         voiceMedia: streamed.voiceMedia,
@@ -341,18 +248,137 @@ export class PrimeFigureRuntimeService {
       await this.conversations.advancePrimeHandledEndUserSequence(
         input.ownerUserId,
         input.conversationId,
-        inputThroughEndUserSeq,
+        context.inputThroughEndUserSeq,
       );
       return decision;
     } catch (error) {
-      if (modelActive) input.onModelActivityChange?.(false);
-      await streamSession.fail(error, {
-        rawResponse: rawResponseText,
-        providerId: responseProviderId,
-        model: responseModel,
-      });
+      await streamSession.fail(error, diagnostics);
       throw error;
     }
+  }
+
+  private async loadDecisionContext(input: PrimeDecisionRequest) {
+    const storedHandledEndUserSeq =
+      await this.conversations.getPrimeHandledEndUserSequence(
+        input.ownerUserId,
+        input.conversationId,
+      );
+    const lastHandledEndUserSeq =
+      storedHandledEndUserSeq ??
+      (await this.messages.findLatestAssistantSequence(
+        input.ownerUserId,
+        input.conversationId,
+      ));
+    const window = getFigureContextWindowConfig().primeFigureMessages;
+    const [recentTimeline, unhandledEndUserMessages] = await Promise.all([
+      this.messages.listContextWindow(
+        input.ownerUserId,
+        input.conversationId,
+        window.minimum,
+        window.maximum,
+      ),
+      this.messages.listEndUserAfterSequence(
+        input.ownerUserId,
+        input.conversationId,
+        lastHandledEndUserSeq,
+      ),
+    ]);
+    if (
+      !unhandledEndUserMessages.length &&
+      !(input.trigger === "debug_hint" && input.debugInstruction?.trim())
+    )
+      return null;
+    const timeline = mergePrimeTimeline(
+      recentTimeline,
+      unhandledEndUserMessages,
+    );
+    return {
+      timeline,
+      lastHandledEndUserSeq,
+      inputThroughEndUserSeq: timeline.reduce(
+        (latest, message) =>
+          message.sender === "end_user"
+            ? Math.max(latest, message.sequence ?? 0)
+            : latest,
+        lastHandledEndUserSeq,
+      ),
+      inputThroughEndUserAtMs: timeline.reduce(
+        (latest, message) =>
+          message.sender === "end_user"
+            ? Math.max(latest, message.occurredAtMs)
+            : latest,
+        0,
+      ),
+    };
+  }
+
+  private async completeWithOptionalRecall(input: {
+    request: PrimeDecisionRequest;
+    provider: AiTextProvider;
+    completionBase: Omit<ChatCompletionInput, "messages">;
+    packet: Awaited<ReturnType<typeof buildPrimeChatMessages>>;
+    streamSession: PrimeDecisionStreamSession;
+    diagnostics: PrimeCompletionDiagnostics;
+  }) {
+    const messages = [...input.packet.messages];
+    const availableReferenceImageIds =
+      input.packet.availableReferenceImages.map((media) => media.id);
+    const recordResponse = (response: ChatCompletionResult) => {
+      input.diagnostics.rawResponse = response.text;
+      input.diagnostics.providerId = response.providerId;
+      input.diagnostics.model = response.model;
+      return response;
+    };
+    const firstResponse = recordResponse(
+      await streamPrimeChatCompletion(
+        input.provider,
+        {
+          ...input.completionBase,
+          messages,
+          tools: [SEARCH_RECALL_TOOL],
+          toolChoice: "auto",
+          responseFormat: buildPrimeDecisionResponseFormat(
+            input.request.agent,
+            false,
+            input.packet.pendingMedia,
+            availableReferenceImageIds,
+          ),
+        },
+        input.streamSession,
+      ),
+    );
+    const recallCall = firstResponse.toolCalls?.find(
+      (call) => call.function.name === "search_recall",
+    );
+    if (!recallCall) return firstResponse;
+    messages.push({
+      role: "assistant",
+      content: firstResponse.text,
+      toolCalls: firstResponse.toolCalls,
+    });
+    messages.push({
+      role: "tool",
+      toolCallId: recallCall.id,
+      name: recallCall.function.name,
+      content: await this.executeRecallTool(recallCall, input.request),
+    });
+    return recordResponse(
+      await streamPrimeChatCompletion(
+        input.provider,
+        {
+          ...input.completionBase,
+          messages,
+          responseFormat: buildPrimeDecisionResponseFormat(
+            input.request.agent,
+            true,
+            input.packet.pendingMedia,
+            availableReferenceImageIds,
+          ),
+          toolChoice: "none",
+        },
+        input.streamSession,
+      ),
+    );
   }
 
   private async persistMediaAnnotations(
@@ -1425,6 +1451,24 @@ function parseRecallArguments(value: string) {
   } catch {
     return { keywords: ["回忆"], limit: 6 };
   }
+}
+
+function parsePrimeDecisionEnvelope(
+  responseText: string,
+  pendingMedia: PendingMediaAnnotation[],
+  availableReferenceImageIds: string[],
+) {
+  const raw = JSON.parse(responseText) as Record<string, unknown>;
+  return {
+    decision: filterUnavailableReferenceMediaIds(
+      primeFigureDecisionSchema.parse(raw) as PrimeFigureDecision,
+      availableReferenceImageIds,
+    ),
+    mediaAnnotations: normalizeMediaAnnotations(
+      raw.mediaAnnotations,
+      pendingMedia,
+    ),
+  };
 }
 
 function normalizeMediaAnnotations(

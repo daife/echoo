@@ -7,7 +7,7 @@ import {
   markLocalMessageSending,
   mergeIncomingMessage,
   mergeLocalMessage,
-  mergeSentTextMessageResult,
+  mergeSentMessageResult,
 } from "./localMessageState";
 
 describe("optimistic outgoing messages", () => {
@@ -18,7 +18,7 @@ describe("optimistic outgoing messages", () => {
       text: "hello",
       now: 1,
     });
-    const merged = mergeSentTextMessageResult([pending], "client_1", {
+    const merged = mergeSentMessageResult([pending], "client_1", {
       message: {
         ...pending,
         id: "msg_1",

@@ -5,7 +5,6 @@ import { MessagingService } from "./messaging.service.js";
 const createTextMessageSchema = z.object({
   text: z.string().trim().min(1).max(20_000),
   clientMessageId: z.string().trim().min(1).max(200).optional(),
-  stream: z.boolean().optional(),
 });
 
 const mediaUploadBaseSchema = z.object({
@@ -149,7 +148,6 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
         conversationId: request.params.conversationId,
         text: parsed.data.text,
         clientMessageId: parsed.data.clientMessageId,
-        stream: parsed.data.stream ?? true,
       });
 
       if (!result)
@@ -253,19 +251,15 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
       if (result.kind === "message_not_found")
         return reply.code(404).send({ error: "MESSAGE_NOT_FOUND" });
       if (result.kind === "unsupported_type")
-        return reply
-          .code(409)
-          .send({
-            error: "MESSAGE_EDIT_UNSUPPORTED",
-            message: "只有切片角色会话支持修改回复。",
-          });
+        return reply.code(409).send({
+          error: "MESSAGE_EDIT_UNSUPPORTED",
+          message: "只有切片角色会话支持修改回复。",
+        });
       if (result.kind === "unsupported_message")
-        return reply
-          .code(409)
-          .send({
-            error: "MESSAGE_EDIT_UNSUPPORTED",
-            message: "只能修改角色发送的文字消息。",
-          });
+        return reply.code(409).send({
+          error: "MESSAGE_EDIT_UNSUPPORTED",
+          message: "只能修改角色发送的文字消息。",
+        });
       if (result.kind === "pending")
         return reply
           .code(409)

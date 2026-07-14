@@ -143,7 +143,7 @@ export function appendMessageDelta(
   });
 }
 
-export function mergeSentTextMessageResult(
+export function mergeSentMessageResult(
   messages: LocalMessage[],
   clientMessageId: string,
   result: { message: Message; assistantMessage?: Message },

@@ -1,16 +1,8 @@
-import type {
-  PrimeMessage,
-  PrimeMessageContent,
-  PrimeMessageSender,
-} from "@echoo/shared";
+import type { PrimeMessage, PrimeMessageContent } from "@echoo/shared";
 import type { RowDataPacket } from "mysql2";
 import { calculateStableContextEvictionStep } from "../../../../infra/config/context-window-config.js";
 import { execute, queryRows } from "../../../../infra/database/mysql.js";
-import { createId } from "../../../../shared/utils/id.js";
-import {
-  MessageCache,
-  type CachedMessage,
-} from "../../../../infra/redis/message-cache.js";
+import { MessageCache } from "../../../../infra/redis/message-cache.js";
 
 interface PrimeRow extends RowDataPacket {
   seq: number;
@@ -29,84 +21,8 @@ interface PrimeRow extends RowDataPacket {
 interface PrimeContextRow extends PrimeRow {
   context_start_message: number | string;
 }
-export interface SavePrimeMessageInput {
-  ownerUserId: string;
-  agentId: string;
-  conversationId: string;
-  sender: PrimeMessageSender;
-  content: PrimeMessageContent;
-  occurredAtMs?: number;
-}
-
 export class PrimeMessageRepository {
   constructor(private readonly cache = new MessageCache()) {}
-  /** Compatibility constructor for the unchanged decision executor; canonical persistence is messages. */
-  async save(input: SavePrimeMessageInput): Promise<PrimeMessage> {
-    const now = Date.now();
-    const occurredAtMs = input.occurredAtMs ?? now;
-    return {
-      id: createId("msg"),
-      ownerUserId: input.ownerUserId,
-      agentId: input.agentId,
-      conversationId: input.conversationId,
-      sender: input.sender,
-      messageType: input.content.type,
-      content: input.content,
-      occurredAtMs,
-      occurredAtIso: new Date(occurredAtMs).toISOString(),
-      createdAt: now,
-      updatedAt: now,
-    };
-  }
-
-  async listRecent(
-    ownerUserId: string,
-    agentId: string,
-    limit = 100,
-    conversationId?: string,
-  ) {
-    if (conversationId) {
-      try {
-        const cached = await this.cache.getRecent(
-          ownerUserId,
-          conversationId,
-          limit,
-        );
-        if (cached)
-          return cached
-            .filter((item) => item.message.status !== "failed")
-            .map((item) => cachedToPrime(item, ownerUserId, agentId));
-      } catch (error) {
-        console.warn(
-          "Prime message cache read failed; falling back to MySQL.",
-          error,
-        );
-      }
-    }
-    const rows = await queryRows<PrimeRow>(
-      `${SELECT_PRIME} WHERE messages.role IN ('user', 'assistant') AND messages.status != 'failed'
-       AND messages.owner_user_id = ? AND conversations.agent_id = ?
-       ORDER BY messages.seq DESC LIMIT ?`,
-      [ownerUserId, agentId, Math.min(Math.max(Math.trunc(limit), 1), 500)],
-    );
-    rows.reverse();
-    if (conversationId) {
-      try {
-        await this.cache.replaceRecent(
-          ownerUserId,
-          conversationId,
-          rows.map((row) => ({
-            sequence: row.seq,
-            message: rowToCanonicalMessage(row),
-          })),
-          limit,
-        );
-      } catch (error) {
-        console.warn("Prime message cache fill failed.", error);
-      }
-    }
-    return rows.map(rowToMessage);
-  }
 
   /** Stable LLM-only context window; every user/assistant message counts once. */
   async listContextWindow(
@@ -277,55 +193,6 @@ function rowToMessage(row: PrimeRow): PrimeMessage {
     occurredAtIso: new Date(row.created_at).toISOString(),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  };
-}
-
-function rowToCanonicalMessage(row: PrimeRow) {
-  const run = parseJson<Record<string, unknown>>(row.run_metadata, {});
-  const { providerId, model, ...metadata } = run;
-  return {
-    id: row.id,
-    conversationId: row.conversation_id,
-    role: row.role,
-    contentType: row.content_type as
-      "text" | "image" | "voice" | "video" | "file" | "system",
-    content: parseJson<Record<string, unknown>>(row.content, {}),
-    status: row.status,
-    ...(typeof providerId === "string" ? { providerId } : {}),
-    ...(typeof model === "string" ? { model } : {}),
-    ...(Object.keys(metadata).length ? { metadata } : {}),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function cachedToPrime(
-  cached: CachedMessage,
-  ownerUserId: string,
-  agentId: string,
-): PrimeMessage {
-  const message = cached.message;
-  const metadata = message.metadata ?? {};
-  const primeContent =
-    metadata.primeContent && typeof metadata.primeContent === "object"
-      ? (metadata.primeContent as PrimeMessageContent)
-      : toPrimeContent(
-          message.contentType,
-          message.content as unknown as Record<string, unknown>,
-        );
-  return {
-    id: message.id,
-    sequence: cached.sequence,
-    ownerUserId,
-    agentId,
-    conversationId: message.conversationId,
-    sender: message.role === "user" ? "end_user" : "prime_figure",
-    messageType: primeContent.type,
-    content: primeContent,
-    occurredAtMs: message.createdAt,
-    occurredAtIso: new Date(message.createdAt).toISOString(),
-    createdAt: message.createdAt,
-    updatedAt: message.updatedAt,
   };
 }
 

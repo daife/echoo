@@ -39,9 +39,47 @@ interface PrimeStreamFailureDiagnostics {
 
 const RAW_RESPONSE_METADATA_LIMIT = 65_536;
 
+interface Deferred<T> {
+  promise: Promise<T>;
+  settled: boolean;
+  resolve: (value: T) => void;
+}
+
+interface VoiceActionState {
+  type: "voice";
+  tts?: FishAudioTtsStream;
+  voicePromise?: Promise<ResolvedPrimeVoiceMedia>;
+  ttsError?: string;
+  audioStarted: boolean;
+  audioSequence: number;
+  pendingAudio: Buffer[];
+}
+
+interface ImageActionState {
+  type: "image";
+  referenceMediaIds: string[];
+  referenceMediaIdBuffer: string;
+  referenceMediaIdsComplete: boolean;
+  generationPromptComplete: boolean;
+  imagePromise?: Promise<ResolvedPrimeImageMedia>;
+}
+
+type ActionKindState =
+  | { type: "unresolved" }
+  | { type: "text" }
+  | VoiceActionState
+  | ImageActionState;
+
+interface StreamedTextState {
+  pending: string;
+  flushScheduled: boolean;
+  complete: Deferred<void>;
+  liveCacheWrite: Promise<void>;
+}
+
 interface StreamedActionState {
   id: string;
-  type?: "text" | "image" | "voice";
+  kind: ActionKindState;
   typeBuffer: string;
   fields: Partial<
     Record<"text" | "description" | "generationPrompt" | "transcript", string>
@@ -50,26 +88,8 @@ interface StreamedActionState {
   revealed: boolean;
   createdAt?: number;
   revealPromise?: Promise<void>;
-  deliveryDone: Promise<number>;
-  resolveDeliveryDone: (completedAt: number) => void;
-  deliveryResolved: boolean;
-  tts?: FishAudioTtsStream;
-  voicePromise?: Promise<ResolvedPrimeVoiceMedia>;
-  ttsError?: string;
-  audioStarted: boolean;
-  audioSequence: number;
-  pendingAudio: Buffer[];
-  referenceMediaIds: string[];
-  referenceMediaIdBuffer: string;
-  referenceMediaIdsComplete: boolean;
-  generationPromptComplete: boolean;
-  imagePromise?: Promise<ResolvedPrimeImageMedia>;
-  pendingText: string;
-  textFlushScheduled: boolean;
-  textComplete: Promise<void>;
-  resolveTextComplete: () => void;
-  textCompleteResolved: boolean;
-  liveCacheWrite: Promise<void>;
+  delivery: Deferred<number>;
+  text: StreamedTextState;
 }
 
 export class PrimeDecisionStreamSession {
@@ -95,23 +115,24 @@ export class PrimeDecisionStreamSession {
     if (event.field === "type") {
       if (!event.complete) state.typeBuffer += event.delta;
       if (event.complete && isMessageType(state.typeBuffer)) {
-        state.type = state.typeBuffer;
+        setActionKind(state, state.typeBuffer);
         this.ensureCreated(event.actionIndex, state);
       }
       return;
     }
 
     if (event.field === "referenceMediaId") {
-      state.referenceMediaIdBuffer += event.delta;
+      const image = ensureImageState(state);
+      image.referenceMediaIdBuffer += event.delta;
       if (event.complete) {
-        if (state.referenceMediaIdBuffer)
-          state.referenceMediaIds.push(state.referenceMediaIdBuffer);
-        state.referenceMediaIdBuffer = "";
+        if (image.referenceMediaIdBuffer)
+          image.referenceMediaIds.push(image.referenceMediaIdBuffer);
+        image.referenceMediaIdBuffer = "";
       }
       return;
     }
     if (event.field === "referenceMediaIds") {
-      state.referenceMediaIdsComplete = true;
+      ensureImageState(state).referenceMediaIdsComplete = true;
       this.maybeStartImage(state);
       return;
     }
@@ -124,23 +145,23 @@ export class PrimeDecisionStreamSession {
     )
       this.ensureStreamingTts(state);
     if (event.field === "generationPrompt" && event.complete) {
-      state.generationPromptComplete = true;
+      ensureImageState(state).generationPromptComplete = true;
       this.maybeStartImage(state);
     }
     if (
       state.created &&
       event.delta &&
-      event.field === visibleField(state.type)
+      event.field === visibleField(messageType(state))
     ) {
       this.queueTextDelta(state, event.delta);
     }
     if (
       event.complete &&
-      ((state.type === "text" && event.field === "text") ||
-        (state.type === "voice" && event.field === "transcript"))
+      ((messageType(state) === "text" && event.field === "text") ||
+        (messageType(state) === "voice" && event.field === "transcript"))
     ) {
       this.resolveTextComplete(state);
-      if (state.type === "text")
+      if (messageType(state) === "text")
         void this.completeTextDelivery(state).catch(() => undefined);
     }
     if (
@@ -159,22 +180,23 @@ export class PrimeDecisionStreamSession {
     for (const [index, action] of decision.actions.entries()) {
       if (action.type !== "send_message") continue;
       const state = this.getAction(index);
-      state.type = action.message.type;
+      setActionKind(state, action.message.type);
       this.ensureCreated(index, state);
       const finalText = getVisibleText(action.message);
-      const streamedText = state.fields[visibleField(state.type)] ?? "";
+      const streamedText = state.fields[visibleField(messageType(state))] ?? "";
       if (finalText.startsWith(streamedText)) {
         const missing = finalText.slice(streamedText.length);
         if (missing) {
-          state.fields[visibleField(state.type)] = finalText;
+          state.fields[visibleField(messageType(state))] = finalText;
           this.queueTextDelta(state, missing);
         }
       }
       if (action.message.type === "image") {
+        const image = ensureImageState(state);
         state.fields.generationPrompt = action.message.generationPrompt;
-        state.referenceMediaIds = [...action.message.referenceMediaIds];
-        state.generationPromptComplete = true;
-        state.referenceMediaIdsComplete = true;
+        image.referenceMediaIds = [...action.message.referenceMediaIds];
+        image.generationPromptComplete = true;
+        image.referenceMediaIdsComplete = true;
         this.maybeStartImage(state);
       } else if (action.message.type === "voice") {
         state.fields.transcript = action.message.transcript;
@@ -198,8 +220,9 @@ export class PrimeDecisionStreamSession {
         if (action.type !== "send_message") return;
         const state = this.getAction(index);
         if (action.message.type === "image") {
+          const image = ensureImageState(state);
           try {
-            const generated = await state.imagePromise;
+            const generated = await image.imagePromise;
             if (generated) imageMedia.set(index, generated);
           } catch (error) {
             imageGenerationErrors.set(index, toErrorMessage(error));
@@ -209,17 +232,18 @@ export class PrimeDecisionStreamSession {
           return;
         }
         if (action.message.type !== "voice") return;
+        const voice = ensureVoiceState(state);
         try {
-          const generated = await state.voicePromise;
+          const generated = await voice.voicePromise;
           if (generated) voiceMedia.set(index, generated);
         } catch (error) {
-          state.ttsError = toErrorMessage(error);
+          voice.ttsError = toErrorMessage(error);
           await state.revealPromise;
           this.appPush.pushToUser(this.input.ownerUserId, {
             type: "message.audio.failed",
             messageId: state.id,
             conversationId: this.input.conversationId,
-            error: state.ttsError,
+            error: voice.ttsError,
           });
         } finally {
           this.resolveDelivery(state);
@@ -228,7 +252,7 @@ export class PrimeDecisionStreamSession {
     );
     await this.deliveryTail;
     await Promise.all(
-      [...this.actions.values()].map((state) => state.liveCacheWrite),
+      [...this.actions.values()].map((state) => state.text.liveCacheWrite),
     );
 
     return {
@@ -247,8 +271,14 @@ export class PrimeDecisionStreamSession {
       ),
       ttsErrors: new Map(
         [...this.actions]
-          .filter(([, state]) => state.ttsError)
-          .map(([index, state]) => [index, state.ttsError as string]),
+          .filter(
+            ([, state]) =>
+              state.kind.type === "voice" && Boolean(state.kind.ttsError),
+          )
+          .map(([index, state]) => [
+            index,
+            (state.kind as VoiceActionState).ttsError as string,
+          ]),
       ),
     };
   }
@@ -261,7 +291,7 @@ export class PrimeDecisionStreamSession {
     for (const state of this.actions.values()) {
       this.resolveTextComplete(state);
       this.flushTextDelta(state);
-      state.tts?.abort();
+      if (state.kind.type === "voice") state.kind.tts?.abort();
     }
     await Promise.all(
       createdStates.map((state, index) =>
@@ -279,53 +309,37 @@ export class PrimeDecisionStreamSession {
   private getAction(index: number) {
     const existing = this.actions.get(index);
     if (existing) return existing;
-    let resolveDeliveryDone!: (completedAt: number) => void;
-    const deliveryDone = new Promise<number>((resolve) => {
-      resolveDeliveryDone = resolve;
-    });
-    let resolveTextComplete!: () => void;
-    const textComplete = new Promise<void>((resolve) => {
-      resolveTextComplete = resolve;
-    });
     const state: StreamedActionState = {
       id: `msg_${randomUUID()}`,
+      kind: { type: "unresolved" },
       typeBuffer: "",
       fields: {},
       created: false,
       revealed: false,
-      deliveryDone,
-      resolveDeliveryDone,
-      deliveryResolved: false,
-      audioStarted: false,
-      audioSequence: 0,
-      pendingAudio: [],
-      referenceMediaIds: [],
-      referenceMediaIdBuffer: "",
-      referenceMediaIdsComplete: false,
-      generationPromptComplete: false,
-      pendingText: "",
-      textFlushScheduled: false,
-      textComplete,
-      resolveTextComplete,
-      textCompleteResolved: false,
-      liveCacheWrite: Promise.resolve(),
+      delivery: createDeferred<number>(),
+      text: {
+        pending: "",
+        flushScheduled: false,
+        complete: createDeferred<void>(),
+        liveCacheWrite: Promise.resolve(),
+      },
     };
     this.actions.set(index, state);
     return state;
   }
 
   private ensureCreated(index: number, state: StreamedActionState) {
-    if (state.created || !isMessageType(state.type)) return;
+    const type = messageType(state);
+    if (state.created || !type) return;
     state.created = true;
     const predecessor = this.deliveryTail;
     state.revealPromise = (async () => {
       const predecessorCompletedAt = await predecessor;
-      if (index > 0 && isTimedMessageType(state.type)) {
-        await state.textComplete;
+      if (index > 0 && isTimedMessageType(type)) {
+        await state.text.complete.promise;
         const elapsed = Date.now() - predecessorCompletedAt;
         const remaining =
-          textMessageGapMs(state.fields[visibleField(state.type)] ?? "") -
-          elapsed;
+          textMessageGapMs(state.fields[visibleField(type)] ?? "") - elapsed;
         if (remaining > 0) await delay(remaining);
       }
       const now = Date.now();
@@ -344,54 +358,58 @@ export class PrimeDecisionStreamSession {
       });
       if (
         this.input.voiceRequestStreaming &&
-        state.type === "voice" &&
-        state.tts
+        state.kind.type === "voice" &&
+        state.kind.tts
       )
         this.startAudioDelivery(state);
       this.flushTextDelta(state);
     })();
-    this.deliveryTail = state.deliveryDone;
+    this.deliveryTail = state.delivery.promise;
   }
 
   private pushAudioChunk(state: StreamedActionState, chunk: Buffer) {
+    const voice = ensureVoiceState(state);
     this.appPush.pushToUser(this.input.ownerUserId, {
       type: "message.audio.chunk",
       messageId: state.id,
       conversationId: this.input.conversationId,
-      sequence: state.audioSequence++,
+      sequence: voice.audioSequence++,
       dataBase64: chunk.toString("base64"),
     });
   }
 
   private startAudioDelivery(state: StreamedActionState) {
-    if (state.audioStarted) return;
+    const voice = ensureVoiceState(state);
+    if (voice.audioStarted) return;
     this.appPush.pushToUser(this.input.ownerUserId, {
       type: "message.audio.started",
       messageId: state.id,
       conversationId: this.input.conversationId,
       mimeType: "audio/mpeg",
     });
-    state.audioStarted = true;
-    for (const chunk of state.pendingAudio) this.pushAudioChunk(state, chunk);
-    state.pendingAudio = [];
+    voice.audioStarted = true;
+    for (const chunk of voice.pendingAudio) this.pushAudioChunk(state, chunk);
+    voice.pendingAudio = [];
   }
 
   private ensureStreamingTts(state: StreamedActionState) {
-    if (state.tts || state.ttsError || state.type !== "voice") return;
+    if (state.kind.type !== "voice") return;
+    const voice = state.kind;
+    if (voice.tts || voice.ttsError) return;
     try {
-      state.tts = this.tts.createStream((chunk) => {
-        if (state.audioStarted) this.pushAudioChunk(state, chunk);
-        else state.pendingAudio.push(chunk);
+      voice.tts = this.tts.createStream((chunk) => {
+        if (voice.audioStarted) this.pushAudioChunk(state, chunk);
+        else voice.pendingAudio.push(chunk);
       });
       if (state.revealed) this.startAudioDelivery(state);
     } catch (error) {
-      state.ttsError = toErrorMessage(error);
+      voice.ttsError = toErrorMessage(error);
       void state.revealPromise?.then(() => {
         this.appPush.pushToUser(this.input.ownerUserId, {
           type: "message.audio.failed",
           messageId: state.id,
           conversationId: this.input.conversationId,
-          error: state.ttsError as string,
+          error: voice.ttsError as string,
         });
       });
     }
@@ -399,31 +417,35 @@ export class PrimeDecisionStreamSession {
 
   private finishStreamingVoice(state: StreamedActionState) {
     this.ensureStreamingTts(state);
-    if (state.voicePromise || !state.tts) return;
-    state.voicePromise = this.persistVoiceResult(
+    if (state.kind.type !== "voice") return;
+    const voice = state.kind;
+    if (voice.voicePromise || !voice.tts) return;
+    voice.voicePromise = this.persistVoiceResult(
       state,
-      state.tts.finish(),
+      voice.tts.finish(),
       state.fields.transcript ?? "",
     );
-    void state.voicePromise.catch(() => undefined);
+    void voice.voicePromise.catch(() => undefined);
   }
 
   private startVoiceSynthesis(state: StreamedActionState, transcript: string) {
-    if (state.voicePromise || state.type !== "voice") return;
+    if (state.kind.type !== "voice") return;
+    const voice = state.kind;
+    if (voice.voicePromise) return;
     const audioStarted = state.revealPromise!.then(() =>
       this.startAudioDelivery(state),
     );
     void audioStarted.catch(() => undefined);
-    state.voicePromise = this.persistVoiceResult(
+    voice.voicePromise = this.persistVoiceResult(
       state,
       this.tts.synthesize(transcript, (chunk) => {
-        if (state.audioStarted) this.pushAudioChunk(state, chunk);
-        else state.pendingAudio.push(chunk);
+        if (voice.audioStarted) this.pushAudioChunk(state, chunk);
+        else voice.pendingAudio.push(chunk);
       }),
       transcript,
       audioStarted,
     );
-    void state.voicePromise.catch(() => undefined);
+    void voice.voicePromise.catch(() => undefined);
   }
 
   private async persistVoiceResult(
@@ -464,18 +486,19 @@ export class PrimeDecisionStreamSession {
   }
 
   private maybeStartImage(state: StreamedActionState) {
+    if (state.kind.type !== "image") return;
+    const image = state.kind;
     if (
-      state.imagePromise ||
-      state.type !== "image" ||
-      !state.generationPromptComplete ||
-      !state.referenceMediaIdsComplete
+      image.imagePromise ||
+      !image.generationPromptComplete ||
+      !image.referenceMediaIdsComplete
     )
       return;
-    state.imagePromise = (async () => {
+    image.imagePromise = (async () => {
       const references = await this.conversationMedia.resolveImageReferences(
         this.input.ownerUserId,
         this.input.conversationId,
-        state.referenceMediaIds,
+        image.referenceMediaIds,
       );
       const generated = await this.imageGeneration.generate({
         prompt: state.fields.generationPrompt ?? "",
@@ -512,7 +535,7 @@ export class PrimeDecisionStreamSession {
         model: generated.model,
       };
     })();
-    void state.imagePromise.catch(() => undefined);
+    void image.imagePromise.catch(() => undefined);
   }
 
   private async completeTextDelivery(state: StreamedActionState) {
@@ -522,15 +545,11 @@ export class PrimeDecisionStreamSession {
   }
 
   private resolveDelivery(state: StreamedActionState) {
-    if (state.deliveryResolved) return;
-    state.deliveryResolved = true;
-    state.resolveDeliveryDone(Date.now());
+    state.delivery.resolve(Date.now());
   }
 
   private resolveTextComplete(state: StreamedActionState) {
-    if (state.textCompleteResolved) return;
-    state.textCompleteResolved = true;
-    state.resolveTextComplete();
+    state.text.complete.resolve(undefined);
   }
 
   private async failState(
@@ -558,20 +577,20 @@ export class PrimeDecisionStreamSession {
   }
 
   private queueTextDelta(state: StreamedActionState, delta: string) {
-    if (this.input.voiceRequestStreaming && state.type === "voice")
-      state.tts?.write(delta);
-    state.pendingText += delta;
-    if (state.textFlushScheduled) return;
-    state.textFlushScheduled = true;
+    if (this.input.voiceRequestStreaming && state.kind.type === "voice")
+      state.kind.tts?.write(delta);
+    state.text.pending += delta;
+    if (state.text.flushScheduled) return;
+    state.text.flushScheduled = true;
     queueMicrotask(() => this.flushTextDelta(state));
   }
 
   private flushTextDelta(state: StreamedActionState) {
-    state.textFlushScheduled = false;
+    state.text.flushScheduled = false;
     if (!state.revealed) return;
-    const delta = state.pendingText;
+    const delta = state.text.pending;
     if (!delta) return;
-    state.pendingText = "";
+    state.text.pending = "";
     this.appPush.pushToUser(this.input.ownerUserId, {
       type: "message.delta",
       messageId: state.id,
@@ -584,10 +603,10 @@ export class PrimeDecisionStreamSession {
       ...this.buildPlaceholder(state, state.createdAt ?? updatedAt, "pending", {
         kind: "prime_figure",
       }),
-      content: { text: state.fields[visibleField(state.type)] ?? "" },
+      content: { text: state.fields[visibleField(messageType(state))] ?? "" },
       updatedAt,
     };
-    state.liveCacheWrite = state.liveCacheWrite.then(() =>
+    state.text.liveCacheWrite = state.text.liveCacheWrite.then(() =>
       this.messages.updateCachedLive(this.input.ownerUserId, liveMessage),
     );
   }
@@ -602,7 +621,7 @@ export class PrimeDecisionStreamSession {
       id: state.id,
       conversationId: this.input.conversationId,
       role: "assistant",
-      contentType: state.type ?? "text",
+      contentType: messageType(state) ?? "text",
       content: { text: "" },
       status,
       metadata,
@@ -622,6 +641,65 @@ function buildFailureDiagnostics(input: PrimeStreamFailureDiagnostics) {
   };
 }
 
+function createDeferred<T>(): Deferred<T> {
+  let resolvePromise!: (value: T) => void;
+  const deferred: Deferred<T> = {
+    promise: new Promise<T>((resolve) => {
+      resolvePromise = resolve;
+    }),
+    settled: false,
+    resolve(value) {
+      if (deferred.settled) return;
+      deferred.settled = true;
+      resolvePromise(value);
+    },
+  };
+  return deferred;
+}
+
+function messageType(
+  state: StreamedActionState,
+): "text" | "image" | "voice" | undefined {
+  return state.kind.type === "unresolved" ? undefined : state.kind.type;
+}
+
+function setActionKind(
+  state: StreamedActionState,
+  type: "text" | "image" | "voice",
+) {
+  if (state.kind.type === type) return;
+  if (type === "text") {
+    state.kind = { type };
+    return;
+  }
+  if (type === "voice") {
+    state.kind = {
+      type,
+      audioStarted: false,
+      audioSequence: 0,
+      pendingAudio: [],
+    };
+    return;
+  }
+  state.kind = {
+    type,
+    referenceMediaIds: [],
+    referenceMediaIdBuffer: "",
+    referenceMediaIdsComplete: false,
+    generationPromptComplete: false,
+  };
+}
+
+function ensureVoiceState(state: StreamedActionState) {
+  if (state.kind.type !== "voice") setActionKind(state, "voice");
+  return state.kind as VoiceActionState;
+}
+
+function ensureImageState(state: StreamedActionState) {
+  if (state.kind.type !== "image") setActionKind(state, "image");
+  return state.kind as ImageActionState;
+}
+
 function isMessageType(
   value: string | undefined,
 ): value is "text" | "image" | "voice" {
@@ -629,12 +707,12 @@ function isMessageType(
 }
 
 function isTimedMessageType(
-  value: StreamedActionState["type"],
+  value: "text" | "image" | "voice" | undefined,
 ): value is "text" | "voice" {
   return value === "text" || value === "voice";
 }
 
-function visibleField(type: StreamedActionState["type"]) {
+function visibleField(type: "text" | "image" | "voice" | undefined) {
   return type === "voice"
     ? "transcript"
     : type === "image"
