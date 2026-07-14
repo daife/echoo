@@ -24,6 +24,45 @@ export function createPendingTextMessage(input: {
   };
 }
 
+export function createPendingMediaMessage(input: {
+  conversationId: string;
+  contentType: "image" | "voice";
+  mediaUrl: string;
+  fileName: string;
+  durationSeconds?: number;
+  clientMessageId?: string;
+  now?: number;
+}): LocalMessage {
+  const clientMessageId =
+    input.clientMessageId ?? `client_${crypto.randomUUID()}`;
+  const now = input.now ?? Date.now();
+  return {
+    id: clientMessageId,
+    clientMessageId,
+    conversationId: input.conversationId,
+    role: "user",
+    contentType: input.contentType,
+    content: {
+      mediaUrl: input.mediaUrl,
+      fileName: input.fileName,
+    },
+    status: "pending",
+    ...(input.contentType === "voice" && input.durationSeconds !== undefined
+      ? {
+          metadata: {
+            mediaIntent: {
+              status: "ready",
+              durationSeconds: input.durationSeconds,
+            },
+          },
+        }
+      : {}),
+    createdAt: now,
+    updatedAt: now,
+    syncStatus: "pending",
+  };
+}
+
 export function mergeLocalMessage(
   messages: LocalMessage[],
   message: LocalMessage,

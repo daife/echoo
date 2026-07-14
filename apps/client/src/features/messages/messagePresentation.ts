@@ -40,7 +40,7 @@ export function isVisibleConversationMessage(message: LocalMessage) {
       message.metadata?.audioStreaming === true
     )
       return true;
-    return message.status !== "pending" && Boolean(message.content.mediaUrl);
+    return Boolean(message.content.mediaUrl);
   }
   if (message.role === "assistant" && message.status === "pending") {
     return Boolean(message.content.text?.trim());
@@ -118,7 +118,9 @@ export interface ParentheticalTextRun {
   muted: boolean;
 }
 
-export function tokenizeParentheticalText(value: string): ParentheticalTextRun[] {
+export function tokenizeParentheticalText(
+  value: string,
+): ParentheticalTextRun[] {
   const runs: ParentheticalTextRun[] = [];
   let depth = 0;
   for (const char of Array.from(value)) {

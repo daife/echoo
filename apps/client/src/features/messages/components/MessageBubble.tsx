@@ -11,7 +11,10 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { sanitizeVoiceTranscript, tokenizeParentheticalText } from "../messagePresentation";
+import {
+  sanitizeVoiceTranscript,
+  tokenizeParentheticalText,
+} from "../messagePresentation";
 
 export interface MessageBubbleModel {
   id: string;
@@ -147,7 +150,10 @@ export function MessageBubble({
           type="button"
           onClick={() => {
             setIsActionOpen(false);
-            onEdit?.(message.sourceMessageId ?? message.id, message.sourceText ?? message.text);
+            onEdit?.(
+              message.sourceMessageId ?? message.id,
+              message.sourceText ?? message.text,
+            );
           }}
         >
           <PencilSimple size={14} />
@@ -169,16 +175,33 @@ export function MessageBubble({
     if (!mediaUrl) return null;
     return (
       <div
-        className="relative flex max-w-[85%] items-start gap-3 self-start md:max-w-[70%]"
+        className={`relative flex max-w-[85%] gap-2 md:max-w-[70%] ${
+          mine ? "items-end self-end" : "items-start self-start"
+        }`}
         {...longPressProps}
       >
         {actionMenu}
-        <div className="mt-1 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
+        {mine ? (
+          <DeliveryIndicator
+            state={message.deliveryState}
+            canRetry={Boolean(canRetry)}
+            onRetry={() => onRetry?.(message.id)}
+          />
+        ) : (
+          <div className="mt-1 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
+        )}
         <img
-          className="max-h-[480px] max-w-[360px] rounded-xl object-cover"
+          className={`max-h-[480px] max-w-[360px] rounded-xl object-cover ${
+            mine && message.deliveryState === "failed"
+              ? "outline outline-1 outline-red-300/25"
+              : ""
+          }`}
           src={mediaUrl}
-          alt="角色发送的图片"
+          alt={mine ? "我发送的图片" : "角色发送的图片"}
         />
+        {mine ? (
+          <div className="mt-1 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
+        ) : null}
       </div>
     );
   }
@@ -187,17 +210,30 @@ export function MessageBubble({
     const mediaUrl = resolveMediaUrl(message.mediaUrl);
     return (
       <div
-        className="relative flex max-w-[85%] items-start gap-3 self-start md:max-w-[70%]"
+        className={`relative flex max-w-[85%] gap-2 md:max-w-[70%] ${
+          mine ? "items-end self-end" : "items-start self-start"
+        }`}
         {...longPressProps}
       >
         {actionMenu}
-        <div className="mt-3 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
+        {mine ? (
+          <DeliveryIndicator
+            state={message.deliveryState}
+            canRetry={Boolean(canRetry)}
+            onRetry={() => onRetry?.(message.id)}
+          />
+        ) : (
+          <div className="mt-3 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
+        )}
         <VoiceBubble
           mediaUrl={mediaUrl}
           durationSeconds={message.durationSeconds}
           transcript={isTranscriptOpen ? cleanTranscript : undefined}
           suppressNextClickRef={didLongPressRef}
         />
+        {mine ? (
+          <div className="mt-3 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
+        ) : null}
       </div>
     );
   }
@@ -230,7 +266,11 @@ export function MessageBubble({
       >
         <ParentheticalText value={message.text} />
         {!mine && message.isPending ? (
-          <SpinnerGap className="ml-2 inline animate-spin text-white/35" size={13} aria-label="回复生成中" />
+          <SpinnerGap
+            className="ml-2 inline animate-spin text-white/35"
+            size={13}
+            aria-label="回复生成中"
+          />
         ) : null}
       </div>
       {mine ? (
@@ -295,7 +335,9 @@ function VoiceBubble({
         className="flex h-12 items-center gap-3 rounded-xl bg-white/[0.055] px-4 text-left text-white transition hover:bg-white/[0.075] active:scale-[0.99]"
         style={{ width }}
         type="button"
-        aria-label={mediaUrl ? (isPlaying ? "暂停语音" : "播放语音") : "语音生成中"}
+        aria-label={
+          mediaUrl ? (isPlaying ? "暂停语音" : "播放语音") : "语音生成中"
+        }
         onClick={toggle}
         disabled={!mediaUrl}
       >
@@ -310,23 +352,25 @@ function VoiceBubble({
           </span>
         ) : null}
       </button>
-      {mediaUrl ? <audio
-        ref={audioRef}
-        className="hidden"
-        preload="metadata"
-        src={mediaUrl}
-        onLoadedMetadata={(event) => {
-          const next = event.currentTarget.duration;
-          if (Number.isFinite(next)) setDuration(next);
-        }}
-        onDurationChange={(event) => {
-          const next = event.currentTarget.duration;
-          if (Number.isFinite(next)) setDuration(next);
-        }}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onEnded={() => setIsPlaying(false)}
-      /> : null}
+      {mediaUrl ? (
+        <audio
+          ref={audioRef}
+          className="hidden"
+          preload="metadata"
+          src={mediaUrl}
+          onLoadedMetadata={(event) => {
+            const next = event.currentTarget.duration;
+            if (Number.isFinite(next)) setDuration(next);
+          }}
+          onDurationChange={(event) => {
+            const next = event.currentTarget.duration;
+            if (Number.isFinite(next)) setDuration(next);
+          }}
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          onEnded={() => setIsPlaying(false)}
+        />
+      ) : null}
       {transcript ? (
         <p className="mt-2 max-w-[320px] rounded-xl bg-white/[0.035] px-3.5 py-2.5 text-sm leading-6 text-white/72">
           <ParentheticalText value={transcript} />
@@ -373,7 +417,7 @@ function DeliveryIndicator({
 
 function resolveMediaUrl(mediaUrl?: string) {
   if (!mediaUrl) return undefined;
-  if (/^https?:\/\//.test(mediaUrl)) return mediaUrl;
+  if (/^(?:https?:|blob:|data:)/.test(mediaUrl)) return mediaUrl;
   const apiBase =
     import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787/api";
   return new URL(mediaUrl, new URL(apiBase).origin).toString();

@@ -2,8 +2,15 @@ import { z } from "zod";
 
 export const messageContentSchema = z.object({
   text: z.string().optional(),
-  mediaUrl: z.string().url().optional(),
-  fileName: z.string().optional()
+  mediaUrl: z
+    .string()
+    .refine(
+      (value) => /^https?:\/\//i.test(value) || value.startsWith("/"),
+      "媒体地址必须是 URL 或站内绝对路径。",
+    )
+    .optional(),
+  fileName: z.string().optional(),
+  resourceId: z.string().optional(),
 });
 
 export const messageSchema = z.object({
@@ -19,5 +26,5 @@ export const messageSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
-  readAt: z.number().optional()
+  readAt: z.number().optional(),
 });

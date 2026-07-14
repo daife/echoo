@@ -1,7 +1,6 @@
 import {
   Copy,
   GearSix,
-  PaperPlaneRight,
   PencilSimple,
   Trash,
   Waveform,
@@ -33,6 +32,7 @@ import {
   MessageBubble,
   type MessageBubbleModel,
 } from "../../features/messages/components/MessageBubble";
+import { MessageComposer } from "../../features/messages/components/MessageComposer";
 import {
   formatConversationTime,
   getOutgoingDeliveryState,
@@ -87,7 +87,10 @@ export function MessagesPage({
   const [isUpdatingPreference, setIsUpdatingPreference] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
-  const [messageBeingEdited, setMessageBeingEdited] = useState<{ id: string; text: string } | null>(null);
+  const [messageBeingEdited, setMessageBeingEdited] = useState<{
+    id: string;
+    text: string;
+  } | null>(null);
   const settingsRef = useRef<HTMLDivElement | null>(null);
   const {
     messages,
@@ -103,6 +106,8 @@ export function MessagesPage({
     error,
     canRollback,
     sendMessage,
+    sendImage,
+    sendVoice,
     loadOlderMessages,
     retryFailedMessage,
     deleteConversation,
@@ -111,7 +116,6 @@ export function MessagesPage({
     updatingMessageId,
   } = useConversationMessages({ agent, onConversationDeleted });
   const mainRef = useRef<HTMLElement | null>(null);
-  const messageInputRef = useRef<HTMLInputElement | null>(null);
   const shouldFollowBottomRef = useRef(true);
   const lastConversationRef = useRef<string | undefined>(undefined);
   const lastVisibleMessageIdRef = useRef<string | undefined>(undefined);
@@ -167,7 +171,11 @@ export function MessagesPage({
     if (!isSettingsOpen) return;
     const close = (event: PointerEvent | KeyboardEvent) => {
       if (event instanceof KeyboardEvent && event.key !== "Escape") return;
-      if (event instanceof PointerEvent && settingsRef.current?.contains(event.target as Node)) return;
+      if (
+        event instanceof PointerEvent &&
+        settingsRef.current?.contains(event.target as Node)
+      )
+        return;
       setIsSettingsOpen(false);
     };
     document.addEventListener("pointerdown", close);
@@ -259,18 +267,30 @@ export function MessagesPage({
             </button>
           ) : (
             <button
-            aria-label="删除会话"
-            className="grid h-9 w-9 place-items-center rounded-lg text-white/35 transition hover:bg-red-400/10 hover:text-red-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-300 active:translate-y-px disabled:opacity-40"
-            disabled={isDeletingConversation}
-            type="button"
-            onClick={deleteConversation}
-          >
-            <Trash size={17} />
+              aria-label="删除会话"
+              className="grid h-9 w-9 place-items-center rounded-lg text-white/35 transition hover:bg-red-400/10 hover:text-red-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-300 active:translate-y-px disabled:opacity-40"
+              disabled={isDeletingConversation}
+              type="button"
+              onClick={deleteConversation}
+            >
+              <Trash size={17} />
             </button>
           )}
-          {isSettingsOpen && (agent.type === "slice-figure" || agent.type === "prime-figure") ? (
+          {isSettingsOpen &&
+          (agent.type === "slice-figure" || agent.type === "prime-figure") ? (
             <div className="absolute right-0 top-11 z-30 w-64 rounded-xl border border-white/10 bg-[#17171b] p-2 shadow-[0_18px_50px_rgba(0,0,0,0.42)]">
-              <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/75 transition hover:bg-white/[0.06] hover:text-white" type="button" onClick={() => { setIsSettingsOpen(false); setEditError(null); setIsEditOpen(true); }}><PencilSimple size={16} />修改角色</button>
+              <button
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/75 transition hover:bg-white/[0.06] hover:text-white"
+                type="button"
+                onClick={() => {
+                  setIsSettingsOpen(false);
+                  setEditError(null);
+                  setIsEditOpen(true);
+                }}
+              >
+                <PencilSimple size={16} />
+                修改角色
+              </button>
               <button
                 className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/75 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-45"
                 disabled={isExporting}
@@ -278,28 +298,103 @@ export function MessagesPage({
                 onClick={() => {
                   setIsExporting(true);
                   setExportNotice(null);
-                  void updateHandlers.exportAgent(agent.id)
+                  void updateHandlers
+                    .exportAgent(agent.id)
                     .then(async (result) => {
                       await copyText(JSON.stringify(result.data, null, 2));
                       setExportNotice("角色 JSON 已复制");
                     })
                     .catch((caught) =>
-                      setExportNotice(caught instanceof Error ? caught.message : "导出失败。"),
+                      setExportNotice(
+                        caught instanceof Error ? caught.message : "导出失败。",
+                      ),
                     )
                     .finally(() => setIsExporting(false));
                 }}
-              ><Copy size={16} />{isExporting ? "正在导出…" : "导出角色"}</button>
-              {agent.type === "slice-figure" ? <label className="mt-1 flex cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 text-sm text-white/75 transition hover:bg-white/[0.06]">
-                <span>回复自动分段</span>
-                <input type="checkbox" checked={agent.detail.replyAutoSegment} disabled={isUpdatingPreference} onChange={async (event) => { const checked = event.target.checked; setIsUpdatingPreference(true); setEditError(null); try { await updateHandlers["slice-figure"](agent.id, { ...agentToUpdateForm(agent), replyAutoSegment: checked }); } catch (caught) { setEditError(caught instanceof Error ? caught.message : "设置保存失败。"); } finally { setIsUpdatingPreference(false); } }} />
-              </label> : null}
-              {agent.type === "prime-figure" ? <label className="mt-1 flex cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 text-sm text-white/75 transition hover:bg-white/[0.06]">
-                <span>流式语音请求</span>
-                <input type="checkbox" checked={agent.detail.voiceRequestStreaming} disabled={isUpdatingPreference} onChange={async (event) => { const checked = event.target.checked; setIsUpdatingPreference(true); setEditError(null); try { await updateHandlers.updatePrimeFigurePreferences(agent.id, { voiceRequestStreaming: checked }); } catch (caught) { setEditError(caught instanceof Error ? caught.message : "设置保存失败。"); } finally { setIsUpdatingPreference(false); } }} />
-              </label> : null}
-              <button className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-red-200/75 transition hover:bg-red-400/10 hover:text-red-100 disabled:opacity-40" disabled={isDeletingConversation} type="button" onClick={() => { setIsSettingsOpen(false); void deleteConversation(); }}><Trash size={16} />删除会话</button>
-              {editError ? <p className="px-3 pb-1 pt-2 text-xs leading-5 text-red-200/75">{editError}</p> : null}
-              {exportNotice ? <p className="px-3 pb-1 pt-2 text-xs leading-5 text-white/55">{exportNotice}</p> : null}
+              >
+                <Copy size={16} />
+                {isExporting ? "正在导出…" : "导出角色"}
+              </button>
+              {agent.type === "slice-figure" ? (
+                <label className="mt-1 flex cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 text-sm text-white/75 transition hover:bg-white/[0.06]">
+                  <span>回复自动分段</span>
+                  <input
+                    type="checkbox"
+                    checked={agent.detail.replyAutoSegment}
+                    disabled={isUpdatingPreference}
+                    onChange={async (event) => {
+                      const checked = event.target.checked;
+                      setIsUpdatingPreference(true);
+                      setEditError(null);
+                      try {
+                        await updateHandlers["slice-figure"](agent.id, {
+                          ...agentToUpdateForm(agent),
+                          replyAutoSegment: checked,
+                        });
+                      } catch (caught) {
+                        setEditError(
+                          caught instanceof Error
+                            ? caught.message
+                            : "设置保存失败。",
+                        );
+                      } finally {
+                        setIsUpdatingPreference(false);
+                      }
+                    }}
+                  />
+                </label>
+              ) : null}
+              {agent.type === "prime-figure" ? (
+                <label className="mt-1 flex cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 text-sm text-white/75 transition hover:bg-white/[0.06]">
+                  <span>流式语音请求</span>
+                  <input
+                    type="checkbox"
+                    checked={agent.detail.voiceRequestStreaming}
+                    disabled={isUpdatingPreference}
+                    onChange={async (event) => {
+                      const checked = event.target.checked;
+                      setIsUpdatingPreference(true);
+                      setEditError(null);
+                      try {
+                        await updateHandlers.updatePrimeFigurePreferences(
+                          agent.id,
+                          { voiceRequestStreaming: checked },
+                        );
+                      } catch (caught) {
+                        setEditError(
+                          caught instanceof Error
+                            ? caught.message
+                            : "设置保存失败。",
+                        );
+                      } finally {
+                        setIsUpdatingPreference(false);
+                      }
+                    }}
+                  />
+                </label>
+              ) : null}
+              <button
+                className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-red-200/75 transition hover:bg-red-400/10 hover:text-red-100 disabled:opacity-40"
+                disabled={isDeletingConversation}
+                type="button"
+                onClick={() => {
+                  setIsSettingsOpen(false);
+                  void deleteConversation();
+                }}
+              >
+                <Trash size={16} />
+                删除会话
+              </button>
+              {editError ? (
+                <p className="px-3 pb-1 pt-2 text-xs leading-5 text-red-200/75">
+                  {editError}
+                </p>
+              ) : null}
+              {exportNotice ? (
+                <p className="px-3 pb-1 pt-2 text-xs leading-5 text-white/55">
+                  {exportNotice}
+                </p>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -326,10 +421,10 @@ export function MessagesPage({
         <div className="flex flex-col gap-5">
           {visibleMessages.map((message, index) => {
             const previous = visibleMessages[index - 1];
-              const showTime = message.kind !== "memory-summary" && message.isSourceStart !== false && shouldShowMessageTime(
-              message.createdAt,
-              previous?.createdAt,
-            );
+            const showTime =
+              message.kind !== "memory-summary" &&
+              message.isSourceStart !== false &&
+              shouldShowMessageTime(message.createdAt, previous?.createdAt);
             return (
               <Fragment key={message.id}>
                 {showTime && message.createdAt > 0 ? (
@@ -341,7 +436,9 @@ export function MessagesPage({
                   message={message}
                   onRetry={retryFailedMessage}
                   onRollback={canRollback ? rollbackConversation : undefined}
-                  onEdit={(messageId, text) => setMessageBeingEdited({ id: messageId, text })}
+                  onEdit={(messageId, text) =>
+                    setMessageBeingEdited({ id: messageId, text })
+                  }
                 />
               </Fragment>
             );
@@ -354,35 +451,17 @@ export function MessagesPage({
         ) : null}
       </main>
 
-      <footer className="relative px-4 pb-4 pt-2 md:px-6 md:pb-6">
-        <div className="pointer-events-none absolute inset-x-0 bottom-full h-16 bg-gradient-to-t from-[#0d0d10] to-transparent" />
-        <form
-          className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#121216] p-2 shadow-[0_14px_38px_rgba(0,0,0,0.22)] transition focus-within:border-white/30"
-          onSubmit={(event) => {
-            void sendMessage(event);
-            window.requestAnimationFrame(() =>
-              messageInputRef.current?.focus(),
-            );
-          }}
-        >
-          <input
-            ref={messageInputRef}
-            aria-label={`给 ${title} 发消息`}
-            className="min-w-0 flex-1 border-none bg-transparent px-3 py-2 text-sm text-white outline-none placeholder:text-white/32"
-            placeholder="写下消息，Enter 发送"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-          />
-          <button
-            aria-label="发送消息"
-            className="grid h-10 w-10 place-items-center rounded-lg bg-white text-[#09090b] transition hover:bg-white/88 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white active:translate-y-px disabled:cursor-not-allowed disabled:opacity-35"
-            disabled={!draft.trim() || isSending}
-            type="submit"
-          >
-            <PaperPlaneRight size={18} weight="fill" />
-          </button>
-        </form>
-      </footer>
+      <MessageComposer
+        key={agent.conversationId}
+        title={title}
+        isPrimeFigure={agent.type === "prime-figure"}
+        draft={draft}
+        isSending={isSending}
+        onDraftChange={setDraft}
+        onSendText={sendMessage}
+        onSendImage={sendImage}
+        onSendVoice={sendVoice}
+      />
       {isEditOpen && agent.type === "slice-figure" ? (
         <EditSliceFigureDialog
           agent={agent}
@@ -390,32 +469,34 @@ export function MessagesPage({
           isSubmitting={isUpdatingAgent}
           user={user}
           onClose={() => {
-              if (isUpdatingAgent) return;
-              setIsEditOpen(false);
-              setEditError(null);
+            if (isUpdatingAgent) return;
+            setIsEditOpen(false);
+            setEditError(null);
           }}
           onSubmit={async (payload) => {
-              setIsUpdatingAgent(true);
-              setEditError(null);
-              try {
-                await updateHandlers["slice-figure"](agent.id, payload);
-                setIsEditOpen(false);
-              } catch (caught) {
-                setEditError(
-                  caught instanceof Error
-                    ? caught.message
-                    : "修改失败，请稍后再试。",
-                );
-              } finally {
-                setIsUpdatingAgent(false);
-              }
+            setIsUpdatingAgent(true);
+            setEditError(null);
+            try {
+              await updateHandlers["slice-figure"](agent.id, payload);
+              setIsEditOpen(false);
+            } catch (caught) {
+              setEditError(
+                caught instanceof Error
+                  ? caught.message
+                  : "修改失败，请稍后再试。",
+              );
+            } finally {
+              setIsUpdatingAgent(false);
+            }
           }}
         />
-        ) : null}
+      ) : null}
       {isEditOpen && agent.type === "prime-figure" ? (
         <EditPrimeFigureDialog
           agent={agent}
-          loadSnapshot={() => updateHandlers.getPrimeFigureEditSnapshot(agent.id)}
+          loadSnapshot={() =>
+            updateHandlers.getPrimeFigureEditSnapshot(agent.id)
+          }
           onClose={() => setIsEditOpen(false)}
           onSubmit={async (payload) => {
             await updateHandlers["prime-figure"](agent.id, payload);
@@ -427,7 +508,9 @@ export function MessagesPage({
         <EditMessageDialog
           initialText={messageBeingEdited.text}
           isSubmitting={updatingMessageId === messageBeingEdited.id}
-          onClose={() => { if (!updatingMessageId) setMessageBeingEdited(null); }}
+          onClose={() => {
+            if (!updatingMessageId) setMessageBeingEdited(null);
+          }}
           onSubmit={async (text) => {
             await updateAssistantMessage(messageBeingEdited.id, text);
             setMessageBeingEdited(null);
@@ -518,10 +601,20 @@ function EditSliceFigureDialog({
           existingCoverUrl={agent.coverResourcePath}
           onApplyJson={() => {
             try {
-              const parsed = JSON.parse(jsonInput) as Partial<CreateSliceFigureRequest>;
-              const next = { ...form, ...parsed, type: "slice-figure" as const };
+              const parsed = JSON.parse(
+                jsonInput,
+              ) as Partial<CreateSliceFigureRequest>;
+              const next = {
+                ...form,
+                ...parsed,
+                type: "slice-figure" as const,
+              };
               setForm(next);
-              setUnlockText(next.unlockConditions ? JSON.stringify(next.unlockConditions, null, 2) : "");
+              setUnlockText(
+                next.unlockConditions
+                  ? JSON.stringify(next.unlockConditions, null, 2)
+                  : "",
+              );
               setLocalError(null);
             } catch {
               setLocalError("JSON 无法解析，请检查格式。");
@@ -562,7 +655,9 @@ function EditPrimeFigureDialog({
   onClose: () => void;
   onSubmit: (payload: UpdatePrimeFigureRequest) => Promise<void>;
 }) {
-  const [snapshot, setSnapshot] = useState<PrimeFigureEditSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<PrimeFigureEditSnapshot | null>(
+    null,
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -599,9 +694,17 @@ function EditPrimeFigureDialog({
           <div className="rounded-2xl border border-white/10 p-7">
             <div className="flex items-center justify-between gap-4">
               <h2 className="text-xl font-semibold text-white">修改本初角色</h2>
-              <button className="grid h-9 w-9 place-items-center rounded-full text-white/50 hover:bg-white/[0.06] hover:text-white" type="button" onClick={onClose}><X size={17} /></button>
+              <button
+                className="grid h-9 w-9 place-items-center rounded-full text-white/50 hover:bg-white/[0.06] hover:text-white"
+                type="button"
+                onClick={onClose}
+              >
+                <X size={17} />
+              </button>
             </div>
-            <p className={`mt-6 text-sm ${loadError ? "text-red-200/80" : "text-white/48"}`}>
+            <p
+              className={`mt-6 text-sm ${loadError ? "text-red-200/80" : "text-white/48"}`}
+            >
               {loadError ?? "正在读取最新角色状态……"}
             </p>
           </div>
@@ -745,23 +848,30 @@ function toBubbleMessages(
   agentType: Agent["type"],
 ): MessageBubbleModel[] {
   if (message.metadata?.kind === "memory_summary")
-    return [{
-      id: message.id,
-      sourceMessageId: message.id,
-      from: "system",
-      text: "已自动总结对话",
-      createdAt: message.createdAt,
-      kind: "memory-summary",
-      canRollback: false,
-      canEdit: false,
-    }];
-  const text = message.contentType === "text" ? (message.content.text ?? "") : "";
+    return [
+      {
+        id: message.id,
+        sourceMessageId: message.id,
+        from: "system",
+        text: "已自动总结对话",
+        createdAt: message.createdAt,
+        kind: "memory-summary",
+        canRollback: false,
+        canEdit: false,
+      },
+    ];
+  const text =
+    message.contentType === "text" ? (message.content.text ?? "") : "";
   const segments =
-    autoSegment && message.role === "assistant" && message.contentType === "text"
+    autoSegment &&
+    message.role === "assistant" &&
+    message.contentType === "text"
       ? splitFigureReply(text)
       : [text];
   const isSegmented =
-    autoSegment && message.role === "assistant" && message.contentType === "text";
+    autoSegment &&
+    message.role === "assistant" &&
+    message.contentType === "text";
   return segments.map((segment, index) => ({
     id: isSegmented ? `${message.id}:segment:${index}` : message.id,
     sourceMessageId: message.id,
@@ -812,12 +922,59 @@ function EditMessageDialog({
   const [error, setError] = useState<string | null>(null);
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 px-4 backdrop-blur-sm">
-      <form className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#101014] p-5 shadow-[0_24px_100px_rgba(0,0,0,0.55)]" onSubmit={async (event) => { event.preventDefault(); const value = text.trim(); if (!value) return setError("消息内容不能为空。"); setError(null); try { await onSubmit(value); } catch (caught) { setError(caught instanceof Error ? caught.message : "修改消息失败。"); } }}>
-        <div className="flex items-center justify-between"><h2 className="text-lg font-semibold text-white">修改角色回复</h2><button aria-label="关闭" className="grid h-9 w-9 place-items-center rounded-lg text-white/45 hover:bg-white/[0.06] hover:text-white" type="button" onClick={onClose}><X size={17} /></button></div>
-        <p className="mt-1 text-xs text-white/40">自动分段仅影响显示，这里始终修改完整的一轮回复。</p>
-        <textarea autoFocus className="mt-4 min-h-44 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-6 text-white outline-none transition focus:border-white/25" value={text} onChange={(event) => setText(event.target.value)} />
+      <form
+        className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#101014] p-5 shadow-[0_24px_100px_rgba(0,0,0,0.55)]"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          const value = text.trim();
+          if (!value) return setError("消息内容不能为空。");
+          setError(null);
+          try {
+            await onSubmit(value);
+          } catch (caught) {
+            setError(
+              caught instanceof Error ? caught.message : "修改消息失败。",
+            );
+          }
+        }}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-white">修改角色回复</h2>
+          <button
+            aria-label="关闭"
+            className="grid h-9 w-9 place-items-center rounded-lg text-white/45 hover:bg-white/[0.06] hover:text-white"
+            type="button"
+            onClick={onClose}
+          >
+            <X size={17} />
+          </button>
+        </div>
+        <p className="mt-1 text-xs text-white/40">
+          自动分段仅影响显示，这里始终修改完整的一轮回复。
+        </p>
+        <textarea
+          autoFocus
+          className="mt-4 min-h-44 w-full resize-y rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-6 text-white outline-none transition focus:border-white/25"
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+        />
         {error ? <p className="mt-3 text-sm text-red-200/80">{error}</p> : null}
-        <div className="mt-5 flex justify-end gap-2"><button className="rounded-lg px-4 py-2 text-sm text-white/55 hover:bg-white/[0.05] hover:text-white" type="button" onClick={onClose}>取消</button><button className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-45" disabled={isSubmitting || !text.trim()} type="submit">{isSubmitting ? "保存中…" : "保存修改"}</button></div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            className="rounded-lg px-4 py-2 text-sm text-white/55 hover:bg-white/[0.05] hover:text-white"
+            type="button"
+            onClick={onClose}
+          >
+            取消
+          </button>
+          <button
+            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-45"
+            disabled={isSubmitting || !text.trim()}
+            type="submit"
+          >
+            {isSubmitting ? "保存中…" : "保存修改"}
+          </button>
+        </div>
       </form>
     </div>
   );

@@ -1,5 +1,9 @@
 import type { MessageApi } from "@echoo/api-client";
-import type { LocalMessage, Message } from "@echoo/shared";
+import type {
+  CreateMediaMessageInput,
+  LocalMessage,
+  Message,
+} from "@echoo/shared";
 
 /** MySQL is canonical. The client keeps only the currently visible page in React state. */
 export class MessageService {
@@ -25,6 +29,9 @@ export class MessageService {
     stream?: boolean;
   }) {
     return this.api.createTextMessage(input);
+  }
+  sendMediaMessage(input: CreateMediaMessageInput) {
+    return this.api.createMediaMessage(input);
   }
   triggerPrimeFigureHint(conversationId: string, instruction: string) {
     return this.api.triggerPrimeFigureHint(conversationId, instruction);

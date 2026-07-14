@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Message } from "@echoo/shared";
+import type { Message, MessageMediaUpload } from "@echoo/shared";
 import {
   AgentRunQueue,
   type AgentRunJob,
@@ -8,6 +8,10 @@ import { PrimeFigureRuntimeService } from "../agents/kinds/prime-figure/prime-fi
 import { SliceFigureRuntimeService } from "../agents/kinds/slice-figure/slice-figure-runtime.service.js";
 import { ConversationRepository } from "../conversations/conversation.repository.js";
 import { AppPushService } from "../realtime/delivery.service.js";
+import {
+  InvalidMediaUploadError,
+  ResourceRepository,
+} from "../resources/resource.repository.js";
 import { MessageRepository } from "./message.repository.js";
 
 export interface CreateUserTextMessageInput {
@@ -23,10 +27,31 @@ export interface CreateUserTextMessageResult {
   assistantMessage?: Message;
 }
 
-export type TriggerPrimeFigureHintResult =
-  | { kind: "ok" }
+export type CreateUserMediaMessageInput =
+  | {
+      ownerUserId: string;
+      conversationId: string;
+      contentType: "image";
+      upload: MessageMediaUpload;
+      clientMessageId?: string | null;
+    }
+  | {
+      ownerUserId: string;
+      conversationId: string;
+      contentType: "voice";
+      upload: MessageMediaUpload;
+      durationSeconds: number;
+      clientMessageId?: string | null;
+    };
+
+export type CreateUserMediaMessageResult =
+  | { kind: "ok"; message: Message }
   | { kind: "not_found" }
-  | { kind: "unsupported_type" };
+  | { kind: "unsupported_type" }
+  | { kind: "invalid_media"; message: string };
+
+export type TriggerPrimeFigureHintResult =
+  { kind: "ok" } | { kind: "not_found" } | { kind: "unsupported_type" };
 
 export class MessagingService {
   constructor(
@@ -36,6 +61,7 @@ export class MessagingService {
     private readonly sliceRuntime = new SliceFigureRuntimeService(),
     private readonly primeRuntime = new PrimeFigureRuntimeService(),
     private readonly runQueue = new AgentRunQueue(),
+    private readonly resources = new ResourceRepository(),
   ) {}
 
   listMessages(
@@ -135,6 +161,102 @@ export class MessagingService {
     });
 
     return { message, assistantMessage };
+  }
+
+  async createUserMediaMessage(
+    input: CreateUserMediaMessageInput,
+  ): Promise<CreateUserMediaMessageResult> {
+    const conversation = await this.conversations.findByIdForOwner(
+      input.ownerUserId,
+      input.conversationId,
+    );
+    if (!conversation) return { kind: "not_found" };
+    if (conversation.type !== "prime-figure" || !conversation.agentId)
+      return { kind: "unsupported_type" };
+
+    const existing = await this.repository.findByClientMessageId(
+      input.ownerUserId,
+      input.clientMessageId,
+    );
+    if (existing) {
+      await this.enqueuePrimeFigureRun(input.ownerUserId, input.conversationId);
+      return { kind: "ok", message: existing };
+    }
+
+    let resource;
+    try {
+      resource = await this.resources.saveUserMedia(
+        input.ownerUserId,
+        input.contentType === "image" ? "end_user_image" : "end_user_voice",
+        input.upload,
+      );
+    } catch (error) {
+      if (!(error instanceof InvalidMediaUploadError)) throw error;
+      return {
+        kind: "invalid_media",
+        message: error instanceof Error ? error.message : "媒体文件无效。",
+      };
+    }
+    const now = Date.now();
+    let message: Message;
+    try {
+      message = await this.repository.save({
+        ownerUserId: input.ownerUserId,
+        id: `msg_${randomUUID()}`,
+        ...(input.clientMessageId
+          ? { clientMessageId: input.clientMessageId }
+          : {}),
+        conversationId: input.conversationId,
+        role: "user",
+        contentType: input.contentType,
+        content: {
+          mediaUrl: resource.publicPath,
+          fileName: input.upload.fileName,
+          resourceId: resource.id,
+        },
+        status: "sent",
+        ...(input.contentType === "voice"
+          ? {
+              metadata: {
+                mediaIntent: {
+                  status: "ready",
+                  durationSeconds:
+                    resource.durationSeconds ?? input.durationSeconds,
+                },
+              },
+            }
+          : {}),
+        createdAt: now,
+        updatedAt: now,
+      });
+    } catch (error) {
+      await this.resources.deleteOwnedByPublicPath(
+        input.ownerUserId,
+        resource.publicPath,
+      );
+      throw error;
+    }
+
+    await this.conversations.updatePreview({
+      ownerUserId: input.ownerUserId,
+      conversationId: input.conversationId,
+      preview: input.contentType === "image" ? "[图片]" : "[语音]",
+      updatedAt: now,
+    });
+    this.appPush.pushToUser(input.ownerUserId, {
+      type: "message.created",
+      message,
+    });
+    await this.enqueuePrimeFigureRun(input.ownerUserId, input.conversationId);
+    return { kind: "ok", message };
+  }
+
+  private enqueuePrimeFigureRun(ownerUserId: string, conversationId: string) {
+    return this.runQueue.enqueue({
+      ownerUserId,
+      conversationId,
+      kind: "prime-figure",
+    });
   }
 
   async triggerPrimeFigureHint(input: {
@@ -276,11 +398,12 @@ export class MessagingService {
       message: updated,
     });
     if (message.sequence) {
-      const invalidated = await this.repository.invalidateMemorySummariesCovering(
-        input.ownerUserId,
-        input.conversationId,
-        message.sequence,
-      );
+      const invalidated =
+        await this.repository.invalidateMemorySummariesCovering(
+          input.ownerUserId,
+          input.conversationId,
+          message.sequence,
+        );
       for (const summary of invalidated)
         this.appPush.pushToUser(input.ownerUserId, {
           type: "message.updated",
@@ -363,9 +486,7 @@ export class MessagingService {
       contentType: "text",
       content: { text: "" },
       status: "pending",
-      ...(replyToMessageId
-        ? { metadata: { replyToMessageId } }
-        : {}),
+      ...(replyToMessageId ? { metadata: { replyToMessageId } } : {}),
       createdAt: now,
       updatedAt: now,
     });
@@ -452,11 +573,17 @@ export class MessagingService {
             message: summary,
           });
       } catch (error) {
-        console.warn("Slice figure memory summary failed; queued for retry.", error);
+        console.warn(
+          "Slice figure memory summary failed; queued for retry.",
+          error,
+        );
         try {
           await this.enqueueSliceMemorySummary(ownerUserId, conversationId);
         } catch (queueError) {
-          console.warn("Slice figure memory summary retry enqueue failed.", queueError);
+          console.warn(
+            "Slice figure memory summary retry enqueue failed.",
+            queueError,
+          );
         }
       }
       return message;

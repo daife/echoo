@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LocalMessage } from "@echoo/shared";
 import {
+  createPendingMediaMessage,
   createPendingTextMessage,
   markLocalMessageFailed,
   markLocalMessageSending,
@@ -60,6 +61,34 @@ describe("optimistic outgoing messages", () => {
     });
   });
 
+  it("retains an optimistic MP3 message and its duration while retrying", () => {
+    const pending = createPendingMediaMessage({
+      conversationId: "conversation_1",
+      clientMessageId: "voice_1",
+      contentType: "voice",
+      mediaUrl: "blob:voice-preview",
+      fileName: "voice.mp3",
+      durationSeconds: 3.2,
+      now: 1,
+    });
+    const [failed] = markLocalMessageFailed([pending], "voice_1", 2);
+    const retrying = markLocalMessageSending(failed, 3);
+
+    expect(retrying).toMatchObject({
+      id: "voice_1",
+      contentType: "voice",
+      content: {
+        mediaUrl: "blob:voice-preview",
+        fileName: "voice.mp3",
+      },
+      metadata: {
+        mediaIntent: { status: "ready", durationSeconds: 3.2 },
+      },
+      status: "pending",
+      syncStatus: "pending",
+    });
+  });
+
   it("places a memory summary after its covered reply and clears it while rebuilding", () => {
     const base = {
       conversationId: "conversation_1",
@@ -106,6 +135,8 @@ describe("optimistic outgoing messages", () => {
       content: { text: "" },
       status: "pending",
     });
-    expect(rebuilt.find((message) => message.id === "summary")?.content.text).toBe("");
+    expect(
+      rebuilt.find((message) => message.id === "summary")?.content.text,
+    ).toBe("");
   });
 });

@@ -59,6 +59,18 @@ describe("conversation message visibility", () => {
     ).toBe(true);
   });
 
+  it("shows optimistic end-user media immediately from its blob URL", () => {
+    expect(
+      isVisibleConversationMessage({
+        ...baseMessage,
+        role: "user",
+        contentType: "image",
+        content: { mediaUrl: "blob:image-preview" },
+        syncStatus: "pending",
+      }),
+    ).toBe(true);
+  });
+
   it("shows a Prime voice placeholder while audio is streaming", () => {
     expect(
       isVisibleConversationMessage({

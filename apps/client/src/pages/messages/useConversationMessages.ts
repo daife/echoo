@@ -4,12 +4,13 @@ import {
   type LocalMessage,
 } from "@echoo/shared";
 import { useQueryClient } from "@tanstack/react-query";
-import type { Dispatch, FormEvent, SetStateAction } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { initApp } from "../../app/bootstrap/initApp";
 import { useRuntime } from "../../app/providers/RuntimeProvider";
 import {
   appendMessageDelta,
+  createPendingMediaMessage,
   createPendingTextMessage,
   mergeIncomingMessage,
   mergeLocalMessage,
@@ -39,6 +40,14 @@ interface StreamDisplayBuffer {
   completedMessage?: LocalMessage;
 }
 
+interface PendingMediaPayload {
+  contentType: "image" | "voice";
+  blob: Blob;
+  fileName: string;
+  objectUrl: string;
+  durationSeconds?: number;
+}
+
 export function useConversationMessages({
   agent,
   onConversationDeleted,
@@ -65,13 +74,16 @@ export function useConversationMessages({
   const [rollingBackMessageId, setRollingBackMessageId] = useState<
     string | null
   >(null);
-  const [updatingMessageId, setUpdatingMessageId] = useState<string | null>(null);
+  const [updatingMessageId, setUpdatingMessageId] = useState<string | null>(
+    null,
+  );
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesRef = useRef<LocalMessage[]>([]);
   const hasOlderRef = useRef(false);
   const streamBuffersRef = useRef(new Map<string, StreamDisplayBuffer>());
   const audioChunksRef = useRef(new Map<string, Uint8Array[]>());
+  const pendingMediaRef = useRef(new Map<string, PendingMediaPayload>());
   const conversationId = agent?.conversationId;
   const activeConversationIdRef = useRef(conversationId);
   activeConversationIdRef.current = conversationId;
@@ -361,6 +373,16 @@ export function useConversationMessages({
     };
   }, [clearStreamBuffers, conversationId]);
 
+  useEffect(
+    () => () => {
+      pendingMediaRef.current.forEach((payload) =>
+        URL.revokeObjectURL(payload.objectUrl),
+      );
+      pendingMediaRef.current.clear();
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!conversationId) return;
 
@@ -486,8 +508,7 @@ export function useConversationMessages({
     services.messageService,
   ]);
 
-  const sendMessage = async (event: FormEvent) => {
-    event.preventDefault();
+  const sendMessage = async () => {
     const text = draft.trim();
     if (!text || !conversationId || isSending) return;
 
@@ -521,6 +542,7 @@ export function useConversationMessages({
       (message) =>
         message.conversationId === conversationId &&
         message.role === "user" &&
+        message.contentType === "text" &&
         message.status === "failed" &&
         message.syncStatus === "failed",
     );
@@ -565,17 +587,108 @@ export function useConversationMessages({
     }
   };
 
+  const sendMediaMessage = async (payload: PendingMediaPayload) => {
+    if (!conversationId || agent?.type !== "prime-figure" || isSending) {
+      URL.revokeObjectURL(payload.objectUrl);
+      return;
+    }
+    if (payload.blob.size > 5 * 1024 * 1024) {
+      setError("媒体文件大小不能超过 5MB。");
+      URL.revokeObjectURL(payload.objectUrl);
+      return;
+    }
+
+    const pending = createPendingMediaMessage({
+      conversationId,
+      contentType: payload.contentType,
+      mediaUrl: payload.objectUrl,
+      fileName: payload.fileName,
+      durationSeconds: payload.durationSeconds,
+    });
+    const clientMessageId = pending.clientMessageId ?? pending.id;
+    pendingMediaRef.current.set(clientMessageId, payload);
+    setError(null);
+    setIsSending(true);
+    setMessages((current) => mergeLocalMessage(current, pending));
+    try {
+      const upload = {
+        fileName: payload.fileName,
+        mimeType:
+          payload.contentType === "voice" ? "audio/mpeg" : payload.blob.type,
+        dataBase64: await blobToBase64(payload.blob),
+      };
+      const result =
+        payload.contentType === "voice"
+          ? await services.messageService.sendMediaMessage({
+              conversationId,
+              contentType: "voice",
+              upload,
+              durationSeconds: payload.durationSeconds ?? 1,
+              clientMessageId,
+            })
+          : await services.messageService.sendMediaMessage({
+              conversationId,
+              contentType: "image",
+              upload,
+              clientMessageId,
+            });
+      pendingMediaRef.current.delete(clientMessageId);
+      URL.revokeObjectURL(payload.objectUrl);
+      if (activeConversationIdRef.current !== conversationId) return;
+      setMessages((current) =>
+        mergeSentTextMessageResult(current, clientMessageId, result),
+      );
+    } catch (sendError) {
+      if (activeConversationIdRef.current !== conversationId) {
+        pendingMediaRef.current.delete(clientMessageId);
+        URL.revokeObjectURL(payload.objectUrl);
+        return;
+      }
+      setError(
+        sendError instanceof Error ? sendError.message : "媒体发送失败。",
+      );
+      setMessages((current) =>
+        markLocalMessageFailed(current, clientMessageId),
+      );
+      setIsAgentActive(false);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const sendImage = async (file: File) => {
+    await sendMediaMessage({
+      contentType: "image",
+      blob: file,
+      fileName: file.name,
+      objectUrl: URL.createObjectURL(file),
+    });
+  };
+
+  const sendVoice = async (blob: Blob, durationSeconds: number) => {
+    await sendMediaMessage({
+      contentType: "voice",
+      blob,
+      fileName: `voice_${Date.now()}.mp3`,
+      objectUrl: URL.createObjectURL(blob),
+      durationSeconds,
+    });
+  };
+
   const retryFailedMessage = async (messageId: string) => {
     if (!conversationId || isSending || retryingMessageId) return;
     const failedMessage = messagesRef.current.find(
       (message) => message.id === messageId,
     );
     const text = failedMessage?.content.text?.trim();
+    const mediaPayload = pendingMediaRef.current.get(
+      failedMessage?.clientMessageId ?? messageId,
+    );
     if (
       !failedMessage ||
       failedMessage.status !== "failed" ||
       failedMessage.role !== "user" ||
-      !text
+      (!text && !mediaPayload)
     )
       return;
 
@@ -593,12 +706,39 @@ export function useConversationMessages({
     );
 
     try {
-      const result = await services.messageService.sendTextMessage({
-        conversationId,
-        text,
-        clientMessageId,
-        stream: true,
-      });
+      const result = mediaPayload
+        ? mediaPayload.contentType === "voice"
+          ? await services.messageService.sendMediaMessage({
+              conversationId,
+              contentType: "voice",
+              upload: {
+                fileName: mediaPayload.fileName,
+                mimeType: "audio/mpeg",
+                dataBase64: await blobToBase64(mediaPayload.blob),
+              },
+              durationSeconds: mediaPayload.durationSeconds ?? 1,
+              clientMessageId,
+            })
+          : await services.messageService.sendMediaMessage({
+              conversationId,
+              contentType: "image",
+              upload: {
+                fileName: mediaPayload.fileName,
+                mimeType: mediaPayload.blob.type,
+                dataBase64: await blobToBase64(mediaPayload.blob),
+              },
+              clientMessageId,
+            })
+        : await services.messageService.sendTextMessage({
+            conversationId,
+            text: text as string,
+            clientMessageId,
+            stream: true,
+          });
+      if (mediaPayload) {
+        pendingMediaRef.current.delete(clientMessageId);
+        URL.revokeObjectURL(mediaPayload.objectUrl);
+      }
       if (activeConversationIdRef.current !== conversationId) return;
       setMessages((current) =>
         mergeSentTextMessageResult(current, clientMessageId, result),
@@ -689,7 +829,9 @@ export function useConversationMessages({
         });
       });
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "修改消息失败。");
+      setError(
+        updateError instanceof Error ? updateError.message : "修改消息失败。",
+      );
       throw updateError;
     } finally {
       setUpdatingMessageId(null);
@@ -711,6 +853,8 @@ export function useConversationMessages({
     error,
     canRollback,
     sendMessage,
+    sendImage,
+    sendVoice,
     loadOlderMessages,
     retryFailedMessage,
     deleteConversation,
@@ -774,8 +918,7 @@ function updateAudioMessage(
               audioStreaming: patch.audioStreaming,
               ...(patch.liveAudioDurationSeconds !== undefined
                 ? {
-                    liveAudioDurationSeconds:
-                      patch.liveAudioDurationSeconds,
+                    liveAudioDurationSeconds: patch.liveAudioDurationSeconds,
                   }
                 : {}),
             },
@@ -800,4 +943,18 @@ function concatBytes(chunks: Uint8Array[]) {
     offset += chunk.length;
   }
   return bytes;
+}
+
+function blobToBase64(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? "");
+      const data = result.slice(result.indexOf(",") + 1);
+      if (!data) reject(new Error("媒体文件读取失败。"));
+      else resolve(data);
+    };
+    reader.onerror = () => reject(new Error("媒体文件读取失败。"));
+    reader.readAsDataURL(blob);
+  });
 }

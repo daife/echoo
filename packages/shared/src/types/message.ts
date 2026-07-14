@@ -1,12 +1,37 @@
 export type MessageRole = "user" | "assistant" | "system";
-export type MessageStatus = "pending" | "sent" | "delivered" | "failed" | "read";
-export type MessageContentType = "text" | "image" | "file" | "voice" | "video" | "system";
+export type MessageStatus =
+  "pending" | "sent" | "delivered" | "failed" | "read";
+export type MessageContentType =
+  "text" | "image" | "file" | "voice" | "video" | "system";
 
 export interface MessageContent {
   text?: string;
   mediaUrl?: string;
   fileName?: string;
+  /** Server-side resource backing a media message. */
+  resourceId?: string;
 }
+
+export interface MessageMediaUpload {
+  fileName: string;
+  mimeType: string;
+  dataBase64: string;
+}
+
+export type CreateMediaMessageInput =
+  | {
+      conversationId: string;
+      contentType: "image";
+      upload: MessageMediaUpload;
+      clientMessageId?: string;
+    }
+  | {
+      conversationId: string;
+      contentType: "voice";
+      upload: MessageMediaUpload;
+      durationSeconds: number;
+      clientMessageId?: string;
+    };
 
 export interface Message {
   id: string;

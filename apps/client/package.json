@@ -9,6 +9,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "tauri": "tauri",
+    "sync:media-permissions": "node scripts/sync-media-permissions.mjs",
     "typecheck": "tsc -b",
     "lint": "tsc -b --pretty false"
   },
@@ -18,6 +19,7 @@
     "@echoo/shared": "workspace:*",
     "@echoo/ui": "workspace:*",
     "@phosphor-icons/react": "^2.1.10",
+    "@breezystack/lamejs": "^1.2.7",
     "@tanstack/react-query": "^5.90.2",
     "@tauri-apps/api": "^2.8.0",
     "motion": "^12.23.22",
