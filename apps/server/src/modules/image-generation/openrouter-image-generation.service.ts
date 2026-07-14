@@ -31,6 +31,7 @@ export class OpenRouterImageGenerationService {
   async generate(input: {
     prompt: string;
     references: ImageGenerationReference[];
+    sessionId?: string;
   }): Promise<GeneratedImage> {
     const apiKey = this.config.apiKey;
     if (!apiKey) throw new Error("Image generation API key is not configured.");
@@ -47,9 +48,11 @@ export class OpenRouterImageGenerationService {
           process.env.CLIENT_URL ??
           "http://localhost:5173",
         "X-OpenRouter-Title": process.env.OPENROUTER_APP_TITLE ?? "Echoo",
+        ...(input.sessionId ? { "x-session-id": input.sessionId } : {}),
       },
       body: JSON.stringify({
         model,
+        ...(input.sessionId ? { session_id: input.sessionId } : {}),
         ...(upstreamProvider ? { provider: { only: [upstreamProvider] } } : {}),
         messages: [
           {

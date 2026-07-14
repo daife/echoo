@@ -6,6 +6,7 @@ import {
   buildImageOptimizationSystemPrompt,
   buildVoiceOptimizationSystemPrompt,
 } from "./prime-prompt-composer.js";
+import { primeModelSessionId } from "./prime-model-session.js";
 
 export interface PrimeOptimizationHooks {
   onVoiceStart?: (actionIndex: number) => void;
@@ -25,6 +26,7 @@ export class PrimeContentOptimizer {
   async optimizeDecision(
     decision: PrimeFigureDecision,
     config: StoredPrimeFigureRuntimeConfig,
+    conversationId: string,
     hooks: PrimeOptimizationHooks = {},
   ): Promise<PrimeFigureDecision> {
     const actions = await Promise.all(
@@ -42,6 +44,7 @@ export class PrimeContentOptimizer {
                 config.optimization.image.level,
               ),
               config: config.optimization.image.model,
+              sessionId: primeModelSessionId(conversationId, "image-optimizer"),
               context: { description: action.message.description },
             });
             return {
@@ -66,6 +69,7 @@ export class PrimeContentOptimizer {
             const transcript = await this.optimizeVoice(
               action.message.transcript,
               config,
+              primeModelSessionId(conversationId, "voice-optimizer"),
               (delta) => hooks.onVoiceDelta?.(actionIndex, delta),
             );
             hooks.onVoiceComplete?.(actionIndex, transcript);
@@ -89,6 +93,7 @@ export class PrimeContentOptimizer {
   private async optimizeVoice(
     transcript: string,
     config: StoredPrimeFigureRuntimeConfig,
+    sessionId: string,
     onDelta: (delta: string) => void,
   ) {
     const modelConfig = config.optimization.voice.model;
@@ -98,6 +103,7 @@ export class PrimeContentOptimizer {
       "transcript",
       buildVoiceOptimizationSystemPrompt(config.optimization.voice.level),
       transcript,
+      sessionId,
     );
     if (!provider.streamChatCompletion) {
       const result = await provider.createChatCompletion(completion);
@@ -127,6 +133,7 @@ export class PrimeContentOptimizer {
     value: string;
     systemPrompt: string;
     config: StoredPrimeFigureRuntimeConfig["optimization"]["image"]["model"];
+    sessionId: string;
     context: Record<string, unknown>;
   }) {
     const provider = this.providers.createProvider(input.config);
@@ -136,6 +143,7 @@ export class PrimeContentOptimizer {
         input.field,
         input.systemPrompt,
         input.value,
+        input.sessionId,
         input.context,
       ),
     );
@@ -148,10 +156,12 @@ function singleFieldCompletion(
   field: "transcript" | "generationPrompt",
   systemPrompt: string,
   value: string,
+  sessionId: string,
   context: Record<string, unknown> = {},
 ): ChatCompletionInput {
   return {
     model: config.model,
+    sessionId,
     temperature: config.temperature,
     maxTokens: config.maxTokens,
     reasoningMode: "disabled",

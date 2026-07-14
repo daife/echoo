@@ -5,6 +5,7 @@ import { buildRuntimeConfigDefaults } from "../../../runtime-config/runtime-conf
 import { PrimeContentOptimizer } from "./prime-content-optimizer.js";
 import { buildPrimeDecisionResponseFormat } from "./prime-figure-runtime.service.js";
 import { PrimeMediaAnnotationService } from "./prime-media-annotation.service.js";
+import { primeModelSessionId } from "./prime-model-session.js";
 import { buildPrimeSystemPrompt } from "./prime-prompt-composer.js";
 
 test("prime prompt and response schema remove disabled media capabilities", () => {
@@ -37,7 +38,7 @@ test("auxiliary visual and audio understanding run separately and return keyed a
   const config = buildRuntimeConfigDefaults().primeFigure;
   config.understanding.visual.mode = "auxiliary";
   config.understanding.audio.mode = "auxiliary";
-  const calls: string[] = [];
+  const calls: Array<{ system: string; sessionId?: string }> = [];
   const service = new PrimeMediaAnnotationService(
     {
       createProvider() {
@@ -45,7 +46,7 @@ test("auxiliary visual and audio understanding run separately and return keyed a
           id: "fake",
           async createChatCompletion(input: any) {
             const system = String(input.messages[0]?.content);
-            calls.push(system);
+            calls.push({ system, sessionId: input.sessionId });
             return {
               providerId: "fake",
               model: "fake",
@@ -82,6 +83,7 @@ test("auxiliary visual and audio understanding run separately and return keyed a
   );
   const annotations = await service.annotate(
     "user_1",
+    "conversation_1",
     [
       { id: "media_1", messageId: "m1", type: "image", resourceId: "image" },
       { id: "media_2", messageId: "m2", type: "voice", resourceId: "voice" },
@@ -89,6 +91,13 @@ test("auxiliary visual and audio understanding run separately and return keyed a
     config,
   );
   assert.equal(calls.length, 2);
+  assert.deepEqual(
+    calls.map((call) => call.sessionId).sort(),
+    [
+      primeModelSessionId("conversation_1", "audio"),
+      primeModelSessionId("conversation_1", "visual"),
+    ].sort(),
+  );
   assert.deepEqual(annotations.map((item) => item.id).sort(), [
     "media_1",
     "media_2",
@@ -99,18 +108,21 @@ test("extra optimizers replace media drafts and expose voice deltas", async () =
   const config = buildRuntimeConfigDefaults().primeFigure;
   config.optimization.image.enabled = true;
   config.optimization.voice.enabled = true;
+  const sessionIds: string[] = [];
   const optimizer = new PrimeContentOptimizer({
     createProvider() {
       return {
         id: "fake",
-        async createChatCompletion() {
+        async createChatCompletion(input: any) {
+          sessionIds.push(input.sessionId);
           return {
             providerId: "fake",
             model: "fake",
             text: JSON.stringify({ generationPrompt: "优化后的图片提示词" }),
           };
         },
-        async *streamChatCompletion() {
+        async *streamChatCompletion(input: any) {
+          sessionIds.push(input.sessionId);
           yield { text: '{"transcript":"[轻声]' };
           yield { text: '你好"}' };
         },
@@ -118,9 +130,12 @@ test("extra optimizers replace media drafts and expose voice deltas", async () =
     },
   } as never);
   const voiceDeltas: string[] = [];
-  const result = await optimizer.optimizeDecision(mediaDecision(), config, {
-    onVoiceDelta: (_index, delta) => voiceDeltas.push(delta),
-  });
+  const result = await optimizer.optimizeDecision(
+    mediaDecision(),
+    config,
+    "conversation_1",
+    { onVoiceDelta: (_index, delta) => voiceDeltas.push(delta) },
+  );
   assert.equal(
     result.actions[0]?.type === "send_message" &&
       result.actions[0].message.type === "image"
@@ -136,6 +151,13 @@ test("extra optimizers replace media drafts and expose voice deltas", async () =
     "[轻声]你好",
   );
   assert.equal(voiceDeltas.join(""), "[轻声]你好");
+  assert.deepEqual(
+    sessionIds.sort(),
+    [
+      primeModelSessionId("conversation_1", "image-optimizer"),
+      primeModelSessionId("conversation_1", "voice-optimizer"),
+    ].sort(),
+  );
 });
 
 test("extra optimizer failures fall back to decision drafts", async () => {
@@ -157,11 +179,22 @@ test("extra optimizer failures fall back to decision drafts", async () => {
     },
   } as never);
   const original = mediaDecision();
-  const result = await optimizer.optimizeDecision(original, config, {
-    onFailure: (failure) => failures.push(failure.kind),
-  });
+  const result = await optimizer.optimizeDecision(
+    original,
+    config,
+    "conversation_1",
+    { onFailure: (failure) => failures.push(failure.kind) },
+  );
   assert.deepEqual(result.actions, original.actions);
   assert.deepEqual(failures.sort(), ["image", "voice"]);
+});
+
+test("prime model session ids are stable and isolated by role", () => {
+  const decision = primeModelSessionId("conversation_1", "decision");
+  assert.equal(decision, primeModelSessionId("conversation_1", "decision"));
+  assert.ok(decision.length <= 22);
+  assert.notEqual(decision, primeModelSessionId("conversation_1", "visual"));
+  assert.notEqual(decision, primeModelSessionId("conversation_2", "decision"));
 });
 
 function promptAgent(): PrimeFigureAgent {

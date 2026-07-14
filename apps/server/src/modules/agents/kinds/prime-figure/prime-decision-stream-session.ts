@@ -15,6 +15,7 @@ import {
 } from "../../../tts/fish-audio-tts.service.js";
 import type { PrimeDecisionStreamFieldDelta } from "./prime-decision-stream-parser.js";
 import { PrimeConversationMediaRepository } from "./prime-conversation-media.repository.js";
+import { primeModelSessionId } from "./prime-model-session.js";
 import { MessageRepository } from "../../../messaging/message.repository.js";
 import type { StoredPrimeFigureRuntimeConfig } from "../../../runtime-config/runtime-config.types.js";
 
@@ -590,6 +591,10 @@ export class PrimeDecisionStreamSession {
       );
       const generated = await this.imageGeneration.generate({
         prompt: state.fields.generationPrompt ?? "",
+        sessionId: primeModelSessionId(
+          this.input.conversationId,
+          "image-generation",
+        ),
         references: await Promise.all(
           references.map(async (reference) => {
             const resource = await this.resources.readForOwner(

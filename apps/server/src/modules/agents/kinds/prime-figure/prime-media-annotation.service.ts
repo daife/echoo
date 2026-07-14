@@ -14,6 +14,10 @@ import {
   AUDIO_ANNOTATION_SYSTEM_PROMPT,
   VISUAL_ANNOTATION_SYSTEM_PROMPT,
 } from "./prime-prompt-composer.js";
+import {
+  primeModelSessionId,
+  type PrimeModelSession,
+} from "./prime-model-session.js";
 
 export interface PrimePendingMedia {
   id: string;
@@ -30,6 +34,7 @@ export class PrimeMediaAnnotationService {
 
   async annotate(
     ownerUserId: string,
+    conversationId: string,
     media: PrimePendingMedia[],
     config: StoredPrimeFigureRuntimeConfig,
   ) {
@@ -46,15 +51,19 @@ export class PrimeMediaAnnotationService {
     const results = await Promise.all([
       this.annotateBatch(
         ownerUserId,
+        conversationId,
         visual,
         config.understanding.visual.model,
         VISUAL_ANNOTATION_SYSTEM_PROMPT,
+        "visual",
       ),
       this.annotateBatch(
         ownerUserId,
+        conversationId,
         audio,
         config.understanding.audio.model,
         AUDIO_ANNOTATION_SYSTEM_PROMPT,
+        "audio",
       ),
     ]);
     return results.flat();
@@ -62,9 +71,11 @@ export class PrimeMediaAnnotationService {
 
   private async annotateBatch(
     ownerUserId: string,
+    conversationId: string,
     media: PrimePendingMedia[],
     modelConfig: StoredTextModelConfig,
     systemPrompt: string,
+    session: PrimeModelSession,
   ): Promise<PrimeMediaAnnotation[]> {
     if (!media.length) return [];
     const provider = this.providers.createProvider(modelConfig);
@@ -78,6 +89,7 @@ export class PrimeMediaAnnotationService {
     }
     const completion: ChatCompletionInput = {
       model: modelConfig.model,
+      sessionId: primeModelSessionId(conversationId, session),
       temperature: modelConfig.temperature,
       maxTokens: modelConfig.maxTokens,
       reasoningMode: "disabled",

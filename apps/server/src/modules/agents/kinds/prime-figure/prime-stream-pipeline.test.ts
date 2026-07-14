@@ -4,13 +4,16 @@ import type { PrimeFigureDecision } from "@echoo/shared";
 import { PrimeDecisionStreamParser } from "./prime-decision-stream-parser.js";
 import { PrimeDecisionStreamSession } from "./prime-decision-stream-session.js";
 import { PrimeFigureRuntimeService } from "./prime-figure-runtime.service.js";
+import { primeModelSessionId } from "./prime-model-session.js";
 
 test("prime stream starts image generation as soon as prompt and references are complete", async () => {
   let generatedPrompt = "";
+  let generatedSessionId = "";
   const session = createSession({
     imageGeneration: {
-      async generate(input: { prompt: string }) {
+      async generate(input: { prompt: string; sessionId?: string }) {
         generatedPrompt = input.prompt;
+        generatedSessionId = input.sessionId ?? "";
         return {
           mimeType: "image/png",
           data: Buffer.from("image"),
@@ -29,6 +32,10 @@ test("prime stream starts image generation as soon as prompt and references are 
   await tick();
 
   assert.equal(generatedPrompt, "cinematic beach");
+  assert.equal(
+    generatedSessionId,
+    primeModelSessionId("conversation_1", "image-generation"),
+  );
 });
 
 test("prime voice sends one complete transcript while keeping audio chunks streamed", async () => {

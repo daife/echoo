@@ -38,6 +38,7 @@ import {
   PrimeMediaAnnotationService,
   type PrimePendingMedia,
 } from "./prime-media-annotation.service.js";
+import { primeModelSessionId } from "./prime-model-session.js";
 import {
   buildDebugHint,
   buildPrimeSystemPrompt,
@@ -199,6 +200,7 @@ export class PrimeFigureRuntimeService {
     if (packet.auxiliaryMedia.length) {
       const annotations = await this.mediaAnnotations.annotate(
         input.ownerUserId,
+        input.conversationId,
         packet.auxiliaryMedia,
         input.runtimeConfig,
       );
@@ -229,7 +231,7 @@ export class PrimeFigureRuntimeService {
     });
     const completionBase = {
       model,
-      sessionId: input.conversationId,
+      sessionId: primeModelSessionId(input.conversationId, "decision"),
       temperature: input.runtimeConfig.decisionModel.temperature,
       maxTokens: input.runtimeConfig.decisionModel.maxTokens,
       reasoningMode: "disabled" as const,
@@ -273,6 +275,7 @@ export class PrimeFigureRuntimeService {
         finalDecision = await this.contentOptimizer.optimizeDecision(
           decision,
           input.runtimeConfig,
+          input.conversationId,
           {
             onVoiceStart: (index) =>
               streamSession.beginVoiceOptimization(index),
