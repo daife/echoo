@@ -14,6 +14,9 @@ import {
 } from "../resources/resource.repository.js";
 import { MessageRepository } from "./message.repository.js";
 
+const PRIME_ACTIVITY_HEARTBEAT_MS = 15_000;
+const PRIME_ACTIVITY_LEASE_MS = 45_000;
+
 export interface CreateUserTextMessageInput {
   ownerUserId: string;
   conversationId: string;
@@ -54,6 +57,8 @@ export type TriggerPrimeFigureHintResult =
   { kind: "ok" } | { kind: "not_found" } | { kind: "unsupported_type" };
 
 export class MessagingService {
+  private readonly activityUpdatedAt = new Map<string, number>();
+
   constructor(
     private readonly repository = new MessageRepository(),
     private readonly conversations = new ConversationRepository(),
@@ -284,12 +289,48 @@ export class MessagingService {
 
   async processQueuedRun(job: AgentRunJob) {
     if (job.kind === "prime-figure") {
-      await this.primeRuntime.requestDecision({
-        ownerUserId: job.ownerUserId,
-        conversationId: job.conversationId,
-        trigger: job.trigger === "memory_summary" ? undefined : job.trigger,
-        debugInstruction: job.debugInstruction,
-      });
+      let heartbeat: ReturnType<typeof setInterval> | undefined;
+      let active = false;
+      const publishActiveLease = () =>
+        this.publishAgentActivity({
+          ownerUserId: job.ownerUserId,
+          conversationId: job.conversationId,
+          active: true,
+          expiresAt: Date.now() + PRIME_ACTIVITY_LEASE_MS,
+        });
+      const setModelActivity = (nextActive: boolean) => {
+        if (nextActive) {
+          if (active) return;
+          active = true;
+          publishActiveLease();
+          heartbeat = setInterval(
+            publishActiveLease,
+            PRIME_ACTIVITY_HEARTBEAT_MS,
+          );
+          heartbeat.unref?.();
+          return;
+        }
+        if (!active) return;
+        active = false;
+        if (heartbeat) clearInterval(heartbeat);
+        heartbeat = undefined;
+        this.publishAgentActivity({
+          ownerUserId: job.ownerUserId,
+          conversationId: job.conversationId,
+          active: false,
+        });
+      };
+      try {
+        await this.primeRuntime.requestDecision({
+          ownerUserId: job.ownerUserId,
+          conversationId: job.conversationId,
+          trigger: job.trigger === "memory_summary" ? undefined : job.trigger,
+          debugInstruction: job.debugInstruction,
+          onModelActivityChange: setModelActivity,
+        });
+      } finally {
+        setModelActivity(false);
+      }
       return;
     }
     if (job.trigger === "memory_summary") {
@@ -322,12 +363,19 @@ export class MessagingService {
     ownerUserId: string;
     conversationId: string;
     active: boolean;
+    expiresAt?: number;
   }) {
+    const updatedAt = Math.max(
+      Date.now(),
+      (this.activityUpdatedAt.get(input.conversationId) ?? 0) + 1,
+    );
+    this.activityUpdatedAt.set(input.conversationId, updatedAt);
     this.appPush.pushToUser(input.ownerUserId, {
       type: "conversation.agent_activity",
       conversationId: input.conversationId,
       active: input.active,
-      updatedAt: Date.now(),
+      updatedAt,
+      ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
     });
   }
 

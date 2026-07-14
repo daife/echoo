@@ -21,6 +21,11 @@ export class WebMessageRuntime implements MessageRuntime {
     string,
     ConversationAgentActivityEvent
   >();
+  private readonly latestActivityUpdatedAt = new Map<string, number>();
+  private readonly activityExpiryTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
   private readonly messageCreatedHandlers = new Set<
     (message: Message) => void
   >();
@@ -30,7 +35,9 @@ export class WebMessageRuntime implements MessageRuntime {
   private readonly messageCompletedHandlers = new Set<
     (message: Message) => void
   >();
-  private readonly messageUpdatedHandlers = new Set<(message: Message) => void>();
+  private readonly messageUpdatedHandlers = new Set<
+    (message: Message) => void
+  >();
   private readonly agentActivityHandlers = new Set<
     (event: ConversationAgentActivityEvent) => void
   >();
@@ -93,10 +100,7 @@ export class WebMessageRuntime implements MessageRuntime {
     socket.onmessage = (event) => {
       const payload = JSON.parse(event.data as string) as AppWsServerEvent;
       if (payload.type === "conversation.agent_activity") {
-        if (payload.active)
-          this.activeConversations.set(payload.conversationId, payload);
-        else this.activeConversations.delete(payload.conversationId);
-        this.agentActivityHandlers.forEach((handler) => handler(payload));
+        this.applyAgentActivity(payload);
         return;
       }
       if (payload.type === "conversation.agent_mute_changed") {
@@ -128,7 +132,9 @@ export class WebMessageRuntime implements MessageRuntime {
         return;
       }
       if (payload.type === "message.updated") {
-        this.messageUpdatedHandlers.forEach((handler) => handler(payload.message));
+        this.messageUpdatedHandlers.forEach((handler) =>
+          handler(payload.message),
+        );
         return;
       }
       if (payload.type === "message.audio.started")
@@ -151,11 +157,7 @@ export class WebMessageRuntime implements MessageRuntime {
   }
 
   private scheduleReconnect() {
-    if (
-      !this.shouldReconnect ||
-      this.reconnectTimer !== null ||
-      this.socket
-    )
+    if (!this.shouldReconnect || this.reconnectTimer !== null || this.socket)
       return;
     const delay = Math.min(500 * 2 ** this.reconnectAttempt, 10_000);
     this.reconnectAttempt += 1;
@@ -173,6 +175,8 @@ export class WebMessageRuntime implements MessageRuntime {
 
   private clearActiveConversations() {
     const updatedAt = Date.now();
+    for (const timer of this.activityExpiryTimers.values()) clearTimeout(timer);
+    this.activityExpiryTimers.clear();
     for (const event of this.activeConversations.values()) {
       const inactiveEvent: ConversationAgentActivityEvent = {
         ...event,
@@ -182,6 +186,55 @@ export class WebMessageRuntime implements MessageRuntime {
       this.agentActivityHandlers.forEach((handler) => handler(inactiveEvent));
     }
     this.activeConversations.clear();
+    this.latestActivityUpdatedAt.clear();
+  }
+
+  private applyAgentActivity(event: ConversationAgentActivityEvent) {
+    const latestUpdatedAt =
+      this.latestActivityUpdatedAt.get(event.conversationId) ?? -Infinity;
+    if (event.updatedAt < latestUpdatedAt) return;
+
+    this.latestActivityUpdatedAt.set(event.conversationId, event.updatedAt);
+    const currentTimer = this.activityExpiryTimers.get(event.conversationId);
+    if (currentTimer) clearTimeout(currentTimer);
+    this.activityExpiryTimers.delete(event.conversationId);
+
+    if (!event.active) {
+      this.activeConversations.delete(event.conversationId);
+      this.agentActivityHandlers.forEach((handler) => handler(event));
+      return;
+    }
+
+    if (event.expiresAt !== undefined && event.expiresAt <= Date.now()) {
+      this.expireAgentActivity(event);
+      return;
+    }
+
+    this.activeConversations.set(event.conversationId, event);
+    this.agentActivityHandlers.forEach((handler) => handler(event));
+    if (event.expiresAt === undefined) return;
+
+    const timer = setTimeout(
+      () => this.expireAgentActivity(event),
+      Math.max(0, event.expiresAt - Date.now()),
+    );
+    this.activityExpiryTimers.set(event.conversationId, timer);
+  }
+
+  private expireAgentActivity(event: ConversationAgentActivityEvent) {
+    const current = this.activeConversations.get(event.conversationId);
+    if (current && current.updatedAt > event.updatedAt) return;
+    this.activityExpiryTimers.delete(event.conversationId);
+    this.activeConversations.delete(event.conversationId);
+    const updatedAt = event.expiresAt ?? Date.now();
+    this.latestActivityUpdatedAt.set(event.conversationId, updatedAt);
+    const inactiveEvent: ConversationAgentActivityEvent = {
+      ...event,
+      active: false,
+      updatedAt,
+      expiresAt: undefined,
+    };
+    this.agentActivityHandlers.forEach((handler) => handler(inactiveEvent));
   }
 
   async getStatus(): Promise<"running" | "stopped" | "unsupported"> {
@@ -212,6 +265,7 @@ export class WebMessageRuntime implements MessageRuntime {
     handler: (event: ConversationAgentActivityEvent) => void,
   ): () => void {
     this.agentActivityHandlers.add(handler);
+    this.activeConversations.forEach(handler);
     return () => this.agentActivityHandlers.delete(handler);
   }
 

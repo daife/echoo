@@ -24,6 +24,7 @@ import {
 } from "../../features/messages/conversationActivity";
 import { parsePrimeFigureHintCommand } from "../../features/messages/messagePresentation";
 import { MAX_IMAGE_UPLOAD_BYTES } from "../../shared/utils/imageCompression";
+import { mediaCache } from "../../services/mediaCache";
 
 const MESSAGE_PAGE_SIZE = 50;
 
@@ -151,6 +152,7 @@ export function useConversationMessages({
         : mergeMessagePages(messagesRef.current, latest);
       setMessages(next);
       if (
+        agent?.type !== "prime-figure" &&
         latest.some(
           (message) =>
             message.role === "assistant" && message.status === "pending",
@@ -169,7 +171,13 @@ export function useConversationMessages({
         hasOlder: nextHasOlder,
       });
     },
-    [cacheKey, conversationId, queryClient, services.messageService],
+    [
+      agent?.type,
+      cacheKey,
+      conversationId,
+      queryClient,
+      services.messageService,
+    ],
   );
 
   const loadOlderMessages = useCallback(async () => {
@@ -472,6 +480,14 @@ export function useConversationMessages({
     const unsubscribeAudioCompleted = runtime.message.onMessageAudioCompleted(
       (event) => {
         if (event.conversationId !== conversationId) return;
+        const chunks = audioChunksRef.current.get(event.messageId);
+        if (event.mediaUrl && chunks?.length) {
+          const bytes = concatBytes(chunks);
+          void mediaCache.put(
+            event.mediaUrl,
+            new Blob([bytes], { type: "audio/mpeg" }),
+          );
+        }
         updateAudioMessage(setMessages, event.messageId, {
           audioStreaming: true,
           ...(event.mediaUrl ? { mediaUrl: event.mediaUrl } : {}),
@@ -636,6 +652,9 @@ export function useConversationMessages({
               upload,
               clientMessageId,
             });
+      if (result.message.content.mediaUrl) {
+        await mediaCache.put(result.message.content.mediaUrl, payload.blob);
+      }
       pendingMediaRef.current.delete(clientMessageId);
       URL.revokeObjectURL(payload.objectUrl);
       if (activeConversationIdRef.current !== conversationId) return;
@@ -740,6 +759,12 @@ export function useConversationMessages({
             stream: true,
           });
       if (mediaPayload) {
+        if (result.message.content.mediaUrl) {
+          await mediaCache.put(
+            result.message.content.mediaUrl,
+            mediaPayload.blob,
+          );
+        }
         pendingMediaRef.current.delete(clientMessageId);
         URL.revokeObjectURL(mediaPayload.objectUrl);
       }
@@ -770,7 +795,11 @@ export function useConversationMessages({
     setIsDeletingConversation(true);
     try {
       clearStreamBuffers();
+      const mediaUrls = messagesRef.current.map(
+        (message) => message.content.mediaUrl,
+      );
       await services.messageService.deleteConversation(conversationId);
+      await mediaCache.delete(mediaUrls);
       queryClient.removeQueries({ queryKey: cacheKey, exact: true });
       if (activeConversationIdRef.current === conversationId) {
         setMessages([]);

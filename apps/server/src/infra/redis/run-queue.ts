@@ -16,9 +16,9 @@ export interface AgentRunJob {
   trigger?:
     | "end_user_message"
     | "mute_ended"
-     | "coalesced_messages"
-      | "debug_hint"
-      | "memory_summary";
+    | "coalesced_messages"
+    | "debug_hint"
+    | "memory_summary";
   debugInstruction?: string;
 }
 
@@ -180,11 +180,12 @@ export class AgentRunQueue {
       void renewLock(redis, lockKey, token);
     }, 30_000);
     heartbeat.unref();
-    onActivity?.({
-      ownerUserId: job.ownerUserId,
-      conversationId: job.conversationId,
-      active: true,
-    });
+    if (job.kind !== "prime-figure")
+      onActivity?.({
+        ownerUserId: job.ownerUserId,
+        conversationId: job.conversationId,
+        active: true,
+      });
     try {
       let currentJob = job;
       do {
@@ -199,11 +200,12 @@ export class AgentRunQueue {
       } while (job.kind === "prime-figure" && (await redis.getDel(dirtyKey)));
     } finally {
       clearInterval(heartbeat);
-      onActivity?.({
-        ownerUserId: job.ownerUserId,
-        conversationId: job.conversationId,
-        active: false,
-      });
+      if (job.kind !== "prime-figure")
+        onActivity?.({
+          ownerUserId: job.ownerUserId,
+          conversationId: job.conversationId,
+          active: false,
+        });
       if ((await redis.get(lockKey)) === token) await redis.del(lockKey);
     }
   }

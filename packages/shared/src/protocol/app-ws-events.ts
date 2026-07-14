@@ -6,6 +6,7 @@ export type AppWsServerEvent =
       conversationId: string;
       active: boolean;
       updatedAt: number;
+      expiresAt?: number;
     }
   | {
       type: "conversation.agent_mute_changed";

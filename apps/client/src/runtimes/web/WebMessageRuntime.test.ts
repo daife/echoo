@@ -117,4 +117,64 @@ describe("WebMessageRuntime reconnect", () => {
     await vi.advanceTimersByTimeAsync(30_000);
     expect(FakeWebSocket.instances).toHaveLength(1);
   });
+
+  it("expires a leased activity event when its inactive event is lost", async () => {
+    const runtime = new WebMessageRuntime(auth);
+    const activity: boolean[] = [];
+    runtime.onConversationAgentActivity((event) => activity.push(event.active));
+    await runtime.startRealtime();
+    const socket = FakeWebSocket.instances[0];
+    socket?.open();
+    socket?.emit({
+      type: "conversation.agent_activity",
+      conversationId: "conversation_1",
+      active: true,
+      updatedAt: 1_000,
+      expiresAt: Date.now() + 45_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(44_999);
+    expect(activity).toEqual([true]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(activity).toEqual([true, false]);
+
+    await runtime.stopRealtime();
+  });
+
+  it("renews activity leases and ignores older events", async () => {
+    const runtime = new WebMessageRuntime(auth);
+    const activity: boolean[] = [];
+    runtime.onConversationAgentActivity((event) => activity.push(event.active));
+    await runtime.startRealtime();
+    const socket = FakeWebSocket.instances[0];
+    socket?.open();
+    socket?.emit({
+      type: "conversation.agent_activity",
+      conversationId: "conversation_1",
+      active: true,
+      updatedAt: 1_000,
+      expiresAt: Date.now() + 45_000,
+    });
+    await vi.advanceTimersByTimeAsync(15_000);
+    socket?.emit({
+      type: "conversation.agent_activity",
+      conversationId: "conversation_1",
+      active: true,
+      updatedAt: 2_000,
+      expiresAt: Date.now() + 45_000,
+    });
+    socket?.emit({
+      type: "conversation.agent_activity",
+      conversationId: "conversation_1",
+      active: false,
+      updatedAt: 1_500,
+    });
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(activity).toEqual([true, true]);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(activity).toEqual([true, true, false]);
+
+    await runtime.stopRealtime();
+  });
 });

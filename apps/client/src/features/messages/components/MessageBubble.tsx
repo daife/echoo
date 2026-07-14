@@ -12,6 +12,11 @@ import type {
 } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  getCacheableMediaKey,
+  mediaCache,
+  resolveMediaUrl,
+} from "../../../services/mediaCache";
+import {
   sanitizeVoiceTranscript,
   tokenizeParentheticalText,
 } from "../messagePresentation";
@@ -171,8 +176,7 @@ export function MessageBubble({
     );
 
   if (message.kind === "image") {
-    const mediaUrl = resolveMediaUrl(message.mediaUrl);
-    if (!mediaUrl) return null;
+    if (!message.mediaUrl) return null;
     return (
       <div
         className={`relative flex max-w-[85%] gap-2 md:max-w-[70%] ${
@@ -190,13 +194,13 @@ export function MessageBubble({
         ) : (
           <div className="mt-1 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
         )}
-        <img
+        <CachedMediaImage
           className={`max-h-[480px] max-w-[360px] rounded-xl object-cover ${
             mine && message.deliveryState === "failed"
               ? "outline outline-1 outline-red-300/25"
               : ""
           }`}
-          src={mediaUrl}
+          mediaUrl={message.mediaUrl}
           alt={mine ? "我发送的图片" : "角色发送的图片"}
         />
         {mine ? (
@@ -207,7 +211,6 @@ export function MessageBubble({
   }
 
   if (message.kind === "voice") {
-    const mediaUrl = resolveMediaUrl(message.mediaUrl);
     return (
       <div
         className={`relative flex max-w-[85%] gap-2 md:max-w-[70%] ${
@@ -226,7 +229,7 @@ export function MessageBubble({
           <div className="mt-3 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
         )}
         <VoiceBubble
-          mediaUrl={mediaUrl}
+          mediaUrl={message.mediaUrl}
           durationSeconds={message.durationSeconds}
           transcript={isTranscriptOpen ? cleanTranscript : undefined}
           suppressNextClickRef={didLongPressRef}
@@ -288,6 +291,56 @@ function ParentheticalText({ value }: { value: string }) {
   ));
 }
 
+function CachedMediaImage({
+  mediaUrl,
+  className,
+  alt,
+}: {
+  mediaUrl: string;
+  className: string;
+  alt: string;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [shouldLoad, setShouldLoad] = useState(
+    () => !getCacheableMediaKey(mediaUrl),
+  );
+  const source = useCachedMediaObjectUrl(mediaUrl, shouldLoad);
+
+  useEffect(() => {
+    if (!getCacheableMediaKey(mediaUrl)) {
+      setShouldLoad(true);
+      return;
+    }
+    setShouldLoad(false);
+    const container = containerRef.current;
+    if (!container || typeof IntersectionObserver === "undefined") {
+      setShouldLoad(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        setShouldLoad(true);
+        observer.disconnect();
+      },
+      { rootMargin: "400px 0px" },
+    );
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [mediaUrl]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="min-h-24 min-w-32 rounded-xl bg-white/[0.025]"
+    >
+      {source ? (
+        <img className={className} src={source} alt={alt} loading="lazy" />
+      ) : null}
+    </div>
+  );
+}
+
 function VoiceBubble({
   mediaUrl,
   durationSeconds,
@@ -302,11 +355,22 @@ function VoiceBubble({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [shouldLoad, setShouldLoad] = useState(false);
+  const playWhenReadyRef = useRef(false);
+  const source = useCachedMediaObjectUrl(mediaUrl, shouldLoad);
 
   useEffect(() => {
     setDuration(0);
     setIsPlaying(false);
+    setShouldLoad(false);
+    playWhenReadyRef.current = false;
   }, [mediaUrl]);
+
+  useEffect(() => {
+    if (!source || !playWhenReadyRef.current) return;
+    playWhenReadyRef.current = false;
+    void audioRef.current?.play().catch(() => undefined);
+  }, [source]);
 
   const toggle = () => {
     if (suppressNextClickRef.current) {
@@ -314,7 +378,12 @@ function VoiceBubble({
       return;
     }
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio) {
+      if (!mediaUrl) return;
+      playWhenReadyRef.current = true;
+      setShouldLoad(true);
+      return;
+    }
     if (audio.paused) void audio.play().catch(() => undefined);
     else audio.pause();
   };
@@ -352,12 +421,12 @@ function VoiceBubble({
           </span>
         ) : null}
       </button>
-      {mediaUrl ? (
+      {source ? (
         <audio
           ref={audioRef}
           className="hidden"
-          preload="metadata"
-          src={mediaUrl}
+          preload="none"
+          src={source}
           onLoadedMetadata={(event) => {
             const next = event.currentTarget.duration;
             if (Number.isFinite(next)) setDuration(next);
@@ -378,6 +447,51 @@ function VoiceBubble({
       ) : null}
     </div>
   );
+}
+
+function useCachedMediaObjectUrl(
+  mediaUrl: string | undefined,
+  enabled: boolean,
+) {
+  const [source, setSource] = useState<string | undefined>(() =>
+    mediaUrl && !getCacheableMediaKey(mediaUrl)
+      ? resolveMediaUrl(mediaUrl)
+      : undefined,
+  );
+
+  useEffect(() => {
+    const resolved = resolveMediaUrl(mediaUrl);
+    if (!resolved) {
+      setSource(undefined);
+      return;
+    }
+    if (!getCacheableMediaKey(resolved)) {
+      setSource(resolved);
+      return;
+    }
+    if (!enabled) {
+      setSource(undefined);
+      return;
+    }
+
+    let cancelled = false;
+    let objectUrl: string | undefined;
+    void mediaCache.get(resolved).then((blob) => {
+      if (cancelled) return;
+      if (!blob) {
+        setSource(resolved);
+        return;
+      }
+      objectUrl = URL.createObjectURL(blob);
+      setSource(objectUrl);
+    });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [enabled, mediaUrl]);
+
+  return source;
 }
 
 function DeliveryIndicator({
@@ -413,12 +527,4 @@ function DeliveryIndicator({
     );
   }
   return null;
-}
-
-function resolveMediaUrl(mediaUrl?: string) {
-  if (!mediaUrl) return undefined;
-  if (/^(?:https?:|blob:|data:)/.test(mediaUrl)) return mediaUrl;
-  const apiBase =
-    import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787/api";
-  return new URL(mediaUrl, new URL(apiBase).origin).toString();
 }

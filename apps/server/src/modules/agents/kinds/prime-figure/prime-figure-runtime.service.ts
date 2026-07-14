@@ -72,6 +72,7 @@ export class PrimeFigureRuntimeService {
     conversationId: string;
     trigger?: PrimeDecisionTrigger;
     debugInstruction?: string;
+    onModelActivityChange?: (active: boolean) => void;
   }): Promise<PrimeFigureDecision | null> {
     const trigger = input.trigger ?? "end_user_message";
     const agent = await this.agents.findByConversation(
@@ -141,6 +142,7 @@ export class PrimeFigureRuntimeService {
     conversationId: string;
     trigger: PrimeDecisionTrigger;
     debugInstruction?: string;
+    onModelActivityChange?: (active: boolean) => void;
     agent: PrimeFigureAgent;
     state: PrimeFigureState;
   }) {
@@ -226,7 +228,10 @@ export class PrimeFigureRuntimeService {
     let rawResponseText = "";
     let responseProviderId = provider.id;
     let responseModel = model;
+    let modelActive = false;
     try {
+      input.onModelActivityChange?.(true);
+      modelActive = true;
       const firstResponse = await streamPrimeChatCompletion(
         provider,
         {
@@ -283,6 +288,9 @@ export class PrimeFigureRuntimeService {
         responseModel = finalResponse.model;
       }
 
+      input.onModelActivityChange?.(false);
+      modelActive = false;
+
       const rawOutput = JSON.parse(finalResponse.text) as Record<
         string,
         unknown
@@ -337,6 +345,7 @@ export class PrimeFigureRuntimeService {
       );
       return decision;
     } catch (error) {
+      if (modelActive) input.onModelActivityChange?.(false);
       await streamSession.fail(error, {
         rawResponse: rawResponseText,
         providerId: responseProviderId,
