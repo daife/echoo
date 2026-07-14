@@ -35,10 +35,10 @@ export class RuntimeConfigService {
     return redactUserConfig(await this.ensureUserConfig(ownerUserId));
   }
 
-  async initializeNewUserConfig(ownerUserId: string) {
+  async initializeUserConfig(ownerUserId: string) {
     await this.repository.insertUserConfigIfAbsent(
       ownerUserId,
-      buildRuntimeConfigDefaults({ includeEnvironmentSecrets: false }),
+      buildRuntimeConfigDefaults(),
     );
   }
 

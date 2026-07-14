@@ -51,7 +51,7 @@ export class AuthService {
 
     // Registration must never copy server-owned API keys into a user's config.
     // INSERT IGNORE preserves any config already created during an earlier attempt.
-    await this.runtimeConfigs.initializeNewUserConfig(user.id);
+    await this.runtimeConfigs.initializeUserConfig(user.id);
 
     const verificationToken = await this.users.createEmailVerificationToken(
       user.id,

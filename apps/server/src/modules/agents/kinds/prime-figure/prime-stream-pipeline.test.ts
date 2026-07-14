@@ -244,240 +244,225 @@ test("prime stream failure stores raw response on only the first failed message"
 
 test("prime messages are persisted when revealed and later actions wait for the prior completion", async () => {
   const saved: Array<{ id: string; createdAt: number }> = [];
-  const previousTypingSpeed = process.env.PRIME_TYPING_CHARS_PER_MINUTE;
-  process.env.PRIME_TYPING_CHARS_PER_MINUTE = "600";
-  try {
-    const session = createSession({
-      messages: {
-        async save(message: { id: string; createdAt: number }) {
-          saved.push({ id: message.id, createdAt: message.createdAt });
-          return message;
-        },
+  const session = createSession({
+    typingCharsPerMinute: 600,
+    messages: {
+      async save(message: { id: string; createdAt: number }) {
+        saved.push({ id: message.id, createdAt: message.createdAt });
+        return message;
       },
-    });
-    const decision = {
-      rationale: "test",
-      figureMood: "calm",
-      variables: {},
-      actions: [
-        { type: "send_message", message: { type: "text", text: "第一条" } },
-        { type: "send_message", message: { type: "text", text: "第二条" } },
-      ],
-    } as PrimeFigureDecision;
-    session.handleField({
-      actionIndex: 0,
-      field: "type",
-      delta: "text",
-      complete: false,
-    });
-    session.handleField({
-      actionIndex: 0,
-      field: "type",
-      delta: "",
-      complete: true,
-    });
-    session.handleField({
-      actionIndex: 0,
-      field: "text",
-      delta: "第一条",
-      complete: false,
-    });
-    session.handleField({
-      actionIndex: 0,
-      field: "text",
-      delta: "",
-      complete: true,
-    });
-    await tick();
-    session.handleField({
-      actionIndex: 1,
-      field: "type",
-      delta: "text",
-      complete: false,
-    });
-    session.handleField({
-      actionIndex: 1,
-      field: "type",
-      delta: "",
-      complete: true,
-    });
-    session.handleField({
-      actionIndex: 1,
-      field: "text",
-      delta: "第二条",
-      complete: false,
-    });
-    await wait(350);
-    session.handleField({
-      actionIndex: 1,
-      field: "text",
-      delta: "",
-      complete: true,
-    });
-    await session.finalize(decision);
+    },
+  });
+  const decision = {
+    rationale: "test",
+    figureMood: "calm",
+    variables: {},
+    actions: [
+      { type: "send_message", message: { type: "text", text: "第一条" } },
+      { type: "send_message", message: { type: "text", text: "第二条" } },
+    ],
+  } as PrimeFigureDecision;
+  session.handleField({
+    actionIndex: 0,
+    field: "type",
+    delta: "text",
+    complete: false,
+  });
+  session.handleField({
+    actionIndex: 0,
+    field: "type",
+    delta: "",
+    complete: true,
+  });
+  session.handleField({
+    actionIndex: 0,
+    field: "text",
+    delta: "第一条",
+    complete: false,
+  });
+  session.handleField({
+    actionIndex: 0,
+    field: "text",
+    delta: "",
+    complete: true,
+  });
+  await tick();
+  session.handleField({
+    actionIndex: 1,
+    field: "type",
+    delta: "text",
+    complete: false,
+  });
+  session.handleField({
+    actionIndex: 1,
+    field: "type",
+    delta: "",
+    complete: true,
+  });
+  session.handleField({
+    actionIndex: 1,
+    field: "text",
+    delta: "第二条",
+    complete: false,
+  });
+  await wait(350);
+  session.handleField({
+    actionIndex: 1,
+    field: "text",
+    delta: "",
+    complete: true,
+  });
+  await session.finalize(decision);
 
-    assert.equal(saved.length, 2);
-    const elapsed = saved[1]!.createdAt - saved[0]!.createdAt;
-    assert.ok(elapsed >= 300);
-    assert.ok(elapsed < 550);
-  } finally {
-    restoreEnvironment("PRIME_TYPING_CHARS_PER_MINUTE", previousTypingSpeed);
-  }
+  assert.equal(saved.length, 2);
+  const elapsed = saved[1]!.createdAt - saved[0]!.createdAt;
+  assert.ok(elapsed >= 300);
+  assert.ok(elapsed < 550);
 });
 
 test("prime non-text messages do not add a typing interval", async () => {
   const saved: Array<{ contentType: string; createdAt: number }> = [];
-  const previousTypingSpeed = process.env.PRIME_TYPING_CHARS_PER_MINUTE;
-  process.env.PRIME_TYPING_CHARS_PER_MINUTE = "1";
-  try {
-    const session = createSession({
-      imageGeneration: {
-        async generate() {
-          return {
-            mimeType: "image/png",
-            data: Buffer.from("image"),
-            model: "test-image",
-          };
+  const session = createSession({
+    typingCharsPerMinute: 1,
+    imageGeneration: {
+      async generate() {
+        return {
+          mimeType: "image/png",
+          data: Buffer.from("image"),
+          model: "test-image",
+        };
+      },
+    },
+    messages: {
+      async save(message: { contentType: string; createdAt: number }) {
+        saved.push({
+          contentType: message.contentType,
+          createdAt: message.createdAt,
+        });
+        return message;
+      },
+    },
+  });
+  const decision = {
+    rationale: "test",
+    figureMood: "calm",
+    variables: {},
+    actions: [
+      { type: "send_message", message: { type: "text", text: "第一条" } },
+      {
+        type: "send_message",
+        message: {
+          type: "image",
+          description: "海边",
+          generationPrompt: "cinematic beach",
+          referenceMediaIds: [],
         },
       },
-      messages: {
-        async save(message: { contentType: string; createdAt: number }) {
-          saved.push({
-            contentType: message.contentType,
-            createdAt: message.createdAt,
-          });
-          return message;
-        },
-      },
-    });
-    const decision = {
-      rationale: "test",
-      figureMood: "calm",
-      variables: {},
-      actions: [
-        { type: "send_message", message: { type: "text", text: "第一条" } },
-        {
-          type: "send_message",
-          message: {
-            type: "image",
-            description: "海边",
-            generationPrompt: "cinematic beach",
-            referenceMediaIds: [],
-          },
-        },
-      ],
-    } as PrimeFigureDecision;
-    const parser = new PrimeDecisionStreamParser((event) =>
-      session.handleField(event),
-    );
-    parser.push(JSON.stringify(decision));
-    await session.finalize(decision);
+    ],
+  } as PrimeFigureDecision;
+  const parser = new PrimeDecisionStreamParser((event) =>
+    session.handleField(event),
+  );
+  parser.push(JSON.stringify(decision));
+  await session.finalize(decision);
 
-    assert.deepEqual(
-      saved.map((message) => message.contentType),
-      ["text", "image"],
-    );
-    assert.ok(saved[1]!.createdAt - saved[0]!.createdAt < 1_000);
-  } finally {
-    restoreEnvironment("PRIME_TYPING_CHARS_PER_MINUTE", previousTypingSpeed);
-  }
+  assert.deepEqual(
+    saved.map((message) => message.contentType),
+    ["text", "image"],
+  );
+  assert.ok(saved[1]!.createdAt - saved[0]!.createdAt < 1_000);
 });
 
 test("prime voice messages use transcript length minus elapsed time", async () => {
   const saved: Array<{ contentType: string; createdAt: number }> = [];
-  const previousTypingSpeed = process.env.PRIME_TYPING_CHARS_PER_MINUTE;
-  process.env.PRIME_TYPING_CHARS_PER_MINUTE = "600";
-  try {
-    const session = createSession({
-      tts: {
-        async synthesize() {
-          return { audio: Buffer.from("voice"), mimeType: "audio/mpeg" };
-        },
+  const session = createSession({
+    typingCharsPerMinute: 600,
+    tts: {
+      async synthesize() {
+        return { audio: Buffer.from("voice"), mimeType: "audio/mpeg" };
       },
-      messages: {
-        async save(message: { contentType: string; createdAt: number }) {
-          saved.push({
-            contentType: message.contentType,
-            createdAt: message.createdAt,
-          });
-          return message;
-        },
+    },
+    messages: {
+      async save(message: { contentType: string; createdAt: number }) {
+        saved.push({
+          contentType: message.contentType,
+          createdAt: message.createdAt,
+        });
+        return message;
       },
-    });
-    const decision = {
-      rationale: "test",
-      figureMood: "calm",
-      variables: {},
-      actions: [
-        { type: "send_message", message: { type: "text", text: "第一条" } },
-        {
-          type: "send_message",
-          message: { type: "voice", transcript: "第二条语音" },
-        },
-      ],
-    } as PrimeFigureDecision;
-    session.handleField({
-      actionIndex: 0,
-      field: "type",
-      delta: "text",
-      complete: false,
-    });
-    session.handleField({
-      actionIndex: 0,
-      field: "type",
-      delta: "",
-      complete: true,
-    });
-    session.handleField({
-      actionIndex: 0,
-      field: "text",
-      delta: "第一条",
-      complete: false,
-    });
-    session.handleField({
-      actionIndex: 0,
-      field: "text",
-      delta: "",
-      complete: true,
-    });
-    await tick();
-    session.handleField({
-      actionIndex: 1,
-      field: "type",
-      delta: "voice",
-      complete: false,
-    });
-    session.handleField({
-      actionIndex: 1,
-      field: "type",
-      delta: "",
-      complete: true,
-    });
-    session.handleField({
-      actionIndex: 1,
-      field: "transcript",
-      delta: "第二条语音",
-      complete: false,
-    });
-    await wait(350);
-    session.handleField({
-      actionIndex: 1,
-      field: "transcript",
-      delta: "",
-      complete: true,
-    });
-    await session.finalize(decision);
+    },
+  });
+  const decision = {
+    rationale: "test",
+    figureMood: "calm",
+    variables: {},
+    actions: [
+      { type: "send_message", message: { type: "text", text: "第一条" } },
+      {
+        type: "send_message",
+        message: { type: "voice", transcript: "第二条语音" },
+      },
+    ],
+  } as PrimeFigureDecision;
+  session.handleField({
+    actionIndex: 0,
+    field: "type",
+    delta: "text",
+    complete: false,
+  });
+  session.handleField({
+    actionIndex: 0,
+    field: "type",
+    delta: "",
+    complete: true,
+  });
+  session.handleField({
+    actionIndex: 0,
+    field: "text",
+    delta: "第一条",
+    complete: false,
+  });
+  session.handleField({
+    actionIndex: 0,
+    field: "text",
+    delta: "",
+    complete: true,
+  });
+  await tick();
+  session.handleField({
+    actionIndex: 1,
+    field: "type",
+    delta: "voice",
+    complete: false,
+  });
+  session.handleField({
+    actionIndex: 1,
+    field: "type",
+    delta: "",
+    complete: true,
+  });
+  session.handleField({
+    actionIndex: 1,
+    field: "transcript",
+    delta: "第二条语音",
+    complete: false,
+  });
+  await wait(350);
+  session.handleField({
+    actionIndex: 1,
+    field: "transcript",
+    delta: "",
+    complete: true,
+  });
+  await session.finalize(decision);
 
-    assert.deepEqual(
-      saved.map((message) => message.contentType),
-      ["text", "voice"],
-    );
-    const elapsed = saved[1]!.createdAt - saved[0]!.createdAt;
-    assert.ok(elapsed >= 450);
-    assert.ok(elapsed < 700);
-  } finally {
-    restoreEnvironment("PRIME_TYPING_CHARS_PER_MINUTE", previousTypingSpeed);
-  }
+  assert.deepEqual(
+    saved.map((message) => message.contentType),
+    ["text", "voice"],
+  );
+  const elapsed = saved[1]!.createdAt - saved[0]!.createdAt;
+  assert.ok(elapsed >= 450);
+  assert.ok(elapsed < 700);
 });
 
 test("a stale dirty wakeup cannot call the LLM after all end-user messages were handled", async () => {
@@ -538,6 +523,7 @@ test("a stale dirty wakeup cannot call the LLM after all end-user messages were 
 
 function createSession(overrides?: {
   voiceRequestStreaming?: boolean;
+  typingCharsPerMinute?: number;
   appPush?: object;
   tts?: object;
   imageGeneration?: object;
@@ -548,7 +534,7 @@ function createSession(overrides?: {
       ownerUserId: "user_1",
       conversationId: "conversation_1",
       voiceRequestStreaming: overrides?.voiceRequestStreaming ?? false,
-      runtimeConfig: runtimeConfigForTest(),
+      runtimeConfig: runtimeConfigForTest(overrides?.typingCharsPerMinute),
     },
     (overrides?.appPush ?? { pushToUser() {} }) as never,
     (overrides?.tts ?? {
@@ -587,7 +573,7 @@ function createSession(overrides?: {
   );
 }
 
-function runtimeConfigForTest() {
+function runtimeConfigForTest(typingCharsPerMinute = 300) {
   return {
     version: 1 as const,
     llm: {
@@ -615,9 +601,7 @@ function runtimeConfigForTest() {
       chunkLength: 100,
     },
     context: { minimumMessages: 150, maximumMessages: 249 },
-    typingCharsPerMinute: Number(
-      process.env.PRIME_TYPING_CHARS_PER_MINUTE ?? 300,
-    ),
+    typingCharsPerMinute,
     messageCoalesceMs: 2_000,
   };
 }
@@ -628,9 +612,4 @@ function tick() {
 
 function wait(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
-
-function restoreEnvironment(name: string, value: string | undefined) {
-  if (value === undefined) delete process.env[name];
-  else process.env[name] = value;
 }

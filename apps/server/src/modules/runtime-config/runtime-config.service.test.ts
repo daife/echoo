@@ -10,23 +10,26 @@ import type {
   StoredUserRuntimeConfig,
 } from "./runtime-config.types.js";
 
-test("first read seeds the user config from environment and redacts secrets", async () => {
+test("missing configs use safe defaults and ignore environment values", async () => {
   const previousKey = process.env.OPENROUTER_API_KEY;
-  const previousPoll = process.env.PRIME_SILENCE_POLL_MS;
+  const previousModel = process.env.DEFAULT_TEXT_MODEL;
   process.env.OPENROUTER_API_KEY = "secret-from-env";
-  process.env.PRIME_SILENCE_POLL_MS = "777";
+  process.env.DEFAULT_TEXT_MODEL = "environment-model";
   try {
     const repository = new MemoryRuntimeConfigRepository();
     const service = createService(repository);
     const view = await service.getUserConfig("user_1");
 
-    assert.equal(view.sliceFigure.llm.apiKey.configured, true);
-    assert.equal(view.sliceFigure.llm.apiKey.masked, "••••-env");
+    assert.equal(view.sliceFigure.llm.apiKey.configured, false);
+    assert.equal(view.sliceFigure.llm.model, "openai/gpt-4o-mini");
     assert.doesNotMatch(JSON.stringify(view), /secret-from-env/);
-    assert.doesNotMatch(JSON.stringify(repository.userConfig), /777/);
+    assert.doesNotMatch(
+      JSON.stringify(repository.userConfig),
+      /environment-model/,
+    );
   } finally {
     restore("OPENROUTER_API_KEY", previousKey);
-    restore("PRIME_SILENCE_POLL_MS", previousPoll);
+    restore("DEFAULT_TEXT_MODEL", previousModel);
   }
 });
 
@@ -38,7 +41,7 @@ test("new-user initialization never copies environment API keys", async () => {
   try {
     const repository = new MemoryRuntimeConfigRepository();
     const service = createService(repository);
-    await service.initializeNewUserConfig("user_1");
+    await service.initializeUserConfig("user_1");
 
     assert.equal(repository.userConfig?.sliceFigure.llm.apiKey, "");
     assert.equal(repository.userConfig?.primeFigure.llm.apiKey, "");
