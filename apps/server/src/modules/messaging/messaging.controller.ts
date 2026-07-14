@@ -8,24 +8,24 @@ const createTextMessageSchema = z.object({
   stream: z.boolean().optional(),
 });
 
-const mediaUploadSchema = z.object({
+const mediaUploadBaseSchema = z.object({
   fileName: z.string().trim().min(1).max(255),
-  mimeType: z.string().trim().min(1).max(100),
-  dataBase64: z.string().min(1).max(7_000_000),
 });
 
 const createMediaMessageSchema = z.discriminatedUnion("contentType", [
   z.object({
     contentType: z.literal("image"),
-    upload: mediaUploadSchema.extend({
-      mimeType: z.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
+    upload: mediaUploadBaseSchema.extend({
+      mimeType: z.literal("image/jpeg"),
+      dataBase64: z.string().min(1).max(7_000_000),
     }),
     clientMessageId: z.string().trim().min(1).max(200).optional(),
   }),
   z.object({
     contentType: z.literal("voice"),
-    upload: mediaUploadSchema.extend({
+    upload: mediaUploadBaseSchema.extend({
       mimeType: z.literal("audio/mpeg"),
+      dataBase64: z.string().min(1),
     }),
     durationSeconds: z.number().finite().min(1).max(60),
     clientMessageId: z.string().trim().min(1).max(200).optional(),
@@ -110,7 +110,7 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { conversationId: string }; Body: unknown }>(
     "/conversations/:conversationId/messages",
-    { bodyLimit: 8 * 1024 * 1024 },
+    { bodyLimit: 96 * 1024 * 1024 },
     async (request, reply) => {
       const userId = await request.requireUserId(reply);
       if (!userId) return;

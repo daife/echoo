@@ -24,6 +24,7 @@ import {
 } from "@echoo/shared";
 import { useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
+import { imageFileToUpload } from "../../shared/utils/imageCompression";
 
 export type CreateAgentHandlers = {
   "slice-figure": (input: CreateSliceFigureRequest) => Promise<Agent>;
@@ -559,6 +560,7 @@ function ReferenceImageEditor({
   existingImages: PrimeFigureReferenceImage[];
   onChange: (items: PrimeFigureReferenceImageInput[]) => void;
 }) {
+  const [error, setError] = useState<string | null>(null);
   const existingUrls = new Map(
     existingImages.map((item) => [item.resourceId, item.resourcePath]),
   );
@@ -611,14 +613,19 @@ function ReferenceImageEditor({
           onChange={async (event) => {
             const file = event.target.files?.[0];
             if (!file) return;
-            onChange([
-              ...items,
-              { upload: await fileToUpload(file), description: "" },
-            ]);
-            event.target.value = "";
+            try {
+              const upload = await imageFileToUpload(file);
+              onChange([...items, { upload, description: "" }]);
+              setError(null);
+            } catch (caught) {
+              setError(caught instanceof Error ? caught.message : "图片压缩失败。");
+            } finally {
+              event.target.value = "";
+            }
           }}
         />
       </label>
+      {error ? <p className="text-xs text-red-200/70">{error}</p> : null}
       {items.length >= 10 ? <p className="text-xs text-white/40">最多添加 10 张创作者参考图片。</p> : null}
     </ListPanel>
   );
@@ -679,7 +686,7 @@ function IconButton({ label, onClick }: { label: string; onClick: () => void }) 
 function ImageInput({ label, value, existingUrl, onChange }: { label: string; value?: AgentResourceUpload | null; existingUrl?: string; onChange: (value: AgentResourceUpload | null) => void }) {
   const [error, setError] = useState<string | null>(null);
   const preview = value ? `data:${value.mimeType};base64,${value.dataBase64}` : value === undefined ? existingUrl : undefined;
-  return <label className="block"><span className="text-sm font-medium text-white/78">{label}</span><span className="mt-2 flex min-h-28 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-dashed border-white/15 bg-white/[0.025] p-4 text-center transition hover:border-white/28"><input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; try { onChange(await fileToUpload(file)); setError(null); } catch (caught) { setError(caught instanceof Error ? caught.message : "图片读取失败。"); } }} />{preview ? <img className="h-24 w-full rounded-lg object-cover" src={preview} alt={`${label}预览`} /> : <span><UploadSimple className="mx-auto text-white/55" size={24} /><span className="mt-2 block text-xs text-white/45">选择图片</span></span>}</span>{preview ? <button className="mt-2 text-xs text-white/45 hover:text-white" type="button" onClick={() => onChange(null)}>移除</button> : null}{error ? <span className="mt-2 block text-xs text-red-200/70">{error}</span> : null}</label>;
+  return <label className="block"><span className="text-sm font-medium text-white/78">{label}</span><span className="mt-2 flex min-h-28 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-dashed border-white/15 bg-white/[0.025] p-4 text-center transition hover:border-white/28"><input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; try { onChange(await imageFileToUpload(file)); setError(null); } catch (caught) { setError(caught instanceof Error ? caught.message : "图片压缩失败。"); } finally { event.target.value = ""; } }} />{preview ? <img className="h-24 w-full rounded-lg object-cover" src={preview} alt={`${label}预览`} /> : <span><UploadSimple className="mx-auto text-white/55" size={24} /><span className="mt-2 block text-xs text-white/45">选择图片</span></span>}</span>{preview ? <button className="mt-2 text-xs text-white/45 hover:text-white" type="button" onClick={() => onChange(null)}>移除</button> : null}{error ? <span className="mt-2 block text-xs text-red-200/70">{error}</span> : null}</label>;
 }
 
 export function buildSlicePayload(form: CreateSliceFigureRequest, unlockText: string): CreateSliceFigureRequest | string {
@@ -754,10 +761,6 @@ function parseDefault(draft: PrimeVariableDraft): PrimeFigureVariableDefinition[
 
 function variableToDraft(variable: PrimeFigureVariableDefinition): PrimeVariableDraft {
   return { key: variable.key, label: variable.label, type: variable.type, description: variable.description, ...(variable.min !== undefined ? { min: variable.min } : {}), ...(variable.max !== undefined ? { max: variable.max } : {}), defaultValueText: variable.defaultValue === undefined ? "" : variable.type === "string" ? String(variable.defaultValue) : JSON.stringify(variable.defaultValue) };
-}
-
-function fileToUpload(file: File): Promise<AgentResourceUpload> {
-  return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => { const result = String(reader.result ?? ""); const dataBase64 = result.split(",")[1]; if (!dataBase64) return reject(new Error("图片读取失败。")); resolve({ fileName: file.name, mimeType: file.type, dataBase64 }); }; reader.onerror = () => reject(new Error("图片读取失败。")); reader.readAsDataURL(file); });
 }
 
 function UnavailableCreatePanel() {

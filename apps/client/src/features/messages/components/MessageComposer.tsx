@@ -8,6 +8,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
+import { compressImageToJpeg } from "../../../shared/utils/imageCompression";
 import { usePushToTalk } from "../usePushToTalk";
 
 const IMAGE_MIME_TYPES = new Set([
@@ -16,8 +17,6 @@ const IMAGE_MIME_TYPES = new Set([
   "image/webp",
   "image/gif",
 ]);
-const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
-
 export function MessageComposer({
   title,
   isPrimeFigure,
@@ -42,6 +41,7 @@ export function MessageComposer({
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [isCompressingImage, setIsCompressingImage] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pushToTalk = usePushToTalk({
@@ -78,20 +78,24 @@ export function MessageComposer({
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const selectImage = (file?: File) => {
+  const selectImage = async (file?: File) => {
     if (!file) return;
     if (!IMAGE_MIME_TYPES.has(file.type)) {
       setNotice("请选择 JPEG、PNG、WebP 或 GIF 图片。");
       return;
     }
-    if (file.size > MAX_MEDIA_BYTES) {
-      setNotice("图片大小不能超过 5MB。");
-      return;
-    }
     setNotice(null);
-    setSelectedImage(file);
-    setPreviewUrl(URL.createObjectURL(file));
-    setIsMoreOpen(false);
+    setIsCompressingImage(true);
+    try {
+      const compressed = await compressImageToJpeg(file);
+      setSelectedImage(compressed);
+      setPreviewUrl(URL.createObjectURL(compressed));
+      setIsMoreOpen(false);
+    } catch (caught) {
+      setNotice(caught instanceof Error ? caught.message : "图片压缩失败。");
+    } finally {
+      setIsCompressingImage(false);
+    }
   };
 
   const isRecording =
@@ -243,19 +247,25 @@ export function MessageComposer({
           <button
             className="flex w-24 flex-col items-center gap-2 rounded-xl p-2 text-xs text-white/55 transition hover:bg-white/[0.055] hover:text-white"
             type="button"
+            disabled={isCompressingImage}
             onClick={() => fileInputRef.current?.click()}
           >
             <span className="grid h-12 w-12 place-items-center rounded-xl bg-white/[0.065] text-white/74">
               <ImageSquare size={23} weight="duotone" />
             </span>
-            图片
+            {isCompressingImage ? "压缩中…" : "图片"}
           </button>
           <input
             ref={fileInputRef}
             className="sr-only"
             type="file"
             accept="image/jpeg,image/png,image/webp,image/gif"
-            onChange={(event) => selectImage(event.target.files?.[0])}
+            disabled={isCompressingImage}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              void selectImage(file);
+            }}
           />
         </div>
       ) : null}

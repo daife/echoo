@@ -7,7 +7,7 @@
     "dev": "tsx watch src/main.ts",
     "build": "tsc -p tsconfig.json && node -e \"require('node:fs').cpSync('src/infra/database/schema.sql','dist/infra/database/schema.sql')\"",
     "start": "node dist/main.js",
-    "test": "tsx --test src/modules/agents/kinds/*/*.test.ts src/modules/tts/*.test.ts",
+    "test": "tsx --test src/modules/agents/kinds/*/*.test.ts src/modules/resources/*.test.ts src/modules/tts/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --pretty false --noEmit"
   },

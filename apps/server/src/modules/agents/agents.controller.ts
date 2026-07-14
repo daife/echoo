@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { ZodError } from "zod";
 import { updatePrimeFigurePreferencesSchema } from "@echoo/shared";
 import type { CreatePrimeFigureRequest, CreateSliceFigureRequest, UpdatePrimeFigurePreferencesRequest, UpdatePrimeFigureRequest, UpdateSliceFigureRequest } from "@echoo/shared";
+import { InvalidMediaUploadError } from "../resources/resource.repository.js";
 import { AgentsService } from "./agents.service.js";
 
 export async function registerAgentRoutes(app: FastifyInstance) {
@@ -42,6 +43,9 @@ export async function registerAgentRoutes(app: FastifyInstance) {
       if (error instanceof ZodError) {
         return reply.code(400).send({ error: "VALIDATION_ERROR", message: error.issues[0]?.message ?? "角色数据无效。" });
       }
+      if (error instanceof InvalidMediaUploadError) {
+        return reply.code(400).send({ error: "INVALID_MEDIA_UPLOAD", message: error.message });
+      }
       throw error;
     }
   });
@@ -57,6 +61,9 @@ export async function registerAgentRoutes(app: FastifyInstance) {
     } catch (error) {
       if (error instanceof ZodError) {
         return reply.code(400).send({ error: "VALIDATION_ERROR", message: error.issues[0]?.message ?? "角色数据无效。" });
+      }
+      if (error instanceof InvalidMediaUploadError) {
+        return reply.code(400).send({ error: "INVALID_MEDIA_UPLOAD", message: error.message });
       }
       throw error;
     }
@@ -103,6 +110,9 @@ export async function registerAgentRoutes(app: FastifyInstance) {
     } catch (error) {
       if (error instanceof ZodError) {
         return reply.code(400).send({ error: "VALIDATION_ERROR", message: error.issues[0]?.message ?? "角色数据无效。" });
+      }
+      if (error instanceof InvalidMediaUploadError) {
+        return reply.code(400).send({ error: "INVALID_MEDIA_UPLOAD", message: error.message });
       }
       throw error;
     }

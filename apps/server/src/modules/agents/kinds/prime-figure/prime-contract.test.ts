@@ -67,9 +67,9 @@ test("prime create and update contracts accept described creator images and curr
     referenceImages: [
       {
         upload: {
-          fileName: "look.png",
-          mimeType: "image/png",
-          dataBase64: "AA==",
+          fileName: "look.jpg",
+          mimeType: "image/jpeg",
+          dataBase64: "/9j/",
         },
         description: "角色的日常穿搭",
       },
@@ -108,9 +108,9 @@ test("prime creator images require descriptions", () => {
       referenceImages: [
         {
           upload: {
-            fileName: "look.png",
-            mimeType: "image/png",
-            dataBase64: "AA==",
+            fileName: "look.jpg",
+            mimeType: "image/jpeg",
+            dataBase64: "/9j/",
           },
           description: "",
         },

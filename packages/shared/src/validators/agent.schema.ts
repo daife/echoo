@@ -8,7 +8,7 @@ const generationPromptSchema = requiredText("生图提示词", 12000);
 
 const imageUploadSchema = z.object({
   fileName: z.string().trim().min(1).max(255),
-  mimeType: z.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
+  mimeType: z.literal("image/jpeg"),
   dataBase64: z.string().min(1),
 });
 

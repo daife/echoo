@@ -23,6 +23,7 @@ import {
   activityAfterMessageCreated,
 } from "../../features/messages/conversationActivity";
 import { parsePrimeFigureHintCommand } from "../../features/messages/messagePresentation";
+import { MAX_IMAGE_UPLOAD_BYTES } from "../../shared/utils/imageCompression";
 
 const MESSAGE_PAGE_SIZE = 50;
 
@@ -592,8 +593,11 @@ export function useConversationMessages({
       URL.revokeObjectURL(payload.objectUrl);
       return;
     }
-    if (payload.blob.size > 5 * 1024 * 1024) {
-      setError("媒体文件大小不能超过 5MB。");
+    if (
+      payload.contentType === "image" &&
+      payload.blob.size > MAX_IMAGE_UPLOAD_BYTES
+    ) {
+      setError("图片大小不能超过 5MB。");
       URL.revokeObjectURL(payload.objectUrl);
       return;
     }
