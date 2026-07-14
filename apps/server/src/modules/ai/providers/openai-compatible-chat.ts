@@ -55,9 +55,7 @@ export async function createOpenAiCompatibleChatCompletion(input: {
   extraBody?: Record<string, unknown>;
 }): Promise<ChatCompletionResult> {
   if (!input.apiKey) {
-    throw new Error(
-      `${input.providerId.toUpperCase()}_API_KEY is not configured.`,
-    );
+    throw new Error(`${input.providerId} API key is not configured.`);
   }
 
   const response = await fetch(
@@ -152,9 +150,7 @@ async function requestChatCompletion(
   extraBody?: Record<string, unknown>,
 ) {
   if (!input.apiKey) {
-    throw new Error(
-      `${input.providerId.toUpperCase()}_API_KEY is not configured.`,
-    );
+    throw new Error(`${input.providerId} API key is not configured.`);
   }
 
   const response = await fetch(

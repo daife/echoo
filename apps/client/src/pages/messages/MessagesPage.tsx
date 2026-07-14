@@ -2,6 +2,7 @@ import {
   Copy,
   GearSix,
   PencilSimple,
+  SlidersHorizontal,
   Trash,
   Waveform,
   X,
@@ -11,10 +12,16 @@ import {
   type AgentExportResponse,
   type CreatePrimeFigureRequest,
   type CreateSliceFigureRequest,
+  type ConversationRuntimeConfigPatchRequest,
+  type ConversationRuntimeConfigResponse,
   type LocalMessage,
   type PrimeFigureEditSnapshot,
   type PrimeFigureAgent,
+  type PrimeFigureRuntimeConfigPatch,
+  type PrimeFigureRuntimeConfigView,
   type SliceFigureAgent,
+  type SliceFigureRuntimeConfigPatch,
+  type SliceFigureRuntimeConfigView,
   type UpdatePrimeFigurePreferencesRequest,
   type UpdatePrimeFigureRequest,
   type UpdateSliceFigureRequest,
@@ -50,6 +57,10 @@ import {
   SliceFigureFormFields,
 } from "../create-agent/CreateAgentPage";
 import { useConversationMessages } from "./useConversationMessages";
+import {
+  PrimeRuntimeConfigForm,
+  SliceRuntimeConfigForm,
+} from "../../features/runtime-config/RuntimeConfigForms";
 
 export type UpdateAgentHandlers = {
   "slice-figure": (
@@ -68,6 +79,13 @@ export type UpdateAgentHandlers = {
     agentId: string,
   ) => Promise<PrimeFigureEditSnapshot>;
   exportAgent: (agentId: string) => Promise<AgentExportResponse>;
+  getConversationRuntimeConfig: (
+    conversationId: string,
+  ) => Promise<ConversationRuntimeConfigResponse>;
+  updateConversationRuntimeConfig: (
+    conversationId: string,
+    patch: ConversationRuntimeConfigPatchRequest,
+  ) => Promise<ConversationRuntimeConfigResponse>;
 };
 
 export function MessagesPage({
@@ -84,6 +102,7 @@ export function MessagesPage({
   const [isUpdatingAgent, setIsUpdatingAgent] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isRuntimeConfigOpen, setIsRuntimeConfigOpen] = useState(false);
   const [isUpdatingPreference, setIsUpdatingPreference] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
@@ -255,42 +274,44 @@ export function MessagesPage({
           </div>
         </div>
         <div className="relative flex items-center gap-1" ref={settingsRef}>
-          {agent.type === "slice-figure" || agent.type === "prime-figure" ? (
-            <button
-              aria-label="角色设置"
-              aria-expanded={isSettingsOpen}
-              className="grid h-9 w-9 place-items-center rounded-lg text-white/45 transition hover:bg-white/[0.05] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white active:translate-y-px"
-              type="button"
-              onClick={() => setIsSettingsOpen((current) => !current)}
-            >
-              <GearSix size={18} />
-            </button>
-          ) : (
-            <button
-              aria-label="删除会话"
-              className="grid h-9 w-9 place-items-center rounded-lg text-white/35 transition hover:bg-red-400/10 hover:text-red-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-300 active:translate-y-px disabled:opacity-40"
-              disabled={isDeletingConversation}
-              type="button"
-              onClick={deleteConversation}
-            >
-              <Trash size={17} />
-            </button>
-          )}
-          {isSettingsOpen &&
-          (agent.type === "slice-figure" || agent.type === "prime-figure") ? (
+          <button
+            aria-label="角色设置"
+            aria-expanded={isSettingsOpen}
+            className="grid h-9 w-9 place-items-center rounded-lg text-white/45 transition hover:bg-white/[0.05] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white active:translate-y-px"
+            type="button"
+            onClick={() => setIsSettingsOpen((current) => !current)}
+          >
+            <GearSix size={18} />
+          </button>
+          {isSettingsOpen ? (
             <div className="absolute right-0 top-11 z-30 w-64 rounded-xl border border-white/10 bg-[#17171b] p-2 shadow-[0_18px_50px_rgba(0,0,0,0.42)]">
-              <button
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/75 transition hover:bg-white/[0.06] hover:text-white"
-                type="button"
-                onClick={() => {
-                  setIsSettingsOpen(false);
-                  setEditError(null);
-                  setIsEditOpen(true);
-                }}
-              >
-                <PencilSimple size={16} />
-                修改角色
-              </button>
+              {agent.type !== "prime-world" ? (
+                <button
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/75 transition hover:bg-white/[0.06] hover:text-white"
+                  type="button"
+                  onClick={() => {
+                    setIsSettingsOpen(false);
+                    setEditError(null);
+                    setIsEditOpen(true);
+                  }}
+                >
+                  <PencilSimple size={16} />
+                  修改角色
+                </button>
+              ) : null}
+              {agent.type !== "prime-world" ? (
+                <button
+                  className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/75 transition hover:bg-white/[0.06] hover:text-white"
+                  type="button"
+                  onClick={() => {
+                    setIsSettingsOpen(false);
+                    setIsRuntimeConfigOpen(true);
+                  }}
+                >
+                  <SlidersHorizontal size={16} />
+                  运行配置
+                </button>
+              ) : null}
               <button
                 className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-white/75 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-45"
                 disabled={isExporting}
@@ -517,7 +538,178 @@ export function MessagesPage({
           }}
         />
       ) : null}
+      {isRuntimeConfigOpen ? (
+        <RuntimeConfigDialog
+          conversationId={agent.conversationId}
+          load={() =>
+            updateHandlers.getConversationRuntimeConfig(agent.conversationId)
+          }
+          update={(patch) =>
+            updateHandlers.updateConversationRuntimeConfig(
+              agent.conversationId,
+              patch,
+            )
+          }
+          onClose={() => setIsRuntimeConfigOpen(false)}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function RuntimeConfigDialog({
+  conversationId,
+  load,
+  update,
+  onClose,
+}: {
+  conversationId: string;
+  load: () => Promise<ConversationRuntimeConfigResponse>;
+  update: (
+    patch: ConversationRuntimeConfigPatchRequest,
+  ) => Promise<ConversationRuntimeConfigResponse>;
+  onClose: () => void;
+}) {
+  const [response, setResponse] =
+    useState<ConversationRuntimeConfigResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setResponse(null);
+    setError(null);
+    void load()
+      .then((value) => {
+        if (!cancelled) setResponse(value);
+      })
+      .catch((caught) => {
+        if (!cancelled)
+          setError(caught instanceof Error ? caught.message : "配置加载失败。");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId]);
+
+  async function setMode(mode: "global" | "custom") {
+    setSwitching(true);
+    setError(null);
+    setNotice(null);
+    try {
+      setResponse(await update({ mode }));
+      setNotice(
+        mode === "global"
+          ? "该会话已实时使用用户全局配置。"
+          : "已创建该会话的独立配置。",
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "模式切换失败。");
+    } finally {
+      setSwitching(false);
+    }
+  }
+
+  async function saveConfig(
+    config: SliceFigureRuntimeConfigPatch | PrimeFigureRuntimeConfigPatch,
+  ) {
+    setError(null);
+    setNotice(null);
+    try {
+      setResponse(await update({ mode: "custom", config }));
+      setNotice("会话独立配置已保存。");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "配置保存失败。");
+      throw caught;
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 px-4 py-8 backdrop-blur-sm">
+      <div className="max-h-[92dvh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-white/10 bg-[#101014] p-5 shadow-[0_24px_100px_rgba(0,0,0,0.55)] md:p-7">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold text-white">会话运行配置</h2>
+            <p className="mt-1 text-sm text-white/42">
+              全局模式实时继承用户设置；独立模式只影响当前会话。
+            </p>
+          </div>
+          <button
+            className="grid h-9 w-9 place-items-center rounded-full text-white/50 transition hover:bg-white/[0.06] hover:text-white"
+            type="button"
+            onClick={onClose}
+          >
+            <X size={17} />
+          </button>
+        </div>
+        {response ? (
+          <div className="mb-6 grid grid-cols-2 gap-2 rounded-xl bg-white/[0.035] p-1.5">
+            <button
+              disabled={switching}
+              type="button"
+              onClick={() => void setMode("global")}
+              className={`rounded-lg px-4 py-2.5 text-sm transition ${response.mode === "global" ? "bg-white text-black" : "text-white/50 hover:text-white"}`}
+            >
+              使用用户全局配置
+            </button>
+            <button
+              disabled={switching}
+              type="button"
+              onClick={() => void setMode("custom")}
+              className={`rounded-lg px-4 py-2.5 text-sm transition ${response.mode === "custom" ? "bg-white text-black" : "text-white/50 hover:text-white"}`}
+            >
+              使用会话独立配置
+            </button>
+          </div>
+        ) : null}
+        {!response && !error ? (
+          <p className="py-12 text-center text-sm text-white/42">
+            正在读取配置…
+          </p>
+        ) : null}
+        {response?.mode === "global" ? (
+          <div className="rounded-xl border border-dashed border-white/10 px-5 py-10 text-center">
+            <p className="text-sm text-white/65">
+              当前会话会在每次运行时读取用户最新全局配置。
+            </p>
+            <p className="mt-2 text-xs text-white/35">
+              切换到独立配置时，服务端会复制当前有效配置和密钥，无需密钥经过客户端。
+            </p>
+          </div>
+        ) : null}
+        {response?.mode === "custom" &&
+        response.conversationType === "slice-figure" ? (
+          <SliceRuntimeConfigForm
+            value={response.config as SliceFigureRuntimeConfigView}
+            onSave={(patch) => saveConfig(patch)}
+            error={error}
+            notice={notice}
+          />
+        ) : null}
+        {response?.mode === "custom" &&
+        response.conversationType === "prime-figure" ? (
+          <PrimeRuntimeConfigForm
+            value={response.config as PrimeFigureRuntimeConfigView}
+            onSave={(patch) => saveConfig(patch)}
+            error={error}
+            notice={notice}
+          />
+        ) : null}
+        {response?.conversationType === "prime-world" ? (
+          <p className="rounded-xl border border-dashed border-white/10 py-12 text-center text-sm text-white/42">
+            本初世界配置已预留，当前没有可编辑参数。
+          </p>
+        ) : null}
+        {error && !response ? (
+          <p className="text-sm text-red-200/75">{error}</p>
+        ) : null}
+        {notice && response?.mode === "global" ? (
+          <p className="mt-4 text-center text-xs text-emerald-200/70">
+            {notice}
+          </p>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

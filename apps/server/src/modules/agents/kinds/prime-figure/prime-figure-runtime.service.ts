@@ -14,7 +14,6 @@ import type {
 } from "@echoo/shared";
 import { AiProviderRegistry } from "../../../ai/ai-provider.registry.js";
 import { APP_TIME_ZONE } from "../../../../shared/constants/time.js";
-import { getFigureContextWindowConfig } from "../../../../infra/config/context-window-config.js";
 import type {
   AiTextProvider,
   ChatCompletionInput,
@@ -40,6 +39,8 @@ import {
   formatReadableMinute,
   formatWeekdayCode,
 } from "./prime-time.js";
+import { RuntimeConfigService } from "../../../runtime-config/runtime-config.service.js";
+import type { StoredPrimeFigureRuntimeConfig } from "../../../runtime-config/runtime-config.types.js";
 
 const PRIME_VISIBLE_MEMORY_LIMIT = 10;
 const RECALL_HINT_PATTERN = /记得|不记得|忘了|还记得|remember|forgot|recal+l/i;
@@ -62,6 +63,7 @@ interface PrimeDecisionRequest {
   onModelActivityChange?: (active: boolean) => void;
   agent: PrimeFigureAgent;
   state: PrimeFigureState;
+  runtimeConfig: StoredPrimeFigureRuntimeConfig;
 }
 
 interface PrimeCompletionDiagnostics {
@@ -81,6 +83,7 @@ export class PrimeFigureRuntimeService {
     private readonly resources = new ResourceRepository(),
     private readonly conversationMedia = new PrimeConversationMediaRepository(),
     private readonly conversations = new ConversationRepository(),
+    private readonly runtimeConfigs = new RuntimeConfigService(),
   ) {}
 
   async requestDecision(input: {
@@ -115,10 +118,27 @@ export class PrimeFigureRuntimeService {
     )
       return null;
 
+    const runtimeConfig = (
+      await this.runtimeConfigs.resolveConversationConfig(
+        input.ownerUserId,
+        input.conversationId,
+      )
+    ).config as StoredPrimeFigureRuntimeConfig;
+
     if (trigger !== "debug_hint")
-      await this.waitForEndUserQuiet(input.ownerUserId, input.conversationId);
+      await this.waitForEndUserQuiet(
+        input.ownerUserId,
+        input.conversationId,
+        runtimeConfig.messageCoalesceMs,
+      );
     try {
-      return await this.createDecisionOnce({ ...input, trigger, agent, state });
+      return await this.createDecisionOnce({
+        ...input,
+        trigger,
+        agent,
+        state,
+        runtimeConfig,
+      });
     } catch (error) {
       await this.logs.save({
         ownerUserId: input.ownerUserId,
@@ -136,11 +156,9 @@ export class PrimeFigureRuntimeService {
   private async waitForEndUserQuiet(
     ownerUserId: string,
     conversationId: string,
+    quietMs: number,
   ) {
-    const quietMs = Math.max(
-      0,
-      Number(process.env.PRIME_MESSAGE_COALESCE_MS ?? 2_000),
-    );
+    quietMs = Math.max(0, quietMs);
     while (quietMs > 0) {
       const latest = await this.messages.findLatestEndUserCreatedAt(
         ownerUserId,
@@ -156,8 +174,8 @@ export class PrimeFigureRuntimeService {
   private async createDecisionOnce(input: PrimeDecisionRequest) {
     const context = await this.loadDecisionContext(input);
     if (!context) return null;
-    const provider = this.providers.getDefaultProvider();
-    const model = this.providers.getDefaultModel();
+    const provider = this.providers.createProvider(input.runtimeConfig.llm);
+    const model = input.runtimeConfig.llm.model;
     const packet = await buildPrimeChatMessages(
       input.agent,
       input.state,
@@ -173,14 +191,13 @@ export class PrimeFigureRuntimeService {
       ownerUserId: input.ownerUserId,
       conversationId: input.conversationId,
       voiceRequestStreaming: input.agent.detail.voiceRequestStreaming,
+      runtimeConfig: input.runtimeConfig,
     });
     const completionBase = {
       model,
       sessionId: input.conversationId,
-      temperature: Number(process.env.DEFAULT_PRIME_TEMPERATURE ?? 0.4),
-      maxTokens: process.env.DEFAULT_PRIME_MAX_TOKENS
-        ? Number(process.env.DEFAULT_PRIME_MAX_TOKENS)
-        : undefined,
+      temperature: input.runtimeConfig.llm.temperature,
+      maxTokens: input.runtimeConfig.llm.maxTokens,
       reasoningMode: "disabled" as const,
     };
 
@@ -269,13 +286,13 @@ export class PrimeFigureRuntimeService {
         input.ownerUserId,
         input.conversationId,
       ));
-    const window = getFigureContextWindowConfig().primeFigureMessages;
+    const window = input.runtimeConfig.context;
     const [recentTimeline, unhandledEndUserMessages] = await Promise.all([
       this.messages.listContextWindow(
         input.ownerUserId,
         input.conversationId,
-        window.minimum,
-        window.maximum,
+        window.minimumMessages,
+        window.maximumMessages,
       ),
       this.messages.listEndUserAfterSequence(
         input.ownerUserId,

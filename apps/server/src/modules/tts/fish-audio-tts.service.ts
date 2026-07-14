@@ -1,6 +1,7 @@
 import { decode, encode } from "@msgpack/msgpack";
 import WebSocket from "ws";
 import type { ClientOptions } from "ws";
+import type { StoredFishAudioConfig } from "../runtime-config/runtime-config.types.js";
 
 export interface FishAudioTtsResult {
   audio: Buffer;
@@ -22,40 +23,36 @@ export type FishAudioWebSocketFactory = (
 
 export class FishAudioTtsService {
   constructor(
+    private readonly config: StoredFishAudioConfig,
     private readonly createSocket: FishAudioWebSocketFactory = (url, options) =>
       new WebSocket(url, options),
   ) {}
 
   isConfigured() {
-    return Boolean(
-      process.env.FISH_AUDIO_API_KEY && process.env.FISH_AUDIO_REFERENCE_ID,
-    );
+    return Boolean(this.config.apiKey && this.config.referenceId);
   }
 
   createStream(onAudio: (chunk: Buffer) => void) {
-    return new FishAudioTtsStream(onAudio, this.createSocket);
+    return new FishAudioTtsStream(this.config, onAudio, this.createSocket);
   }
 
   async synthesize(
     transcript: string,
     onAudio: (chunk: Buffer) => void,
   ): Promise<FishAudioTtsResult> {
-    const apiKey = process.env.FISH_AUDIO_API_KEY;
-    if (!apiKey) throw new Error("FISH_AUDIO_API_KEY is not configured.");
-    const referenceId = process.env.FISH_AUDIO_REFERENCE_ID?.trim();
+    const apiKey = this.config.apiKey;
+    if (!apiKey) throw new Error("Fish Audio API key is not configured.");
+    const referenceId = this.config.referenceId.trim();
     if (!referenceId)
-      throw new Error("FISH_AUDIO_REFERENCE_ID is not configured.");
+      throw new Error("Fish Audio reference ID is not configured.");
     if (!transcript.trim())
       throw new Error("Fish Audio TTS transcript must not be empty.");
 
-    const response = await fetch(
-      process.env.FISH_AUDIO_TTS_URL ?? "https://api.fish.audio/v1/tts",
-      {
-        method: "POST",
-        headers: fishAudioHeaders(apiKey),
-        body: JSON.stringify(ttsRequest(referenceId, transcript)),
-      },
-    );
+    const response = await fetch(this.config.httpUrl, {
+      method: "POST",
+      headers: fishAudioHeaders(apiKey, this.config.model),
+      body: JSON.stringify(ttsRequest(this.config, referenceId, transcript)),
+    });
 
     if (!response.ok) {
       const detail = await readErrorDetail(response);
@@ -96,15 +93,16 @@ export class FishAudioTtsStream {
   private settled = false;
 
   constructor(
+    private readonly config: StoredFishAudioConfig,
     private readonly onAudio: (chunk: Buffer) => void,
     createSocket: FishAudioWebSocketFactory = (url, options) =>
       new WebSocket(url, options),
   ) {
-    const apiKey = process.env.FISH_AUDIO_API_KEY;
-    if (!apiKey) throw new Error("FISH_AUDIO_API_KEY is not configured.");
-    const referenceId = process.env.FISH_AUDIO_REFERENCE_ID?.trim();
+    const apiKey = this.config.apiKey;
+    if (!apiKey) throw new Error("Fish Audio API key is not configured.");
+    const referenceId = this.config.referenceId.trim();
     if (!referenceId)
-      throw new Error("FISH_AUDIO_REFERENCE_ID is not configured.");
+      throw new Error("Fish Audio reference ID is not configured.");
 
     this.completed = new Promise((resolve, reject) => {
       this.resolveCompleted = resolve;
@@ -112,22 +110,19 @@ export class FishAudioTtsStream {
     });
     void this.completed.catch(() => undefined);
 
-    this.socket = createSocket(
-      process.env.FISH_AUDIO_WS_URL ?? "wss://api.fish.audio/v1/tts/live",
-      {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          model: process.env.FISH_AUDIO_MODEL ?? "s2.1-pro-free",
-        },
+    this.socket = createSocket(this.config.wsUrl, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        model: this.config.model,
       },
-    );
+    });
     this.socket.binaryType = "arraybuffer";
     this.ready = new Promise((resolve, reject) => {
       this.socket.once("open", () => {
         try {
           this.send({
             event: "start",
-            request: ttsRequest(referenceId, ""),
+            request: ttsRequest(this.config, referenceId, ""),
           });
           resolve();
         } catch (error) {
@@ -231,21 +226,25 @@ export class FishAudioTtsStream {
   }
 }
 
-function fishAudioHeaders(apiKey: string) {
+function fishAudioHeaders(apiKey: string, model?: string) {
   return {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
     Accept: "audio/mpeg",
-    model: process.env.FISH_AUDIO_MODEL ?? "s2.1-pro-free",
+    model: model ?? "s2.1-pro-free",
   };
 }
 
-function ttsRequest(referenceId: string, text: string) {
+function ttsRequest(
+  config: StoredFishAudioConfig,
+  referenceId: string,
+  text: string,
+) {
   return {
     text,
     format: "mp3",
-    latency: process.env.FISH_AUDIO_LATENCY ?? "balanced",
-    chunk_length: Number(process.env.FISH_AUDIO_CHUNK_LENGTH ?? 100),
+    latency: config.latency,
+    chunk_length: config.chunkLength,
     reference_id: referenceId,
   };
 }

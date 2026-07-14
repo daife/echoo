@@ -24,7 +24,7 @@ test("Fish Audio TTS posts the complete transcript and streams response chunks",
     }) as typeof fetch;
     const streamed: Buffer[] = [];
 
-    const result = await new FishAudioTtsService().synthesize(
+    const result = await new FishAudioTtsService(fishConfig()).synthesize(
       "[轻声]完整文本",
       (chunk) => streamed.push(chunk),
     );
@@ -52,7 +52,10 @@ test("Fish Audio TTS reports non-success responses", async () => {
       })) as typeof fetch;
 
     await assert.rejects(
-      new FishAudioTtsService().synthesize("完整文本", () => undefined),
+      new FishAudioTtsService(fishConfig()).synthesize(
+        "完整文本",
+        () => undefined,
+      ),
       /Fish Audio TTS failed \(422 Unprocessable Content\).*invalid reference/,
     );
   });
@@ -72,7 +75,10 @@ test("Fish Audio TTS propagates interrupted audio responses", async () => {
       )) as typeof fetch;
 
     await assert.rejects(
-      new FishAudioTtsService().synthesize("完整文本", () => undefined),
+      new FishAudioTtsService(fishConfig()).synthesize(
+        "完整文本",
+        () => undefined,
+      ),
       /connection interrupted/,
     );
   });
@@ -98,7 +104,7 @@ test("Fish Audio streaming TTS sends MessagePack start, text, flush, and stop ev
         );
       });
     });
-    const service = new FishAudioTtsService((url, options) => {
+    const service = new FishAudioTtsService(fishConfig(), (url, options) => {
       socketUrl = url;
       socketHeaders = options.headers as Record<string, unknown>;
       queueMicrotask(() => socket.open());
@@ -129,6 +135,19 @@ test("Fish Audio streaming TTS sends MessagePack start, text, flush, and stop ev
     assert.equal(result.audio.toString(), "voice");
   });
 });
+
+function fishConfig() {
+  return {
+    provider: "fish-audio",
+    apiKey: process.env.FISH_AUDIO_API_KEY ?? "",
+    referenceId: process.env.FISH_AUDIO_REFERENCE_ID ?? "",
+    model: process.env.FISH_AUDIO_MODEL ?? "",
+    httpUrl: process.env.FISH_AUDIO_TTS_URL ?? "",
+    wsUrl: process.env.FISH_AUDIO_WS_URL ?? "",
+    latency: process.env.FISH_AUDIO_LATENCY ?? "balanced",
+    chunkLength: Number(process.env.FISH_AUDIO_CHUNK_LENGTH ?? 100),
+  };
+}
 
 async function withFishAudioEnvironment(run: () => Promise<void>) {
   const originalFetch = globalThis.fetch;

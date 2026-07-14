@@ -15,6 +15,7 @@ import { registerMessagingRoutes } from "./modules/messaging/messaging.controlle
 import { registerRealtimeGateway } from "./modules/realtime/ws.gateway.js";
 import { startRealtimeEventBus } from "./modules/realtime/realtime-event-bus.js";
 import { registerResourceRoutes } from "./modules/resources/resources.controller.js";
+import { registerRuntimeConfigRoutes } from "./modules/runtime-config/runtime-config.controller.js";
 
 export async function buildApp() {
   await initializeDatabase();
@@ -52,6 +53,7 @@ export async function buildApp() {
     prefix: "/api/interface-bindings",
   });
   await app.register(registerResourceRoutes, { prefix: "/api/resources" });
+  await app.register(registerRuntimeConfigRoutes, { prefix: "/api" });
   await app.register(registerRealtimeGateway);
   app.addHook("onReady", async () => {
     await startRealtimeEventBus();

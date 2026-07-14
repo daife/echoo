@@ -12,10 +12,11 @@ import {
   UserRepository,
   toUserProfile,
 } from "../../../auth/user.repository.js";
-import { getFigureContextWindowConfig } from "../../../../infra/config/context-window-config.js";
 import { MessageRepository } from "../../../messaging/message.repository.js";
 import { AgentRepository } from "../../agent.repository.js";
 import { randomUUID } from "node:crypto";
+import { RuntimeConfigService } from "../../../runtime-config/runtime-config.service.js";
+import type { StoredSliceFigureRuntimeConfig } from "../../../runtime-config/runtime-config.types.js";
 
 export interface SliceFigureRuntimeResult {
   text: string;
@@ -29,6 +30,7 @@ export class SliceFigureRuntimeService {
     private readonly messages = new MessageRepository(),
     private readonly providers = new AiProviderRegistry(),
     private readonly users = new UserRepository(),
+    private readonly runtimeConfigs = new RuntimeConfigService(),
   ) {}
 
   async createPendingMemorySummaries(input: {
@@ -42,10 +44,15 @@ export class SliceFigureRuntimeService {
     if (!agent || agent.type !== "slice-figure") return [];
     const userRecord = await this.users.findById(input.ownerUserId);
     const user = userRecord ? toUserProfile(userRecord) : null;
-    const provider = this.providers.getDefaultProvider();
-    const model = this.providers.getDefaultModel();
-    const rounds =
-      getFigureContextWindowConfig().sliceFigureMemorySummaryRounds;
+    const runtimeConfig = (
+      await this.runtimeConfigs.resolveConversationConfig(
+        input.ownerUserId,
+        input.conversationId,
+      )
+    ).config as StoredSliceFigureRuntimeConfig;
+    const provider = this.providers.createProvider(runtimeConfig.llm);
+    const model = runtimeConfig.llm.model;
+    const rounds = runtimeConfig.context.memorySummaryRounds;
     const completed: Message[] = [];
 
     for (;;) {
@@ -108,6 +115,7 @@ export class SliceFigureRuntimeService {
         model,
         prompt,
         entries,
+        maxTokens: runtimeConfig.llm.maxTokens,
       });
       const message = await this.messages.completeMemorySummary({
         ownerUserId: input.ownerUserId,
@@ -128,11 +136,17 @@ export class SliceFigureRuntimeService {
     input: { ownerUserId: string; conversationId: string },
     onDelta: (delta: { text: string }) => void,
   ): Promise<SliceFigureRuntimeResult | null> {
-    const context = await this.loadContext(input);
+    const runtimeConfig = (
+      await this.runtimeConfigs.resolveConversationConfig(
+        input.ownerUserId,
+        input.conversationId,
+      )
+    ).config as StoredSliceFigureRuntimeConfig;
+    const context = await this.loadContext(input, runtimeConfig);
     if (!context) return null;
 
-    const provider = this.providers.getDefaultProvider();
-    const model = this.providers.getDefaultModel();
+    const provider = this.providers.createProvider(runtimeConfig.llm);
+    const model = runtimeConfig.llm.model;
     const completion: ChatCompletionInput = {
       model,
       sessionId: input.conversationId,
@@ -142,10 +156,8 @@ export class SliceFigureRuntimeService {
         context.history,
         context.isInitialWindow,
       ),
-      temperature: Number(process.env.DEFAULT_TEXT_TEMPERATURE ?? 0.8),
-      maxTokens: process.env.DEFAULT_TEXT_MAX_TOKENS
-        ? Number(process.env.DEFAULT_TEXT_MAX_TOKENS)
-        : undefined,
+      temperature: runtimeConfig.llm.temperature,
+      maxTokens: runtimeConfig.llm.maxTokens,
       reasoningMode: "disabled",
     };
 
@@ -169,10 +181,13 @@ export class SliceFigureRuntimeService {
     return { text, providerId: provider.id, model };
   }
 
-  private async loadContext(input: {
-    ownerUserId: string;
-    conversationId: string;
-  }) {
+  private async loadContext(
+    input: {
+      ownerUserId: string;
+      conversationId: string;
+    },
+    runtimeConfig: StoredSliceFigureRuntimeConfig,
+  ) {
     const agent = await this.agents.findByConversation(
       input.ownerUserId,
       input.conversationId,
@@ -182,13 +197,12 @@ export class SliceFigureRuntimeService {
       throw new Error(`切片角色运行时收到了错误的角色类型：${agent.type}。`);
 
     const user = await this.users.findById(input.ownerUserId);
-    const contextWindowConfig =
-      getFigureContextWindowConfig().sliceFigureRounds;
+    const contextWindowConfig = runtimeConfig.context;
     const contextWindow = await this.messages.listSliceFigureContextWindow(
       input.ownerUserId,
       input.conversationId,
-      contextWindowConfig.minimum,
-      contextWindowConfig.maximum,
+      contextWindowConfig.minimumRounds,
+      contextWindowConfig.maximumRounds,
     );
     return {
       agent,
@@ -276,10 +290,11 @@ function formatMemorySourceMessage(message: Message) {
 }
 
 async function summarizeEntries(input: {
-  provider: ReturnType<AiProviderRegistry["getDefaultProvider"]>;
+  provider: ReturnType<AiProviderRegistry["createProvider"]>;
   model: string;
   prompt: string;
   entries: string[];
+  maxTokens: number;
 }) {
   const chunks = chunkEntries(input.entries, 60_000);
   const partials = [];
@@ -297,9 +312,7 @@ async function summarizeEntries(input: {
         },
       ],
       temperature: 0.2,
-      maxTokens: process.env.DEFAULT_TEXT_MAX_TOKENS
-        ? Number(process.env.DEFAULT_TEXT_MAX_TOKENS)
-        : undefined,
+      maxTokens: input.maxTokens,
       reasoningMode: "disabled",
     });
     partials.push(result);

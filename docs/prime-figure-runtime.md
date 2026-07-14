@@ -2,6 +2,8 @@
 
 本文档只描述当前代码中的 `prime-figure` 运行时。重点是：一次运行会如何构造 LLM/API 请求，以及每个请求中模型可见的提示词、工具描述、JSON schema 描述、媒体和动态 hint 从哪里进入。
 
+每轮任务开始时，运行时通过 `RuntimeConfigService` 解析一次会话配置快照。会话处于 `global` 模式时实时读取用户全局 `primeFigure` 配置；处于 `custom` 模式时读取会话保存的独立配置。模型、图像、TTS、上下文和消息节奏在该轮中都使用同一快照，不再直接读取环境变量。环境变量只负责迁移尚无配置记录的存量用户；新注册用户会初始化公开默认值，但不会复制服务器的 LLM、图像或 TTS API Key。`PRIME_SILENCE_POLL_MS` 仍是服务器调度配置。
+
 ## 总览流程
 
 ```mermaid
@@ -16,7 +18,7 @@ flowchart TD
   E --> F["加载 agent 和 state"]
   F --> G{"silenceUntilMs<br/>仍晚于当前时间?"}
   G -- 是 --> R["返回 null"]
-  G -- 否 --> H["等待最新用户消息<br/>连续静默 PRIME_MESSAGE_COALESCE_MS"]
+  G -- 否 --> H["等待最新用户消息<br/>连续静默 messageCoalesceMs"]
   H --> I["读取 recent timeline<br/>及 lastHandledEndUserSeq 之后的用户消息"]
   I --> I2{"存在未处理用户消息?"}
   I2 -- 否 --> R
@@ -59,7 +61,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  A["进入 waitForEndUserQuiet"] --> B["quietMs = max(0, Number<br/>PRIME_MESSAGE_COALESCE_MS 或默认 2000)"]
+  A["进入 waitForEndUserQuiet"] --> B["quietMs = max(0,<br/>会话 messageCoalesceMs)"]
   B --> C{"quietMs 大于 0?"}
   C -- 否 --> Z["结束等待"]
   C -- 是 --> D["查询当前会话最新一条<br/>role=user 消息的 created_at"]
@@ -74,7 +76,7 @@ flowchart TD
 
 计时基准和计算方式如下：
 
-- `PRIME_MESSAGE_COALESCE_MS` 未配置时默认为 `2000` 毫秒；`0` 会关闭等待，负数会被钳制为 `0`。
+- `messageCoalesceMs` 来自本轮解析出的会话配置；用户配置首次初始化时默认 `2000` 毫秒，`0` 会关闭等待。
 - `latest` 来自数据库中当前会话按消息序号排序后的最新 `role = 'user'` 消息，其值是该消息的 `created_at`：[`prime-message.repository.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-message.repository.ts#L61-L68)。
 - 静默截止时间是 `latest + quietMs`。worker 开始处理前已经过去的时间会被扣除；如果任务出队时窗口早已结束，就不再额外等待。
 - 每次等待结束都会重新查询 `latest`。如果期间又写入用户消息，截止时间会移动到“新消息的 `created_at + quietMs`”，直到最后一条用户消息之后连续安静满整个窗口。
@@ -89,7 +91,7 @@ flowchart TD
 12:00:03.500  B 之后已连续静默 2000 ms，窗口结束
 ```
 
-窗口结束后才读取稳定上下文窗口和 `lastHandledEndUserSeq` 之后的用户消息。稳定窗口按单条 `user`/`assistant` 消息计数（不是问答轮次），默认保留 150–249 条；达到 250 条时批量淘汰最早的 100 条，使后续 100 次增长中的前缀保持不变。上下限可通过 `PRIME_FIGURE_CONTEXT_MIN_MESSAGES` 和 `PRIME_FIGURE_CONTEXT_MAX_MESSAGES` 配置。未处理用户消息会在窗口之外优先完整并入，因此极端积压时本轮输入可以临时超过最大值。若没有未处理用户消息，本轮返回 `null`，不会请求 LLM；否则会记录本轮输入所覆盖的最大用户消息序号，构造稳定的输入快照：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L132-L196)。
+窗口结束后才读取稳定上下文窗口和 `lastHandledEndUserSeq` 之后的用户消息。稳定窗口按单条 `user`/`assistant` 消息计数（不是问答轮次），默认保留 150–249 条；达到 250 条时批量淘汰最早的 100 条，使后续 100 次增长中的前缀保持不变。上下限来自有效会话配置的 `context.minimumMessages/maximumMessages`。未处理用户消息会在窗口之外优先完整并入，因此极端积压时本轮输入可以临时超过最大值。若没有未处理用户消息，本轮返回 `null`，不会请求 LLM；否则会记录本轮输入所覆盖的最大用户消息序号，构造稳定的输入快照：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L132-L196)。
 
 静默窗口内到达且在快照查询前已写入的消息，通常会合并进同一次 LLM 决策。快照形成后、LLM 或动作执行期间到达的消息不会被强行塞进已经发出的请求；它们会通过新的队列任务设置 `run-dirty`，当前轮结束后再以 `coalesced_messages` 触发下一轮。下一轮仍会先等待最新用户消息满足静默窗口。决策成功后，只有本轮快照覆盖到的最大用户消息序号会写入 `lastHandledEndUserSeq`，因此快照之后的新消息仍保持未处理状态：[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L164-L196)、[`prime-figure-runtime.service.ts`](../apps/server/src/modules/agents/kinds/prime-figure/prime-figure-runtime.service.ts#L289-L314)。
 
@@ -231,9 +233,9 @@ system prompt 顶部要求：当 `hints` 中出现系统调试指令时，将其
 
 Fish Audio 请求不是 LLM 决策请求，但外部 TTS 服务会看到。运行时不会转换自由文本 tag，两种模式均继续分块读取返回音频、推送现有 `message.audio.*` 事件，并聚合完整 MP3 用于资源持久化：
 
-- 默认关闭：`transcript` delta 只用于消息文字增量展示和实时缓存。最终响应完成并通过 `JSON.parse` 与 `primeFigureDecisionSchema` 校验后，使用 `FISH_AUDIO_TTS_URL`（默认 `https://api.fish.audio/v1/tts`）一次提交完整 transcript。
-- 启用流式语音请求：使用 `FISH_AUDIO_WS_URL`（默认 `wss://api.fish.audio/v1/tts/live`）建立 MessagePack WebSocket，在最终 JSON/schema 校验前发送 transcript delta；达到字符阈值或句末标点时 `flush`，transcript 字段结束时 `stop`。若后续解析或校验失败，连接会被中止，因此该模式延迟更低，但可能产生更多真实停顿或已经生成部分音频。
-- 两种请求都使用 `FISH_AUDIO_API_KEY`、`FISH_AUDIO_REFERENCE_ID`、`FISH_AUDIO_MODEL`、`FISH_AUDIO_LATENCY` 和 `FISH_AUDIO_CHUNK_LENGTH`：[`fish-audio-tts.service.ts`](../apps/server/src/modules/tts/fish-audio-tts.service.ts)。
+- 默认关闭：`transcript` delta 只用于消息文字增量展示和实时缓存。最终响应完成并通过 `JSON.parse` 与 `primeFigureDecisionSchema` 校验后，使用会话 TTS 配置的 `httpUrl` 一次提交完整 transcript。
+- 启用流式语音请求：使用会话 TTS 配置的 `wsUrl` 建立 MessagePack WebSocket，在最终 JSON/schema 校验前发送 transcript delta；达到字符阈值或句末标点时 `flush`，transcript 字段结束时 `stop`。若后续解析或校验失败，连接会被中止，因此该模式延迟更低，但可能产生更多真实停顿或已经生成部分音频。
+- 两种请求都使用同一配置快照中的 `apiKey`、`referenceId`、`model`、`latency` 和 `chunkLength`：[`fish-audio-tts.service.ts`](../apps/server/src/modules/tts/fish-audio-tts.service.ts)。
 
 ## 执行与持久化
 

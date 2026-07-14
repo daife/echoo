@@ -301,13 +301,25 @@ export function App() {
               services.agentService.getPrimeFigureEditSnapshot(agentId),
             exportAgent: (agentId) =>
               services.agentService.exportAgent(agentId),
+            getConversationRuntimeConfig: (conversationId) =>
+              services.runtimeConfigService.getConversationConfig(
+                conversationId,
+              ),
+            updateConversationRuntimeConfig: (conversationId, patch) =>
+              services.runtimeConfigService.updateConversationConfig(
+                conversationId,
+                patch,
+              ),
           }}
           onConversationDeleted={handleConversationDeleted}
         />
       );
     }
     if (view === "bindings") return <BindingsPanel />;
-    if (view === "settings") return <SettingsPage />;
+    if (view === "settings")
+      return (
+        <SettingsPage runtimeConfigService={services.runtimeConfigService} />
+      );
     return (
       <HomePage
         onCreateAgent={() => setView("create")}

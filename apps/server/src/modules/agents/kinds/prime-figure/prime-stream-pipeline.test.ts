@@ -505,7 +505,7 @@ test("a stale dirty wakeup cannot call the LLM after all end-user messages were 
       },
     } as never,
     {
-      getDefaultProvider() {
+      createProvider() {
         providerAccessed = true;
         throw new Error("LLM must not be called");
       },
@@ -517,6 +517,11 @@ test("a stale dirty wakeup cannot call the LLM after all end-user messages were 
     {
       async getPrimeHandledEndUserSequence() {
         return 39;
+      },
+    } as never,
+    {
+      async resolveConversationConfig() {
+        return { config: runtimeConfigForTest() };
       },
     } as never,
   );
@@ -543,6 +548,7 @@ function createSession(overrides?: {
       ownerUserId: "user_1",
       conversationId: "conversation_1",
       voiceRequestStreaming: overrides?.voiceRequestStreaming ?? false,
+      runtimeConfig: runtimeConfigForTest(),
     },
     (overrides?.appPush ?? { pushToUser() {} }) as never,
     (overrides?.tts ?? {
@@ -579,6 +585,41 @@ function createSession(overrides?: {
       ...(overrides?.messages ?? {}),
     } as never,
   );
+}
+
+function runtimeConfigForTest() {
+  return {
+    version: 1 as const,
+    llm: {
+      provider: "openrouter",
+      baseUrl: "https://openrouter.test/api/v1",
+      apiKey: "key",
+      model: "model",
+      temperature: 0.4,
+      maxTokens: 1600,
+    },
+    image: {
+      provider: "openrouter",
+      baseUrl: "https://openrouter.test/api/v1",
+      apiKey: "key",
+      model: "image-model",
+    },
+    tts: {
+      provider: "fish-audio",
+      apiKey: "fish-key",
+      referenceId: "reference",
+      model: "fish-model",
+      httpUrl: "https://fish.test/v1/tts",
+      wsUrl: "wss://fish.test/v1/tts/live",
+      latency: "balanced",
+      chunkLength: 100,
+    },
+    context: { minimumMessages: 150, maximumMessages: 249 },
+    typingCharsPerMinute: Number(
+      process.env.PRIME_TYPING_CHARS_PER_MINUTE ?? 300,
+    ),
+    messageCoalesceMs: 2_000,
+  };
 }
 
 function tick() {

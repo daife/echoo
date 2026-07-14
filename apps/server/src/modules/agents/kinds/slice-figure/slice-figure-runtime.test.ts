@@ -14,7 +14,9 @@ test("slice context keeps a repository-selected 100-199 round window intact", ()
   const history: Message[] = [];
   for (let round = 100; round <= 299; round += 1) {
     history.push(message(`user-${round}`, "user", `user ${round}`));
-    history.push(message(`assistant-${round}`, "assistant", `assistant ${round}`));
+    history.push(
+      message(`assistant-${round}`, "assistant", `assistant ${round}`),
+    );
   }
 
   const selected = selectSliceFigureContextMessages(agent(), history, false);
@@ -80,7 +82,8 @@ test("memory summary prompt resolves the same safe figure placeholders", () => {
   const value = buildFigureMemorySummaryPrompt(
     {
       ...agent().detail,
-      memorySummaryPrompt: "{{user.name}}/{{figure.persona}}/{{figure.currentSituation}}",
+      memorySummaryPrompt:
+        "{{user.name}}/{{figure.persona}}/{{figure.currentSituation}}",
     },
     { user: { displayName: "小林" } },
   );
@@ -100,20 +103,32 @@ test("memory summary rolls the previous summary into only the next completed bat
     createdAt: 1,
     updatedAt: 1,
   };
-  const boundary = { ...message("assistant-1000", "assistant", "新的回复"), sequence: 2000 };
+  const boundary = {
+    ...message("assistant-1000", "assistant", "新的回复"),
+    sequence: 2000,
+  };
   let latest: Message | null = previous;
   let requestText = "";
   const repository = {
     findLatestMemorySummary: async () => latest,
-    findSliceMemorySummaryBoundary: async (_owner: string, _conversation: string, after: number) =>
-      after === 1000 ? boundary : null,
+    findSliceMemorySummaryBoundary: async (
+      _owner: string,
+      _conversation: string,
+      after: number,
+    ) => (after === 1000 ? boundary : null),
     listSliceMemorySummarySource: async () => [
       { ...message("user-1000", "user", "本周期的新原文"), sequence: 1999 },
       boundary,
     ],
     findPendingMemorySummary: async () => null,
-    save: async (input: Message & { ownerUserId: string }) => ({ ...input, sequence: 2001 }),
-    completeMemorySummary: async (input: { messageId: string; text: string }) => {
+    save: async (input: Message & { ownerUserId: string }) => ({
+      ...input,
+      sequence: 2001,
+    }),
+    completeMemorySummary: async (input: {
+      messageId: string;
+      text: string;
+    }) => {
       latest = {
         id: input.messageId,
         sequence: 2001,
@@ -131,16 +146,42 @@ test("memory summary rolls the previous summary into only the next completed bat
   };
   const provider = {
     id: "openrouter" as const,
-    createChatCompletion: async (input: { messages: Array<{ content: string }> }) => {
+    createChatCompletion: async (input: {
+      messages: Array<{ content: string }>;
+    }) => {
       requestText = input.messages.at(-1)?.content ?? "";
-      return { text: "第二阶段滚动总结", providerId: "openrouter" as const, model: "model" };
+      return {
+        text: "第二阶段滚动总结",
+        providerId: "openrouter" as const,
+        model: "model",
+      };
     },
   };
   const runtime = new SliceFigureRuntimeService(
     { findByConversation: async () => agent() } as never,
     repository as never,
-    { getDefaultProvider: () => provider, getDefaultModel: () => "model" } as never,
+    { createProvider: () => provider } as never,
     { findById: async () => null } as never,
+    {
+      resolveConversationConfig: async () => ({
+        config: {
+          version: 1,
+          llm: {
+            provider: "openrouter",
+            baseUrl: "https://example.test",
+            apiKey: "key",
+            model: "model",
+            temperature: 0.8,
+            maxTokens: 1200,
+          },
+          context: {
+            minimumRounds: 100,
+            maximumRounds: 199,
+            memorySummaryRounds: 500,
+          },
+        },
+      }),
+    } as never,
   );
 
   const summaries = await runtime.createPendingMemorySummaries({
@@ -154,7 +195,11 @@ test("memory summary rolls the previous summary into only the next completed bat
   assert.doesNotMatch(requestText, /第一阶段原始对话/);
 });
 
-function message(id: string, role: "user" | "assistant", text: string): Message {
+function message(
+  id: string,
+  role: "user" | "assistant",
+  text: string,
+): Message {
   return {
     id,
     conversationId: "conversation-1",

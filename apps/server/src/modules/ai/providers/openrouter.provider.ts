@@ -4,13 +4,18 @@ import type {
   ChatCompletionResult,
   ChatDelta,
 } from "../ai-provider.interface.js";
+import type { StoredTextModelConfig } from "../../runtime-config/runtime-config.types.js";
 import {
   createOpenAiCompatibleChatCompletion,
   streamOpenAiCompatibleChatCompletion,
 } from "./openai-compatible-chat.js";
 
 export class OpenRouterProvider implements AiTextProvider {
-  readonly id = "openrouter" as const;
+  readonly id: string;
+
+  constructor(private readonly config: StoredTextModelConfig) {
+    this.id = config.provider;
+  }
 
   async createChatCompletion(
     input: ChatCompletionInput,
@@ -24,13 +29,12 @@ export class OpenRouterProvider implements AiTextProvider {
 
   private buildRequest(input: ChatCompletionInput) {
     const sessionId = normalizeSessionId(input.sessionId);
-    const upstreamProvider = process.env.OPENROUTER_PROVIDER?.trim();
+    const upstreamProvider = this.config.routingProvider?.trim();
 
     return {
       providerId: this.id,
-      apiKey: process.env.OPENROUTER_API_KEY,
-      baseUrl:
-        process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1",
+      apiKey: this.config.apiKey,
+      baseUrl: this.config.baseUrl,
       completion: input,
       headers: {
         "HTTP-Referer":

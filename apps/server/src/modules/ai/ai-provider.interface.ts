@@ -1,4 +1,4 @@
-export type AiProviderId = "openrouter";
+export type AiProviderId = string;
 
 export interface TextContentPart {
   type: "text";

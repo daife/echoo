@@ -8,6 +8,7 @@ export interface GeneratedImage {
   data: Buffer;
   model: string;
 }
+import type { StoredModelEndpointConfig } from "../runtime-config/runtime-config.types.js";
 
 interface OpenRouterImageResponse {
   choices?: Array<{
@@ -22,21 +23,20 @@ interface OpenRouterImageResponse {
 }
 
 export class OpenRouterImageGenerationService {
-  constructor(private readonly fetcher: typeof fetch = fetch) {}
+  constructor(
+    private readonly config: StoredModelEndpointConfig,
+    private readonly fetcher: typeof fetch = fetch,
+  ) {}
 
   async generate(input: {
     prompt: string;
     references: ImageGenerationReference[];
   }): Promise<GeneratedImage> {
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured.");
-    const model =
-      process.env.DEFAULT_PRIME_IMAGE_MODEL ??
-      "google/gemini-3.1-flash-lite-image";
-    const upstreamProvider = process.env.OPENROUTER_PROVIDER?.trim();
-    const baseUrl = (
-      process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1"
-    ).replace(/\/+$/, "");
+    const apiKey = this.config.apiKey;
+    if (!apiKey) throw new Error("Image generation API key is not configured.");
+    const model = this.config.model;
+    const upstreamProvider = this.config.routingProvider?.trim();
+    const baseUrl = this.config.baseUrl.replace(/\/+$/, "");
     const response = await this.fetcher(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {

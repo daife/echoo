@@ -66,6 +66,26 @@ CREATE TABLE IF NOT EXISTS conversations (
   CONSTRAINT fk_conversations_agent FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS user_runtime_configs (
+  owner_user_id VARCHAR(64) PRIMARY KEY,
+  config JSON NOT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  CONSTRAINT fk_user_runtime_configs_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS conversation_runtime_configs (
+  conversation_id VARCHAR(64) PRIMARY KEY,
+  owner_user_id VARCHAR(64) NOT NULL,
+  mode ENUM('global', 'custom') NOT NULL DEFAULT 'global',
+  custom_config JSON NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  INDEX idx_conversation_runtime_configs_owner (owner_user_id),
+  CONSTRAINT fk_conversation_runtime_configs_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_conversation_runtime_configs_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS messages (
   seq BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   id VARCHAR(64) NOT NULL,

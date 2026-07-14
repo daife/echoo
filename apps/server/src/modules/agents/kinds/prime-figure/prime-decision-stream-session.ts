@@ -16,6 +16,7 @@ import {
 import type { PrimeDecisionStreamFieldDelta } from "./prime-decision-stream-parser.js";
 import { PrimeConversationMediaRepository } from "./prime-conversation-media.repository.js";
 import { MessageRepository } from "../../../messaging/message.repository.js";
+import type { StoredPrimeFigureRuntimeConfig } from "../../../runtime-config/runtime-config.types.js";
 
 interface ResolvedPrimeMedia {
   resourceId: string;
@@ -95,20 +96,28 @@ interface StreamedActionState {
 export class PrimeDecisionStreamSession {
   private readonly actions = new Map<number, StreamedActionState>();
   private deliveryTail: Promise<number> = Promise.resolve(Date.now());
+  private readonly tts: FishAudioTtsService;
+  private readonly imageGeneration: OpenRouterImageGenerationService;
 
   constructor(
     private readonly input: {
       ownerUserId: string;
       conversationId: string;
       voiceRequestStreaming: boolean;
+      runtimeConfig: StoredPrimeFigureRuntimeConfig;
     },
     private readonly appPush = new AppPushService(),
-    private readonly tts = new FishAudioTtsService(),
+    tts?: FishAudioTtsService,
     private readonly resources = new ResourceRepository(),
-    private readonly imageGeneration = new OpenRouterImageGenerationService(),
+    imageGeneration?: OpenRouterImageGenerationService,
     private readonly conversationMedia = new PrimeConversationMediaRepository(),
     private readonly messages = new MessageRepository(),
-  ) {}
+  ) {
+    this.tts = tts ?? new FishAudioTtsService(input.runtimeConfig.tts);
+    this.imageGeneration =
+      imageGeneration ??
+      new OpenRouterImageGenerationService(input.runtimeConfig.image);
+  }
 
   handleField(event: PrimeDecisionStreamFieldDelta) {
     const state = this.getAction(event.actionIndex);
@@ -339,7 +348,10 @@ export class PrimeDecisionStreamSession {
         await state.text.complete.promise;
         const elapsed = Date.now() - predecessorCompletedAt;
         const remaining =
-          textMessageGapMs(state.fields[visibleField(type)] ?? "") - elapsed;
+          textMessageGapMs(
+            state.fields[visibleField(type)] ?? "",
+            this.input.runtimeConfig.typingCharsPerMinute,
+          ) - elapsed;
         if (remaining > 0) await delay(remaining);
       }
       const now = Date.now();
@@ -734,8 +746,7 @@ function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function textMessageGapMs(text: string) {
-  const configured = Number(process.env.PRIME_TYPING_CHARS_PER_MINUTE ?? 300);
+export function textMessageGapMs(text: string, configured: number) {
   const charactersPerMinute =
     Number.isFinite(configured) && configured > 0 ? configured : 300;
   const characterCount = Array.from(text).length;
