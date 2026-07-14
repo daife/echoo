@@ -48,6 +48,16 @@ export function isVisibleConversationMessage(message: LocalMessage) {
   return Boolean(message.content.text?.trim());
 }
 
+export function getPrimeRuntimeErrorText(message: LocalMessage) {
+  if (
+    message.role !== "system" ||
+    message.contentType !== "system" ||
+    message.metadata?.kind !== "prime_runtime_error"
+  )
+    return null;
+  return message.content.text?.trim() || null;
+}
+
 export function getOutgoingDeliveryState(
   message: LocalMessage,
 ): "sending" | "failed" | undefined {
@@ -144,6 +154,40 @@ export function shouldShowMessageTime(
     previousTimestamp === undefined ||
     timestamp - previousTimestamp >= FIVE_MINUTES_MS
   );
+}
+
+export function shouldShowTimelineItemTime(
+  items: ReadonlyArray<{
+    createdAt: number;
+    kind?: string;
+    isSourceStart?: boolean;
+  }>,
+  index: number,
+) {
+  const item = items[index];
+  if (
+    !item ||
+    item.createdAt <= 0 ||
+    item.isSourceStart === false ||
+    isTimelineNotice(item)
+  )
+    return false;
+
+  for (let previousIndex = index - 1; previousIndex >= 0; previousIndex -= 1) {
+    const previous = items[previousIndex];
+    if (
+      !previous ||
+      previous.isSourceStart === false ||
+      isTimelineNotice(previous)
+    )
+      continue;
+    return shouldShowMessageTime(item.createdAt, previous.createdAt);
+  }
+  return true;
+}
+
+function isTimelineNotice(item: { kind?: string }) {
+  return item.kind === "memory-summary" || item.kind === "runtime-error";
 }
 
 export function formatConversationTime(timestamp: number, now = Date.now()) {

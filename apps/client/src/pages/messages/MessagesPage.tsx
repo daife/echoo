@@ -42,13 +42,14 @@ import {
 import { MessageComposer } from "../../features/messages/components/MessageComposer";
 import {
   formatConversationTime,
+  getPrimeRuntimeErrorText,
   getOutgoingDeliveryState,
   isVisibleConversationMessage,
   getConversationPresenceLabel,
   getPrimePresencePhaseDuration,
   type PrimePresencePhase,
   shouldShowFigurePendingIndicator,
-  shouldShowMessageTime,
+  shouldShowTimelineItemTime,
   splitFigureReply,
 } from "../../features/messages/messagePresentation";
 import {
@@ -441,14 +442,10 @@ export function MessagesPage({
         ) : null}
         <div className="flex flex-col gap-5">
           {visibleMessages.map((message, index) => {
-            const previous = visibleMessages[index - 1];
-            const showTime =
-              message.kind !== "memory-summary" &&
-              message.isSourceStart !== false &&
-              shouldShowMessageTime(message.createdAt, previous?.createdAt);
+            const showTime = shouldShowTimelineItemTime(visibleMessages, index);
             return (
               <Fragment key={message.id}>
-                {showTime && message.createdAt > 0 ? (
+                {showTime ? (
                   <div className="self-center text-[11px] tabular-nums text-white/32">
                     {formatConversationTime(message.createdAt)}
                   </div>
@@ -1039,6 +1036,20 @@ function toBubbleMessages(
   canEditFigureMessages: boolean,
   agentType: Agent["type"],
 ): MessageBubbleModel[] {
+  const runtimeErrorText = getPrimeRuntimeErrorText(message);
+  if (runtimeErrorText)
+    return [
+      {
+        id: message.id,
+        sourceMessageId: message.id,
+        from: "system",
+        text: runtimeErrorText,
+        createdAt: message.createdAt,
+        kind: "runtime-error",
+        canRollback: false,
+        canEdit: false,
+      },
+    ];
   if (message.metadata?.kind === "memory_summary")
     return [
       {

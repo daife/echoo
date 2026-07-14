@@ -51,6 +51,7 @@ import {
 } from "./prime-time.js";
 import { RuntimeConfigService } from "../../../runtime-config/runtime-config.service.js";
 import type { StoredPrimeFigureRuntimeConfig } from "../../../runtime-config/runtime-config.types.js";
+import { PrimeRuntimeFailureNotifier } from "./prime-runtime-failure-notifier.js";
 
 const PRIME_VISIBLE_MEMORY_LIMIT = 20;
 const RECALL_HINT_PATTERN = /记得|不记得|忘了|还记得|remember|forgot|recal+l/i;
@@ -91,6 +92,7 @@ export class PrimeFigureRuntimeService {
     private readonly runtimeConfigs = new RuntimeConfigService(),
     private readonly mediaAnnotations = new PrimeMediaAnnotationService(),
     private readonly contentOptimizer = new PrimeContentOptimizer(),
+    private readonly failureNotifier = new PrimeRuntimeFailureNotifier(),
   ) {}
 
   async requestDecision(input: {
@@ -108,12 +110,11 @@ export class PrimeFigureRuntimeService {
     if (!agent || agent.type !== "prime-figure") return null;
     const state = await this.states.findByAgent(input.ownerUserId, agent.id);
     if (!state) {
-      await this.logs.save({
+      await this.recordTerminalFailure({
         ownerUserId: input.ownerUserId,
         agentId: agent.id,
         conversationId: input.conversationId,
-        action: { type: "prime_runtime", trigger },
-        status: "failed",
+        trigger,
         errorMessage: "本初角色状态缺失。",
       });
       return null;
@@ -147,17 +148,42 @@ export class PrimeFigureRuntimeService {
         runtimeConfig,
       });
     } catch (error) {
-      await this.logs.save({
+      await this.recordTerminalFailure({
         ownerUserId: input.ownerUserId,
         agentId: agent.id,
         conversationId: input.conversationId,
-        action: { type: "prime_runtime", trigger },
-        status: "failed",
+        trigger,
         errorMessage:
           error instanceof Error ? error.message : "本初角色运行时执行失败。",
       });
       return null;
     }
+  }
+
+  private async recordTerminalFailure(input: {
+    ownerUserId: string;
+    agentId: string;
+    conversationId: string;
+    trigger: PrimeDecisionTrigger;
+    errorMessage: string;
+  }) {
+    const now = Date.now();
+    await this.logs.save({
+      ownerUserId: input.ownerUserId,
+      agentId: input.agentId,
+      conversationId: input.conversationId,
+      action: { type: "prime_runtime", trigger: input.trigger },
+      status: "failed",
+      errorMessage: input.errorMessage,
+      now,
+    });
+    await this.failureNotifier.notify({
+      ownerUserId: input.ownerUserId,
+      conversationId: input.conversationId,
+      trigger: input.trigger,
+      errorMessage: input.errorMessage,
+      now,
+    });
   }
 
   private async waitForEndUserQuiet(

@@ -4,10 +4,12 @@ import {
   getOutgoingDeliveryState,
   getConversationPresenceLabel,
   getPrimePresencePhaseDuration,
+  getPrimeRuntimeErrorText,
   isVisibleConversationMessage,
   sanitizeVoiceTranscript,
   parsePrimeFigureHintCommand,
   shouldShowMessageTime,
+  shouldShowTimelineItemTime,
   shouldShowFigurePendingIndicator,
   splitFigureReply,
   tokenizeParentheticalText,
@@ -79,6 +81,26 @@ describe("conversation message visibility", () => {
         metadata: { audioStreaming: true },
       }),
     ).toBe(true);
+  });
+
+  it("recognizes persisted Prime runtime errors", () => {
+    const runtimeError: LocalMessage = {
+      ...baseMessage,
+      role: "system",
+      contentType: "system",
+      content: { text: "openrouter API key is not configured." },
+      status: "delivered",
+      metadata: { kind: "prime_runtime_error" },
+    };
+    expect(getPrimeRuntimeErrorText(runtimeError)).toBe(
+      "openrouter API key is not configured.",
+    );
+    expect(
+      getPrimeRuntimeErrorText({
+        ...runtimeError,
+        metadata: { kind: "memory_summary" },
+      }),
+    ).toBeNull();
   });
 });
 
@@ -225,5 +247,19 @@ describe("message time presentation", () => {
     expect(shouldShowMessageTime(timestamp)).toBe(true);
     expect(shouldShowMessageTime(timestamp + 299_999, timestamp)).toBe(false);
     expect(shouldShowMessageTime(timestamp + 300_000, timestamp)).toBe(true);
+  });
+
+  it("does not show or reset time separators for timeline notices", () => {
+    const timestamp = new Date(2026, 6, 12, 9, 5).getTime();
+    const items = [
+      { createdAt: timestamp, kind: "text" },
+      { createdAt: timestamp + 240_000, kind: "runtime-error" },
+      { createdAt: timestamp + 300_000, kind: "text" },
+      { createdAt: timestamp + 360_000, kind: "memory-summary" },
+    ];
+    expect(shouldShowTimelineItemTime(items, 0)).toBe(true);
+    expect(shouldShowTimelineItemTime(items, 1)).toBe(false);
+    expect(shouldShowTimelineItemTime(items, 2)).toBe(true);
+    expect(shouldShowTimelineItemTime(items, 3)).toBe(false);
   });
 });
