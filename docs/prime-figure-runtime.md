@@ -51,7 +51,7 @@ API 的 `user` 表示整个运行数据包；数组中每条时间线 JSON 的 `
 `user` 数据包包含：
 
 - 按时间排序的文本、图片、视频、语音、贴纸和转账记录。
-- 当前时间、星期、角色情绪、关系、变量和可见记忆。
+- 当前时间、星期、角色当前处境、行程、完整日程、情绪、关系、变量和可见记忆。
 - `availableReferenceImages`。
 - 最终的 `hints` 数组。
 
@@ -61,11 +61,12 @@ API 的 `user` 表示整个运行数据包；数组中每条时间线 JSON 的 `
 
 ## Prompt 与响应 Schema
 
-System prompt 由独立 composer 按配置组合核心决策、能力、图片、语音、状态、记忆、输出和角色资料模块。
+System prompt 由独立 composer 按配置组合核心决策、能力、图片、语音、状态、记忆、输出和稳定角色资料模块。可由运行时更新的 `currentSituation`、`itinerary`、`schedule` 只放在末尾 user 数据包的 `figureNow` 中，避免动态状态破坏 system 前缀缓存。
 
-- 关闭图片发送时，不拼入图片规则，响应 schema 也不包含 image action。
-- 关闭语音发送时，不拼入语音规则，响应 schema 也不包含 voice action。
-- 能力开关是硬边界；即使 `/hint` 要求关闭的能力，也不能绕过 schema。
+- 关闭图片发送时，不拼入图片规则，显式声明暂不支持 image action，响应 schema 也不包含 image action。
+- 关闭语音发送时，不拼入语音规则，显式声明暂不支持 voice action，响应 schema 也不包含 voice action。
+- 能力开关是执行硬边界；即使 `/hint` 要求关闭的能力，也不会执行对应 action。
+- 如果模型仍误输出已关闭的 image/voice action，能力感知的解析和流式运行时会静默忽略该 action，不创建消息、不调用媒体服务，也不使整轮失败。其余合法 action、状态和记忆更新继续执行；启用能力的畸形输出及未知 action 仍按契约失败。
 - 图片和语音内嵌指导分别支持 `basic`、`medium`、`advanced`。
 
 原生媒体理解时，尚未标注的原始媒体进入决策 user 消息，hints 和严格响应 schema 要求返回 `mediaAnnotations`。辅助理解时，决策模型只看到已持久化的文本描述或 transcript，不再看到原始媒体，也不再收到该媒体的标注规则或输出字段。两种模式可以按视觉和听觉混合使用。

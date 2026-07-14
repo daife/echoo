@@ -52,6 +52,10 @@ import {
 import { RuntimeConfigService } from "../../../runtime-config/runtime-config.service.js";
 import type { StoredPrimeFigureRuntimeConfig } from "../../../runtime-config/runtime-config.types.js";
 import { PrimeRuntimeFailureNotifier } from "./prime-runtime-failure-notifier.js";
+import {
+  filterPrimeActionsByCapabilities,
+  isPrimeOutputEnabled,
+} from "./prime-output-capabilities.js";
 
 const PRIME_VISIBLE_MEMORY_LIMIT = 20;
 const RECALL_HINT_PATTERN = /记得|不记得|忘了|还记得|remember|forgot|recal+l/i;
@@ -289,7 +293,7 @@ export class PrimeFigureRuntimeService {
         packet.availableReferenceImages.map((media) => media.id),
         input.runtimeConfig,
       );
-      const { decision, mediaAnnotations } = envelope;
+      const { decision, mediaAnnotations, sourceActionIndices } = envelope;
       const optimizationFailures: Array<{
         kind: "image" | "voice";
         actionIndex: number;
@@ -304,13 +308,24 @@ export class PrimeFigureRuntimeService {
           input.conversationId,
           {
             onVoiceStart: (index) =>
-              streamSession.beginVoiceOptimization(index),
+              streamSession.beginVoiceOptimization(
+                sourceActionIndices[index] ?? index,
+              ),
             onVoiceDelta: (index, delta) =>
-              streamSession.pushOptimizedVoiceDelta(index, delta),
+              streamSession.pushOptimizedVoiceDelta(
+                sourceActionIndices[index] ?? index,
+                delta,
+              ),
             onVoiceComplete: (index, transcript) =>
-              streamSession.completeVoiceOptimization(index, transcript),
+              streamSession.completeVoiceOptimization(
+                sourceActionIndices[index] ?? index,
+                transcript,
+              ),
             onVoiceFallback: (index, transcript) =>
-              streamSession.fallbackVoiceOptimization(index, transcript),
+              streamSession.fallbackVoiceOptimization(
+                sourceActionIndices[index] ?? index,
+                transcript,
+              ),
             onFailure: (failure) => optimizationFailures.push(failure),
           },
         );
@@ -329,7 +344,10 @@ export class PrimeFigureRuntimeService {
           status: "failed",
           errorMessage: failure.error,
         });
-      const streamed = await streamSession.finalize(finalDecision);
+      const streamed = await streamSession.finalize(
+        finalDecision,
+        sourceActionIndices,
+      );
       for (const [
         actionIndex,
         errorMessage,
@@ -957,6 +975,20 @@ export async function buildPrimeChatMessages(
       now: formatReadableMinute(now, timezone),
       weekday: formatWeekdayCode(now, timezone),
       figureNow: {
+        currentSituation: sanitizeVisibleText(
+          agent.detail.currentSituation,
+          timezone,
+        ),
+        itinerary: sanitizeVisibleText(agent.detail.itinerary, timezone),
+        schedule: {
+          segments: agent.detail.schedule.segments.map((segment) => ({
+            label: sanitizeVisibleText(segment.label, timezone),
+            days: segment.days,
+            start: segment.start,
+            end: segment.end,
+            description: sanitizeVisibleText(segment.description, timezone),
+          })),
+        },
         mood: state.mood
           ? `figure当前情绪：“${state.mood}”。该判断形成于${describeAge(state.moodObservedAtMs, now)}。`
           : "figure当前没有已记录的情绪。",
@@ -1350,7 +1382,7 @@ function buildSendMessageActionSchema(
             required: ["type", "text"],
             additionalProperties: false,
           },
-          ...(runtimeConfig.outputs.image.enabled
+          ...(isPrimeOutputEnabled(runtimeConfig, "image")
             ? [
                 {
                   type: "object",
@@ -1391,7 +1423,7 @@ function buildSendMessageActionSchema(
                 },
               ]
             : []),
-          ...(runtimeConfig.outputs.voice.enabled
+          ...(isPrimeOutputEnabled(runtimeConfig, "voice")
             ? [
                 {
                   type: "object",
@@ -1486,26 +1518,34 @@ function parseRecallArguments(value: string) {
   }
 }
 
-function parsePrimeDecisionEnvelope(
+export function parsePrimeDecisionEnvelope(
   responseText: string,
   pendingMedia: PendingMediaAnnotation[],
   availableReferenceImageIds: string[],
   runtimeConfig: StoredPrimeFigureRuntimeConfig,
 ) {
   const raw = JSON.parse(responseText) as Record<string, unknown>;
+  const rawActionFilter = Array.isArray(raw.actions)
+    ? filterPrimeActionsByCapabilities(raw.actions, runtimeConfig)
+    : null;
+  const parsed = primeFigureDecisionSchema.parse(
+    rawActionFilter ? { ...raw, actions: rawActionFilter.actions } : raw,
+  ) as PrimeFigureDecision;
+  const parsedActionFilter = filterPrimeActionsByCapabilities(
+    parsed.actions,
+    runtimeConfig,
+    rawActionFilter?.sourceIndices,
+  );
   const decision = filterUnavailableReferenceMediaIds(
-    primeFigureDecisionSchema.parse(raw) as PrimeFigureDecision,
+    {
+      ...parsed,
+      actions: parsedActionFilter.actions as PrimeFigureDecision["actions"],
+    },
     availableReferenceImageIds,
   );
-  for (const action of decision.actions) {
-    if (action.type !== "send_message") continue;
-    if (action.message.type === "image" && !runtimeConfig.outputs.image.enabled)
-      throw new Error("当前运行配置禁止 figure 发送图片。");
-    if (action.message.type === "voice" && !runtimeConfig.outputs.voice.enabled)
-      throw new Error("当前运行配置禁止 figure 发送语音。");
-  }
   return {
     decision,
+    sourceActionIndices: parsedActionFilter.sourceIndices,
     mediaAnnotations: normalizeMediaAnnotations(
       raw.mediaAnnotations,
       pendingMedia,

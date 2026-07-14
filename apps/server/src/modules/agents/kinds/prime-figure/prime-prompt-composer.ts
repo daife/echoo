@@ -2,16 +2,13 @@ import type { PrimeFigureAgent } from "@echoo/shared";
 import { APP_TIME_ZONE } from "../../../../shared/constants/time.js";
 import type { StoredPrimeFigureRuntimeConfig } from "../../../runtime-config/runtime-config.types.js";
 import { formatReadableMinute } from "./prime-time.js";
+import { isPrimeOutputEnabled } from "./prime-output-capabilities.js";
 
 export function buildPrimeSystemPrompt(
   agent: PrimeFigureAgent,
   config: StoredPrimeFigureRuntimeConfig,
 ) {
   const timezone = APP_TIME_ZONE;
-  const schedule = agent.detail.schedule.segments.map(
-    (segment) =>
-      `${segment.days.join(",")} ${segment.start}-${segment.end} ${segment.label}: ${sanitizePromptText(segment.description, timezone)}`,
-  );
   const parameters = agent.detail.variableDefinitions.map(
     (definition) =>
       `${definition.key} (${definition.type}, nullable): ${sanitizePromptText(definition.description, timezone)}`,
@@ -24,10 +21,10 @@ export function buildPrimeSystemPrompt(
     DECISION_RULES,
     buildActionRules(config),
     SEND_MESSAGE_RULES,
-    ...(config.outputs.image.enabled
+    ...(isPrimeOutputEnabled(config, "image")
       ? [IMAGE_MESSAGE_RULES, imageGuidance(config.outputs.image.guidanceLevel)]
       : []),
-    ...(config.outputs.voice.enabled
+    ...(isPrimeOutputEnabled(config, "voice")
       ? [voiceGuidance(config.outputs.voice.guidanceLevel)]
       : []),
     STATE_UPDATE_RULES,
@@ -39,9 +36,6 @@ export function buildPrimeSystemPrompt(
     `性格：${sanitizePromptText(agent.detail.personality, timezone)}`,
     `回复风格：${sanitizePromptText(agent.detail.responseStyle, timezone)}`,
     `决策风格：${sanitizePromptText(agent.detail.decisionStyle, timezone) || "无额外决策风格。"}`,
-    `当前处境：${sanitizePromptText(agent.detail.currentSituation, timezone) || "无额外当前处境。"}`,
-    `行程：${sanitizePromptText(agent.detail.itinerary, timezone) || "无行程。"}`,
-    `日程：\n${schedule.length ? schedule.join("\n") : "无日程时段。"}`,
     `变量：\n${parameters.length ? parameters.join("\n") : "无额外变量。"}`,
   ];
   return blocks.join("\n");
@@ -90,12 +84,20 @@ const DECISION_RULES = `先在rationale中写出简洁的决策分析。分析fi
 function buildActionRules(config: StoredPrimeFigureRuntimeConfig) {
   const media = [
     "文本",
-    ...(config.outputs.image.enabled ? ["图片"] : []),
-    ...(config.outputs.voice.enabled ? ["语音"] : []),
+    ...(isPrimeOutputEnabled(config, "image") ? ["图片"] : []),
+    ...(isPrimeOutputEnabled(config, "voice") ? ["语音"] : []),
   ].join("、");
+  const unavailable = [
+    ...(!isPrimeOutputEnabled(config, "image")
+      ? ["暂不支持image action。"]
+      : []),
+    ...(!isPrimeOutputEnabled(config, "voice")
+      ? ["暂不支持voice action。"]
+      : []),
+  ];
   return `actions 注意事项：
 figure可以发送${media}消息，也可以用 silence 表示本次不回复，或用 mute 管理对新消息的屏蔽状态。
-silence 只表示本次不回复，不影响后续消息。mute.revisitAfterMinutes 使用正整数时，会在指定分钟内屏蔽end_user的新消息；使用 null 时解除当前mute状态。`;
+${unavailable.length ? `${unavailable.join("\n")}\n` : ""}silence 只表示本次不回复，不影响后续消息。mute.revisitAfterMinutes 使用正整数时，会在指定分钟内屏蔽end_user的新消息；使用 null 时解除当前mute状态。`;
 }
 
 const SEND_MESSAGE_RULES = `send_message 注意事项：

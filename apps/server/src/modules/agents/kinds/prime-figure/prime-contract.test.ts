@@ -9,6 +9,7 @@ import {
 } from "@echoo/shared";
 import type {
   PrimeFigureAction,
+  PrimeFigureAgent,
   PrimeFigureDecision,
   PrimeFigureState,
 } from "@echoo/shared";
@@ -349,6 +350,108 @@ test("prime debug hints stay inside the single user packet", async () => {
     String(context && "text" in context ? context.text : ""),
     /请留下来/,
   );
+});
+
+test("prime dynamic figure context lives only in the final user packet", async () => {
+  const agent = {
+    id: "agent_1",
+    ownerUserId: "user_1",
+    type: "prime-figure",
+    name: "Mira",
+    attributes: [],
+    tags: [],
+    introduction: "",
+    isPublic: false,
+    conversationId: "conv_1",
+    createdAt: 1,
+    updatedAt: 1,
+    detail: {
+      prologueHtml: "",
+      linkedAgentIds: [],
+      persona: "固定人设",
+      background: "固定背景",
+      personality: "固定性格",
+      responseStyle: "固定风格",
+      decisionStyle: "",
+      currentSituation: "独特处境 2026-07-14T10:30:45+08:00",
+      itinerary: "独特行程",
+      schedule: {
+        segments: [
+          {
+            label: "独特日程",
+            days: ["tue"],
+            start: "10:00",
+            end: "11:00",
+            description: "独特说明 2026-07-14T10:00:30+08:00",
+          },
+        ],
+      },
+      variableDefinitions: [],
+      referenceImages: [],
+      voiceRequestStreaming: false,
+    },
+  } as PrimeFigureAgent;
+  const buildPacket = (value: PrimeFigureAgent) =>
+    buildPrimeChatMessages(
+      value,
+      {
+        variables: {},
+        memories: [],
+        mood: "平静",
+        moodObservedAtMs: 1,
+        relationshipStatus: "朋友",
+        updatedAt: 1,
+      },
+      [],
+      "end_user_message",
+      "user_1",
+      {} as never,
+      {
+        async listAvailableImages() {
+          return [];
+        },
+      } as never,
+      0,
+      undefined,
+      buildRuntimeConfigDefaults().primeFigure,
+    );
+  const packet = await buildPacket(agent);
+  const changed = structuredClone(agent);
+  changed.detail.currentSituation = "另一个处境";
+  changed.detail.itinerary = "另一个行程";
+  changed.detail.schedule = { segments: [] };
+  const changedPacket = await buildPacket(changed);
+
+  const system = String(packet.messages[0]?.content);
+  assert.equal(system, changedPacket.messages[0]?.content);
+  assert.doesNotMatch(system, /独特处境|独特行程|独特日程|独特说明/);
+
+  const userContent = packet.messages[1]?.content;
+  assert.ok(Array.isArray(userContent));
+  const contextPart = userContent.at(-1);
+  assert.equal(contextPart?.type, "text");
+  const context = JSON.parse(
+    String(contextPart && "text" in contextPart ? contextPart.text : "{}"),
+  ) as {
+    figureNow: {
+      currentSituation: string;
+      itinerary: string;
+      schedule: PrimeFigureAgent["detail"]["schedule"];
+    };
+  };
+  assert.equal(context.figureNow.currentSituation, "独特处境 2026-07-14T10:30");
+  assert.equal(context.figureNow.itinerary, "独特行程");
+  assert.deepEqual(context.figureNow.schedule, {
+    segments: [
+      {
+        label: "独特日程",
+        days: ["tue"],
+        start: "10:00",
+        end: "11:00",
+        description: "独特说明 2026-07-14T10:00",
+      },
+    ],
+  });
 });
 
 test("prime context exposes only the latest twenty persistent memories", async () => {

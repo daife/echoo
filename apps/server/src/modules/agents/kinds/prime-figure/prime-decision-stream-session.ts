@@ -18,6 +18,7 @@ import { PrimeConversationMediaRepository } from "./prime-conversation-media.rep
 import { primeModelSessionId } from "./prime-model-session.js";
 import { MessageRepository } from "../../../messaging/message.repository.js";
 import type { StoredPrimeFigureRuntimeConfig } from "../../../runtime-config/runtime-config.types.js";
+import { isPrimeOutputMessageTypeEnabled } from "./prime-output-capabilities.js";
 
 interface ResolvedPrimeMedia {
   resourceId: string;
@@ -87,6 +88,7 @@ interface StreamedActionState {
   fields: Partial<
     Record<"text" | "description" | "generationPrompt" | "transcript", string>
   >;
+  ignored: boolean;
   created: boolean;
   revealed: boolean;
   createdAt?: number;
@@ -101,6 +103,7 @@ export class PrimeDecisionStreamSession {
   private readonly tts: FishAudioTtsService;
   private readonly imageGeneration: OpenRouterImageGenerationService;
   private finalizing = false;
+  private scheduledMessageCount = 0;
 
   constructor(
     private readonly input: {
@@ -130,18 +133,30 @@ export class PrimeDecisionStreamSession {
     if (event.field === "type") {
       if (!event.complete) state.typeBuffer += event.delta;
       if (event.complete && isMessageType(state.typeBuffer)) {
+        if (
+          !isPrimeOutputMessageTypeEnabled(
+            this.input.runtimeConfig,
+            state.typeBuffer,
+          )
+        ) {
+          state.ignored = true;
+          return;
+        }
         setActionKind(state, state.typeBuffer);
         if (!(
           state.typeBuffer === "voice" &&
           this.input.runtimeConfig.optimization.voice.enabled
         ))
-          this.ensureCreated(event.actionIndex, state);
+          this.ensureCreated(state);
       }
       return;
     }
 
+    if (state.ignored) return;
+
     if (event.field === "referenceMediaId") {
-      const image = ensureImageState(state);
+      if (state.kind.type !== "image") return;
+      const image = state.kind;
       image.referenceMediaIdBuffer += event.delta;
       if (event.complete) {
         if (image.referenceMediaIdBuffer)
@@ -151,7 +166,8 @@ export class PrimeDecisionStreamSession {
       return;
     }
     if (event.field === "referenceMediaIds") {
-      ensureImageState(state).referenceMediaIdsComplete = true;
+      if (state.kind.type !== "image") return;
+      state.kind.referenceMediaIdsComplete = true;
       this.maybeStartImage(state);
       return;
     }
@@ -170,8 +186,10 @@ export class PrimeDecisionStreamSession {
     )
       this.ensureStreamingTts(state);
     if (event.field === "generationPrompt" && event.complete) {
-      ensureImageState(state).generationPromptComplete = true;
-      this.maybeStartImage(state);
+      if (state.kind.type === "image") {
+        state.kind.generationPromptComplete = true;
+        this.maybeStartImage(state);
+      }
     }
     if (
       state.created &&
@@ -197,7 +215,10 @@ export class PrimeDecisionStreamSession {
       this.finishStreamingVoice(state);
   }
 
-  async finalize(decision: PrimeFigureDecision) {
+  async finalize(
+    decision: PrimeFigureDecision,
+    sourceActionIndices: number[] = decision.actions.map((_, index) => index),
+  ) {
     this.finalizing = true;
     const voiceMedia = new Map<number, ResolvedPrimeVoiceMedia>();
     const imageMedia = new Map<number, ResolvedPrimeImageMedia>();
@@ -205,7 +226,7 @@ export class PrimeDecisionStreamSession {
 
     for (const [index, action] of decision.actions.entries()) {
       if (action.type !== "send_message") continue;
-      const state = this.getAction(index);
+      const state = this.getAction(sourceActionIndices[index] ?? index);
       setActionKind(state, action.message.type);
       if (
         action.message.type === "voice" &&
@@ -213,7 +234,7 @@ export class PrimeDecisionStreamSession {
         !ensureVoiceState(state).optimizedTranscriptReady
       )
         state.fields.transcript = "";
-      this.ensureCreated(index, state);
+      this.ensureCreated(state);
       const finalText = getVisibleText(action.message);
       const streamedText = state.fields[visibleField(messageType(state))] ?? "";
       if (finalText.startsWith(streamedText)) {
@@ -250,7 +271,7 @@ export class PrimeDecisionStreamSession {
     await Promise.all(
       decision.actions.map(async (action, index) => {
         if (action.type !== "send_message") return;
-        const state = this.getAction(index);
+        const state = this.getAction(sourceActionIndices[index] ?? index);
         if (action.message.type === "image") {
           const image = ensureImageState(state);
           try {
@@ -289,28 +310,32 @@ export class PrimeDecisionStreamSession {
 
     return {
       messageIds: new Map(
-        [...this.actions]
-          .filter(([, state]) => state.created)
-          .map(([index, state]) => [index, state.id]),
+        decision.actions.flatMap((action, index) => {
+          if (action.type !== "send_message") return [];
+          const state = this.getAction(sourceActionIndices[index] ?? index);
+          return state.created ? [[index, state.id] as const] : [];
+        }),
       ),
       voiceMedia,
       imageMedia,
       imageGenerationErrors,
       messageCreatedAt: new Map(
-        [...this.actions]
-          .filter(([, state]) => state.createdAt !== undefined)
-          .map(([index, state]) => [index, state.createdAt as number]),
+        decision.actions.flatMap((action, index) => {
+          if (action.type !== "send_message") return [];
+          const state = this.getAction(sourceActionIndices[index] ?? index);
+          return state.createdAt === undefined
+            ? []
+            : [[index, state.createdAt] as const];
+        }),
       ),
       ttsErrors: new Map(
-        [...this.actions]
-          .filter(
-            ([, state]) =>
-              state.kind.type === "voice" && Boolean(state.kind.ttsError),
-          )
-          .map(([index, state]) => [
-            index,
-            (state.kind as VoiceActionState).ttsError as string,
-          ]),
+        decision.actions.flatMap((action, index) => {
+          if (action.type !== "send_message") return [];
+          const state = this.getAction(sourceActionIndices[index] ?? index);
+          return state.kind.type === "voice" && state.kind.ttsError
+            ? [[index, state.kind.ttsError] as const]
+            : [];
+        }),
       ),
     };
   }
@@ -346,7 +371,7 @@ export class PrimeDecisionStreamSession {
     const voice = ensureVoiceState(state);
     state.fields.transcript = transcript;
     voice.optimizedTranscriptReady = true;
-    this.ensureCreated(actionIndex, state);
+    this.ensureCreated(state);
     this.queueTextDelta(state, transcript, false);
     this.resolveTextComplete(state);
     if (this.input.voiceRequestStreaming) this.finishStreamingVoice(state);
@@ -398,6 +423,7 @@ export class PrimeDecisionStreamSession {
       kind: { type: "unresolved" },
       typeBuffer: "",
       fields: {},
+      ignored: false,
       created: false,
       revealed: false,
       delivery: createDeferred<number>(),
@@ -412,14 +438,16 @@ export class PrimeDecisionStreamSession {
     return state;
   }
 
-  private ensureCreated(index: number, state: StreamedActionState) {
+  private ensureCreated(state: StreamedActionState) {
     const type = messageType(state);
     if (state.created || !type) return;
+    const hasPredecessor = this.scheduledMessageCount > 0;
+    this.scheduledMessageCount += 1;
     state.created = true;
     const predecessor = this.deliveryTail;
     state.revealPromise = (async () => {
       const predecessorCompletedAt = await predecessor;
-      if (index > 0 && isTimedMessageType(type)) {
+      if (hasPredecessor && isTimedMessageType(type)) {
         await state.text.complete.promise;
         const elapsed = Date.now() - predecessorCompletedAt;
         const remaining =

@@ -3,22 +3,109 @@ import test from "node:test";
 import type { PrimeFigureAgent, PrimeFigureDecision } from "@echoo/shared";
 import { buildRuntimeConfigDefaults } from "../../../runtime-config/runtime-config.defaults.js";
 import { PrimeContentOptimizer } from "./prime-content-optimizer.js";
-import { buildPrimeDecisionResponseFormat } from "./prime-figure-runtime.service.js";
+import {
+  buildPrimeDecisionResponseFormat,
+  parsePrimeDecisionEnvelope,
+} from "./prime-figure-runtime.service.js";
 import { PrimeMediaAnnotationService } from "./prime-media-annotation.service.js";
 import { primeModelSessionId } from "./prime-model-session.js";
 import { buildPrimeSystemPrompt } from "./prime-prompt-composer.js";
 
-test("prime prompt and response schema remove disabled media capabilities", () => {
+test("prime prompt and response schema track every output capability combination", () => {
+  for (const imageEnabled of [false, true]) {
+    for (const voiceEnabled of [false, true]) {
+      const config = buildRuntimeConfigDefaults().primeFigure;
+      config.outputs.image.enabled = imageEnabled;
+      config.outputs.voice.enabled = voiceEnabled;
+      const prompt = buildPrimeSystemPrompt(promptAgent(), config);
+      const schema = JSON.stringify(
+        buildPrimeDecisionResponseFormat(promptAgent(), config, false, [], []),
+      );
+
+      assert.equal(/image 注意事项/.test(prompt), imageEnabled);
+      assert.equal(/暂不支持image action/.test(prompt), !imageEnabled);
+      assert.equal(/generationPrompt/.test(schema), imageEnabled);
+      assert.equal(/voice 注意事项/.test(prompt), voiceEnabled);
+      assert.equal(/暂不支持voice action/.test(prompt), !voiceEnabled);
+      assert.equal(/transcript/.test(schema), voiceEnabled);
+      assert.match(schema, /"text"/);
+    }
+  }
+});
+
+test("disabled output actions are ignored before validation and retain source indices", () => {
   const config = buildRuntimeConfigDefaults().primeFigure;
   config.outputs.image.enabled = false;
   config.outputs.voice.enabled = false;
-  const prompt = buildPrimeSystemPrompt(promptAgent(), config);
-  const schema = JSON.stringify(
-    buildPrimeDecisionResponseFormat(promptAgent(), config, false, [], []),
+  const envelope = parsePrimeDecisionEnvelope(
+    JSON.stringify({
+      rationale: "只执行当前支持的动作",
+      figureMood: "平静",
+      variables: {},
+      stateUpdates: { currentSituation: "新的处境" },
+      actions: [
+        { type: "voice", message: { type: "voice" } },
+        { type: "send_message", message: { type: "text", text: "保留" } },
+        { type: "image" },
+        { type: "mute", revisitAfterMinutes: 5 },
+      ],
+    }),
+    [],
+    [],
+    config,
   );
-  assert.doesNotMatch(prompt, /image 注意事项|voice 注意事项/);
-  assert.doesNotMatch(schema, /generationPrompt|transcript/);
-  assert.match(schema, /"text"/);
+
+  assert.deepEqual(envelope.decision.actions, [
+    { type: "send_message", message: { type: "text", text: "保留" } },
+    { type: "mute", revisitAfterMinutes: 5 },
+  ]);
+  assert.deepEqual(envelope.sourceActionIndices, [1, 3]);
+  assert.equal(envelope.decision.stateUpdates?.currentSituation, "新的处境");
+
+  const ignoredOnly = parsePrimeDecisionEnvelope(
+    JSON.stringify({
+      rationale: "能力已关闭",
+      figureMood: "平静",
+      variables: {},
+      actions: [
+        { type: "send_message", message: { type: "voice" } },
+        { type: "image", message: { type: "image" } },
+      ],
+    }),
+    [],
+    [],
+    config,
+  );
+  assert.deepEqual(ignoredOnly.decision.actions, []);
+  assert.deepEqual(ignoredOnly.sourceActionIndices, []);
+});
+
+test("enabled malformed and unknown actions remain invalid", () => {
+  const config = buildRuntimeConfigDefaults().primeFigure;
+  const base = {
+    rationale: "测试严格边界",
+    figureMood: "平静",
+    variables: {},
+  };
+  assert.throws(() =>
+    parsePrimeDecisionEnvelope(
+      JSON.stringify({
+        ...base,
+        actions: [{ type: "voice", message: { type: "voice" } }],
+      }),
+      [],
+      [],
+      config,
+    ),
+  );
+  assert.throws(() =>
+    parsePrimeDecisionEnvelope(
+      JSON.stringify({ ...base, actions: [{ type: "teleport" }] }),
+      [],
+      [],
+      config,
+    ),
+  );
 });
 
 test("prime prompt stays strict while the decision schema remains tolerant", () => {

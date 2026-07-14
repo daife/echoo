@@ -174,6 +174,115 @@ test("prime voice aborts an active streaming TTS request when the decision fails
   assert.equal(aborted, true);
 });
 
+test("disabled voice streaming is ignored while a later text action keeps its index", async () => {
+  const pushed: Array<Record<string, unknown>> = [];
+  const saved: Array<Record<string, unknown>> = [];
+  let ttsCalls = 0;
+  const session = createSession({
+    voiceRequestStreaming: true,
+    voiceEnabled: false,
+    appPush: {
+      pushToUser(_ownerUserId: string, event: Record<string, unknown>) {
+        pushed.push(event);
+      },
+    },
+    tts: {
+      createStream() {
+        ttsCalls += 1;
+        throw new Error("disabled voice must not start streaming TTS");
+      },
+      async synthesize() {
+        ttsCalls += 1;
+        throw new Error("disabled voice must not start TTS");
+      },
+    },
+    messages: {
+      async save(message: Record<string, unknown>) {
+        saved.push(message);
+        return message;
+      },
+    },
+  });
+  const parser = new PrimeDecisionStreamParser((event) =>
+    session.handleField(event),
+  );
+  parser.push(
+    '{"actions":[{"message":{"type":"voice","transcript":"忽略"}},{"message":{"type":"text","text":"保留"}}]}',
+  );
+
+  const result = await session.finalize(
+    {
+      rationale: "只保留文本",
+      figureMood: "平静",
+      variables: {},
+      actions: [
+        { type: "send_message", message: { type: "text", text: "保留" } },
+      ],
+    } as PrimeFigureDecision,
+    [1],
+  );
+
+  assert.equal(ttsCalls, 0);
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0]?.contentType, "text");
+  assert.deepEqual([...result.messageIds.keys()], [0]);
+  assert.equal(
+    pushed.some((event) => String(event.type).startsWith("message.audio.")),
+    false,
+  );
+});
+
+test("disabled image streaming creates no message, generation, or resource", async () => {
+  let generated = 0;
+  let resourcesSaved = 0;
+  let messagesSaved = 0;
+  const session = createSession({
+    imageEnabled: false,
+    imageGeneration: {
+      async generate() {
+        generated += 1;
+        throw new Error("disabled image must not be generated");
+      },
+    },
+    resources: {
+      async readForOwner() {
+        return null;
+      },
+      async saveGeneratedMedia() {
+        resourcesSaved += 1;
+        throw new Error("disabled image must not be saved");
+      },
+    },
+    messages: {
+      async save(message: unknown) {
+        messagesSaved += 1;
+        return message;
+      },
+    },
+  });
+  const parser = new PrimeDecisionStreamParser((event) =>
+    session.handleField(event),
+  );
+  parser.push(
+    '{"actions":[{"message":{"generationPrompt":"ignored","referenceMediaIds":[],"type":"image","description":"忽略"}}]}',
+  );
+  const result = await session.finalize(
+    {
+      rationale: "能力关闭",
+      figureMood: "平静",
+      variables: {},
+      actions: [],
+    },
+    [],
+  );
+
+  assert.equal(generated, 0);
+  assert.equal(resourcesSaved, 0);
+  assert.equal(messagesSaved, 0);
+  assert.equal(result.messageIds.size, 0);
+  assert.equal(result.imageMedia.size, 0);
+});
+
 test("prime voice exposes HTTP TTS failures through audio events and metadata", async () => {
   const pushed: Array<Record<string, unknown>> = [];
   const session = createSession({
@@ -530,18 +639,24 @@ test("a stale dirty wakeup cannot call the LLM after all end-user messages were 
 
 function createSession(overrides?: {
   voiceRequestStreaming?: boolean;
+  voiceEnabled?: boolean;
+  imageEnabled?: boolean;
   typingCharsPerMinute?: number;
   appPush?: object;
   tts?: object;
   imageGeneration?: object;
+  resources?: object;
   messages?: object;
 }) {
+  const runtimeConfig = runtimeConfigForTest(overrides?.typingCharsPerMinute);
+  runtimeConfig.outputs.voice.enabled = overrides?.voiceEnabled ?? true;
+  runtimeConfig.outputs.image.enabled = overrides?.imageEnabled ?? true;
   return new PrimeDecisionStreamSession(
     {
       ownerUserId: "user_1",
       conversationId: "conversation_1",
       voiceRequestStreaming: overrides?.voiceRequestStreaming ?? false,
-      runtimeConfig: runtimeConfigForTest(overrides?.typingCharsPerMinute),
+      runtimeConfig,
     },
     (overrides?.appPush ?? { pushToUser() {} }) as never,
     (overrides?.tts ?? {
@@ -549,14 +664,14 @@ function createSession(overrides?: {
         throw new Error("unused");
       },
     }) as never,
-    {
+    (overrides?.resources ?? {
       async readForOwner() {
         return null;
       },
       async saveGeneratedMedia(_owner: string, kind: string) {
         return { id: `resource_${kind}`, publicPath: `/resources/${kind}` };
       },
-    } as never,
+    }) as never,
     (overrides?.imageGeneration ?? {
       async generate() {
         throw new Error("unused");
