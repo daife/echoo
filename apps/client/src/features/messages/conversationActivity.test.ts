@@ -11,6 +11,25 @@ describe("conversation agent activity recovery", () => {
     ).toBe(false);
   });
 
+  it("infers activity from pending assistant messages for regular figures", () => {
+    expect(
+      activityAfterMessageCreated(false, {
+        role: "assistant",
+        status: "pending",
+      }),
+    ).toBe(true);
+  });
+
+  it("does not reactivate a prime figure from delayed message delivery", () => {
+    expect(
+      activityAfterMessageCreated(
+        false,
+        { role: "assistant", status: "pending" },
+        false,
+      ),
+    ).toBe(false);
+  });
+
   it("clears stale activity when a streamed reply fails", () => {
     expect(
       activityAfterMessageCompleted(true, {

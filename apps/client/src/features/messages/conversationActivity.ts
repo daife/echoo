@@ -5,9 +5,15 @@ type ActivityMessage = Pick<LocalMessage, "role" | "status">;
 export function activityAfterMessageCreated(
   current: boolean,
   message: ActivityMessage,
+  inferAssistantActivity = true,
 ) {
   if (message.role === "user") return false;
-  if (message.role === "assistant" && message.status === "pending") return true;
+  if (
+    inferAssistantActivity &&
+    message.role === "assistant" &&
+    message.status === "pending"
+  )
+    return true;
   return current;
 }
 

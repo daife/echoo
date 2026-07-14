@@ -399,7 +399,11 @@ export function useConversationMessages({
     const unsubscribeCreated = runtime.message.onMessageCreated((message) => {
       if (message.conversationId !== conversationId) return;
       setIsAgentActive((current) =>
-        activityAfterMessageCreated(current, message),
+        activityAfterMessageCreated(
+          current,
+          message,
+          agent?.type !== "prime-figure",
+        ),
       );
       setMessages((current) =>
         mergeIncomingMessage(current, { ...message, syncStatus: "synced" }),
