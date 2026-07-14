@@ -177,4 +177,31 @@ describe("WebMessageRuntime reconnect", () => {
 
     await runtime.stopRealtime();
   });
+
+  it("still accepts the server completion event after a lease expires locally", async () => {
+    const runtime = new WebMessageRuntime(auth);
+    const activity: boolean[] = [];
+    runtime.onConversationAgentActivity((event) => activity.push(event.active));
+    await runtime.startRealtime();
+    const socket = FakeWebSocket.instances[0];
+    socket?.open();
+    socket?.emit({
+      type: "conversation.agent_activity",
+      conversationId: "conversation_1",
+      active: true,
+      updatedAt: 1_000,
+      expiresAt: Date.now() + 45_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(45_000);
+    socket?.emit({
+      type: "conversation.agent_activity",
+      conversationId: "conversation_1",
+      active: false,
+      updatedAt: 2_000,
+    });
+
+    expect(activity).toEqual([true, false, false]);
+    await runtime.stopRealtime();
+  });
 });

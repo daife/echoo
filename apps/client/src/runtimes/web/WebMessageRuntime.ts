@@ -227,7 +227,6 @@ export class WebMessageRuntime implements MessageRuntime {
     this.activityExpiryTimers.delete(event.conversationId);
     this.activeConversations.delete(event.conversationId);
     const updatedAt = event.expiresAt ?? Date.now();
-    this.latestActivityUpdatedAt.set(event.conversationId, updatedAt);
     const inactiveEvent: ConversationAgentActivityEvent = {
       ...event,
       active: false,
