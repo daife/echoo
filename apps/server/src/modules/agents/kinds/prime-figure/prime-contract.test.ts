@@ -4,9 +4,15 @@ import {
   createPrimeFigureSchema,
   primeFigureDecisionSchema,
   primeFigureScheduleSchema,
+  primeFigureStateSchema,
   updatePrimeFigureSchema,
 } from "@echoo/shared";
-import type { PrimeFigureDecision, PrimeFigureState } from "@echoo/shared";
+import type {
+  PrimeFigureAction,
+  PrimeFigureDecision,
+  PrimeFigureState,
+} from "@echoo/shared";
+import { truncatePreview } from "../../../conversations/conversation.repository.js";
 import { PrimeActionExecutor } from "./prime-action-executor.js";
 import { PrimeDecisionStreamParser } from "./prime-decision-stream-parser.js";
 import { buildPrimeChatMessages } from "./prime-figure-runtime.service.js";
@@ -118,6 +124,69 @@ test("prime creator images require descriptions", () => {
       ],
     }),
   );
+});
+
+test("prime contracts accept expanded authoring data and long JSON text", () => {
+  const longText = "x".repeat(20_001);
+  const created = createPrimeFigureSchema.parse({
+    type: "prime-figure",
+    name: "Mira",
+    isPublic: false,
+    persona: longText,
+    background: longText,
+    personality: longText,
+    responseStyle: longText,
+    attributes: Array.from({ length: 51 }, (_, index) => ({
+      key: `attribute_${index}`,
+      value: longText,
+    })),
+    tags: Array.from({ length: 31 }, (_, index) => `tag_${index}`),
+    linkedAgentIds: Array.from({ length: 51 }, (_, index) => `agent_${index}`),
+    schedule: {
+      segments: Array.from({ length: 101 }, (_, index) => ({
+        label: `segment_${index}`,
+        days: ["mon"],
+        start: "09:00",
+        end: "10:00",
+        description: longText,
+      })),
+    },
+    variableDefinitions: Array.from({ length: 101 }, (_, index) => ({
+      key: `variable_${index}`,
+      label: `Variable ${index}`,
+      type: "string",
+      description: longText,
+    })),
+    referenceImages: Array.from({ length: 11 }, (_, index) => ({
+      resourceId: `res_${index}`,
+      description: longText,
+    })),
+  });
+
+  assert.equal(created.attributes.length, 51);
+  assert.equal(created.schedule.segments.length, 101);
+  assert.equal(created.variableDefinitions.length, 101);
+  assert.equal(created.referenceImages.length, 11);
+  assert.equal(created.persona.length, longText.length);
+});
+
+test("prime state contract does not reject or discard older memories", () => {
+  const memories = Array.from({ length: 1_001 }, (_, index) => ({
+    id: `memory_${index}`,
+    content: `memory ${index}`,
+    eventAtMs: index,
+    recordedAtMs: index,
+  }));
+  const state = primeFigureStateSchema.parse({
+    variables: {},
+    memories,
+    mood: "calm",
+    moodObservedAtMs: 0,
+    relationshipStatus: "stable",
+    updatedAt: 0,
+  });
+  assert.equal(state.memories.length, 1_001);
+  assert.equal(state.memories[0]?.id, "memory_0");
 });
 
 test("prime context registers cover and creator images before conversation media", async () => {
@@ -282,6 +351,65 @@ test("prime debug hints stay inside the single user packet", async () => {
   );
 });
 
+test("prime context exposes only the latest twenty persistent memories", async () => {
+  const packet = await buildPrimeChatMessages(
+    {
+      id: "agent_1",
+      type: "prime-figure",
+      name: "Mira",
+      conversationId: "conv_1",
+      detail: {
+        persona: "persona",
+        background: "background",
+        personality: "personality",
+        responseStyle: "style",
+        decisionStyle: "",
+        currentSituation: "",
+        schedule: { segments: [] },
+        itinerary: "",
+        variableDefinitions: [],
+        referenceImages: [],
+      },
+    } as never,
+    {
+      variables: {},
+      memories: Array.from({ length: 25 }, (_, index) => ({
+        id: `memory_${index}`,
+        content: `memory ${index}`,
+        eventAtMs: index + 1,
+        recordedAtMs: index + 1,
+      })),
+      mood: "",
+      moodObservedAtMs: 1,
+      relationshipStatus: "",
+      updatedAt: 1,
+    },
+    [],
+    "end_user_message",
+    "user_1",
+    {} as never,
+    {
+      async listAvailableImages() {
+        return [];
+      },
+    } as never,
+    0,
+    undefined,
+    buildRuntimeConfigDefaults().primeFigure,
+  );
+
+  const userContent = packet.messages[1]?.content;
+  assert.ok(Array.isArray(userContent));
+  const contextPart = userContent.at(-1);
+  assert.equal(contextPart?.type, "text");
+  const context = JSON.parse(
+    String(contextPart && "text" in contextPart ? contextPart.text : "{}"),
+  ) as { memories: Array<[string, string]> };
+  assert.equal(context.memories.length, 20);
+  assert.equal(context.memories[0]?.[1], "memory 5");
+  assert.equal(context.memories.at(-1)?.[1], "memory 24");
+});
+
 test("prime decision distinguishes one-turn silence from message muting", () => {
   const base = { rationale: "等待", figureMood: "平静", variables: {} };
   assert.deepEqual(
@@ -296,12 +424,53 @@ test("prime decision distinguishes one-turn silence from message muting", () => 
     }).actions,
     [{ type: "mute", revisitAfterMinutes: 5 }],
   );
-  assert.throws(() =>
+  assert.deepEqual(
     primeFigureDecisionSchema.parse({
       ...base,
       actions: [{ type: "silence", revisitAfterMinutes: 5 }],
-    }),
+    }).actions,
+    [{ type: "silence" }],
   );
+});
+
+test("prime decision accepts omitted, empty, and expanded action and memory arrays", () => {
+  const base = {
+    rationale: "No response is needed",
+    figureMood: "calm",
+    variables: {},
+  };
+  assert.deepEqual(primeFigureDecisionSchema.parse(base).actions, []);
+  assert.deepEqual(
+    primeFigureDecisionSchema.parse({ ...base, actions: [] }).actions,
+    [],
+  );
+
+  const expanded = primeFigureDecisionSchema.parse({
+    ...base,
+    memoryWrites: Array.from({ length: 9 }, (_, index) => ({
+      content: `memory ${index}`,
+      eventAt: null,
+    })),
+    actions: Array.from({ length: 13 }, () => ({ type: "silence" })),
+  });
+  assert.equal(expanded.memoryWrites.length, 9);
+  assert.equal(expanded.actions.length, 13);
+});
+
+test("prime decision accepts mute null and strips unknown action fields", () => {
+  const decision = primeFigureDecisionSchema.parse({
+    rationale: "Clear mute",
+    figureMood: "calm",
+    variables: {},
+    actions: [
+      { type: "silence", ignored: true },
+      { type: "mute", revisitAfterMinutes: null, ignored: true },
+    ],
+  });
+  assert.deepEqual(decision.actions, [
+    { type: "silence" },
+    { type: "mute", revisitAfterMinutes: null },
+  ]);
 });
 
 test("prime decision accepts advisory-only action exclusivity", () => {
@@ -544,3 +713,164 @@ test("prime executor sends messages and starts mute when actions coexist", async
   assert.equal(savedState?.silenceStartedAtMs, muteMessageCutoffAtMs);
   assert.ok((savedState?.silenceUntilMs ?? 0) > Date.now());
 });
+
+test("prime executor preserves mute for empty and silence-only decisions", async () => {
+  for (const actions of [[], [{ type: "silence" } as const]]) {
+    const result = await executePrimeDecisionCase({
+      actions,
+      state: {
+        silenceStartedAtMs: 100,
+        silenceUntilMs: Date.now() + 60_000,
+      },
+    });
+    assert.equal(result.state.silenceStartedAtMs, 100);
+    assert.ok((result.state.silenceUntilMs ?? 0) > Date.now());
+    assert.equal(result.events.length, 0);
+  }
+});
+
+test("prime executor clears mute for send actions and explicit null", async () => {
+  const muted = {
+    silenceStartedAtMs: 100,
+    silenceUntilMs: Date.now() + 60_000,
+  };
+  const failedImage = await executePrimeDecisionCase({
+    actions: [
+      {
+        type: "send_message",
+        message: {
+          type: "image",
+          description: "",
+          generationPrompt: "image prompt",
+          referenceMediaIds: [],
+        },
+      },
+    ],
+    state: muted,
+  });
+  assert.equal(failedImage.messages[0]?.status, "failed");
+  assert.equal(failedImage.state.silenceStartedAtMs, undefined);
+  assert.equal(failedImage.state.silenceUntilMs, undefined);
+  assert.equal(failedImage.events[0]?.muteUntilMs, null);
+
+  const explicitClear = await executePrimeDecisionCase({
+    actions: [{ type: "mute", revisitAfterMinutes: null }],
+    state: muted,
+  });
+  assert.equal(explicitClear.state.silenceUntilMs, undefined);
+  assert.equal(explicitClear.events[0]?.muteUntilMs, null);
+});
+
+test("prime executor gives the last numeric mute priority over send and null", async () => {
+  const cutoff = 1_700_000_000_000;
+  const before = Date.now();
+  const result = await executePrimeDecisionCase({
+    actions: [
+      { type: "send_message", message: { type: "text", text: "hello" } },
+      { type: "mute", revisitAfterMinutes: null },
+      { type: "mute", revisitAfterMinutes: 2 },
+      { type: "mute", revisitAfterMinutes: 7 },
+    ],
+    state: {
+      silenceStartedAtMs: 100,
+      silenceUntilMs: before + 60_000,
+    },
+    muteMessageCutoffAtMs: cutoff,
+  });
+  assert.equal(result.state.silenceStartedAtMs, cutoff);
+  assert.ok((result.state.silenceUntilMs ?? 0) >= before + 7 * 60_000);
+  assert.equal(result.events[0]?.muteUntilMs, result.state.silenceUntilMs);
+});
+
+test("prime executor appends memories without a retention cutoff", async () => {
+  const memories = Array.from({ length: 1_000 }, (_, index) => ({
+    id: `memory_${index}`,
+    content: `memory ${index}`,
+    eventAtMs: index,
+    recordedAtMs: index,
+  }));
+  const result = await executePrimeDecisionCase({
+    actions: [],
+    state: { memories },
+    memoryWrites: [
+      { content: "memory 1000", eventAt: null },
+      { content: "memory 1001", eventAt: null },
+    ],
+  });
+  assert.equal(result.state.memories.length, 1_002);
+  assert.equal(result.state.memories[0]?.id, "memory_0");
+});
+
+test("conversation previews honor the database column without truncating content", () => {
+  const preview = `${"🙂".repeat(500)}tail`;
+  const truncated = truncatePreview(preview);
+  assert.equal(Array.from(truncated ?? "").length, 500);
+  assert.equal(truncated, "🙂".repeat(500));
+});
+
+async function executePrimeDecisionCase(input: {
+  actions: PrimeFigureAction[];
+  state?: Partial<PrimeFigureState>;
+  memoryWrites?: PrimeFigureDecision["memoryWrites"];
+  muteMessageCutoffAtMs?: number;
+}) {
+  let savedState: PrimeFigureState | undefined;
+  const messages: Array<Record<string, unknown>> = [];
+  const events: Array<Record<string, unknown>> = [];
+  const executor = new PrimeActionExecutor(
+    {
+      async save(
+        _ownerUserId: string,
+        _agentId: string,
+        state: PrimeFigureState,
+      ) {
+        savedState = state;
+      },
+    } as never,
+    { async applyRuntimeUpdates() {} } as never,
+    {
+      async save(message: Record<string, unknown>) {
+        messages.push(message);
+        return message;
+      },
+    } as never,
+    { async save() {} } as never,
+    { async updatePreview() {} } as never,
+    {
+      pushToUser(_ownerUserId: string, event: Record<string, unknown>) {
+        events.push(event);
+      },
+    } as never,
+  );
+
+  await executor.executeDecision({
+    ownerUserId: "user_1",
+    conversationId: "conversation_1",
+    agent: {
+      id: "agent_1",
+      detail: { variableDefinitions: [] },
+    } as never,
+    state: {
+      variables: {},
+      memories: [],
+      mood: "",
+      moodObservedAtMs: 0,
+      relationshipStatus: "",
+      updatedAt: 0,
+      ...input.state,
+    },
+    decision: {
+      rationale: "test",
+      figureMood: "calm",
+      variables: {},
+      memoryWrites: input.memoryWrites ?? [],
+      actions: input.actions,
+    },
+    providerId: "test-provider",
+    model: "test-model",
+    muteMessageCutoffAtMs: input.muteMessageCutoffAtMs,
+  });
+
+  if (!savedState) throw new Error("Expected prime state to be saved.");
+  return { state: savedState, messages, events };
+}

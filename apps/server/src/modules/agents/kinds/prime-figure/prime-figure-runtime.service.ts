@@ -52,7 +52,7 @@ import {
 import { RuntimeConfigService } from "../../../runtime-config/runtime-config.service.js";
 import type { StoredPrimeFigureRuntimeConfig } from "../../../runtime-config/runtime-config.types.js";
 
-const PRIME_VISIBLE_MEMORY_LIMIT = 10;
+const PRIME_VISIBLE_MEMORY_LIMIT = 20;
 const RECALL_HINT_PATTERN = /记得|不记得|忘了|还记得|remember|forgot|recal+l/i;
 
 export type PrimeDecisionTrigger =
@@ -1119,7 +1119,7 @@ export function buildPrimeDecisionResponseFormat(
     type: "json_schema",
     json_schema: {
       name: "figure_decision_v3",
-      strict: true,
+      strict: false,
       schema: {
         type: "object",
         properties: {
@@ -1143,7 +1143,6 @@ export function buildPrimeDecisionResponseFormat(
             description:
               "新增的持久figure记忆。除非该事件值得日后回忆，否则保持为空。调用 search_recall 后必须至少写入一条。",
             minItems: requireMemoryWrite ? 1 : 0,
-            maxItems: 8,
             items: {
               type: "object",
               properties: {
@@ -1173,7 +1172,6 @@ export function buildPrimeDecisionResponseFormat(
             properties: {
               currentSituation: nullableStringSchema(
                 "figure当前处境的完整替换内容；使用 null 保留原值。",
-                4000,
               ),
               schedule: {
                 description:
@@ -1182,42 +1180,26 @@ export function buildPrimeDecisionResponseFormat(
               },
               itinerary: nullableStringSchema(
                 "完整替换行程；使用 null 保留原值。",
-                8000,
               ),
               relationshipStatus: nullableStringSchema(
                 "figure与 end_user 更新后的关系状态；使用 null 保留原值。",
-                500,
               ),
             },
             additionalProperties: false,
           },
           actions: {
-            description:
-              "figure按顺序执行的动作。silence 或 mute 必须单独出现，绝不能与 send_message 并存。",
-            anyOf: [
-              {
-                type: "array",
-                description: "按序发送的一条或多条文本、图片或语音消息。",
-                minItems: 1,
-                maxItems: 12,
-                items: buildSendMessageActionSchema(
+            type: "array",
+            description: "figure按顺序执行的动作。",
+            items: {
+              anyOf: [
+                buildSendMessageActionSchema(
                   availableReferenceImageIds,
                   runtimeConfig,
                 ),
-              },
-              {
-                type: "array",
-                minItems: 1,
-                maxItems: 1,
-                items: buildSilenceActionSchema(),
-              },
-              {
-                type: "array",
-                minItems: 1,
-                maxItems: 1,
-                items: buildMuteActionSchema(),
-              },
-            ],
+                buildSilenceActionSchema(),
+                buildMuteActionSchema(),
+              ],
+            },
           },
           ...(pendingMedia.length
             ? {
@@ -1238,7 +1220,6 @@ export function buildPrimeDecisionResponseFormat(
           "rationale",
           "figureMood",
           "variables",
-          "actions",
           ...(pendingMedia.length ? ["mediaAnnotations"] : []),
         ],
         additionalProperties: false,
@@ -1278,10 +1259,10 @@ function buildMediaAnnotationOutputSchema(target: PendingMediaAnnotation) {
   } as const;
 }
 
-function nullableStringSchema(description: string, maxLength: number) {
+function nullableStringSchema(description: string) {
   return {
     description,
-    anyOf: [{ type: "string", maxLength }, { type: "null" }],
+    anyOf: [{ type: "string" }, { type: "null" }],
   } as const;
 }
 
@@ -1291,8 +1272,6 @@ function buildScheduleOutputSchema() {
     properties: {
       segments: {
         type: "array",
-        // Keep the 100-item limit in Zod only. Gemini rejects this nested
-        // maxItems constraint as an overly complex response schema.
         items: {
           type: "object",
           properties: {
@@ -1426,14 +1405,13 @@ function buildSilenceActionSchema() {
 function buildMuteActionSchema() {
   return {
     type: "object",
-    description: "屏蔽之后一段时间内的 end_user 消息。",
+    description: "设置或解除对 end_user 新消息的屏蔽状态。",
     properties: {
       type: { const: "mute" },
       revisitAfterMinutes: {
-        type: "integer",
-        description: "屏蔽消息的分钟数。",
-        minimum: 1,
-        maximum: 10080,
+        description:
+          "使用正整数设置屏蔽消息的分钟数；使用 null 解除当前mute状态。",
+        anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }],
       },
     },
     required: ["type", "revisitAfterMinutes"],

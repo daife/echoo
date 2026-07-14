@@ -94,8 +94,8 @@ function buildActionRules(config: StoredPrimeFigureRuntimeConfig) {
     ...(config.outputs.voice.enabled ? ["语音"] : []),
   ].join("、");
   return `actions 注意事项：
-figure可以发送一条或多条${media}消息，也可以用 silence 表示本次不回复，或用 mute 在一段时间内屏蔽新消息。
-send_message、silence 与 mute 互斥。silence 只表示本次不回复，不影响后续消息；mute 会在指定时间内屏蔽end_user的新消息。选择 silence 或 mute 时，它必须是唯一动作。`;
+figure可以发送${media}消息，也可以用 silence 表示本次不回复，或用 mute 管理对新消息的屏蔽状态。
+silence 只表示本次不回复，不影响后续消息。mute.revisitAfterMinutes 使用正整数时，会在指定分钟内屏蔽end_user的新消息；使用 null 时解除当前mute状态。`;
 }
 
 const SEND_MESSAGE_RULES = `send_message 注意事项：

@@ -609,7 +609,6 @@ function ReferenceImageEditor({
           className="sr-only"
           type="file"
           accept="image/jpeg,image/png,image/webp,image/gif"
-          disabled={items.length >= 10}
           onChange={async (event) => {
             const file = event.target.files?.[0];
             if (!file) return;
@@ -626,7 +625,6 @@ function ReferenceImageEditor({
         />
       </label>
       {error ? <p className="text-xs text-red-200/70">{error}</p> : null}
-      {items.length >= 10 ? <p className="text-xs text-white/40">最多添加 10 张创作者参考图片。</p> : null}
     </ListPanel>
   );
 }

@@ -1,10 +1,9 @@
 import { z } from "zod";
 
-const requiredText = (label: string, max = 2000) =>
-  z.string().trim().min(1, `${label}不能为空。`).max(max);
-const optionalText = (max = 2000) =>
-  z.string().trim().max(max).optional().default("");
-const generationPromptSchema = requiredText("生图提示词", 12000);
+const requiredText = (label: string) =>
+  z.string().trim().min(1, `${label}不能为空。`);
+const optionalText = () => z.string().trim().optional().default("");
+const generationPromptSchema = requiredText("生图提示词");
 
 const imageUploadSchema = z.object({
   fileName: z.string().trim().min(1).max(255),
@@ -16,44 +15,39 @@ const primeFigureReferenceImageInputSchema = z.union([
   z
     .object({
       resourceId: z.string().trim().min(1).max(120),
-      description: requiredText("图片描述", 4000),
+      description: requiredText("图片描述"),
     })
     .strict(),
   z
     .object({
       upload: imageUploadSchema,
-      description: requiredText("图片描述", 4000),
+      description: requiredText("图片描述"),
     })
     .strict(),
 ]);
 
 export const agentAttributeSchema = z.object({
-  key: requiredText("属性键", 80),
-  value: requiredText("属性值", 240),
+  key: requiredText("属性键"),
+  value: requiredText("属性值"),
 });
 
 const createAgentBaseSchema = z.object({
   avatar: imageUploadSchema.nullish(),
   cover: imageUploadSchema.nullish(),
-  name: requiredText("角色名称", 80),
-  attributes: z.array(agentAttributeSchema).max(50).optional().default([]),
-  tags: z
-    .array(z.string().trim().min(1).max(40))
-    .max(30)
-    .optional()
-    .default([]),
-  introduction: optionalText(2000),
+  name: requiredText("角色名称").max(160),
+  attributes: z.array(agentAttributeSchema).optional().default([]),
+  tags: z.array(z.string().trim().min(1)).optional().default([]),
+  introduction: optionalText(),
   isPublic: z.boolean(),
 });
 
 export const createSliceFigureSchema = createAgentBaseSchema.extend({
   type: z.literal("slice-figure"),
-  prologueHtml: optionalText(12000),
-  currentSituation: optionalText(4000),
-  openingLine: optionalText(2000),
+  prologueHtml: optionalText(),
+  currentSituation: optionalText(),
+  openingLine: optionalText(),
   linkedAgentIds: z
     .array(z.string().trim().min(1).max(120))
-    .max(50)
     .optional()
     .default([]),
   unlockConditions: z.record(z.string(), z.unknown()).nullish(),
@@ -61,8 +55,8 @@ export const createSliceFigureSchema = createAgentBaseSchema.extend({
   background: requiredText("背景"),
   personality: requiredText("性格"),
   responseStyle: requiredText("回复风格"),
-  systemPrompt: requiredText("系统提示词", 12000),
-  memorySummaryPrompt: requiredText("记忆总结提示词", 12000),
+  systemPrompt: requiredText("系统提示词"),
+  memorySummaryPrompt: requiredText("记忆总结提示词"),
   replyAutoSegment: z.boolean().optional().default(false),
 });
 
@@ -77,13 +71,13 @@ const primeVariableValueSchema = z.union([
 
 export const primeFigureVariableDefinitionSchema = z
   .object({
-    key: requiredText("变量键", 80).regex(
+    key: requiredText("变量键").regex(
       /^[A-Za-z_][A-Za-z0-9_]*$/,
       "变量键必须符合 JSON Schema 的安全命名规则。",
     ),
-    label: requiredText("变量标签", 120),
+    label: requiredText("变量标签"),
     type: z.enum(["string", "number", "boolean", "json"]),
-    description: requiredText("变量描述", 1000),
+    description: requiredText("变量描述"),
     defaultValue: primeVariableValueSchema.optional(),
     min: z.number().optional(),
     max: z.number().optional(),
@@ -128,7 +122,7 @@ export const primeFigureVariableDefinitionSchema = z
 
 export const primeFigureMemorySchema = z.object({
   id: z.string().trim().min(1).max(120),
-  content: requiredText("记忆", 4000),
+  content: requiredText("记忆"),
   eventAtMs: z.number().nonnegative(),
   recordedAtMs: z.number().nonnegative(),
 });
@@ -138,20 +132,18 @@ const clockTimeSchema = z
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "时间必须采用 HH:mm 格式。");
 
 export const primeFigureScheduleSchema = z.object({
-  segments: z
-    .array(
-      z.object({
-        label: requiredText("日程时段名称", 120),
-        days: z
-          .array(z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]))
-          .min(1)
-          .max(7),
-        start: clockTimeSchema,
-        end: clockTimeSchema,
-        description: requiredText("日程时段描述", 1000),
-      }),
-    )
-    .max(100),
+  segments: z.array(
+    z.object({
+      label: requiredText("日程时段名称"),
+      days: z
+        .array(z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]))
+        .min(1)
+        .max(7),
+      start: clockTimeSchema,
+      end: clockTimeSchema,
+      description: requiredText("日程时段描述"),
+    }),
+  ),
 });
 
 export const primeFigureStateSchema = z.object({
@@ -159,10 +151,10 @@ export const primeFigureStateSchema = z.object({
     .record(z.string(), primeVariableValueSchema)
     .optional()
     .default({}),
-  memories: z.array(primeFigureMemorySchema).max(1000).optional().default([]),
-  mood: optionalText(500),
+  memories: z.array(primeFigureMemorySchema).optional().default([]),
+  mood: optionalText(),
   moodObservedAtMs: z.number().nonnegative(),
-  relationshipStatus: optionalText(500),
+  relationshipStatus: optionalText(),
   silenceStartedAtMs: z.number().nonnegative().optional(),
   silenceUntilMs: z.number().nonnegative().optional(),
   updatedAt: z.number().nonnegative(),
@@ -170,10 +162,9 @@ export const primeFigureStateSchema = z.object({
 
 export const createPrimeFigureSchema = createAgentBaseSchema.extend({
   type: z.literal("prime-figure"),
-  prologueHtml: optionalText(12000),
+  prologueHtml: optionalText(),
   linkedAgentIds: z
     .array(z.string().trim().min(1).max(120))
-    .max(50)
     .optional()
     .default([]),
   unlockConditions: z.record(z.string(), z.unknown()).nullish(),
@@ -181,13 +172,12 @@ export const createPrimeFigureSchema = createAgentBaseSchema.extend({
   background: requiredText("背景"),
   personality: requiredText("性格"),
   responseStyle: requiredText("回复风格"),
-  decisionStyle: optionalText(4000),
-  currentSituation: optionalText(4000),
+  decisionStyle: optionalText(),
+  currentSituation: optionalText(),
   schedule: primeFigureScheduleSchema.optional().default({ segments: [] }),
-  itinerary: optionalText(8000),
+  itinerary: optionalText(),
   variableDefinitions: z
     .array(primeFigureVariableDefinitionSchema)
-    .max(100)
     .superRefine((definitions, context) => {
       const keys = new Set<string>();
       definitions.forEach((definition, index) => {
@@ -204,12 +194,11 @@ export const createPrimeFigureSchema = createAgentBaseSchema.extend({
     .default([]),
   referenceImages: z
     .array(primeFigureReferenceImageInputSchema)
-    .max(10)
     .optional()
     .default([]),
   voiceRequestStreaming: z.boolean().optional().default(false),
-  initialMood: optionalText(500),
-  initialRelationshipStatus: optionalText(500),
+  initialMood: optionalText(),
+  initialRelationshipStatus: optionalText(),
 });
 
 export const updatePrimeFigureSchema = createPrimeFigureSchema
@@ -220,13 +209,10 @@ export const updatePrimeFigureSchema = createPrimeFigureSchema
     referenceImages: true,
   })
   .extend({
-    referenceImages: z
-      .array(primeFigureReferenceImageInputSchema)
-      .max(10)
-      .optional(),
+    referenceImages: z.array(primeFigureReferenceImageInputSchema).optional(),
     currentVariables: z.record(z.string(), primeVariableValueSchema),
-    currentMood: z.string().trim().max(500),
-    currentRelationshipStatus: z.string().trim().max(500),
+    currentMood: z.string().trim(),
+    currentRelationshipStatus: z.string().trim(),
     // Preserve the stored preference when older clients omit this field.
     voiceRequestStreaming: z.boolean().optional(),
   });
@@ -235,18 +221,14 @@ export const updatePrimeFigurePreferencesSchema = z.object({
   voiceRequestStreaming: z.boolean(),
 });
 
-const urlLikeSchema = z.string().trim().min(1).max(2048);
+const urlLikeSchema = z.string().trim().min(1);
 
 const primeImageContentSchema = z
   .object({
     type: z.literal("image"),
-    description: z.string().trim().min(1).max(4000).optional(),
-    generationPrompt: optionalText(12000),
-    referenceResourceUrls: z
-      .array(urlLikeSchema)
-      .max(20)
-      .optional()
-      .default([]),
+    description: z.string().trim().min(1).optional(),
+    generationPrompt: optionalText(),
+    referenceResourceUrls: z.array(urlLikeSchema).optional().default([]),
     referenceMediaIds: z
       .array(z.string().regex(/^media_[1-9]\d*$/))
       .max(10)
@@ -262,7 +244,7 @@ const primeImageContentSchema = z
 const primeVideoContentSchema = z
   .object({
     type: z.literal("video"),
-    description: z.string().trim().min(1).max(4000).optional(),
+    description: z.string().trim().min(1).optional(),
     resourceId: z.string().trim().min(1).max(120).optional(),
     resourceUrl: urlLikeSchema.optional(),
   })
@@ -273,8 +255,8 @@ const primeVideoContentSchema = z
 const primeVoiceContentSchema = z
   .object({
     type: z.literal("voice"),
-    description: z.string().trim().min(1).max(4000).optional(),
-    transcript: z.string().trim().min(1).max(12000).optional(),
+    description: z.string().trim().min(1).optional(),
+    transcript: z.string().trim().min(1).optional(),
     resourceId: z.string().trim().min(1).max(120).optional(),
     resourceUrl: urlLikeSchema.optional(),
   })
@@ -285,22 +267,22 @@ const primeVoiceContentSchema = z
 export const primeMessageContentSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("text"),
-    text: requiredText("文本", 12000),
+    text: requiredText("文本"),
   }),
   primeImageContentSchema,
   primeVideoContentSchema,
   primeVoiceContentSchema,
   z.object({
     type: z.literal("sticker"),
-    stickerId: requiredText("贴纸 ID", 120),
-    description: requiredText("贴纸描述", 1000),
+    stickerId: requiredText("贴纸 ID").max(120),
+    description: requiredText("贴纸描述"),
     resourceUrl: urlLikeSchema.optional(),
   }),
   z.object({
     type: z.literal("transfer"),
-    note: optionalText(500),
+    note: optionalText(),
     amount: z.number().finite().nonnegative(),
-    currency: z.string().trim().min(1).max(16).default("CNY"),
+    currency: z.string().trim().min(1).default("CNY"),
     direction: z.enum(["received", "paid"]),
   }),
 ]);
@@ -309,12 +291,12 @@ export const primeMediaAnnotationSchema = z.discriminatedUnion("type", [
   z.object({
     id: z.string().trim().min(1).max(120),
     type: z.enum(["image", "video"]),
-    description: requiredText("媒体描述", 4000),
+    description: requiredText("媒体描述"),
   }),
   z.object({
     id: z.string().trim().min(1).max(120),
     type: z.literal("voice"),
-    transcript: requiredText("语音转写", 12000),
+    transcript: requiredText("语音转写"),
   }),
 ]);
 
@@ -345,11 +327,11 @@ const primeFigureActionOutputSchema = z.discriminatedUnion("type", [
     message: z.discriminatedUnion("type", [
       z.object({
         type: z.literal("text"),
-        text: requiredText("文本", 12000),
+        text: requiredText("文本"),
       }),
       z.object({
         type: z.literal("image"),
-        description: optionalText(4000),
+        description: optionalText(),
         generationPrompt: generationPromptSchema,
         referenceMediaIds: z
           .array(z.string().regex(/^media_[1-9]\d*$/))
@@ -363,21 +345,17 @@ const primeFigureActionOutputSchema = z.discriminatedUnion("type", [
       }),
       z.object({
         type: z.literal("voice"),
-        transcript: requiredText("语音文本", 12000),
+        transcript: requiredText("语音文本"),
       }),
     ]),
   }),
-  z
-    .object({
-      type: z.literal("silence"),
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal("mute"),
-      revisitAfterMinutes: z.number().int().min(1).max(10080),
-    })
-    .strict(),
+  z.object({
+    type: z.literal("silence"),
+  }),
+  z.object({
+    type: z.literal("mute"),
+    revisitAfterMinutes: z.number().int().min(1).nullable(),
+  }),
 ]);
 
 export const primeFigureActionSchema = z.preprocess(
@@ -431,32 +409,31 @@ function normalizeReferenceMediaIds(value: unknown) {
 }
 
 export const primeFigureDecisionSchema = z.object({
-  rationale: requiredText("角色决策依据", 2000),
-  figureMood: requiredText("角色情绪", 500),
+  rationale: requiredText("角色决策依据"),
+  figureMood: requiredText("角色情绪"),
   variables: z.record(z.string(), primeVariableValueSchema),
   memoryWrites: z
     .array(
       z.object({
-        content: requiredText("记忆", 4000),
+        content: requiredText("记忆"),
         eventAt: z
           .string()
           .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
           .nullable(),
       }),
     )
-    .max(8)
     .optional()
     .default([]),
   stateUpdates: z
     .object({
-      currentSituation: z.string().trim().max(4000).nullish(),
+      currentSituation: z.string().trim().nullish(),
       schedule: primeFigureScheduleSchema.nullish(),
-      itinerary: z.string().trim().max(8000).nullish(),
-      relationshipStatus: z.string().trim().max(500).nullish(),
+      itinerary: z.string().trim().nullish(),
+      relationshipStatus: z.string().trim().nullish(),
     })
     .optional()
     .default({}),
-  actions: z.array(primeFigureActionSchema).min(1).max(12),
+  actions: z.array(primeFigureActionSchema).optional().default([]),
 });
 
 export const updateSliceFigureSchema = createSliceFigureSchema.omit({

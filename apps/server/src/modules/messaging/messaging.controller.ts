@@ -3,8 +3,8 @@ import { z } from "zod";
 import { MessagingService } from "./messaging.service.js";
 
 const createTextMessageSchema = z.object({
-  text: z.string().trim().min(1).max(20_000),
-  clientMessageId: z.string().trim().min(1).max(200).optional(),
+  text: z.string().trim().min(1),
+  clientMessageId: z.string().trim().min(1).max(96).optional(),
 });
 
 const mediaUploadBaseSchema = z.object({
@@ -18,7 +18,7 @@ const createMediaMessageSchema = z.discriminatedUnion("contentType", [
       mimeType: z.literal("image/jpeg"),
       dataBase64: z.string().min(1).max(7_000_000),
     }),
-    clientMessageId: z.string().trim().min(1).max(200).optional(),
+    clientMessageId: z.string().trim().min(1).max(96).optional(),
   }),
   z.object({
     contentType: z.literal("voice"),
@@ -27,7 +27,7 @@ const createMediaMessageSchema = z.discriminatedUnion("contentType", [
       dataBase64: z.string().min(1),
     }),
     durationSeconds: z.number().finite().min(1).max(60),
-    clientMessageId: z.string().trim().min(1).max(200).optional(),
+    clientMessageId: z.string().trim().min(1).max(96).optional(),
   }),
 ]);
 
@@ -37,7 +37,7 @@ const createMessageSchema = z.union([
 ]);
 
 const primeFigureHintSchema = z.object({
-  instruction: z.string().trim().min(1).max(20_000),
+  instruction: z.string().trim().min(1),
 });
 
 const rollbackConversationSchema = z.object({
@@ -45,7 +45,7 @@ const rollbackConversationSchema = z.object({
 });
 
 const updateAssistantMessageSchema = z.object({
-  text: z.string().trim().min(1).max(20_000),
+  text: z.string().trim().min(1),
 });
 
 const listMessagesQuerySchema = z.object({

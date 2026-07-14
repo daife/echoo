@@ -47,7 +47,7 @@ export class ConversationRepository {
       `UPDATE conversations SET last_message_preview = ?, unread_count = unread_count + ?, updated_at = ?
        WHERE owner_user_id = ? AND id = ?`,
       [
-        input.preview,
+        truncatePreview(input.preview),
         input.unreadIncrement ?? (input.incrementUnread ? 1 : 0),
         input.updatedAt,
         input.ownerUserId,
@@ -112,6 +112,10 @@ export class ConversationRepository {
       [sequence, ownerUserId, conversationId],
     );
   }
+}
+
+export function truncatePreview(value: string | null) {
+  return value === null ? null : Array.from(value).slice(0, 500).join("");
 }
 
 function rowToConversation(row: ConversationRow): Conversation {

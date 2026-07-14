@@ -73,16 +73,33 @@ export class PrimeActionExecutor {
     }> = [];
 
     try {
-      const muteAction = decision.actions.find(
-        (action) => action.type === "mute",
-      );
-      if (muteAction) {
+      const previousSilenceStartedAtMs = state.silenceStartedAtMs;
+      const previousSilenceUntilMs = state.silenceUntilMs;
+      const muteAction = [...decision.actions]
+        .reverse()
+        .find(
+          (action) =>
+            action.type === "mute" && action.revisitAfterMinutes !== null,
+        );
+      if (
+        muteAction?.type === "mute" &&
+        muteAction.revisitAfterMinutes !== null
+      ) {
         state.silenceStartedAtMs = input.muteMessageCutoffAtMs ?? now;
         state.silenceUntilMs = now + muteAction.revisitAfterMinutes * 60_000;
-      } else {
+      } else if (
+        decision.actions.some(
+          (action) =>
+            action.type === "send_message" ||
+            (action.type === "mute" && action.revisitAfterMinutes === null),
+        )
+      ) {
         delete state.silenceStartedAtMs;
         delete state.silenceUntilMs;
       }
+      const muteChanged =
+        state.silenceStartedAtMs !== previousSilenceStartedAtMs ||
+        state.silenceUntilMs !== previousSilenceUntilMs;
 
       for (const [index, action] of decision.actions.entries()) {
         if (action.type !== "send_message") continue;
@@ -154,15 +171,16 @@ export class PrimeActionExecutor {
         decision.stateUpdates ?? {},
       );
       await this.states.save(input.ownerUserId, input.agent.id, state);
-      this.appPush.pushToUser(input.ownerUserId, {
-        type: "conversation.agent_mute_changed",
-        conversationId: input.conversationId,
-        muteUntilMs:
-          state.silenceUntilMs && state.silenceUntilMs > Date.now()
-            ? state.silenceUntilMs
-            : null,
-        updatedAt: Date.now(),
-      });
+      if (muteChanged)
+        this.appPush.pushToUser(input.ownerUserId, {
+          type: "conversation.agent_mute_changed",
+          conversationId: input.conversationId,
+          muteUntilMs:
+            state.silenceUntilMs && state.silenceUntilMs > now
+              ? state.silenceUntilMs
+              : null,
+          updatedAt: now,
+        });
       await Promise.all(
         decision.actions.map((action) =>
           this.logs.save({
@@ -308,7 +326,7 @@ function appendMemories(
       : now,
     recordedAtMs: now,
   }));
-  return [...state.memories, ...writes].slice(-1000);
+  return [...state.memories, ...writes];
 }
 
 function applyVariableSnapshot(

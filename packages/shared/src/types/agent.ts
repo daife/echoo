@@ -332,7 +332,7 @@ export type PrimeFigureAction =
     }
   | {
       type: "mute";
-      revisitAfterMinutes: number;
+      revisitAfterMinutes: number | null;
     };
 
 export interface PrimeFigureStateUpdates {
@@ -351,7 +351,7 @@ export interface PrimeFigureDecision {
     eventAt: string | null;
   }>;
   stateUpdates?: PrimeFigureStateUpdates;
-  actions: [PrimeFigureAction, ...PrimeFigureAction[]];
+  actions: PrimeFigureAction[];
 }
 
 export interface CreateAgentResponse {

@@ -21,6 +21,34 @@ test("prime prompt and response schema remove disabled media capabilities", () =
   assert.match(schema, /"text"/);
 });
 
+test("prime prompt stays strict while the decision schema remains tolerant", () => {
+  const config = buildRuntimeConfigDefaults().primeFigure;
+  const prompt = buildPrimeSystemPrompt(promptAgent(), config);
+  const response = buildPrimeDecisionResponseFormat(
+    promptAgent(),
+    config,
+    false,
+    [],
+    [],
+  ) as any;
+  const schema = response.json_schema.schema;
+  const actions = schema.properties.actions;
+  const memoryWrites = schema.properties.memoryWrites;
+
+  assert.equal(response.json_schema.strict, false);
+  assert.equal(schema.required.includes("actions"), false);
+  assert.equal("minItems" in actions, false);
+  assert.equal("maxItems" in actions, false);
+  assert.ok(Array.isArray(actions.items.anyOf));
+  assert.equal("maxItems" in memoryWrites, false);
+  assert.match(prompt, /revisitAfterMinutes.*null.*解除/);
+  assert.match(prompt, /只返回符合严格 schema 的 JSON/);
+  assert.doesNotMatch(
+    prompt,
+    /互斥|唯一动作|没有数量限制|宽松处理|发送消息.*解除.*mute/,
+  );
+});
+
 test("prime prompt guidance levels are independently composable", () => {
   const basic = buildRuntimeConfigDefaults().primeFigure;
   basic.outputs.image.guidanceLevel = "basic";
