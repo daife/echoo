@@ -44,18 +44,50 @@ describe("runtime config forms", () => {
     const html = renderToStaticMarkup(
       <PrimeRuntimeConfigForm
         value={{
-          version: 1,
-          llm: { ...endpoint, temperature: 0.4, maxTokens: 1600 },
-          image: { ...endpoint, model: "image-model" },
-          tts: {
-            provider: "fish-audio",
-            apiKey: { configured: false },
-            referenceId: "voice",
-            model: "fish-model",
-            httpUrl: "https://fish.test/tts",
-            wsUrl: "wss://fish.test/tts/live",
-            latency: "balanced",
-            chunkLength: 100,
+          version: 2,
+          decisionModel: { ...endpoint, temperature: 0.4, maxTokens: 1600 },
+          outputs: {
+            image: {
+              enabled: true,
+              guidanceLevel: "medium",
+              generator: { ...endpoint, model: "image-model" },
+            },
+            voice: {
+              enabled: true,
+              guidanceLevel: "medium",
+              tts: {
+                provider: "fish-audio",
+                apiKey: { configured: false },
+                referenceId: "voice",
+                model: "fish-model",
+                httpUrl: "https://fish.test/tts",
+                wsUrl: "wss://fish.test/tts/live",
+                latency: "balanced",
+                chunkLength: 100,
+              },
+            },
+          },
+          optimization: {
+            image: {
+              enabled: false,
+              level: "advanced",
+              model: { ...endpoint, temperature: 0.2, maxTokens: 2400 },
+            },
+            voice: {
+              enabled: false,
+              level: "advanced",
+              model: { ...endpoint, temperature: 0.2, maxTokens: 1600 },
+            },
+          },
+          understanding: {
+            visual: {
+              mode: "native",
+              model: { ...endpoint, temperature: 0.1, maxTokens: 2400 },
+            },
+            audio: {
+              mode: "native",
+              model: { ...endpoint, temperature: 0.1, maxTokens: 2400 },
+            },
           },
           context: { minimumMessages: 150, maximumMessages: 249 },
           typingCharsPerMinute: 300,
@@ -65,7 +97,8 @@ describe("runtime config forms", () => {
       />,
     );
     expect(html).toContain("图像生成");
-    expect(html).toContain("Fish Audio");
+    expect(html).toContain("TTS 服务");
+    expect(html).toContain("媒体理解");
     expect(html).toContain("连续消息合并间隔（毫秒）");
     expect(html).toContain('value="2000"');
   });

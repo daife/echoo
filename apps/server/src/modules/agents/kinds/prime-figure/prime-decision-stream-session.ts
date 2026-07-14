@@ -54,6 +54,7 @@ interface VoiceActionState {
   audioStarted: boolean;
   audioSequence: number;
   pendingAudio: Buffer[];
+  optimizedTranscriptReady?: boolean;
 }
 
 interface ImageActionState {
@@ -98,6 +99,7 @@ export class PrimeDecisionStreamSession {
   private deliveryTail: Promise<number> = Promise.resolve(Date.now());
   private readonly tts: FishAudioTtsService;
   private readonly imageGeneration: OpenRouterImageGenerationService;
+  private finalizing = false;
 
   constructor(
     private readonly input: {
@@ -113,10 +115,13 @@ export class PrimeDecisionStreamSession {
     private readonly conversationMedia = new PrimeConversationMediaRepository(),
     private readonly messages = new MessageRepository(),
   ) {
-    this.tts = tts ?? new FishAudioTtsService(input.runtimeConfig.tts);
+    this.tts =
+      tts ?? new FishAudioTtsService(input.runtimeConfig.outputs.voice.tts);
     this.imageGeneration =
       imageGeneration ??
-      new OpenRouterImageGenerationService(input.runtimeConfig.image);
+      new OpenRouterImageGenerationService(
+        input.runtimeConfig.outputs.image.generator,
+      );
   }
 
   handleField(event: PrimeDecisionStreamFieldDelta) {
@@ -125,7 +130,11 @@ export class PrimeDecisionStreamSession {
       if (!event.complete) state.typeBuffer += event.delta;
       if (event.complete && isMessageType(state.typeBuffer)) {
         setActionKind(state, state.typeBuffer);
-        this.ensureCreated(event.actionIndex, state);
+        if (!(
+          state.typeBuffer === "voice" &&
+          this.input.runtimeConfig.optimization.voice.enabled
+        ))
+          this.ensureCreated(event.actionIndex, state);
       }
       return;
     }
@@ -147,6 +156,12 @@ export class PrimeDecisionStreamSession {
     }
 
     state.fields[event.field] = append(state.fields[event.field], event.delta);
+    if (
+      event.field === "transcript" &&
+      this.input.runtimeConfig.optimization.voice.enabled &&
+      !this.finalizing
+    )
+      return;
     if (
       this.input.voiceRequestStreaming &&
       event.field === "transcript" &&
@@ -182,6 +197,7 @@ export class PrimeDecisionStreamSession {
   }
 
   async finalize(decision: PrimeFigureDecision) {
+    this.finalizing = true;
     const voiceMedia = new Map<number, ResolvedPrimeVoiceMedia>();
     const imageMedia = new Map<number, ResolvedPrimeImageMedia>();
     const imageGenerationErrors = new Map<number, string>();
@@ -190,6 +206,12 @@ export class PrimeDecisionStreamSession {
       if (action.type !== "send_message") continue;
       const state = this.getAction(index);
       setActionKind(state, action.message.type);
+      if (
+        action.message.type === "voice" &&
+        this.input.runtimeConfig.optimization.voice.enabled &&
+        !ensureVoiceState(state).optimizedTranscriptReady
+      )
+        state.fields.transcript = "";
       this.ensureCreated(index, state);
       const finalText = getVisibleText(action.message);
       const streamedText = state.fields[visibleField(messageType(state))] ?? "";
@@ -290,6 +312,58 @@ export class PrimeDecisionStreamSession {
           ]),
       ),
     };
+  }
+
+  beginVoiceOptimization(actionIndex: number) {
+    const state = this.getAction(actionIndex);
+    setActionKind(state, "voice");
+    const voice = ensureVoiceState(state);
+    voice.tts?.abort();
+    voice.tts = undefined;
+    voice.voicePromise = undefined;
+    voice.ttsError = undefined;
+    voice.pendingAudio = [];
+    voice.optimizedTranscriptReady = false;
+    state.fields.transcript = "";
+    if (this.input.voiceRequestStreaming) this.ensureStreamingTts(state);
+  }
+
+  pushOptimizedVoiceDelta(actionIndex: number, delta: string) {
+    if (!delta) return;
+    const state = this.getAction(actionIndex);
+    setActionKind(state, "voice");
+    state.fields.transcript = append(state.fields.transcript, delta);
+    if (this.input.voiceRequestStreaming) {
+      this.ensureStreamingTts(state);
+      ensureVoiceState(state).tts?.write(delta);
+    }
+  }
+
+  completeVoiceOptimization(actionIndex: number, transcript: string) {
+    const state = this.getAction(actionIndex);
+    setActionKind(state, "voice");
+    const voice = ensureVoiceState(state);
+    state.fields.transcript = transcript;
+    voice.optimizedTranscriptReady = true;
+    this.ensureCreated(actionIndex, state);
+    this.queueTextDelta(state, transcript, false);
+    this.resolveTextComplete(state);
+    if (this.input.voiceRequestStreaming) this.finishStreamingVoice(state);
+  }
+
+  fallbackVoiceOptimization(actionIndex: number, transcript: string) {
+    const state = this.getAction(actionIndex);
+    setActionKind(state, "voice");
+    const voice = ensureVoiceState(state);
+    voice.tts?.abort();
+    voice.tts = undefined;
+    voice.voicePromise = undefined;
+    voice.ttsError = undefined;
+    voice.pendingAudio = [];
+    voice.optimizedTranscriptReady = false;
+    state.fields.transcript = "";
+    // finalize() will reveal and synthesize the decision-model fallback.
+    void transcript;
   }
 
   async fail(error: unknown, diagnostics?: PrimeStreamFailureDiagnostics) {
@@ -499,6 +573,8 @@ export class PrimeDecisionStreamSession {
 
   private maybeStartImage(state: StreamedActionState) {
     if (state.kind.type !== "image") return;
+    if (this.input.runtimeConfig.optimization.image.enabled && !this.finalizing)
+      return;
     const image = state.kind;
     if (
       image.imagePromise ||
@@ -588,8 +664,16 @@ export class PrimeDecisionStreamSession {
     this.resolveDelivery(state);
   }
 
-  private queueTextDelta(state: StreamedActionState, delta: string) {
-    if (this.input.voiceRequestStreaming && state.kind.type === "voice")
+  private queueTextDelta(
+    state: StreamedActionState,
+    delta: string,
+    writeTts = true,
+  ) {
+    if (
+      writeTts &&
+      this.input.voiceRequestStreaming &&
+      state.kind.type === "voice"
+    )
       state.kind.tts?.write(delta);
     state.text.pending += delta;
     if (state.text.flushScheduled) return;

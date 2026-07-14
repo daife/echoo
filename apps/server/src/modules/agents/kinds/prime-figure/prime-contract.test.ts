@@ -10,6 +10,7 @@ import type { PrimeFigureDecision, PrimeFigureState } from "@echoo/shared";
 import { PrimeActionExecutor } from "./prime-action-executor.js";
 import { PrimeDecisionStreamParser } from "./prime-decision-stream-parser.js";
 import { buildPrimeChatMessages } from "./prime-figure-runtime.service.js";
+import { buildRuntimeConfigDefaults } from "../../../runtime-config/runtime-config.defaults.js";
 
 test("prime decision parser preserves streamed visible message fields", () => {
   const events: Array<{
@@ -197,6 +198,8 @@ test("prime context registers cover and creator images before conversation media
       },
     } as never,
     0,
+    undefined,
+    buildRuntimeConfigDefaults().primeFigure,
   );
 
   assert.deepEqual(
@@ -208,7 +211,7 @@ test("prime context registers cover and creator images before conversation media
   );
 });
 
-test("prime debug hints are injected as a dedicated highest-priority system message", async () => {
+test("prime debug hints stay inside the single user packet", async () => {
   const instruction = "发送语音消息：请留下来。";
   const packet = await buildPrimeChatMessages(
     {
@@ -258,13 +261,25 @@ test("prime debug hints are injected as a dedicated highest-priority system mess
     } as never,
     0,
     instruction,
+    buildRuntimeConfigDefaults().primeFigure,
   );
 
-  assert.equal(packet.messages[1]?.role, "system");
-  assert.equal(typeof packet.messages[1]?.content, "string");
-  assert.match(String(packet.messages[1]?.content), /最高优先级系统调试指令/);
-  assert.match(String(packet.messages[1]?.content), /禁止改用 silence 或 mute/);
-  assert.match(String(packet.messages[1]?.content), /请留下来/);
+  assert.deepEqual(
+    packet.messages.map((message) => message.role),
+    ["system", "user"],
+  );
+  const userContent = packet.messages[1]?.content;
+  assert.ok(Array.isArray(userContent));
+  const context = userContent.at(-1);
+  assert.equal(context?.type, "text");
+  assert.match(
+    String(context && "text" in context ? context.text : ""),
+    /系统调试指令/,
+  );
+  assert.match(
+    String(context && "text" in context ? context.text : ""),
+    /请留下来/,
+  );
 });
 
 test("prime decision distinguishes one-turn silence from message muting", () => {

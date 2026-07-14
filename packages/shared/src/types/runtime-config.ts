@@ -41,11 +41,53 @@ export interface SliceFigureRuntimeConfigView {
   };
 }
 
+export type PrimeFigureGuidanceLevel = "basic" | "medium" | "advanced";
+export type PrimeFigureOptimizationLevel = "advanced" | "top";
+export type PrimeFigureUnderstandingMode = "native" | "auxiliary";
+
+export interface PrimeFigureOutputConfigView {
+  image: {
+    enabled: boolean;
+    guidanceLevel: PrimeFigureGuidanceLevel;
+    generator: ModelEndpointConfigView;
+  };
+  voice: {
+    enabled: boolean;
+    guidanceLevel: PrimeFigureGuidanceLevel;
+    tts: FishAudioConfigView;
+  };
+}
+
+export interface PrimeFigureOptimizationConfigView {
+  image: {
+    enabled: boolean;
+    level: PrimeFigureOptimizationLevel;
+    model: TextModelConfigView;
+  };
+  voice: {
+    enabled: boolean;
+    level: PrimeFigureOptimizationLevel;
+    model: TextModelConfigView;
+  };
+}
+
+export interface PrimeFigureUnderstandingConfigView {
+  visual: {
+    mode: PrimeFigureUnderstandingMode;
+    model: TextModelConfigView;
+  };
+  audio: {
+    mode: PrimeFigureUnderstandingMode;
+    model: TextModelConfigView;
+  };
+}
+
 export interface PrimeFigureRuntimeConfigView {
-  version: 1;
-  llm: TextModelConfigView;
-  image: ModelEndpointConfigView;
-  tts: FishAudioConfigView;
+  version: 2;
+  decisionModel: TextModelConfigView;
+  outputs: PrimeFigureOutputConfigView;
+  optimization: PrimeFigureOptimizationConfigView;
+  understanding: PrimeFigureUnderstandingConfigView;
   context: {
     minimumMessages: number;
     maximumMessages: number;
@@ -96,9 +138,41 @@ export interface SliceFigureRuntimeConfigPatch {
 }
 
 export interface PrimeFigureRuntimeConfigPatch {
-  llm?: TextModelConfigPatch;
-  image?: ModelEndpointConfigPatch;
-  tts?: FishAudioConfigPatch;
+  decisionModel?: TextModelConfigPatch;
+  outputs?: {
+    image?: {
+      enabled?: boolean;
+      guidanceLevel?: PrimeFigureGuidanceLevel;
+      generator?: ModelEndpointConfigPatch;
+    };
+    voice?: {
+      enabled?: boolean;
+      guidanceLevel?: PrimeFigureGuidanceLevel;
+      tts?: FishAudioConfigPatch;
+    };
+  };
+  optimization?: {
+    image?: {
+      enabled?: boolean;
+      level?: PrimeFigureOptimizationLevel;
+      model?: TextModelConfigPatch;
+    };
+    voice?: {
+      enabled?: boolean;
+      level?: PrimeFigureOptimizationLevel;
+      model?: TextModelConfigPatch;
+    };
+  };
+  understanding?: {
+    visual?: {
+      mode?: PrimeFigureUnderstandingMode;
+      model?: TextModelConfigPatch;
+    };
+    audio?: {
+      mode?: PrimeFigureUnderstandingMode;
+      model?: TextModelConfigPatch;
+    };
+  };
   context?: Partial<PrimeFigureRuntimeConfigView["context"]>;
   typingCharsPerMinute?: number;
   messageCoalesceMs?: number;

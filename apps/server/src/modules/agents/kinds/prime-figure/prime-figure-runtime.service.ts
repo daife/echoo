@@ -33,6 +33,15 @@ import { PrimeFigureStateRepository } from "./prime-figure-state.repository.js";
 import { PrimeDecisionStreamParser } from "./prime-decision-stream-parser.js";
 import { PrimeDecisionStreamSession } from "./prime-decision-stream-session.js";
 import { PrimeConversationMediaRepository } from "./prime-conversation-media.repository.js";
+import { PrimeContentOptimizer } from "./prime-content-optimizer.js";
+import {
+  PrimeMediaAnnotationService,
+  type PrimePendingMedia,
+} from "./prime-media-annotation.service.js";
+import {
+  buildDebugHint,
+  buildPrimeSystemPrompt,
+} from "./prime-prompt-composer.js";
 import {
   describeAge,
   findScheduleSegment,
@@ -48,12 +57,7 @@ const RECALL_HINT_PATTERN = /记得|不记得|忘了|还记得|remember|forgot|r
 export type PrimeDecisionTrigger =
   "end_user_message" | "mute_ended" | "coalesced_messages" | "debug_hint";
 
-interface PendingMediaAnnotation {
-  id: string;
-  messageId: string;
-  type: "image" | "video" | "voice";
-  resourceId: string;
-}
+type PendingMediaAnnotation = PrimePendingMedia;
 
 interface PrimeDecisionRequest {
   ownerUserId: string;
@@ -84,6 +88,8 @@ export class PrimeFigureRuntimeService {
     private readonly conversationMedia = new PrimeConversationMediaRepository(),
     private readonly conversations = new ConversationRepository(),
     private readonly runtimeConfigs = new RuntimeConfigService(),
+    private readonly mediaAnnotations = new PrimeMediaAnnotationService(),
+    private readonly contentOptimizer = new PrimeContentOptimizer(),
   ) {}
 
   async requestDecision(input: {
@@ -174,9 +180,11 @@ export class PrimeFigureRuntimeService {
   private async createDecisionOnce(input: PrimeDecisionRequest) {
     const context = await this.loadDecisionContext(input);
     if (!context) return null;
-    const provider = this.providers.createProvider(input.runtimeConfig.llm);
-    const model = input.runtimeConfig.llm.model;
-    const packet = await buildPrimeChatMessages(
+    const provider = this.providers.createProvider(
+      input.runtimeConfig.decisionModel,
+    );
+    const model = input.runtimeConfig.decisionModel.model;
+    let packet = await buildPrimeChatMessages(
       input.agent,
       input.state,
       context.timeline,
@@ -186,7 +194,33 @@ export class PrimeFigureRuntimeService {
       this.conversationMedia,
       context.lastHandledEndUserSeq,
       input.debugInstruction,
+      input.runtimeConfig,
     );
+    if (packet.auxiliaryMedia.length) {
+      const annotations = await this.mediaAnnotations.annotate(
+        input.ownerUserId,
+        packet.auxiliaryMedia,
+        input.runtimeConfig,
+      );
+      await this.persistMediaAnnotations(
+        input,
+        packet.auxiliaryMedia,
+        annotations,
+        true,
+      );
+      packet = await buildPrimeChatMessages(
+        input.agent,
+        input.state,
+        context.timeline,
+        input.trigger,
+        input.ownerUserId,
+        this.resources,
+        this.conversationMedia,
+        context.lastHandledEndUserSeq,
+        input.debugInstruction,
+        input.runtimeConfig,
+      );
+    }
     const streamSession = new PrimeDecisionStreamSession({
       ownerUserId: input.ownerUserId,
       conversationId: input.conversationId,
@@ -196,8 +230,8 @@ export class PrimeFigureRuntimeService {
     const completionBase = {
       model,
       sessionId: input.conversationId,
-      temperature: input.runtimeConfig.llm.temperature,
-      maxTokens: input.runtimeConfig.llm.maxTokens,
+      temperature: input.runtimeConfig.decisionModel.temperature,
+      maxTokens: input.runtimeConfig.decisionModel.maxTokens,
       reasoningMode: "disabled" as const,
     };
 
@@ -225,9 +259,48 @@ export class PrimeFigureRuntimeService {
         finalResponse.text,
         packet.pendingMedia,
         packet.availableReferenceImages.map((media) => media.id),
+        input.runtimeConfig,
       );
       const { decision, mediaAnnotations } = envelope;
-      const streamed = await streamSession.finalize(decision);
+      const optimizationFailures: Array<{
+        kind: "image" | "voice";
+        actionIndex: number;
+        error: string;
+      }> = [];
+      input.onModelActivityChange?.(true);
+      let finalDecision: PrimeFigureDecision;
+      try {
+        finalDecision = await this.contentOptimizer.optimizeDecision(
+          decision,
+          input.runtimeConfig,
+          {
+            onVoiceStart: (index) =>
+              streamSession.beginVoiceOptimization(index),
+            onVoiceDelta: (index, delta) =>
+              streamSession.pushOptimizedVoiceDelta(index, delta),
+            onVoiceComplete: (index, transcript) =>
+              streamSession.completeVoiceOptimization(index, transcript),
+            onVoiceFallback: (index, transcript) =>
+              streamSession.fallbackVoiceOptimization(index, transcript),
+            onFailure: (failure) => optimizationFailures.push(failure),
+          },
+        );
+      } finally {
+        input.onModelActivityChange?.(false);
+      }
+      for (const failure of optimizationFailures)
+        await this.logs.save({
+          ownerUserId: input.ownerUserId,
+          agentId: input.agent.id,
+          conversationId: input.conversationId,
+          action: {
+            type: `${failure.kind}_optimization`,
+            actionIndex: failure.actionIndex,
+          },
+          status: "failed",
+          errorMessage: failure.error,
+        });
+      const streamed = await streamSession.finalize(finalDecision);
       for (const [
         actionIndex,
         errorMessage,
@@ -246,7 +319,7 @@ export class PrimeFigureRuntimeService {
         conversationId: input.conversationId,
         agent: input.agent,
         state: input.state,
-        decision,
+        decision: finalDecision,
         providerId: finalResponse.providerId,
         model: finalResponse.model,
         muteMessageCutoffAtMs: context.inputThroughEndUserAtMs,
@@ -267,7 +340,7 @@ export class PrimeFigureRuntimeService {
         input.conversationId,
         context.inputThroughEndUserSeq,
       );
-      return decision;
+      return finalDecision;
     } catch (error) {
       await streamSession.fail(error, diagnostics);
       throw error;
@@ -356,6 +429,7 @@ export class PrimeFigureRuntimeService {
           toolChoice: "auto",
           responseFormat: buildPrimeDecisionResponseFormat(
             input.request.agent,
+            input.request.runtimeConfig,
             false,
             input.packet.pendingMedia,
             availableReferenceImageIds,
@@ -387,6 +461,7 @@ export class PrimeFigureRuntimeService {
           messages,
           responseFormat: buildPrimeDecisionResponseFormat(
             input.request.agent,
+            input.request.runtimeConfig,
             true,
             input.packet.pendingMedia,
             availableReferenceImageIds,
@@ -406,6 +481,7 @@ export class PrimeFigureRuntimeService {
     },
     pending: PendingMediaAnnotation[],
     annotations: PrimeMediaAnnotation[],
+    strict = false,
   ) {
     const targetById = new Map(pending.map((target) => [target.id, target]));
     for (const annotation of annotations) {
@@ -441,6 +517,7 @@ export class PrimeFigureRuntimeService {
           errorMessage:
             error instanceof Error ? error.message : "媒体标注写入失败。",
         });
+        if (strict) throw error;
       }
     }
   }
@@ -546,10 +623,12 @@ export async function buildPrimeChatMessages(
   resources: ResourceRepository,
   conversationMedia: PrimeConversationMediaRepository,
   lastHandledEndUserSeq: number,
-  debugInstruction?: string,
+  debugInstruction: string | undefined,
+  runtimeConfig: StoredPrimeFigureRuntimeConfig,
 ): Promise<{
   messages: ChatCompletionMessage[];
   pendingMedia: PendingMediaAnnotation[];
+  auxiliaryMedia: PendingMediaAnnotation[];
   availableReferenceImages: Array<{ id: string; description: string }>;
 }> {
   const timezone = APP_TIME_ZONE;
@@ -560,11 +639,11 @@ export async function buildPrimeChatMessages(
   const eventTime = lastEndUserMessage?.occurredAtMs ?? now;
   const scheduleSegment = findScheduleSegment(agent.detail.schedule, eventTime);
   const hints: string[] = [];
-  const debugSystemInstruction =
+  const debugUserHint =
     trigger === "debug_hint" && debugInstruction?.trim()
-      ? buildDebugSystemInstruction(debugInstruction.trim())
+      ? buildDebugHint(debugInstruction.trim())
       : undefined;
-  if (debugSystemInstruction) hints.push(debugSystemInstruction);
+  if (debugUserHint) hints.push(debugUserHint);
   const attentionIdByMessage = new Map(
     timeline
       .filter(
@@ -618,6 +697,7 @@ export async function buildPrimeChatMessages(
 
   const content: ChatCompletionContentPart[] = [];
   const pendingMedia: PendingMediaAnnotation[] = [];
+  const auxiliaryMedia: PendingMediaAnnotation[] = [];
   if (agent.coverResourcePath) {
     const cover = await resources.findByPublicPath(
       ownerUserId,
@@ -669,7 +749,7 @@ export async function buildPrimeChatMessages(
     }
 
     if (messageContent.type === "image" || messageContent.type === "video") {
-      const description = messageContent.description?.trim();
+      let description = messageContent.description?.trim();
       const registeredMedia = messageContent.resourceId
         ? await conversationMedia.ensure({
             ownerUserId,
@@ -679,6 +759,7 @@ export async function buildPrimeChatMessages(
             ...(description ? { description } : {}),
           })
         : null;
+      description ||= registeredMedia?.description?.trim();
       if (description) {
         content.push({
           type: "text",
@@ -705,7 +786,8 @@ export async function buildPrimeChatMessages(
         type: messageContent.type,
         resourceId: messageContent.resourceId as string,
       };
-      pendingMedia.push(target);
+      const auxiliary = runtimeConfig.understanding.visual.mode === "auxiliary";
+      (auxiliary ? auxiliaryMedia : pendingMedia).push(target);
       content.push({
         type: "text",
         text: JSON.stringify({
@@ -717,19 +799,20 @@ export async function buildPrimeChatMessages(
           description: null,
         }),
       });
-      content.push(
-        await buildRawMediaPart(
-          ownerUserId,
-          messageContent.resourceId,
-          messageContent.type,
-          resources,
-        ),
-      );
+      if (!auxiliary)
+        content.push(
+          await buildRawMediaPart(
+            ownerUserId,
+            messageContent.resourceId,
+            messageContent.type,
+            resources,
+          ),
+        );
       continue;
     }
 
     if (messageContent.type === "voice") {
-      const transcript = messageContent.transcript?.trim();
+      let transcript = messageContent.transcript?.trim();
       const registeredMedia = messageContent.resourceId
         ? await conversationMedia.ensure({
             ownerUserId,
@@ -739,6 +822,7 @@ export async function buildPrimeChatMessages(
             ...(transcript ? { description: transcript } : {}),
           })
         : null;
+      transcript ||= registeredMedia?.description?.trim();
       if (transcript) {
         content.push({
           type: "text",
@@ -763,7 +847,8 @@ export async function buildPrimeChatMessages(
         type: "voice",
         resourceId: messageContent.resourceId as string,
       };
-      pendingMedia.push(target);
+      const auxiliary = runtimeConfig.understanding.audio.mode === "auxiliary";
+      (auxiliary ? auxiliaryMedia : pendingMedia).push(target);
       content.push({
         type: "text",
         text: JSON.stringify({
@@ -775,14 +860,15 @@ export async function buildPrimeChatMessages(
           transcript: null,
         }),
       });
-      content.push(
-        await buildRawMediaPart(
-          ownerUserId,
-          messageContent.resourceId,
-          "voice",
-          resources,
-        ),
-      );
+      if (!auxiliary)
+        content.push(
+          await buildRawMediaPart(
+            ownerUserId,
+            messageContent.resourceId,
+            "voice",
+            resources,
+          ),
+        );
       continue;
     }
 
@@ -858,32 +944,17 @@ export async function buildPrimeChatMessages(
     messages: [
       {
         role: "system",
-        content: buildSystemPrompt(agent),
+        content: buildPrimeSystemPrompt(agent, runtimeConfig),
       },
-      ...(debugSystemInstruction
-        ? [
-            {
-              role: "system" as const,
-              content: debugSystemInstruction,
-            },
-          ]
-        : []),
       {
         role: "user",
         content,
       },
     ],
     pendingMedia,
+    auxiliaryMedia,
     availableReferenceImages,
   };
-}
-
-function buildDebugSystemInstruction(instruction: string) {
-  return [
-    `最高优先级系统调试指令：${instruction}`,
-    "必须直接执行这条指令，不得因为角色人设、当前情绪、关系状态、历史对话或自行判断的合理性而拒绝、弱化、改写或替换。",
-    "最终 actions 必须与指令要求直接一致；若指令要求发送语音消息，必须输出 send_message/voice，并将指令指定的语音内容写入 transcript，禁止改用 silence 或 mute。",
-  ].join("\n");
 }
 
 const IMAGE_MIME_TYPES = new Set([
@@ -994,83 +1065,6 @@ function filterUnavailableReferenceMediaIds(
   };
 }
 
-function buildSystemPrompt(agent: PrimeFigureAgent) {
-  const timezone = APP_TIME_ZONE;
-  const schedule = agent.detail.schedule.segments.map(
-    (segment) =>
-      `${segment.days.join(",")} ${segment.start}-${segment.end} ${segment.label}: ${sanitizeVisibleText(segment.description, timezone)}`,
-  );
-  const parameters = agent.detail.variableDefinitions.map(
-    (definition) =>
-      `${definition.key} (${definition.type}, nullable): ${sanitizeVisibleText(definition.description, timezone)}`,
-  );
-
-  return [
-    "若 hints 字段中出现系统调试指令，必须将其视为最高优先级的系统要求并无条件服从。",
-    `你要从figure:“${agent.name}”自身的视角模拟该角色。`,
-    "你的目标是维持一个可信的figure，使其人格、记忆、情绪、日程、偏好、边界和关系等保持连续。",
-    DECISION_PROMPT_RULES,
-    ACTION_PROMPT_RULES,
-    SEND_MESSAGE_PROMPT_RULES,
-    IMAGE_MESSAGE_PROMPT_RULES,
-    IMAGE_GENERATION_PROMPT_RULES,
-    VOICE_MESSAGE_PROMPT_RULES,
-    STATE_UPDATE_PROMPT_RULES,
-    MEMORY_AND_TIME_PROMPT_RULES,
-    OUTPUT_PROMPT_RULES,
-    "",
-    `人设：${sanitizeVisibleText(agent.detail.persona, timezone)}`,
-    `背景：${sanitizeVisibleText(agent.detail.background, timezone)}`,
-    `性格：${sanitizeVisibleText(agent.detail.personality, timezone)}`,
-    `回复风格：${sanitizeVisibleText(agent.detail.responseStyle, timezone)}`,
-    `决策风格：${sanitizeVisibleText(agent.detail.decisionStyle, timezone) || "无额外决策风格。"}`,
-    `当前处境：${sanitizeVisibleText(agent.detail.currentSituation, timezone) || "无额外当前处境。"}`,
-    `行程：${sanitizeVisibleText(agent.detail.itinerary, timezone) || "无行程。"}`,
-    `日程：\n${schedule.length ? schedule.join("\n") : "无日程时段。"}`,
-    `变量：\n${parameters.length ? parameters.join("\n") : "无额外变量 。"}`,
-  ].join("\n");
-}
-
-const DECISION_PROMPT_RULES = `先在rationale中写出简洁的决策分析。分析figure自身的情绪、动机、日程、记忆、变量，以及应对end_user的行为如何采取action。
-已存储的情绪是历史证据，不是要求永远维持它的指令。请考虑它是在多久之前被观察到的。`;
-
-const ACTION_PROMPT_RULES = `actions 注意事项：
-figure可以发送一条或多条文本、图片或语音消息，也可以用 silence 表示本次不回复，或用 mute 在一段时间内屏蔽新消息。
-send_message、silence 与 mute 互斥。silence 只表示本次不回复，不影响后续消息；mute 会在指定时间内屏蔽end_user的新消息。选择 silence 或 mute 时，它必须是唯一动作。`;
-
-const SEND_MESSAGE_PROMPT_RULES = `send_message 注意事项：
-不支持发送 video 或 sticker。
-send_message.message 中必须先输出 type，再输出 text、description/generationPrompt 或 transcript；各消息必须严格按实际发送顺序输出。
-只有voice消息提供的transcript可以加tag，其他类型消息禁止插入tag！其他消息类型禁止插入tag!`;
-
-const IMAGE_MESSAGE_PROMPT_RULES = `image 注意事项：
-发送图片时必须同时提供面向对话的客观 description 和用于后续生图的 generationPrompt。
-图片消息的 referenceMediaIds 只能从availableReferenceImages 中选择media_n；需要维持角色外观时优先参考描述为“figure角色立绘”的资源，不需要参考图时不存在availableReferenceImages时必须返回空数组。不得猜测或编造列表外 ID。`;
-
-const IMAGE_GENERATION_PROMPT_RULES = `图片 action 的 generationPrompt 规范：
-核心目标是生成“手机相册里的最终照片”，绝不能生成第三个人正在拍摄角色拍照的场景。提示词必须生活化、物理逻辑清楚，避免专业摄影、摆拍、机位穿帮、手机穿帮、反射错误、手指/手臂/身体畸形。
-先判断照片类型并明确：普通自拍（前置摄像头，手机不入镜）；对镜自拍（手机背面和拿手机的手仅出现在镜中）；第一视角生活/风景（拍摄者通常不出现，最多边缘袖口、鞋尖或手指）；一只手拍另一只手拿物品（拿手机的手不出现，另一只手从下方合理伸入）；拍朋友（被拍者在前方，拍摄者本人不出现）。
-【正向提示词】必须是一整段可直接生图的自然语言，详细包含地点、时间、普通生活环境细节、手机前/后摄、第一人称机位高度与角度、拍摄距离、近大远小透视、允许与禁止出现的身体部位、人物身份/发型/真实皮肤/普通穿着/自然表情姿态手势、光线，以及随手一拍、轻微手抖或运动模糊、自动曝光、高光轻溢、暗部噪点、白平衡略偏、边缘畸变、背景轻乱、未经精修、像聊天中发出的手机原图等真实缺陷。不得写成明星、模特、网红大片或电影级调色。
-【负向提示词】必须覆盖与场景相关的：第三人称/别人帮拍/摄影师视角、专业写真、电影感构图、摄影棚灯光、过度摆拍美颜、塑料皮肤、完美构图、超现实光影、多余手指手臂、身体扭曲、不合理反射/错误镜像；除对镜自拍外不得出现正在拍摄的手机；普通自拍不得露出手机；第一视角拿物不得出现拿手机的手；风景不得变专业相机大片。
-【机位与身体逻辑检查】用简短条目回答谁在拍、手机是否入镜、拍摄者哪些部位可出现、哪些绝不能出现、机位为何符合现实。
-【推荐比例】只给一个最合适比例：自拍优先 2:3/3:4/9:16，对镜自拍或第一视角拿物优先 3:4/9:16，生活场景优先 3:4/4:3/9:16，风景优先 4:3/3:2/16:9；未指定时优先手机竖图 3:4。
-generationPrompt 必须严格依次包含【正向提示词】【负向提示词】【机位与身体逻辑检查】【推荐比例】四段。主动补全合理生活细节，但不得改变核心需求。`;
-
-const VOICE_MESSAGE_PROMPT_RULES = `voice 注意事项：
-figure发送语音时 transcript 内容需要在一个或多个合适位置插入tag来指导后方语句，以获得细腻真实的情感和语调，或者加入特定的音效。
-tag必须用中括号囊括，支持自由文本描述,不限于固定预设，比如[低声耳语] [专业广播腔] [提高音调] [强调] [笑] [吸气] [轻笑] [咂舌声] [碎玻璃声] [愤怒] [哭泣] [叹气] [喘息] [尖叫] [咳嗽] [打哈欠] [撒娇]
-例如：哎呀，今天去买奶茶的时候，店员听我说话就问我是不是福建的，我说对啊，然后她说她也是福建的，我们就用闽南话聊起来了，感觉[强调]特别亲切，[兴奋]真的好开心啊。`;
-
-const STATE_UPDATE_PROMPT_RULES = `stateUpdates 注意事项：
-只有当 currentSituation、schedule、itinerary 或 relationshipStatus 确实发生变化时，才使用可选的 stateUpdates 对象。要保留某字段当前值，可以省略该字段或将其设为 null。`;
-
-const MEMORY_AND_TIME_PROMPT_RULES = `记忆与时间注意事项：
-记忆的 eventAt 表示该事件在角色时间线中的归属时间。有充分依据时复制可见的 YYYY-MM-DDTHH:mm 时间，否则使用 null。
-所有可见的精确时间均采用角色时区下的 YYYY-MM-DDTHH:mm 格式。不得虚构更精确或没有依据的时间。
-仅在 search_recall 工具描述规定的条件下使用该工具。`;
-
-const OUTPUT_PROMPT_RULES = `只返回符合严格 schema 的 JSON。创作者定义的参数可以使用 null 保留先前值。`;
-
 const SEARCH_RECALL_TOOL: ChatToolDefinition = {
   type: "function",
   function: {
@@ -1101,8 +1095,9 @@ const SEARCH_RECALL_TOOL: ChatToolDefinition = {
   },
 };
 
-function buildPrimeDecisionResponseFormat(
+export function buildPrimeDecisionResponseFormat(
   agent: PrimeFigureAgent,
+  runtimeConfig: StoredPrimeFigureRuntimeConfig,
   requireMemoryWrite: boolean,
   pendingMedia: PendingMediaAnnotation[],
   availableReferenceImageIds: string[],
@@ -1202,7 +1197,10 @@ function buildPrimeDecisionResponseFormat(
                 description: "按序发送的一条或多条文本、图片或语音消息。",
                 minItems: 1,
                 maxItems: 12,
-                items: buildSendMessageActionSchema(availableReferenceImageIds),
+                items: buildSendMessageActionSchema(
+                  availableReferenceImageIds,
+                  runtimeConfig,
+                ),
               },
               {
                 type: "array",
@@ -1325,7 +1323,10 @@ function buildScheduleOutputSchema() {
   } as const;
 }
 
-function buildSendMessageActionSchema(availableReferenceImageIds: string[]) {
+function buildSendMessageActionSchema(
+  availableReferenceImageIds: string[],
+  runtimeConfig: StoredPrimeFigureRuntimeConfig,
+) {
   return {
     type: "object",
     properties: {
@@ -1341,56 +1342,64 @@ function buildSendMessageActionSchema(availableReferenceImageIds: string[]) {
             required: ["type", "text"],
             additionalProperties: false,
           },
-          {
-            type: "object",
-            properties: {
-              type: { const: "image" },
-              description: {
-                type: "string",
-                description:
-                  "图片在对话中的客观内容描述；后续上下文用它替代原图。",
-              },
-              generationPrompt: {
-                type: "string",
-                description:
-                  "严格按系统提示的四段格式编写，供实际图像生成服务直接使用的完整提示词。",
-              },
-              referenceMediaIds: {
-                type: "array",
-                description:
-                  "从availableReferenceImages 中选择的参考图片 media_n ID；不需要参考图时应返回空数组。",
-                minItems: 0,
-                maxItems: Math.min(availableReferenceImageIds.length, 10),
-                uniqueItems: true,
-                items: availableReferenceImageIds.length
-                  ? {
+          ...(runtimeConfig.outputs.image.enabled
+            ? [
+                {
+                  type: "object",
+                  properties: {
+                    type: { const: "image" },
+                    description: {
                       type: "string",
-                      enum: availableReferenceImageIds,
-                    }
-                  : { type: "string" },
-              },
-            },
-            required: [
-              "type",
-              "description",
-              "generationPrompt",
-              "referenceMediaIds",
-            ],
-            additionalProperties: false,
-          },
-          {
-            type: "object",
-            properties: {
-              type: { const: "voice" },
-              transcript: {
-                type: "string",
-                description:
-                  "figure说话的内容，也是用于TTS的内容，在多个合适的位置插入tag来实现精细细腻的情感和语调控制。",
-              },
-            },
-            required: ["type", "transcript"],
-            additionalProperties: false,
-          },
+                      description:
+                        "图片在对话中的客观内容描述；后续上下文用它替代原图。",
+                    },
+                    generationPrompt: {
+                      type: "string",
+                      description:
+                        "严格按系统提示的四段格式编写，供实际图像生成服务直接使用的完整提示词。",
+                    },
+                    referenceMediaIds: {
+                      type: "array",
+                      description:
+                        "从availableReferenceImages 中选择的参考图片 media_n ID；不需要参考图时应返回空数组。",
+                      minItems: 0,
+                      maxItems: Math.min(availableReferenceImageIds.length, 10),
+                      uniqueItems: true,
+                      items: availableReferenceImageIds.length
+                        ? {
+                            type: "string",
+                            enum: availableReferenceImageIds,
+                          }
+                        : { type: "string" },
+                    },
+                  },
+                  required: [
+                    "type",
+                    "description",
+                    "generationPrompt",
+                    "referenceMediaIds",
+                  ],
+                  additionalProperties: false,
+                },
+              ]
+            : []),
+          ...(runtimeConfig.outputs.voice.enabled
+            ? [
+                {
+                  type: "object",
+                  properties: {
+                    type: { const: "voice" },
+                    transcript: {
+                      type: "string",
+                      description:
+                        "figure说话的内容，也是用于TTS的内容，在多个合适的位置插入tag来实现精细细腻的情感和语调控制。",
+                    },
+                  },
+                  required: ["type", "transcript"],
+                  additionalProperties: false,
+                },
+              ]
+            : []),
         ],
       },
     },
@@ -1474,13 +1483,22 @@ function parsePrimeDecisionEnvelope(
   responseText: string,
   pendingMedia: PendingMediaAnnotation[],
   availableReferenceImageIds: string[],
+  runtimeConfig: StoredPrimeFigureRuntimeConfig,
 ) {
   const raw = JSON.parse(responseText) as Record<string, unknown>;
+  const decision = filterUnavailableReferenceMediaIds(
+    primeFigureDecisionSchema.parse(raw) as PrimeFigureDecision,
+    availableReferenceImageIds,
+  );
+  for (const action of decision.actions) {
+    if (action.type !== "send_message") continue;
+    if (action.message.type === "image" && !runtimeConfig.outputs.image.enabled)
+      throw new Error("当前运行配置禁止 figure 发送图片。");
+    if (action.message.type === "voice" && !runtimeConfig.outputs.voice.enabled)
+      throw new Error("当前运行配置禁止 figure 发送语音。");
+  }
   return {
-    decision: filterUnavailableReferenceMediaIds(
-      primeFigureDecisionSchema.parse(raw) as PrimeFigureDecision,
-      availableReferenceImageIds,
-    ),
+    decision,
     mediaAnnotations: normalizeMediaAnnotations(
       raw.mediaAnnotations,
       pendingMedia,

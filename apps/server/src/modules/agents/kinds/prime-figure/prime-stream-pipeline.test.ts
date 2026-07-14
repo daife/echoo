@@ -574,31 +574,50 @@ function createSession(overrides?: {
 }
 
 function runtimeConfigForTest(typingCharsPerMinute = 300) {
+  const textModel = {
+    provider: "openrouter",
+    baseUrl: "https://openrouter.test/api/v1",
+    apiKey: "key",
+    model: "model",
+    temperature: 0.4,
+    maxTokens: 1600,
+  };
   return {
-    version: 1 as const,
-    llm: {
-      provider: "openrouter",
-      baseUrl: "https://openrouter.test/api/v1",
-      apiKey: "key",
-      model: "model",
-      temperature: 0.4,
-      maxTokens: 1600,
+    version: 2 as const,
+    decisionModel: textModel,
+    outputs: {
+      image: {
+        enabled: true,
+        guidanceLevel: "medium" as const,
+        generator: {
+          provider: "openrouter",
+          baseUrl: "https://openrouter.test/api/v1",
+          apiKey: "key",
+          model: "image-model",
+        },
+      },
+      voice: {
+        enabled: true,
+        guidanceLevel: "medium" as const,
+        tts: {
+          provider: "fish-audio",
+          apiKey: "fish-key",
+          referenceId: "reference",
+          model: "fish-model",
+          httpUrl: "https://fish.test/v1/tts",
+          wsUrl: "wss://fish.test/v1/tts/live",
+          latency: "balanced",
+          chunkLength: 100,
+        },
+      },
     },
-    image: {
-      provider: "openrouter",
-      baseUrl: "https://openrouter.test/api/v1",
-      apiKey: "key",
-      model: "image-model",
+    optimization: {
+      image: { enabled: false, level: "advanced" as const, model: textModel },
+      voice: { enabled: false, level: "advanced" as const, model: textModel },
     },
-    tts: {
-      provider: "fish-audio",
-      apiKey: "fish-key",
-      referenceId: "reference",
-      model: "fish-model",
-      httpUrl: "https://fish.test/v1/tts",
-      wsUrl: "wss://fish.test/v1/tts/live",
-      latency: "balanced",
-      chunkLength: 100,
+    understanding: {
+      visual: { mode: "native" as const, model: textModel },
+      audio: { mode: "native" as const, model: textModel },
     },
     context: { minimumMessages: 150, maximumMessages: 249 },
     typingCharsPerMinute,

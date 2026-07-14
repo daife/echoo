@@ -4,6 +4,7 @@ import { buildRuntimeConfigDefaults } from "./runtime-config.defaults.js";
 import {
   RuntimeConfigNotFoundError,
   RuntimeConfigService,
+  RuntimeConfigValidationError,
 } from "./runtime-config.service.js";
 import type {
   StoredFigureRuntimeConfig,
@@ -44,9 +45,15 @@ test("new-user initialization never copies environment API keys", async () => {
     await service.initializeUserConfig("user_1");
 
     assert.equal(repository.userConfig?.sliceFigure.llm.apiKey, "");
-    assert.equal(repository.userConfig?.primeFigure.llm.apiKey, "");
-    assert.equal(repository.userConfig?.primeFigure.image.apiKey, "");
-    assert.equal(repository.userConfig?.primeFigure.tts.apiKey, "");
+    assert.equal(repository.userConfig?.primeFigure.decisionModel.apiKey, "");
+    assert.equal(
+      repository.userConfig?.primeFigure.outputs.image.generator.apiKey,
+      "",
+    );
+    assert.equal(
+      repository.userConfig?.primeFigure.outputs.voice.tts.apiKey,
+      "",
+    );
     assert.doesNotMatch(
       JSON.stringify(repository.userConfig),
       /server-(openrouter|fish)-secret/,
@@ -55,6 +62,34 @@ test("new-user initialization never copies environment API keys", async () => {
     restore("OPENROUTER_API_KEY", previousOpenRouterKey);
     restore("FISH_AUDIO_API_KEY", previousFishKey);
   }
+});
+
+test("prime v2 defaults enable media with medium guidance and native understanding", () => {
+  const prime = buildRuntimeConfigDefaults().primeFigure;
+  assert.equal(prime.version, 2);
+  assert.equal(prime.outputs.image.enabled, true);
+  assert.equal(prime.outputs.voice.enabled, true);
+  assert.equal(prime.outputs.image.guidanceLevel, "medium");
+  assert.equal(prime.outputs.voice.guidanceLevel, "medium");
+  assert.equal(prime.optimization.image.enabled, false);
+  assert.equal(prime.optimization.voice.enabled, false);
+  assert.equal(prime.understanding.visual.mode, "native");
+  assert.equal(prime.understanding.audio.mode, "native");
+});
+
+test("prime dependent model features cannot outlive their output capability", async () => {
+  const repository = new MemoryRuntimeConfigRepository();
+  repository.userConfig = buildRuntimeConfigDefaults();
+  const service = createService(repository);
+  await assert.rejects(
+    service.updateUserConfig("user_1", {
+      primeFigure: {
+        outputs: { image: { enabled: false } },
+        optimization: { image: { enabled: true } },
+      },
+    }),
+    RuntimeConfigValidationError,
+  );
 });
 
 test("secret patches retain, replace, and clear without exposing raw values", async () => {

@@ -23,26 +23,78 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
       },
     },
     primeFigure: {
-      version: 1,
-      llm: {
+      version: 2,
+      decisionModel: {
         ...sharedEndpoint,
         model: "openai/gpt-4o-mini",
         temperature: 0.4,
         maxTokens: 1600,
       },
-      image: {
-        ...sharedEndpoint,
-        model: "google/gemini-3.1-flash-lite-image",
+      outputs: {
+        image: {
+          enabled: true,
+          guidanceLevel: "medium",
+          generator: {
+            ...sharedEndpoint,
+            model: "google/gemini-3.1-flash-lite-image",
+          },
+        },
+        voice: {
+          enabled: true,
+          guidanceLevel: "medium",
+          tts: {
+            provider: "fish-audio",
+            apiKey: "",
+            referenceId: "",
+            model: "s2.1-pro-free",
+            httpUrl: "https://api.fish.audio/v1/tts",
+            wsUrl: "wss://api.fish.audio/v1/tts/live",
+            latency: "balanced",
+            chunkLength: 100,
+          },
+        },
       },
-      tts: {
-        provider: "fish-audio",
-        apiKey: "",
-        referenceId: "",
-        model: "s2.1-pro-free",
-        httpUrl: "https://api.fish.audio/v1/tts",
-        wsUrl: "wss://api.fish.audio/v1/tts/live",
-        latency: "balanced",
-        chunkLength: 100,
+      optimization: {
+        image: {
+          enabled: false,
+          level: "advanced",
+          model: {
+            ...sharedEndpoint,
+            model: "openai/gpt-4o-mini",
+            temperature: 0.2,
+            maxTokens: 2400,
+          },
+        },
+        voice: {
+          enabled: false,
+          level: "advanced",
+          model: {
+            ...sharedEndpoint,
+            model: "openai/gpt-4o-mini",
+            temperature: 0.2,
+            maxTokens: 1600,
+          },
+        },
+      },
+      understanding: {
+        visual: {
+          mode: "native",
+          model: {
+            ...sharedEndpoint,
+            model: "openai/gpt-4o-mini",
+            temperature: 0.1,
+            maxTokens: 2400,
+          },
+        },
+        audio: {
+          mode: "native",
+          model: {
+            ...sharedEndpoint,
+            model: "openai/gpt-4o-mini",
+            temperature: 0.1,
+            maxTokens: 2400,
+          },
+        },
       },
       context: {
         minimumMessages: 150,

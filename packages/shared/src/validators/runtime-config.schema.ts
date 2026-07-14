@@ -40,9 +40,59 @@ export const sliceFigureRuntimeConfigPatchSchema = z.object({
 });
 
 export const primeFigureRuntimeConfigPatchSchema = z.object({
-  llm: textModelPatchSchema.optional(),
-  image: modelEndpointPatchSchema.optional(),
-  tts: fishAudioPatchSchema.optional(),
+  decisionModel: textModelPatchSchema.optional(),
+  outputs: z
+    .object({
+      image: z
+        .object({
+          enabled: z.boolean().optional(),
+          guidanceLevel: z.enum(["basic", "medium", "advanced"]).optional(),
+          generator: modelEndpointPatchSchema.optional(),
+        })
+        .optional(),
+      voice: z
+        .object({
+          enabled: z.boolean().optional(),
+          guidanceLevel: z.enum(["basic", "medium", "advanced"]).optional(),
+          tts: fishAudioPatchSchema.optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  optimization: z
+    .object({
+      image: z
+        .object({
+          enabled: z.boolean().optional(),
+          level: z.enum(["advanced", "top"]).optional(),
+          model: textModelPatchSchema.optional(),
+        })
+        .optional(),
+      voice: z
+        .object({
+          enabled: z.boolean().optional(),
+          level: z.enum(["advanced", "top"]).optional(),
+          model: textModelPatchSchema.optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  understanding: z
+    .object({
+      visual: z
+        .object({
+          mode: z.enum(["native", "auxiliary"]).optional(),
+          model: textModelPatchSchema.optional(),
+        })
+        .optional(),
+      audio: z
+        .object({
+          mode: z.enum(["native", "auxiliary"]).optional(),
+          model: textModelPatchSchema.optional(),
+        })
+        .optional(),
+    })
+    .optional(),
   context: z
     .object({
       minimumMessages: optionalPositive,

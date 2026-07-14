@@ -33,10 +33,42 @@ export interface StoredSliceFigureRuntimeConfig {
 }
 
 export interface StoredPrimeFigureRuntimeConfig {
-  version: 1;
-  llm: StoredTextModelConfig;
-  image: StoredModelEndpointConfig;
-  tts: StoredFishAudioConfig;
+  version: 2;
+  decisionModel: StoredTextModelConfig;
+  outputs: {
+    image: {
+      enabled: boolean;
+      guidanceLevel: "basic" | "medium" | "advanced";
+      generator: StoredModelEndpointConfig;
+    };
+    voice: {
+      enabled: boolean;
+      guidanceLevel: "basic" | "medium" | "advanced";
+      tts: StoredFishAudioConfig;
+    };
+  };
+  optimization: {
+    image: {
+      enabled: boolean;
+      level: "advanced" | "top";
+      model: StoredTextModelConfig;
+    };
+    voice: {
+      enabled: boolean;
+      level: "advanced" | "top";
+      model: StoredTextModelConfig;
+    };
+  };
+  understanding: {
+    visual: {
+      mode: "native" | "auxiliary";
+      model: StoredTextModelConfig;
+    };
+    audio: {
+      mode: "native" | "auxiliary";
+      model: StoredTextModelConfig;
+    };
+  };
   context: {
     minimumMessages: number;
     maximumMessages: number;

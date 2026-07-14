@@ -184,16 +184,67 @@ function patchPrimeConfig(
 ): StoredPrimeFigureRuntimeConfig {
   return {
     ...current,
-    llm: patch.llm ? patchTextModel(current.llm, patch.llm) : current.llm,
-    image: patch.image
-      ? patchEndpoint(current.image, patch.image)
-      : current.image,
-    tts: patch.tts ? patchFishAudio(current.tts, patch.tts) : current.tts,
+    decisionModel: patch.decisionModel
+      ? patchTextModel(current.decisionModel, patch.decisionModel)
+      : current.decisionModel,
+    outputs: {
+      image: {
+        ...current.outputs.image,
+        ...patch.outputs?.image,
+        generator: patch.outputs?.image?.generator
+          ? patchEndpoint(
+              current.outputs.image.generator,
+              patch.outputs.image.generator,
+            )
+          : current.outputs.image.generator,
+      },
+      voice: {
+        ...current.outputs.voice,
+        ...patch.outputs?.voice,
+        tts: patch.outputs?.voice?.tts
+          ? patchFishAudio(current.outputs.voice.tts, patch.outputs.voice.tts)
+          : current.outputs.voice.tts,
+      },
+    },
+    optimization: {
+      image: patchPrimeModelFeature(
+        current.optimization.image,
+        patch.optimization?.image,
+      ),
+      voice: patchPrimeModelFeature(
+        current.optimization.voice,
+        patch.optimization?.voice,
+      ),
+    },
+    understanding: {
+      visual: patchPrimeModelFeature(
+        current.understanding.visual,
+        patch.understanding?.visual,
+      ),
+      audio: patchPrimeModelFeature(
+        current.understanding.audio,
+        patch.understanding?.audio,
+      ),
+    },
     context: { ...current.context, ...patch.context },
     typingCharsPerMinute:
       patch.typingCharsPerMinute ?? current.typingCharsPerMinute,
     messageCoalesceMs: patch.messageCoalesceMs ?? current.messageCoalesceMs,
   };
+}
+
+function patchPrimeModelFeature<
+  T extends { model: StoredTextModelConfig },
+  P extends Partial<Omit<T, "model">> & { model?: ModelEndpointConfigPatch },
+>(current: T, patch?: P): T {
+  if (!patch) return current;
+  return {
+    ...current,
+    ...patch,
+    model: patch.model
+      ? patchTextModel(current.model, patch.model)
+      : current.model,
+  } as T;
 }
 
 function patchTextModel(
@@ -274,16 +325,43 @@ function redactUserConfig(
 }
 
 function redactFigureConfig(config: StoredFigureRuntimeConfig): any {
-  if (!("llm" in config)) return config;
-  if (!("image" in config))
-    return { ...config, llm: redactEndpoint(config.llm) };
+  if (!("llm" in config) && !("decisionModel" in config)) return config;
+  if ("llm" in config) return { ...config, llm: redactEndpoint(config.llm) };
   return {
     ...config,
-    llm: redactEndpoint(config.llm),
-    image: redactEndpoint(config.image),
-    tts: {
-      ...config.tts,
-      apiKey: redactSecret(config.tts.apiKey),
+    decisionModel: redactEndpoint(config.decisionModel),
+    outputs: {
+      image: {
+        ...config.outputs.image,
+        generator: redactEndpoint(config.outputs.image.generator),
+      },
+      voice: {
+        ...config.outputs.voice,
+        tts: {
+          ...config.outputs.voice.tts,
+          apiKey: redactSecret(config.outputs.voice.tts.apiKey),
+        },
+      },
+    },
+    optimization: {
+      image: {
+        ...config.optimization.image,
+        model: redactEndpoint(config.optimization.image.model),
+      },
+      voice: {
+        ...config.optimization.voice,
+        model: redactEndpoint(config.optimization.voice.model),
+      },
+    },
+    understanding: {
+      visual: {
+        ...config.understanding.visual,
+        model: redactEndpoint(config.understanding.visual.model),
+      },
+      audio: {
+        ...config.understanding.audio,
+        model: redactEndpoint(config.understanding.audio.model),
+      },
     },
   };
 }
@@ -320,9 +398,32 @@ function validateFigureConfig(
   }
   if (type === "prime-figure") {
     const value = config as StoredPrimeFigureRuntimeConfig;
-    validateTextModel(value.llm);
-    validateEndpoint(value.image);
-    positiveInteger(value.tts.chunkLength, "Fish Audio 分块长度");
+    validateTextModel(value.decisionModel);
+    if (value.outputs.image.enabled)
+      validateEndpoint(value.outputs.image.generator);
+    if (value.outputs.voice.enabled) {
+      const tts = value.outputs.voice.tts;
+      if (
+        !tts.provider.trim() ||
+        !tts.model.trim() ||
+        !tts.httpUrl.trim() ||
+        !tts.wsUrl.trim()
+      )
+        invalid("语音输出开启时 TTS 提供商、模型及地址不能为空。");
+      positiveInteger(tts.chunkLength, "Fish Audio 分块长度");
+    }
+    if (value.optimization.image.enabled)
+      validateTextModel(value.optimization.image.model);
+    if (value.optimization.voice.enabled)
+      validateTextModel(value.optimization.voice.model);
+    if (value.optimization.image.enabled && !value.outputs.image.enabled)
+      invalid("开启额外生图优化前必须允许 figure 发送图片。");
+    if (value.optimization.voice.enabled && !value.outputs.voice.enabled)
+      invalid("开启额外语音优化前必须允许 figure 发送语音。");
+    if (value.understanding.visual.mode === "auxiliary")
+      validateTextModel(value.understanding.visual.model);
+    if (value.understanding.audio.mode === "auxiliary")
+      validateTextModel(value.understanding.audio.model);
     positiveInteger(value.context.minimumMessages, "最小上下文消息数");
     positiveInteger(value.context.maximumMessages, "最大上下文消息数");
     positiveNumber(value.typingCharsPerMinute, "每分钟打字字符数");
