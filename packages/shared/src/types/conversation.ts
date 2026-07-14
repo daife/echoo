@@ -1,4 +1,5 @@
-export type ConversationType = "direct" | "group" | "slice-figure" | "prime-figure" | "prime-world";
+export type ConversationType =
+  "direct" | "group" | "slice-figure" | "prime-figure" | "prime-world";
 
 export interface Conversation {
   /**

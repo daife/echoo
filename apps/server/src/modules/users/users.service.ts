@@ -4,7 +4,7 @@ export class UsersService {
       id: userId,
       email: "demo@echoo.local",
       displayName: "Echoo User",
-      createdAt: Date.now()
+      createdAt: Date.now(),
     };
   }
 }

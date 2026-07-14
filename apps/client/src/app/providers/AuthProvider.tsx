@@ -1,6 +1,13 @@
 import type { UserProfile } from "@echoo/shared";
 import type { PropsWithChildren } from "react";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { initApp } from "../bootstrap/initApp";
 import type { AuthLinkParams } from "../../runtimes/contracts";
 import { useRuntime } from "./RuntimeProvider";
@@ -15,8 +22,14 @@ interface AuthContextValue {
   authLinkParams: AuthLinkParams;
   requireAuth: (mode?: AuthMode) => void;
   login: (input: { email: string; password: string }) => Promise<void>;
-  register: (input: { email: string; password: string; displayName?: string }) => Promise<{ verificationToken?: string }>;
-  forgotPassword: (input: { email: string }) => Promise<{ resetToken?: string }>;
+  register: (input: {
+    email: string;
+    password: string;
+    displayName?: string;
+  }) => Promise<{ verificationToken?: string }>;
+  forgotPassword: (input: {
+    email: string;
+  }) => Promise<{ resetToken?: string }>;
   resetPassword: (input: { token: string; password: string }) => Promise<void>;
   verifyEmail: (input: { token: string }) => Promise<void>;
   signOut: () => Promise<void>;
@@ -38,15 +51,22 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([services.authService.loadCurrentUser(), runtime.link.getInitialAuthLinkParams()]).then(
-      ([currentUser, initialAuthLinkParams]) => {
-        if (cancelled) return;
-        setUser(currentUser);
-        setAuthLinkParams(initialAuthLinkParams);
-        setAuthMode(initialAuthLinkParams.verificationToken ? "verify" : initialAuthLinkParams.resetToken ? "reset" : "login");
-        setIsLoading(false);
-      }
-    );
+    void Promise.all([
+      services.authService.loadCurrentUser(),
+      runtime.link.getInitialAuthLinkParams(),
+    ]).then(([currentUser, initialAuthLinkParams]) => {
+      if (cancelled) return;
+      setUser(currentUser);
+      setAuthLinkParams(initialAuthLinkParams);
+      setAuthMode(
+        initialAuthLinkParams.verificationToken
+          ? "verify"
+          : initialAuthLinkParams.resetToken
+            ? "reset"
+            : "login",
+      );
+      setIsLoading(false);
+    });
     return () => {
       cancelled = true;
     };
@@ -61,7 +81,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         return next;
       });
     },
-    [runtime.link]
+    [runtime.link],
   );
 
   useEffect(() => {
@@ -80,7 +100,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     try {
       return await action();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "发生了意外错误。";
+      const message =
+        error instanceof Error ? error.message : "发生了意外错误。";
       setAuthError(message);
       throw error;
     }
@@ -98,11 +119,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setAuthError(null);
       },
       login: async (input) => {
-        const nextUser = await runAuthAction(() => services.authService.login(input));
+        const nextUser = await runAuthAction(() =>
+          services.authService.login(input),
+        );
         setUser(nextUser);
       },
-      register: (input) => runAuthAction(() => services.authService.register(input)),
-      forgotPassword: (input) => runAuthAction(() => services.authService.forgotPassword(input)),
+      register: (input) =>
+        runAuthAction(() => services.authService.register(input)),
+      forgotPassword: (input) =>
+        runAuthAction(() => services.authService.forgotPassword(input)),
       resetPassword: async (input) => {
         await runAuthAction(() => services.authService.resetPassword(input));
         await clearAuthLinkParams(["resetToken"]);
@@ -123,9 +148,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setAuthMode(mode);
         setAuthError(null);
       },
-      clearAuthError: () => setAuthError(null)
+      clearAuthError: () => setAuthError(null),
     }),
-    [authError, authLinkParams, authMode, clearAuthLinkParams, isLoading, runAuthAction, services.authService, user]
+    [
+      authError,
+      authLinkParams,
+      authMode,
+      clearAuthLinkParams,
+      isLoading,
+      runAuthAction,
+      services.authService,
+      user,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

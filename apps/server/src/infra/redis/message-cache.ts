@@ -51,7 +51,9 @@ export class MessageCache {
       cached.map((item) => item.message.id),
     );
     return cached.map((item, index) => {
-      const liveMessage = live[index] ? parseMessage(live[index] as string) : null;
+      const liveMessage = live[index]
+        ? parseMessage(live[index] as string)
+        : null;
       return liveMessage ? { ...item, message: liveMessage } : item;
     });
   }
@@ -75,16 +77,14 @@ export class MessageCache {
           value: JSON.stringify(item),
         })),
       );
-    transaction
-      .pExpire(dataKey, this.ttlMs)
-      .set(
-        metaKey,
-        JSON.stringify({
-          covered: Math.min(requestedLimit, this.maximum),
-          complete: messages.length < requestedLimit,
-        }),
-        { PX: this.ttlMs },
-      );
+    transaction.pExpire(dataKey, this.ttlMs).set(
+      metaKey,
+      JSON.stringify({
+        covered: Math.min(requestedLimit, this.maximum),
+        complete: messages.length < requestedLimit,
+      }),
+      { PX: this.ttlMs },
+    );
     await transaction.exec();
   }
 
@@ -106,10 +106,17 @@ export class MessageCache {
         String(this.ttlMs),
       ],
     });
-    await redis.hDel(this.liveKey(ownerUserId, conversationId), item.message.id);
+    await redis.hDel(
+      this.liveKey(ownerUserId, conversationId),
+      item.message.id,
+    );
   }
 
-  async updateLive(ownerUserId: string, conversationId: string, message: Message) {
+  async updateLive(
+    ownerUserId: string,
+    conversationId: string,
+    message: Message,
+  ) {
     const redis = await getRedis();
     const key = this.liveKey(ownerUserId, conversationId);
     await redis.hSet(key, message.id, JSON.stringify(message));
@@ -133,7 +140,6 @@ export class MessageCache {
     return `echoo:messages:recent-meta:${ownerUserId}:${conversationId}`;
   }
 
-
   private liveKey(ownerUserId: string, conversationId: string) {
     return `echoo:messages:live:${ownerUserId}:${conversationId}`;
   }
@@ -142,7 +148,9 @@ export class MessageCache {
 function parseCachedMessage(value: string): CachedMessage | null {
   try {
     const parsed = JSON.parse(value) as CachedMessage;
-    return typeof parsed.sequence === "number" && parsed.message ? parsed : null;
+    return typeof parsed.sequence === "number" && parsed.message
+      ? parsed
+      : null;
   } catch {
     return null;
   }
@@ -163,7 +171,10 @@ function parseMessage(value: string): Message | null {
 
 function parseCoverage(value: string) {
   try {
-    const parsed = JSON.parse(value) as { covered?: unknown; complete?: unknown };
+    const parsed = JSON.parse(value) as {
+      covered?: unknown;
+      complete?: unknown;
+    };
     return {
       covered: typeof parsed.covered === "number" ? parsed.covered : 0,
       complete: parsed.complete === true,

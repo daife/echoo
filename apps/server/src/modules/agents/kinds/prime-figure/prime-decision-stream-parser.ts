@@ -114,7 +114,8 @@ export class PrimeDecisionStreamParser {
       if (frame.phase === "value_or_end") {
         if (char === "]") {
           const completed = this.stack.pop();
-          if (completed?.type === "array") this.emitArrayComplete(completed.path);
+          if (completed?.type === "array")
+            this.emitArrayComplete(completed.path);
           this.completeValue();
         } else {
           this.startValue(char, [...frame.path, frame.index]);

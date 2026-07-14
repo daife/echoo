@@ -12,17 +12,30 @@ test("slice message edit keeps later history and only refreshes the last-message
   const repository = {
     findByIdInConversation: async () => target,
     findLastPreviewMessage: async () => lastMessage,
-    updateText: async (_owner: string, _conversation: string, _id: string, text: string, updatedAt: number) => ({
+    updateText: async (
+      _owner: string,
+      _conversation: string,
+      _id: string,
+      text: string,
+      updatedAt: number,
+    ) => ({
       ...target,
       content: { text },
       updatedAt,
     }),
   };
   const conversations = {
-    findByIdForOwner: async () => ({ id: "conversation", type: "slice-figure" }),
-    updatePreview: async (input: { preview: string }) => { previews.push(input.preview); },
+    findByIdForOwner: async () => ({
+      id: "conversation",
+      type: "slice-figure",
+    }),
+    updatePreview: async (input: { preview: string }) => {
+      previews.push(input.preview);
+    },
   };
-  const appPush = { pushToUser: (_owner: string, event: unknown) => events.push(event) };
+  const appPush = {
+    pushToUser: (_owner: string, event: unknown) => events.push(event),
+  };
   const service = new MessagingService(
     repository as never,
     conversations as never,
@@ -56,12 +69,35 @@ test("slice message edit rejects pending and non-assistant messages", async () =
       findByIdInConversation: async () => current,
     } as never,
     {
-      findByIdForOwner: async () => ({ id: "conversation", type: "slice-figure" }),
+      findByIdForOwner: async () => ({
+        id: "conversation",
+        type: "slice-figure",
+      }),
     } as never,
   );
-  assert.equal((await service.updateAssistantTextMessage({ ownerUserId: "owner", conversationId: "conversation", messageId: current.id, text: "x" })).kind, "pending");
+  assert.equal(
+    (
+      await service.updateAssistantTextMessage({
+        ownerUserId: "owner",
+        conversationId: "conversation",
+        messageId: current.id,
+        text: "x",
+      })
+    ).kind,
+    "pending",
+  );
   current = { ...current, role: "user", status: "sent" };
-  assert.equal((await service.updateAssistantTextMessage({ ownerUserId: "owner", conversationId: "conversation", messageId: current.id, text: "x" })).kind, "unsupported_message");
+  assert.equal(
+    (
+      await service.updateAssistantTextMessage({
+        ownerUserId: "owner",
+        conversationId: "conversation",
+        messageId: current.id,
+        text: "x",
+      })
+    ).kind,
+    "unsupported_message",
+  );
 });
 
 function message(id: string, status: Message["status"]): Message {

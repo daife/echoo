@@ -13,6 +13,6 @@ export function createWebRuntime(): RuntimeBundle {
     storage,
     link: new WebLinkRuntime(),
     message: new WebMessageRuntime(auth),
-    notification: new WebNotificationRuntime()
+    notification: new WebNotificationRuntime(),
   };
 }

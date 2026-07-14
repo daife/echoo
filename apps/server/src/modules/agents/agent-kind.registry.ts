@@ -7,7 +7,13 @@ import { SliceFigureHandler } from "./kinds/slice-figure/slice-figure.handler.js
 export class AgentKindRegistry {
   private readonly handlers = new Map<AgentType, AgentKindHandler>();
 
-  constructor(handlers: AgentKindHandler[] = [new SliceFigureHandler(), new PrimeFigureHandler(), new PrimeWorldPlaceholderHandler()]) {
+  constructor(
+    handlers: AgentKindHandler[] = [
+      new SliceFigureHandler(),
+      new PrimeFigureHandler(),
+      new PrimeWorldPlaceholderHandler(),
+    ],
+  ) {
     handlers.forEach((handler) => this.handlers.set(handler.type, handler));
   }
 

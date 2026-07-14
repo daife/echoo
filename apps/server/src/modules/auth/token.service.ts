@@ -7,10 +7,16 @@ export class TokenService {
   constructor(private readonly app: FastifyInstance) {}
 
   createAccessToken(userId: string) {
-    return this.app.jwt.sign({ sub: userId }, { expiresIn: accessTokenExpiresIn });
+    return this.app.jwt.sign(
+      { sub: userId },
+      { expiresIn: accessTokenExpiresIn },
+    );
   }
 
   createRefreshToken(userId: string) {
-    return this.app.jwt.sign({ sub: userId, type: "refresh" }, { expiresIn: "30d" });
+    return this.app.jwt.sign(
+      { sub: userId, type: "refresh" },
+      { expiresIn: "30d" },
+    );
   }
 }

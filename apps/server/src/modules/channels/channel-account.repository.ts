@@ -9,8 +9,8 @@ const bindings: ExternalInterfaceBinding[] = [
     boundAgentId: "agent_aster",
     displayName: "Interface 01",
     enabled: true,
-    createdAt: Date.now()
-  }
+    createdAt: Date.now(),
+  },
 ];
 
 export class InterfaceBindingRepository {

@@ -12,7 +12,7 @@ export class WechatConnector implements Connector {
     canRecallMessage: false,
     supportsReadReceipt: false,
     supportsDeliveryReceipt: false,
-    requiresReplyWindow: true
+    requiresReplyWindow: true,
   };
 
   sendMessage = this.sender.send.bind(this.sender);

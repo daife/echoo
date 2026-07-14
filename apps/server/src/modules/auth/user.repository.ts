@@ -68,14 +68,7 @@ export class UserRepository {
       `INSERT INTO users
        (id, email, display_name, password_hash, email_verified_at, created_at, updated_at)
        VALUES (?, ?, ?, ?, NULL, ?, ?)`,
-      [
-        user.id,
-        user.email,
-        user.displayName,
-        user.passwordHash,
-        now,
-        now,
-      ],
+      [user.id, user.email, user.displayName, user.passwordHash, now, now],
     );
     return user;
   }
@@ -161,7 +154,11 @@ export class UserRepository {
 }
 
 export function toUserProfile(user: AuthUser): UserProfile {
-  const { passwordHash: _passwordHash, updatedAt: _updatedAt, ...profile } = user;
+  const {
+    passwordHash: _passwordHash,
+    updatedAt: _updatedAt,
+    ...profile
+  } = user;
   return profile;
 }
 
@@ -174,7 +171,9 @@ function rowToUser(row: AuthUserRow | null): AuthUser | null {
     passwordHash: row.password_hash,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    ...(row.email_verified_at ? { emailVerifiedAt: row.email_verified_at } : {}),
+    ...(row.email_verified_at
+      ? { emailVerifiedAt: row.email_verified_at }
+      : {}),
   };
 }
 

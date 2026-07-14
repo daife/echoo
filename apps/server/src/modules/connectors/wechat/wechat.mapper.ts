@@ -4,6 +4,6 @@ export function mapWechatText(text: string) {
   return normalizeInboundMessage({
     interfaceType: "wechat",
     conversationId: "conv_wechat",
-    text
+    text,
   });
 }

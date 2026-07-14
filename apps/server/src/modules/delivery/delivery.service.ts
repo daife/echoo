@@ -8,7 +8,7 @@ export class DeliveryService {
       id: `delivery_${crypto.randomUUID()}`,
       messageId,
       attempts: 0,
-      createdAt: Date.now()
+      createdAt: Date.now(),
     });
   }
 }

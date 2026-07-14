@@ -16,7 +16,7 @@ export class EmailService {
       title: "Verify your email",
       body: `Hi ${escapeHtml(user.displayName)}, confirm this email address to activate your Echoo account. This link expires in 24 hours.`,
       action: "Verify email",
-      skippedMessage: "Verification email skipped"
+      skippedMessage: "Verification email skipped",
     });
   }
 
@@ -28,7 +28,7 @@ export class EmailService {
       title: "Reset your password",
       body: `Hi ${escapeHtml(user.displayName)}, use the link below to set a new password. This link expires in 30 minutes.`,
       action: "Choose a new password",
-      skippedMessage: "Password reset email skipped"
+      skippedMessage: "Password reset email skipped",
     });
   }
 
@@ -42,7 +42,8 @@ export class EmailService {
     skippedMessage: string;
   }) {
     const apiKey = process.env.RESEND_API_KEY;
-    const from = process.env.RESEND_FROM_EMAIL ?? "Echoo <onboarding@resend.dev>";
+    const from =
+      process.env.RESEND_FROM_EMAIL ?? "Echoo <onboarding@resend.dev>";
     const html = `
       <div style="font-family:Inter,Arial,sans-serif;background:#09090b;color:#e5e2e1;padding:32px">
         <div style="max-width:520px;margin:0 auto;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:28px;background:rgba(255,255,255,.04)">
@@ -56,7 +57,9 @@ export class EmailService {
     `;
 
     if (!apiKey) {
-      console.info(`${input.skippedMessage}; RESEND_API_KEY is not set. URL: ${input.url}`);
+      console.info(
+        `${input.skippedMessage}; RESEND_API_KEY is not set. URL: ${input.url}`,
+      );
       return;
     }
 
@@ -64,16 +67,16 @@ export class EmailService {
       from,
       to: [input.user.email],
       subject: input.subject,
-      html
+      html,
     };
 
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {

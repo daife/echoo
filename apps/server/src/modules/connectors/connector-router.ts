@@ -7,7 +7,8 @@ export class ConnectorRouter {
 
   async route(message: Message, interfaceType: ExternalInterfaceType) {
     const connector = this.registry.get(interfaceType);
-    if (!connector) throw new Error(`Connector not registered: ${interfaceType}`);
+    if (!connector)
+      throw new Error(`Connector not registered: ${interfaceType}`);
     return connector.sendMessage(message);
   }
 }

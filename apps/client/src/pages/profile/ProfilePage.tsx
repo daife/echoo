@@ -1,4 +1,11 @@
-import { ChatCircleDots, GearSix, Heart, NotePencil, PencilSimple, Robot } from "@phosphor-icons/react";
+import {
+  ChatCircleDots,
+  GearSix,
+  Heart,
+  NotePencil,
+  PencilSimple,
+  Robot,
+} from "@phosphor-icons/react";
 import type { Agent } from "@echoo/shared";
 import { CharacterCard } from "../../features/conversations/components/CharacterCard";
 
@@ -7,20 +14,20 @@ const posts = [
     title: "关于本初角色记忆的三条边界",
     body: "长期记忆应该服务于关系，而不是复制聊天记录。",
     likes: "812",
-    replies: "34"
+    replies: "34",
   },
   {
     title: "我为什么喜欢切片角色",
     body: "它像一段短促但准确的共鸣，不需要承担完整人格。",
     likes: "509",
-    replies: "21"
-  }
+    replies: "21",
+  },
 ];
 
 export function ProfilePage({
   agents,
   isLoadingAgents,
-  onOpenAgent
+  onOpenAgent,
 }: {
   agents: Agent[];
   isLoadingAgents: boolean;
@@ -36,7 +43,7 @@ export function ProfilePage({
     coverResourcePath: agent.coverResourcePath,
     attributes: agent.attributes,
     tags: agent.tags,
-    source: agent
+    source: agent,
   }));
 
   return (
@@ -47,19 +54,35 @@ export function ProfilePage({
           <div className="grid h-36 w-36 place-items-center rounded-full border border-white/18 bg-white/[0.05] shadow-[0_0_48px_rgba(255,255,255,0.12)] md:h-40 md:w-40">
             <Robot size={72} weight="thin" className="text-white" />
           </div>
-          <h1 className="mt-6 text-4xl font-semibold text-white md:text-5xl">Aether</h1>
+          <h1 className="mt-6 text-4xl font-semibold text-white md:text-5xl">
+            Aether
+          </h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-white/52">
             一个正在共创角色的人。偏好安静、连续、带长期记忆的会话体验。
           </p>
           <div className="mt-7 grid w-full max-w-2xl grid-cols-3 border-y border-white/10 py-5">
             {[
               [String(agents.length), "角色"],
-              [String(agents.filter((agent) => agent.type === "prime-figure").length), "本初角色"],
-              [String(agents.filter((agent) => agent.type === "slice-figure").length), "切片角色"]
+              [
+                String(
+                  agents.filter((agent) => agent.type === "prime-figure")
+                    .length,
+                ),
+                "本初角色",
+              ],
+              [
+                String(
+                  agents.filter((agent) => agent.type === "slice-figure")
+                    .length,
+                ),
+                "切片角色",
+              ],
             ].map(([value, label]) => (
               <div key={label}>
                 <div className="text-2xl font-semibold text-white">{value}</div>
-                <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-white/38">{label}</div>
+                <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-white/38">
+                  {label}
+                </div>
               </div>
             ))}
           </div>
@@ -78,8 +101,12 @@ export function ProfilePage({
 
       <div className="glass-panel rounded-full p-1.5">
         <div className="grid grid-cols-2 gap-2">
-          <button className="rounded-full bg-white py-3 text-sm font-medium text-[#09090b]">创作</button>
-          <button className="rounded-full py-3 text-sm font-medium text-white/55 transition hover:text-white">动态</button>
+          <button className="rounded-full bg-white py-3 text-sm font-medium text-[#09090b]">
+            创作
+          </button>
+          <button className="rounded-full py-3 text-sm font-medium text-white/55 transition hover:text-white">
+            动态
+          </button>
         </div>
       </div>
 
@@ -90,11 +117,17 @@ export function ProfilePage({
             <span className="text-sm text-white/40">本初角色与切片角色</span>
           </div>
           {isLoadingAgents ? (
-            <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-6 text-sm text-white/45">正在加载角色……</div>
+            <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-6 text-sm text-white/45">
+              正在加载角色……
+            </div>
           ) : cards.length > 0 ? (
             <div className="grid gap-5 md:grid-cols-2">
               {cards.map((agent) => (
-                <CharacterCard key={agent.id} agent={agent} onOpenChat={() => onOpenAgent(agent.source)} />
+                <CharacterCard
+                  key={agent.id}
+                  agent={agent}
+                  onOpenChat={() => onOpenAgent(agent.source)}
+                />
               ))}
             </div>
           ) : (
@@ -115,9 +148,16 @@ export function ProfilePage({
           </div>
           <div className="mt-5 space-y-4">
             {posts.map((post) => (
-              <article key={post.title} className="rounded-xl border border-white/8 bg-white/[0.025] p-4">
-                <h3 className="text-sm font-medium leading-5 text-white">{post.title}</h3>
-                <p className="mt-2 text-xs leading-5 text-white/45">{post.body}</p>
+              <article
+                key={post.title}
+                className="rounded-xl border border-white/8 bg-white/[0.025] p-4"
+              >
+                <h3 className="text-sm font-medium leading-5 text-white">
+                  {post.title}
+                </h3>
+                <p className="mt-2 text-xs leading-5 text-white/45">
+                  {post.body}
+                </p>
                 <div className="mt-3 flex items-center gap-4 text-xs text-white/38">
                   <span className="flex items-center gap-1.5">
                     <Heart size={14} />

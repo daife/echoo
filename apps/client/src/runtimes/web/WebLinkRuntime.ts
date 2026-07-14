@@ -5,7 +5,7 @@ export class WebLinkRuntime implements LinkRuntime {
     const params = new URLSearchParams(window.location.search);
     return {
       resetToken: params.get("resetToken") ?? undefined,
-      verificationToken: params.get("verificationToken") ?? undefined
+      verificationToken: params.get("verificationToken") ?? undefined,
     };
   }
 

@@ -7,7 +7,7 @@ import type {
   RegisterResponse,
   ResetPasswordRequest,
   UserProfile,
-  VerifyEmailRequest
+  VerifyEmailRequest,
 } from "@echoo/shared";
 import type { ApiClient } from "./client";
 
@@ -27,7 +27,10 @@ export class AuthApi {
   }
 
   forgotPassword(body: ForgotPasswordRequest): Promise<ForgotPasswordResponse> {
-    return this.client.post<ForgotPasswordResponse>("/auth/password/forgot", body);
+    return this.client.post<ForgotPasswordResponse>(
+      "/auth/password/forgot",
+      body,
+    );
   }
 
   resetPassword(body: ResetPasswordRequest): Promise<{ ok: true }> {

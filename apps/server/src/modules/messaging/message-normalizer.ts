@@ -1,4 +1,8 @@
-import type { ExternalInterfaceType, Message, MessageContentType } from "@echoo/shared";
+import type {
+  ExternalInterfaceType,
+  Message,
+  MessageContentType,
+} from "@echoo/shared";
 
 export function normalizeInboundMessage(input: {
   interfaceType: ExternalInterfaceType;
@@ -15,6 +19,6 @@ export function normalizeInboundMessage(input: {
     content: { text: input.text },
     status: "delivered",
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
   };
 }

@@ -7,7 +7,7 @@ import type {
   PrimeFigureEditSnapshot,
   UpdatePrimeFigureRequest,
   UpdatePrimeFigurePreferencesRequest,
-  UpdateSliceFigureRequest
+  UpdateSliceFigureRequest,
 } from "@echoo/shared";
 import type { ApiClient } from "./client";
 
@@ -15,31 +15,53 @@ export class AgentsApi {
   constructor(private readonly client: ApiClient) {}
 
   listMyAgents(): Promise<Agent[]> {
-    return this.client.get<Agent[]>("/agents").then((agents) => agents.map((agent) => normalizeAgentResources(this.client, agent)));
+    return this.client
+      .get<Agent[]>("/agents")
+      .then((agents) =>
+        agents.map((agent) => normalizeAgentResources(this.client, agent)),
+      );
   }
 
-  createSliceFigure(body: CreateSliceFigureRequest): Promise<CreateAgentResponse> {
+  createSliceFigure(
+    body: CreateSliceFigureRequest,
+  ): Promise<CreateAgentResponse> {
     return this.client
       .post<CreateAgentResponse>("/agents", body)
-      .then((response) => ({ agent: normalizeAgentResources(this.client, response.agent) }));
+      .then((response) => ({
+        agent: normalizeAgentResources(this.client, response.agent),
+      }));
   }
 
-  createPrimeFigure(body: CreatePrimeFigureRequest): Promise<CreateAgentResponse> {
+  createPrimeFigure(
+    body: CreatePrimeFigureRequest,
+  ): Promise<CreateAgentResponse> {
     return this.client
       .post<CreateAgentResponse>("/agents", body)
-      .then((response) => ({ agent: normalizeAgentResources(this.client, response.agent) }));
+      .then((response) => ({
+        agent: normalizeAgentResources(this.client, response.agent),
+      }));
   }
 
-  updateSliceFigure(agentId: string, body: UpdateSliceFigureRequest): Promise<CreateAgentResponse> {
+  updateSliceFigure(
+    agentId: string,
+    body: UpdateSliceFigureRequest,
+  ): Promise<CreateAgentResponse> {
     return this.client
       .patch<CreateAgentResponse>(`/agents/${agentId}`, body)
-      .then((response) => ({ agent: normalizeAgentResources(this.client, response.agent) }));
+      .then((response) => ({
+        agent: normalizeAgentResources(this.client, response.agent),
+      }));
   }
 
-  updatePrimeFigure(agentId: string, body: UpdatePrimeFigureRequest): Promise<CreateAgentResponse> {
+  updatePrimeFigure(
+    agentId: string,
+    body: UpdatePrimeFigureRequest,
+  ): Promise<CreateAgentResponse> {
     return this.client
       .patch<CreateAgentResponse>(`/agents/${agentId}/prime-figure`, body)
-      .then((response) => ({ agent: normalizeAgentResources(this.client, response.agent) }));
+      .then((response) => ({
+        agent: normalizeAgentResources(this.client, response.agent),
+      }));
   }
 
   updatePrimeFigurePreferences(
@@ -56,12 +78,17 @@ export class AgentsApi {
       }));
   }
 
-  getPrimeFigureEditSnapshot(agentId: string): Promise<PrimeFigureEditSnapshot> {
+  getPrimeFigureEditSnapshot(
+    agentId: string,
+  ): Promise<PrimeFigureEditSnapshot> {
     return this.client
       .get<PrimeFigureEditSnapshot>(`/agents/${agentId}/prime-figure/edit`)
       .then((response) => ({
         ...response,
-        agent: normalizeAgentResources(this.client, response.agent) as Extract<Agent, { type: "prime-figure" }>,
+        agent: normalizeAgentResources(this.client, response.agent) as Extract<
+          Agent,
+          { type: "prime-figure" }
+        >,
       }));
   }
 
@@ -73,8 +100,16 @@ export class AgentsApi {
 function normalizeAgentResources(client: ApiClient, agent: Agent): Agent {
   const normalized = {
     ...agent,
-    ...(agent.avatarResourcePath ? { avatarResourcePath: client.resolveServerPath(agent.avatarResourcePath) } : {}),
-    ...(agent.coverResourcePath ? { coverResourcePath: client.resolveServerPath(agent.coverResourcePath) } : {}),
+    ...(agent.avatarResourcePath
+      ? {
+          avatarResourcePath: client.resolveServerPath(
+            agent.avatarResourcePath,
+          ),
+        }
+      : {}),
+    ...(agent.coverResourcePath
+      ? { coverResourcePath: client.resolveServerPath(agent.coverResourcePath) }
+      : {}),
   };
   if (agent.type !== "prime-figure") return normalized as Agent;
   return {

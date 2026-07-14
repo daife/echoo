@@ -179,10 +179,7 @@ export interface CreateSliceFigureRequest {
   replyAutoSegment?: boolean;
 }
 
-export type UpdateSliceFigureRequest = Omit<
-  CreateSliceFigureRequest,
-  "type"
->;
+export type UpdateSliceFigureRequest = Omit<CreateSliceFigureRequest, "type">;
 
 export interface CreatePrimeFigureRequest {
   type: "prime-figure";
@@ -226,10 +223,7 @@ export interface UpdatePrimeFigurePreferencesRequest {
 
 export interface PrimeFigureEditSnapshot {
   agent: PrimeFigureAgent;
-  state: Pick<
-    PrimeFigureState,
-    "variables" | "mood" | "relationshipStatus"
-  >;
+  state: Pick<PrimeFigureState, "variables" | "mood" | "relationshipStatus">;
 }
 
 export interface AgentExportResponse {

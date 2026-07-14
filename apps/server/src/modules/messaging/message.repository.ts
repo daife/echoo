@@ -158,10 +158,7 @@ export class MessageRepository {
     };
   }
 
-  async findLatestMemorySummary(
-    ownerUserId: string,
-    conversationId: string,
-  ) {
+  async findLatestMemorySummary(ownerUserId: string, conversationId: string) {
     const row = await queryOne<MessageRow>(
       `SELECT * FROM messages
        WHERE owner_user_id = ? AND conversation_id = ?
@@ -242,8 +239,15 @@ export class MessageRepository {
       `UPDATE messages SET content = JSON_SET(content, '$.text', ?), status = 'delivered',
         run_metadata = JSON_SET(COALESCE(run_metadata, JSON_OBJECT()), '$.providerId', ?, '$.model', ?), updated_at = ?
        WHERE owner_user_id = ? AND conversation_id = ? AND id = ? AND status = 'pending'`,
-      [input.text, input.providerId, input.model, input.updatedAt, input.ownerUserId,
-        input.conversationId, input.messageId],
+      [
+        input.text,
+        input.providerId,
+        input.model,
+        input.updatedAt,
+        input.ownerUserId,
+        input.conversationId,
+        input.messageId,
+      ],
     );
     if (!result.affectedRows) return null;
     await this.invalidateCache(input.ownerUserId, input.conversationId);

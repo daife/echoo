@@ -10,7 +10,9 @@ export class WebAuthRuntime implements AuthRuntime {
 
   async getAccessToken(): Promise<string | null> {
     const token = localStorage.getItem(STORAGE_KEYS.accessToken);
-    const expiresAt = Number(localStorage.getItem(STORAGE_KEYS.tokenExpiresAt) ?? 0);
+    const expiresAt = Number(
+      localStorage.getItem(STORAGE_KEYS.tokenExpiresAt) ?? 0,
+    );
     if (!token) return null;
     if (expiresAt > 0 && expiresAt <= Date.now()) {
       await this.clearTokens();

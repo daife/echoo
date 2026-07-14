@@ -12,7 +12,7 @@ export class TelegramConnector implements Connector {
     canRecallMessage: false,
     supportsReadReceipt: false,
     supportsDeliveryReceipt: true,
-    requiresReplyWindow: false
+    requiresReplyWindow: false,
   };
 
   sendMessage = this.sender.send.bind(this.sender);

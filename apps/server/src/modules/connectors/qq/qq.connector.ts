@@ -12,7 +12,7 @@ export class QqConnector implements Connector {
     canRecallMessage: false,
     supportsReadReceipt: false,
     supportsDeliveryReceipt: true,
-    requiresReplyWindow: true
+    requiresReplyWindow: true,
   };
 
   sendMessage = this.sender.send.bind(this.sender);

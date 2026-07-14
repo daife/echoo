@@ -15,12 +15,18 @@ export function RuntimeProvider({ children }: PropsWithChildren) {
   if (!runtime) {
     return (
       <div className="grid min-h-[100dvh] place-items-center bg-[#09090b] text-white">
-        <div className="glass-panel rounded-full px-5 py-3 text-sm text-white/70">Echoo 正在启动</div>
+        <div className="glass-panel rounded-full px-5 py-3 text-sm text-white/70">
+          Echoo 正在启动
+        </div>
       </div>
     );
   }
 
-  return <RuntimeContext.Provider value={runtime}>{children}</RuntimeContext.Provider>;
+  return (
+    <RuntimeContext.Provider value={runtime}>
+      {children}
+    </RuntimeContext.Provider>
+  );
 }
 
 export function useRuntime() {

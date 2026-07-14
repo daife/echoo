@@ -1,4 +1,8 @@
-import type { ExternalInterfaceCapability, ExternalInterfaceType, Message } from "@echoo/shared";
+import type {
+  ExternalInterfaceCapability,
+  ExternalInterfaceType,
+  Message,
+} from "@echoo/shared";
 
 export interface Connector {
   type: ExternalInterfaceType;

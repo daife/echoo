@@ -1,4 +1,11 @@
-import { ArrowRight, Key, LockKey, SealCheck, Sparkle, UserCircle } from "@phosphor-icons/react";
+import {
+  ArrowRight,
+  Key,
+  LockKey,
+  SealCheck,
+  Sparkle,
+  UserCircle,
+} from "@phosphor-icons/react";
 import type { FormEvent } from "react";
 import { useMemo, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
@@ -11,10 +18,16 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [notice, setNotice] = useState<string | null>(
-    verificationToken ? "检测到验证链接，请确认账户后继续。" : resetToken ? "检测到重置链接，请设置新密码。" : null
+    verificationToken
+      ? "检测到验证链接，请确认账户后继续。"
+      : resetToken
+        ? "检测到重置链接，请设置新密码。"
+        : null,
   );
   const [devResetToken, setDevResetToken] = useState<string | null>(null);
-  const [devVerificationToken, setDevVerificationToken] = useState<string | null>(null);
+  const [devVerificationToken, setDevVerificationToken] = useState<
+    string | null
+  >(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const copy = useMemo(() => {
@@ -23,7 +36,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
         eyebrow: "创建访问权限",
         title: "开启你的 Echoo 空间。",
         detail: "先创建账户并验证邮箱，之后即可开启你的私人运行空间。",
-        action: "创建账户"
+        action: "创建账户",
       };
     }
     if (auth.authMode === "verify") {
@@ -31,7 +44,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
         eyebrow: "邮箱验证",
         title: "验证你的账户。",
         detail: "验证邮箱后即可登录，同时避免未确认的邮箱地址访问私人会话。",
-        action: "验证邮箱"
+        action: "验证邮箱",
       };
     }
     if (auth.authMode === "forgot") {
@@ -39,7 +52,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
         eyebrow: "账户恢复",
         title: "重新进入你的空间。",
         detail: "我们会向 Echoo 账户绑定的邮箱发送密码重置链接。",
-        action: "发送重置链接"
+        action: "发送重置链接",
       };
     }
     if (auth.authMode === "reset") {
@@ -47,14 +60,14 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
         eyebrow: "新密码",
         title: "设置一把新钥匙。",
         detail: "设置新密码后，旧的重置链接将立即失效。",
-        action: "重置密码"
+        action: "重置密码",
       };
     }
     return {
       eyebrow: "受保护空间",
       title: "登录后继续。",
       detail: "此页面涉及私人会话、外部绑定或账户设置。",
-      action: "进入 Echoo"
+      action: "进入 Echoo",
     };
   }, [auth.authMode]);
 
@@ -67,7 +80,11 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
 
     try {
       if (auth.authMode === "register") {
-        const response = await auth.register({ email, password, displayName: displayName || undefined });
+        const response = await auth.register({
+          email,
+          password,
+          displayName: displayName || undefined,
+        });
         setDevVerificationToken(response.verificationToken ?? null);
         setPassword("");
         auth.setAuthMode("login");
@@ -77,11 +94,16 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
         setDevResetToken(response.resetToken ?? null);
         setNotice("如果该邮箱已注册，重置链接正在发送。");
       } else if (auth.authMode === "reset") {
-        await auth.resetPassword({ token: resetToken || devResetToken || "", password });
+        await auth.resetPassword({
+          token: resetToken || devResetToken || "",
+          password,
+        });
         setPassword("");
         setNotice("密码重置完成，现在可以登录。");
       } else if (auth.authMode === "verify") {
-        await auth.verifyEmail({ token: verificationToken || devVerificationToken || "" });
+        await auth.verifyEmail({
+          token: verificationToken || devVerificationToken || "",
+        });
         setNotice("邮箱验证完成，现在可以登录。");
       } else {
         await auth.login({ email, password });
@@ -104,14 +126,27 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
               <div className="grid h-12 w-12 place-items-center rounded-full border border-white/12 bg-white/[0.05]">
                 <Sparkle size={22} weight="duotone" />
               </div>
-              <p className="mt-8 text-xs uppercase tracking-[0.24em] text-white/38">{copy.eyebrow}</p>
-              <h1 className="mt-4 max-w-md text-5xl font-semibold leading-tight text-white">{copy.title}</h1>
-              <p className="mt-5 max-w-md text-base leading-7 text-white/52">{copy.detail}</p>
+              <p className="mt-8 text-xs uppercase tracking-[0.24em] text-white/38">
+                {copy.eyebrow}
+              </p>
+              <h1 className="mt-4 max-w-md text-5xl font-semibold leading-tight text-white">
+                {copy.title}
+              </h1>
+              <p className="mt-5 max-w-md text-base leading-7 text-white/52">
+                {copy.detail}
+              </p>
             </div>
             <div className="grid gap-3">
               {["私人消息同步", "外部界面绑定", "原生实时保活"].map((item) => (
-                <div key={item} className="flex items-center gap-3 text-sm text-white/60">
-                  <SealCheck size={18} weight="duotone" className="text-white" />
+                <div
+                  key={item}
+                  className="flex items-center gap-3 text-sm text-white/60"
+                >
+                  <SealCheck
+                    size={18}
+                    weight="duotone"
+                    className="text-white"
+                  />
                   {item}
                 </div>
               ))}
@@ -121,8 +156,12 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
 
         <form className="space-y-5 p-6 md:p-8" onSubmit={onSubmit}>
           <div>
-            <p className="text-xs uppercase tracking-[0.22em] text-white/38">{copy.eyebrow}</p>
-            <h2 className="mt-2 text-3xl font-semibold text-white">{copy.action}</h2>
+            <p className="text-xs uppercase tracking-[0.22em] text-white/38">
+              {copy.eyebrow}
+            </p>
+            <h2 className="mt-2 text-3xl font-semibold text-white">
+              {copy.action}
+            </h2>
           </div>
 
           {auth.authMode === "register" ? (
@@ -164,7 +203,9 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
                 <LockKey size={18} className="text-white/35" />
                 <input
                   className="h-12 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30"
-                  placeholder={auth.authMode === "reset" ? "新密码" : "至少 8 个字符"}
+                  placeholder={
+                    auth.authMode === "reset" ? "新密码" : "至少 8 个字符"
+                  }
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
@@ -221,17 +262,29 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
 
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm text-white/45">
             {auth.authMode !== "login" ? (
-              <button type="button" className="hover:text-white" onClick={() => auth.setAuthMode("login")}>
+              <button
+                type="button"
+                className="hover:text-white"
+                onClick={() => auth.setAuthMode("login")}
+              >
                 登录
               </button>
             ) : null}
             {auth.authMode !== "register" ? (
-              <button type="button" className="hover:text-white" onClick={() => auth.setAuthMode("register")}>
+              <button
+                type="button"
+                className="hover:text-white"
+                onClick={() => auth.setAuthMode("register")}
+              >
                 创建账户
               </button>
             ) : null}
             {auth.authMode !== "forgot" ? (
-              <button type="button" className="hover:text-white" onClick={() => auth.setAuthMode("forgot")}>
+              <button
+                type="button"
+                className="hover:text-white"
+                onClick={() => auth.setAuthMode("forgot")}
+              >
                 忘记密码
               </button>
             ) : null}

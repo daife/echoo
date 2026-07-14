@@ -1,4 +1,5 @@
-export type SyncTaskType = "mark_message_read" | "send_message" | "update_interface_binding";
+export type SyncTaskType =
+  "mark_message_read" | "send_message" | "update_interface_binding";
 
 export interface SyncTask {
   id: string;

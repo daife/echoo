@@ -86,7 +86,10 @@ export async function execute(
   values: unknown[] = [],
   connection: Pool | PoolConnection = getDatabase(),
 ) {
-  const [result] = await connection.execute<ResultSetHeader>(sql, values as never[]);
+  const [result] = await connection.execute<ResultSetHeader>(
+    sql,
+    values as never[],
+  );
   return result;
 }
 

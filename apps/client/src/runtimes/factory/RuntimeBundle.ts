@@ -1,4 +1,10 @@
-import type { AuthRuntime, LinkRuntime, MessageRuntime, NotificationRuntime, StorageRuntime } from "../contracts";
+import type {
+  AuthRuntime,
+  LinkRuntime,
+  MessageRuntime,
+  NotificationRuntime,
+  StorageRuntime,
+} from "../contracts";
 
 export interface RuntimeBundle {
   auth: AuthRuntime;

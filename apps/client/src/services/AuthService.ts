@@ -5,7 +5,7 @@ import type {
   RegisterResponse,
   RegisterRequest,
   ResetPasswordRequest,
-  VerifyEmailRequest
+  VerifyEmailRequest,
 } from "@echoo/shared";
 import type { AuthApi } from "@echoo/api-client";
 import type { AuthRuntime } from "../runtimes/contracts";
@@ -17,7 +17,7 @@ export class AuthService {
   constructor(
     private readonly api: AuthApi,
     private readonly auth: AuthRuntime,
-    private readonly storage: StorageRuntime
+    private readonly storage: StorageRuntime,
   ) {}
 
   register(body: RegisterRequest): Promise<RegisterResponse> {

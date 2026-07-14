@@ -12,7 +12,16 @@ services:
     volumes:
       - echoo_mysql:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-plocal-root-only"]
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-uroot",
+          "-plocal-root-only",
+        ]
       interval: 5s
       timeout: 3s
       retries: 20

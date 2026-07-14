@@ -4,6 +4,6 @@ export function mapTelegramText(text: string) {
   return normalizeInboundMessage({
     interfaceType: "telegram",
     conversationId: "conv_telegram",
-    text
+    text,
   });
 }
