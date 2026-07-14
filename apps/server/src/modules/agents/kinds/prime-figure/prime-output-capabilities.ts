@@ -29,6 +29,7 @@ export function filterPrimeActionsByCapabilities<T>(
   const retainedSourceIndices: number[] = [];
   actions.forEach((action, index) => {
     const type = readPrimeActionOutputType(action);
+    if (type === "schedule_wakeup" && !config.wakeups.proactive.enabled) return;
     if (
       (type === "image" || type === "voice") &&
       !isPrimeOutputEnabled(config, type)
@@ -46,6 +47,7 @@ export function filterPrimeActionsByCapabilities<T>(
 function readPrimeActionOutputType(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const action = value as Record<string, unknown>;
+  if (action.type === "schedule_wakeup") return "schedule_wakeup";
   const message = action.message;
   if (message && typeof message === "object" && !Array.isArray(message)) {
     const type = (message as Record<string, unknown>).type;

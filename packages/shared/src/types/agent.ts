@@ -90,7 +90,35 @@ export interface PrimeFigureState {
   relationshipStatus: string;
   silenceStartedAtMs?: number;
   silenceUntilMs?: number;
+  lastFigureActivityAtMs?: number;
+  proactiveWakeup?: PrimeFigureProactiveWakeup;
+  passiveWakeup?: PrimeFigurePassiveWakeup;
+  passiveWakeupExhaustedAfterEndUserSequence?: number;
   updatedAt: number;
+}
+
+export interface PrimeFigureWakeupLease {
+  leaseUntilMs: number;
+  deliveryAttempts: number;
+}
+
+export interface PrimeFigureProactiveWakeup {
+  token: string;
+  scheduledAtMs: number;
+  dueAtMs: number;
+  interactionAfterSequence: number;
+  interactionInvalidationWindowMinutes: number;
+  lease?: PrimeFigureWakeupLease;
+}
+
+export interface PrimeFigurePassiveWakeup {
+  token: string;
+  stage: 1 | 2 | 3;
+  anchorActivityAtMs: number;
+  dueAtMs: number;
+  baselineEndUserSequence: number;
+  milestonesMinutes: [number, number, number];
+  lease?: PrimeFigureWakeupLease;
 }
 
 export interface PrimeFigureDetail {
@@ -327,6 +355,10 @@ export type PrimeFigureAction =
   | {
       type: "mute";
       revisitAfterMinutes: number | null;
+    }
+  | {
+      type: "schedule_wakeup";
+      afterMinutes: number | null;
     };
 
 export interface PrimeFigureStateUpdates {

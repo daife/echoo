@@ -44,7 +44,7 @@ describe("runtime config forms", () => {
     const html = renderToStaticMarkup(
       <PrimeRuntimeConfigForm
         value={{
-          version: 2,
+          version: 3,
           decisionModel: { ...endpoint, temperature: 0.4, maxTokens: 1600 },
           outputs: {
             image: {
@@ -92,6 +92,16 @@ describe("runtime config forms", () => {
           context: { minimumMessages: 150, maximumMessages: 249 },
           typingCharsPerMinute: 300,
           messageCoalesceMs: 2000,
+          wakeups: {
+            proactive: {
+              enabled: false,
+              interactionInvalidationWindowMinutes: 10,
+            },
+            passive: {
+              enabled: false,
+              milestonesMinutes: [15, 180, 1440],
+            },
+          },
         }}
         onSave={vi.fn()}
       />,
@@ -101,5 +111,8 @@ describe("runtime config forms", () => {
     expect(html).toContain("媒体理解");
     expect(html).toContain("连续消息合并间隔（毫秒）");
     expect(html).toContain('value="2000"');
+    expect(html).toContain("允许 figure 主动设置定时唤醒");
+    expect(html).toContain("第一次被动唤醒（累计分钟）");
+    expect(html).toContain('value="1440"');
   });
 });

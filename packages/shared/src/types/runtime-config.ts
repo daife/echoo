@@ -83,7 +83,7 @@ export interface PrimeFigureUnderstandingConfigView {
 }
 
 export interface PrimeFigureRuntimeConfigView {
-  version: 2;
+  version: 3;
   decisionModel: TextModelConfigView;
   outputs: PrimeFigureOutputConfigView;
   optimization: PrimeFigureOptimizationConfigView;
@@ -94,6 +94,18 @@ export interface PrimeFigureRuntimeConfigView {
   };
   typingCharsPerMinute: number;
   messageCoalesceMs: number;
+  wakeups: PrimeFigureWakeupConfig;
+}
+
+export interface PrimeFigureWakeupConfig {
+  proactive: {
+    enabled: boolean;
+    interactionInvalidationWindowMinutes: number;
+  };
+  passive: {
+    enabled: boolean;
+    milestonesMinutes: [number, number, number];
+  };
 }
 
 export interface PrimeWorldRuntimeConfigView {
@@ -176,6 +188,16 @@ export interface PrimeFigureRuntimeConfigPatch {
   context?: Partial<PrimeFigureRuntimeConfigView["context"]>;
   typingCharsPerMinute?: number;
   messageCoalesceMs?: number;
+  wakeups?: {
+    proactive?: {
+      enabled?: boolean;
+      interactionInvalidationWindowMinutes?: number;
+    };
+    passive?: {
+      enabled?: boolean;
+      milestonesMinutes?: [number, number, number];
+    };
+  };
 }
 
 export interface UserRuntimeConfigPatch {

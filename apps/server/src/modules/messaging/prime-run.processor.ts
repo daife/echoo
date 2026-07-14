@@ -48,6 +48,8 @@ export class PrimeRunProcessor {
         conversationId: job.conversationId,
         trigger: job.trigger === "memory_summary" ? undefined : job.trigger,
         debugInstruction: job.debugInstruction,
+        wakeupToken: job.wakeupToken,
+        passiveStage: job.passiveStage,
         onModelActivityChange: setModelActivity,
       });
     } finally {

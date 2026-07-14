@@ -66,7 +66,16 @@ System prompt 由独立 composer 按配置组合核心决策、能力、图片�
 - 关闭图片发送时，不拼入图片规则，显式声明暂不支持 image action，响应 schema 也不包含 image action。
 - 关闭语音发送时，不拼入语音规则，显式声明暂不支持 voice action，响应 schema 也不包含 voice action。
 - 能力开关是执行硬边界；即使 `/hint` 要求关闭的能力，也不会执行对应 action。
-- 如果模型仍误输出已关闭的 image/voice action，能力感知的解析和流式运行时会静默忽略该 action，不创建消息、不调用媒体服务，也不使整轮失败。其余合法 action、状态和记忆更新继续执行；启用能力的畸形输出及未知 action 仍按契约失败。
+- 如果模型仍误输出已关闭的 image/voice 或 `schedule_wakeup` action，能力感知的解析和流式运行时会静默忽略该 action，不创建消息、不调用对应服务，也不使整轮失败。其余合法 action、状态和记忆更新继续执行；启用能力的畸形输出及未知 action 仍按契约失败。
+
+## 可插拔定时唤醒
+
+Prime Figure v3 运行配置在全局和会话 custom 模式下提供 `wakeups.proactive` 与 `wakeups.passive`，两项默认关闭。主动能力开启后，响应 schema 才会包含 `schedule_wakeup` action；正整数 `afterMinutes` 创建或替换计时，`null` 取消。计时会保存创建时的互动失效窗口和消息序列基线，因此同一轮发送的消息不会使新计时自我失效，之后仅在到期前配置窗口内出现新的 end_user 或 figure 消息时失效。
+
+被动唤醒使用三个严格递增的累计分钟里程碑，默认是 15、180、1440。它只在没有主动计时时运行：第一次从成功的 figure 活动开始计时，后两次使用相邻里程碑差值；第三次成功运行后停止。空 actions、`silence`、`mute` 和正常发送都属于成功活动。end_user 的新消息会清除当前被动周期，随后一次成功的非被动决策从第一阶段重新开始。
+
+统一调度器从 `mute`、主动唤醒、被动唤醒及已认领任务租约中计算最早的 `agents.next_run_at`。主动与被动任务分别使用 `scheduled_wakeup`、`passive_wakeup` trigger，并携带持久 token；重复或过期任务会在调用模型前退出。定时 trigger 可以在 `mute` 中运行，也允许在没有未处理 end_user 消息时使用现有时间线作出决策。被动 hint 只陈述这是系统定时唤醒及双方已有多久没有消息交流，不携带产品目标或要求必须发送消息的暗示。
+
 - 图片和语音内嵌指导分别支持 `basic`、`medium`、`advanced`。
 
 原生媒体理解时，尚未标注的原始媒体进入决策 user 消息，hints 和严格响应 schema 要求返回 `mediaAnnotations`。辅助理解时，决策模型只看到已持久化的文本描述或 transcript，不再看到原始媒体，也不再收到该媒体的标注规则或输出字段。两种模式可以按视觉和听觉混合使用。

@@ -705,7 +705,7 @@ function runtimeConfigForTest(typingCharsPerMinute = 300) {
     maxTokens: 1600,
   };
   return {
-    version: 2 as const,
+    version: 3 as const,
     decisionModel: textModel,
     outputs: {
       image: {
@@ -744,6 +744,16 @@ function runtimeConfigForTest(typingCharsPerMinute = 300) {
     context: { minimumMessages: 150, maximumMessages: 249 },
     typingCharsPerMinute,
     messageCoalesceMs: 2_000,
+    wakeups: {
+      proactive: {
+        enabled: false,
+        interactionInvalidationWindowMinutes: 10,
+      },
+      passive: {
+        enabled: false,
+        milestonesMinutes: [15, 180, 1_440] as [number, number, number],
+      },
+    },
   };
 }
 

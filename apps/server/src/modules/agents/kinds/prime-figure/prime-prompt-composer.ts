@@ -95,9 +95,13 @@ function buildActionRules(config: StoredPrimeFigureRuntimeConfig) {
       ? ["暂不支持voice action。"]
       : []),
   ];
+  const wakeup = config.wakeups.proactive.enabled
+    ? "figure还可以用 schedule_wakeup.afterMinutes 安排若干分钟后重新查看会话；正整数会创建或替换计时，null 会取消已有计时。"
+    : "当前未开放 schedule_wakeup action。";
   return `actions 注意事项：
 figure可以发送${media}消息，也可以用 silence 表示本次不回复，或用 mute 管理对新消息的屏蔽状态。
-${unavailable.length ? `${unavailable.join("\n")}\n` : ""}silence 只表示本次不回复，不影响后续消息。mute.revisitAfterMinutes 使用正整数时，会在指定分钟内屏蔽end_user的新消息；使用 null 时解除当前mute状态。`;
+${unavailable.length ? `${unavailable.join("\n")}\n` : ""}silence 只表示本次不回复，不影响后续消息。mute.revisitAfterMinutes 使用正整数时，会在指定分钟内屏蔽end_user的新消息；使用 null 时解除当前mute状态。
+${wakeup}`;
 }
 
 const SEND_MESSAGE_RULES = `send_message 注意事项：

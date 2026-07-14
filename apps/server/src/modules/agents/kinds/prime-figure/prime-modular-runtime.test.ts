@@ -80,6 +80,40 @@ test("disabled output actions are ignored before validation and retain source in
   assert.deepEqual(ignoredOnly.sourceActionIndices, []);
 });
 
+test("proactive wakeup action follows its capability boundary", () => {
+  const disabled = buildRuntimeConfigDefaults().primeFigure;
+  const disabledPrompt = buildPrimeSystemPrompt(promptAgent(), disabled);
+  const disabledSchema = JSON.stringify(
+    buildPrimeDecisionResponseFormat(promptAgent(), disabled, false, [], []),
+  );
+  assert.match(disabledPrompt, /未开放 schedule_wakeup/);
+  assert.doesNotMatch(disabledSchema, /schedule_wakeup/);
+  assert.deepEqual(
+    parsePrimeDecisionEnvelope(
+      JSON.stringify({
+        rationale: "能力关闭",
+        figureMood: "平静",
+        variables: {},
+        actions: [{ type: "schedule_wakeup", afterMinutes: 5 }],
+      }),
+      [],
+      [],
+      disabled,
+    ).decision.actions,
+    [],
+  );
+
+  const enabled = structuredClone(disabled);
+  enabled.wakeups.proactive.enabled = true;
+  assert.match(buildPrimeSystemPrompt(promptAgent(), enabled), /安排若干分钟/);
+  assert.match(
+    JSON.stringify(
+      buildPrimeDecisionResponseFormat(promptAgent(), enabled, false, [], []),
+    ),
+    /schedule_wakeup/,
+  );
+});
+
 test("enabled malformed and unknown actions remain invalid", () => {
   const config = buildRuntimeConfigDefaults().primeFigure;
   const base = {

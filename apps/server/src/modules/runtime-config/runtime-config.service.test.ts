@@ -64,9 +64,9 @@ test("new-user initialization never copies environment API keys", async () => {
   }
 });
 
-test("prime v2 defaults enable media with medium guidance and native understanding", () => {
+test("prime v3 defaults keep wakeups disabled", () => {
   const prime = buildRuntimeConfigDefaults().primeFigure;
-  assert.equal(prime.version, 2);
+  assert.equal(prime.version, 3);
   assert.equal(prime.outputs.image.enabled, true);
   assert.equal(prime.outputs.voice.enabled, true);
   assert.equal(prime.outputs.image.guidanceLevel, "medium");
@@ -75,6 +75,28 @@ test("prime v2 defaults enable media with medium guidance and native understandi
   assert.equal(prime.optimization.voice.enabled, false);
   assert.equal(prime.understanding.visual.mode, "native");
   assert.equal(prime.understanding.audio.mode, "native");
+  assert.deepEqual(prime.wakeups, {
+    proactive: {
+      enabled: false,
+      interactionInvalidationWindowMinutes: 10,
+    },
+    passive: { enabled: false, milestonesMinutes: [15, 180, 1_440] },
+  });
+});
+
+test("legacy prime v2 configs are normalized with disabled wakeups", async () => {
+  const repository = new MemoryRuntimeConfigRepository();
+  const legacy = buildRuntimeConfigDefaults();
+  delete (legacy.primeFigure as any).wakeups;
+  (legacy.primeFigure as any).version = 2;
+  repository.userConfig = legacy;
+
+  const view = await createService(repository).getUserConfig("user_1");
+
+  assert.equal(view.primeFigure.version, 3);
+  assert.equal(view.primeFigure.wakeups.proactive.enabled, false);
+  assert.equal(view.primeFigure.wakeups.passive.enabled, false);
+  assert.equal(repository.userConfig?.primeFigure.version, 3);
 });
 
 test("prime dependent model features cannot outlive their output capability", async () => {
@@ -90,6 +112,41 @@ test("prime dependent model features cannot outlive their output capability", as
     }),
     RuntimeConfigValidationError,
   );
+});
+
+test("passive wakeup milestones must be strictly increasing", async () => {
+  const repository = new MemoryRuntimeConfigRepository();
+  repository.userConfig = buildRuntimeConfigDefaults();
+  await assert.rejects(
+    createService(repository).updateUserConfig("user_1", {
+      primeFigure: {
+        wakeups: { passive: { milestonesMinutes: [15, 10, 1_440] } },
+      },
+    }),
+    RuntimeConfigValidationError,
+  );
+});
+
+test("disabling global wakeups clears only the disabled capability state", async () => {
+  const repository = new MemoryRuntimeConfigRepository();
+  repository.userConfig = buildRuntimeConfigDefaults();
+  repository.userConfig.primeFigure.wakeups.proactive.enabled = true;
+  repository.userConfig.primeFigure.wakeups.passive.enabled = true;
+  const calls: unknown[] = [];
+  const service = createService(repository, {
+    async clearDisabledWakeupsForOwner(input: unknown) {
+      calls.push(input);
+    },
+    async clearDisabledWakeupsForConversation() {},
+  });
+
+  await service.updateUserConfig("user_1", {
+    primeFigure: { wakeups: { proactive: { enabled: false } } },
+  });
+
+  assert.deepEqual(calls, [
+    { ownerUserId: "user_1", proactive: true, passive: false },
+  ]);
 });
 
 test("secret patches retain, replace, and clear without exposing raw values", async () => {
@@ -219,7 +276,10 @@ class MemoryRuntimeConfigRepository {
   }
 }
 
-function createService(repository: MemoryRuntimeConfigRepository) {
+function createService(
+  repository: MemoryRuntimeConfigRepository,
+  primeStates?: object,
+) {
   return new RuntimeConfigService(
     repository as never,
     {
@@ -229,6 +289,7 @@ function createService(repository: MemoryRuntimeConfigRepository) {
           : null;
       },
     } as never,
+    primeStates as never,
   );
 }
 

@@ -17,6 +17,11 @@ import { truncatePreview } from "../../../conversations/conversation.repository.
 import { PrimeActionExecutor } from "./prime-action-executor.js";
 import { PrimeDecisionStreamParser } from "./prime-decision-stream-parser.js";
 import { buildPrimeChatMessages } from "./prime-figure-runtime.service.js";
+import { PrimeFigureWakeupScheduler } from "./prime-figure-silence.scheduler.js";
+import {
+  invalidatesProactiveWakeup,
+  nextPrimeRunAt,
+} from "./prime-figure-state.repository.js";
 import { buildRuntimeConfigDefaults } from "../../../runtime-config/runtime-config.defaults.js";
 
 test("prime decision parser preserves streamed visible message fields", () => {
@@ -352,6 +357,49 @@ test("prime debug hints stay inside the single user packet", async () => {
   );
 });
 
+test("passive wakeup hint is neutral and reports inactivity", async () => {
+  const packet = await buildPrimeChatMessages(
+    minimalPrimeAgent(),
+    {
+      variables: {},
+      memories: [],
+      mood: "",
+      moodObservedAtMs: 1,
+      relationshipStatus: "",
+      passiveWakeup: {
+        token: "wake_1",
+        stage: 1,
+        anchorActivityAtMs: Date.now() - 15 * 60_000,
+        dueAtMs: Date.now(),
+        baselineEndUserSequence: 0,
+        milestonesMinutes: [15, 180, 1_440],
+      },
+      updatedAt: 1,
+    },
+    [],
+    "passive_wakeup",
+    "user_1",
+    {} as never,
+    {
+      async listAvailableImages() {
+        return [];
+      },
+    } as never,
+    0,
+    undefined,
+    buildRuntimeConfigDefaults().primeFigure,
+  );
+  const userContent = packet.messages[1]?.content;
+  assert.ok(Array.isArray(userContent));
+  const contextPart = userContent.at(-1);
+  const serialized = String(
+    contextPart && "text" in contextPart ? contextPart.text : "",
+  );
+  assert.match(serialized, /系统定时唤醒/);
+  assert.match(serialized, /约 15 分钟/);
+  assert.doesNotMatch(serialized, /挽留|召回|留存/);
+});
+
 test("prime dynamic figure context lives only in the final user packet", async () => {
   const agent = {
     id: "agent_1",
@@ -558,6 +606,27 @@ test("prime decision accepts omitted, empty, and expanded action and memory arra
   });
   assert.equal(expanded.memoryWrites.length, 9);
   assert.equal(expanded.actions.length, 13);
+});
+
+test("prime decision accepts proactive wakeup scheduling and cancellation", () => {
+  const base = {
+    rationale: "稍后再看",
+    figureMood: "平静",
+    variables: {},
+  };
+  assert.deepEqual(
+    primeFigureDecisionSchema.parse({
+      ...base,
+      actions: [
+        { type: "schedule_wakeup", afterMinutes: 30 },
+        { type: "schedule_wakeup", afterMinutes: null },
+      ],
+    }).actions,
+    [
+      { type: "schedule_wakeup", afterMinutes: 30 },
+      { type: "schedule_wakeup", afterMinutes: null },
+    ],
+  );
 });
 
 test("prime decision accepts mute null and strips unknown action fields", () => {
@@ -911,11 +980,169 @@ test("conversation previews honor the database column without truncating content
   assert.equal(truncated, "🙂".repeat(500));
 });
 
+test("prime executor schedules the last proactive wakeup after same-run messages", async () => {
+  const config = buildRuntimeConfigDefaults().primeFigure;
+  config.wakeups.proactive.enabled = true;
+  const result = await executePrimeDecisionCase({
+    actions: [
+      {
+        type: "send_message",
+        message: { type: "text", text: "我过一会儿再来。" },
+      },
+      { type: "schedule_wakeup", afterMinutes: 3 },
+      { type: "schedule_wakeup", afterMinutes: 7 },
+    ],
+    runtimeConfig: config,
+  });
+  assert.equal(result.state.proactiveWakeup?.interactionAfterSequence, 1);
+  assert.equal(
+    result.state.proactiveWakeup!.dueAtMs -
+      result.state.proactiveWakeup!.scheduledAtMs,
+    7 * 60_000,
+  );
+});
+
+test("proactive wakeup interaction window uses exact time and sequence boundaries", () => {
+  const wakeup = {
+    token: "wake_1",
+    scheduledAtMs: 1_000,
+    dueAtMs: 11 * 60_000,
+    interactionAfterSequence: 8,
+    interactionInvalidationWindowMinutes: 10,
+  };
+  assert.equal(invalidatesProactiveWakeup(wakeup, 9, 60_000), true);
+  assert.equal(invalidatesProactiveWakeup(wakeup, 9, 11 * 60_000), true);
+  assert.equal(invalidatesProactiveWakeup(wakeup, 8, 60_000), false);
+  assert.equal(invalidatesProactiveWakeup(wakeup, 9, 59_999), false);
+  assert.equal(
+    nextPrimeRunAt({
+      variables: {},
+      memories: [],
+      mood: "",
+      moodObservedAtMs: 0,
+      relationshipStatus: "",
+      silenceUntilMs: 50_000,
+      proactiveWakeup: wakeup,
+      updatedAt: 0,
+    }),
+    50_000,
+  );
+});
+
+test("unified scheduler publishes mute end while selecting one timed trigger", async () => {
+  const events: unknown[] = [];
+  const jobs: unknown[] = [];
+  const scheduler = new PrimeFigureWakeupScheduler(
+    {
+      async claimDueWakeups() {
+        return [
+          {
+            ownerUserId: "user_1",
+            agentId: "agent_1",
+            conversationId: "conv_1",
+            trigger: "scheduled_wakeup" as const,
+            wakeupToken: "wake_1",
+            muteEnded: true,
+          },
+        ];
+      },
+    } as never,
+    {
+      async enqueue(job: unknown) {
+        jobs.push(job);
+      },
+    } as never,
+    {
+      pushToUser(_ownerUserId: string, event: unknown) {
+        events.push(event);
+      },
+    } as never,
+  );
+
+  await (scheduler as any).tick();
+
+  assert.equal(events.length, 1);
+  assert.deepEqual(jobs, [
+    {
+      ownerUserId: "user_1",
+      conversationId: "conv_1",
+      kind: "prime-figure",
+      trigger: "scheduled_wakeup",
+      wakeupToken: "wake_1",
+      passiveStage: undefined,
+    },
+  ]);
+});
+
+test("prime executor advances and exhausts passive wakeup milestones", async () => {
+  const config = buildRuntimeConfigDefaults().primeFigure;
+  config.wakeups.passive.enabled = true;
+  const first = await executePrimeDecisionCase({
+    actions: [{ type: "silence" }],
+    runtimeConfig: config,
+    trigger: "passive_wakeup",
+    wakeupToken: "wake_1",
+    passiveStage: 1,
+    state: {
+      passiveWakeup: {
+        token: "wake_1",
+        stage: 1,
+        anchorActivityAtMs: 100,
+        dueAtMs: 200,
+        baselineEndUserSequence: 4,
+        milestonesMinutes: [15, 180, 1_440],
+      },
+    },
+    inputThroughEndUserSeq: 4,
+  });
+  assert.equal(first.state.passiveWakeup?.stage, 2);
+  assert.equal(
+    first.state.passiveWakeup!.dueAtMs -
+      first.state.passiveWakeup!.anchorActivityAtMs,
+    165 * 60_000,
+  );
+
+  const third = await executePrimeDecisionCase({
+    actions: [],
+    runtimeConfig: config,
+    trigger: "passive_wakeup",
+    wakeupToken: "wake_3",
+    passiveStage: 3,
+    state: {
+      passiveWakeup: {
+        token: "wake_3",
+        stage: 3,
+        anchorActivityAtMs: 100,
+        dueAtMs: 200,
+        baselineEndUserSequence: 4,
+        milestonesMinutes: [15, 180, 1_440],
+      },
+    },
+    inputThroughEndUserSeq: 4,
+  });
+  assert.equal(third.state.passiveWakeup, undefined);
+  assert.equal(third.state.passiveWakeupExhaustedAfterEndUserSequence, 4);
+
+  const restarted = await executePrimeDecisionCase({
+    actions: [],
+    runtimeConfig: config,
+    state: { passiveWakeupExhaustedAfterEndUserSequence: 4 },
+    inputThroughEndUserSeq: 5,
+  });
+  assert.equal(restarted.state.passiveWakeup?.stage, 1);
+  assert.equal(restarted.state.passiveWakeup?.baselineEndUserSequence, 5);
+});
+
 async function executePrimeDecisionCase(input: {
   actions: PrimeFigureAction[];
   state?: Partial<PrimeFigureState>;
   memoryWrites?: PrimeFigureDecision["memoryWrites"];
   muteMessageCutoffAtMs?: number;
+  runtimeConfig?: ReturnType<typeof buildRuntimeConfigDefaults>["primeFigure"];
+  trigger?: "end_user_message" | "scheduled_wakeup" | "passive_wakeup";
+  wakeupToken?: string;
+  passiveStage?: 1 | 2 | 3;
+  inputThroughEndUserSeq?: number;
 }) {
   let savedState: PrimeFigureState | undefined;
   const messages: Array<Record<string, unknown>> = [];
@@ -933,8 +1160,9 @@ async function executePrimeDecisionCase(input: {
     { async applyRuntimeUpdates() {} } as never,
     {
       async save(message: Record<string, unknown>) {
-        messages.push(message);
-        return message;
+        const saved = { ...message, sequence: messages.length + 1 };
+        messages.push(saved);
+        return saved;
       },
     } as never,
     { async save() {} } as never,
@@ -972,8 +1200,44 @@ async function executePrimeDecisionCase(input: {
     providerId: "test-provider",
     model: "test-model",
     muteMessageCutoffAtMs: input.muteMessageCutoffAtMs,
+    runtimeConfig: input.runtimeConfig,
+    trigger: input.trigger,
+    wakeupToken: input.wakeupToken,
+    passiveStage: input.passiveStage,
+    inputThroughEndUserSeq: input.inputThroughEndUserSeq,
   });
 
   if (!savedState) throw new Error("Expected prime state to be saved.");
   return { state: savedState, messages, events };
+}
+
+function minimalPrimeAgent(): PrimeFigureAgent {
+  return {
+    id: "agent_1",
+    ownerUserId: "user_1",
+    type: "prime-figure",
+    name: "Mira",
+    attributes: [],
+    tags: [],
+    introduction: "",
+    isPublic: false,
+    conversationId: "conv_1",
+    createdAt: 1,
+    updatedAt: 1,
+    detail: {
+      prologueHtml: "",
+      linkedAgentIds: [],
+      persona: "人设",
+      background: "背景",
+      personality: "性格",
+      responseStyle: "风格",
+      decisionStyle: "",
+      currentSituation: "",
+      schedule: { segments: [] },
+      itinerary: "",
+      variableDefinitions: [],
+      referenceImages: [],
+      voiceRequestStreaming: false,
+    },
+  };
 }

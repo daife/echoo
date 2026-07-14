@@ -23,7 +23,7 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
       },
     },
     primeFigure: {
-      version: 2,
+      version: 3,
       decisionModel: {
         ...sharedEndpoint,
         model: "openai/gpt-4o-mini",
@@ -102,6 +102,16 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
       },
       typingCharsPerMinute: 300,
       messageCoalesceMs: 2_000,
+      wakeups: {
+        proactive: {
+          enabled: false,
+          interactionInvalidationWindowMinutes: 10,
+        },
+        passive: {
+          enabled: false,
+          milestonesMinutes: [15, 180, 1_440],
+        },
+      },
     },
     primeWorld: { version: 1 },
   };

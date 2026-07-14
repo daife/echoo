@@ -6,7 +6,7 @@ import { closeDatabase, initializeDatabase } from "./infra/database/mysql.js";
 import { AgentRunQueue } from "./infra/redis/run-queue.js";
 import { closeRedis, getRedis } from "./infra/redis/redis.js";
 import { registerAgentRoutes } from "./modules/agents/agents.controller.js";
-import { PrimeFigureSilenceScheduler } from "./modules/agents/kinds/prime-figure/prime-figure-silence.scheduler.js";
+import { PrimeFigureWakeupScheduler } from "./modules/agents/kinds/prime-figure/prime-figure-silence.scheduler.js";
 import { registerAuthDecorators } from "./modules/auth/auth.decorators.js";
 import { registerAuthRoutes } from "./modules/auth/auth.controller.js";
 import { registerInterfaceBindingRoutes } from "./modules/channels/channels.controller.js";
@@ -21,7 +21,7 @@ export async function buildApp() {
   await initializeDatabase();
   await getRedis();
   const app = Fastify({ logger: true });
-  const primeSilenceScheduler = new PrimeFigureSilenceScheduler();
+  const primeWakeupScheduler = new PrimeFigureWakeupScheduler();
   const runQueue = new AgentRunQueue();
   const runService = new (
     await import("./modules/messaging/messaging.service.js")
@@ -57,7 +57,7 @@ export async function buildApp() {
   await app.register(registerRealtimeGateway);
   app.addHook("onReady", async () => {
     await startRealtimeEventBus();
-    primeSilenceScheduler.start();
+    primeWakeupScheduler.start();
     void runQueue
       .start(
         (job) => runService.processQueuedRun(job),
@@ -66,7 +66,7 @@ export async function buildApp() {
       .catch((error) => app.log.error(error, "Agent run worker stopped"));
   });
   app.addHook("onClose", async () => {
-    primeSilenceScheduler.stop();
+    primeWakeupScheduler.stop();
     runQueue.stop();
     await closeRedis();
     await closeDatabase();

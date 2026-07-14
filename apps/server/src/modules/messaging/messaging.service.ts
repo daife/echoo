@@ -5,6 +5,7 @@ import {
   type AgentRunJob,
 } from "../../infra/redis/run-queue.js";
 import { PrimeFigureRuntimeService } from "../agents/kinds/prime-figure/prime-figure-runtime.service.js";
+import { PrimeFigureStateRepository } from "../agents/kinds/prime-figure/prime-figure-state.repository.js";
 import { SliceFigureRuntimeService } from "../agents/kinds/slice-figure/slice-figure-runtime.service.js";
 import { ConversationRepository } from "../conversations/conversation.repository.js";
 import { AppPushService } from "../realtime/delivery.service.js";
@@ -66,6 +67,7 @@ export class MessagingService {
     primeRuntime = new PrimeFigureRuntimeService(),
     private readonly runQueue = new AgentRunQueue(),
     private readonly resources = new ResourceRepository(),
+    private readonly primeStates = new PrimeFigureStateRepository(),
   ) {
     this.primeRuns = new PrimeRunProcessor(primeRuntime, this.appPush);
     this.sliceReplies = new SliceReplyProcessor(
@@ -147,6 +149,14 @@ export class MessagingService {
     if (!conversation.agentId) return { message };
 
     if (conversation.type === "prime-figure") {
+      if (message.sequence !== undefined)
+        await this.primeStates.recordMessageInteraction({
+          ownerUserId: input.ownerUserId,
+          conversationId: input.conversationId,
+          role: "user",
+          sequence: message.sequence,
+          occurredAtMs: message.createdAt,
+        });
       await this.runQueue.enqueue({
         ownerUserId: input.ownerUserId,
         conversationId: input.conversationId,
@@ -260,6 +270,14 @@ export class MessagingService {
       type: "message.created",
       message,
     });
+    if (message.sequence !== undefined)
+      await this.primeStates.recordMessageInteraction({
+        ownerUserId: input.ownerUserId,
+        conversationId: input.conversationId,
+        role: "user",
+        sequence: message.sequence,
+        occurredAtMs: message.createdAt,
+      });
     await this.enqueuePrimeFigureRun(input.ownerUserId, input.conversationId);
     return { kind: "ok", message };
   }

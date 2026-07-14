@@ -101,6 +101,36 @@ export const primeFigureRuntimeConfigPatchSchema = z.object({
     .optional(),
   typingCharsPerMinute: optionalPositive,
   messageCoalesceMs: optionalNonnegative,
+  wakeups: z
+    .object({
+      proactive: z
+        .object({
+          enabled: z.boolean().optional(),
+          interactionInvalidationWindowMinutes: z
+            .number()
+            .int()
+            .nonnegative()
+            .optional(),
+        })
+        .optional(),
+      passive: z
+        .object({
+          enabled: z.boolean().optional(),
+          milestonesMinutes: z
+            .tuple([
+              z.number().int().positive(),
+              z.number().int().positive(),
+              z.number().int().positive(),
+            ])
+            .refine(
+              ([first, second, third]) => first < second && second < third,
+              "被动唤醒时间必须严格递增。",
+            )
+            .optional(),
+        })
+        .optional(),
+    })
+    .optional(),
 });
 
 export const userRuntimeConfigPatchSchema = z.object({

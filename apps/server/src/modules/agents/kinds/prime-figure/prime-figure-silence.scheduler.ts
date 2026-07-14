@@ -2,7 +2,7 @@ import { AgentRunQueue } from "../../../../infra/redis/run-queue.js";
 import { AppPushService } from "../../../realtime/delivery.service.js";
 import { PrimeFigureStateRepository } from "./prime-figure-state.repository.js";
 
-export class PrimeFigureSilenceScheduler {
+export class PrimeFigureWakeupScheduler {
   private timer: NodeJS.Timeout | null = null;
   private ticking = false;
 
@@ -15,19 +15,23 @@ export class PrimeFigureSilenceScheduler {
   start() {
     if (this.timer) return;
     const intervalMs = Math.max(
-      Number(process.env.PRIME_SILENCE_POLL_MS ?? 1000),
+      Number(
+        process.env.PRIME_WAKEUP_POLL_MS ??
+          process.env.PRIME_SILENCE_POLL_MS ??
+          1000,
+      ),
       250,
     );
     this.timer = setInterval(
       () =>
         void this.tick().catch((error) =>
-          console.error("Prime Figure silence scheduler failed.", error),
+          console.error("Prime Figure wakeup scheduler failed.", error),
         ),
       intervalMs,
     );
     this.timer.unref();
     void this.tick().catch((error) =>
-      console.error("Prime Figure silence scheduler failed.", error),
+      console.error("Prime Figure wakeup scheduler failed.", error),
     );
   }
 
@@ -40,24 +44,27 @@ export class PrimeFigureSilenceScheduler {
     if (this.ticking) return;
     this.ticking = true;
     try {
-      const due = await this.states.claimDueSilences(Date.now());
+      const due = await this.states.claimDueWakeups(Date.now());
       for (const item of due) {
-        this.appPush.pushToUser(item.ownerUserId, {
-          type: "conversation.agent_mute_changed",
-          conversationId: item.conversationId,
-          muteUntilMs: null,
-          updatedAt: Date.now(),
-        });
+        if (item.muteEnded)
+          this.appPush.pushToUser(item.ownerUserId, {
+            type: "conversation.agent_mute_changed",
+            conversationId: item.conversationId,
+            muteUntilMs: null,
+            updatedAt: Date.now(),
+          });
       }
       await Promise.all(
         due
-          .filter((item) => item.hadQueuedMessages)
+          .filter((item) => item.trigger)
           .map((item) =>
             this.runQueue.enqueue({
               ownerUserId: item.ownerUserId,
               conversationId: item.conversationId,
               kind: "prime-figure",
-              trigger: "mute_ended",
+              trigger: item.trigger!,
+              wakeupToken: item.wakeupToken,
+              passiveStage: item.passiveStage,
             }),
           ),
       );

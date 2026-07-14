@@ -10,6 +10,7 @@ import type {
   UserRuntimeConfigView,
 } from "@echoo/shared";
 import { ConversationRepository } from "../conversations/conversation.repository.js";
+import { PrimeFigureStateRepository } from "../agents/kinds/prime-figure/prime-figure-state.repository.js";
 import { buildRuntimeConfigDefaults } from "./runtime-config.defaults.js";
 import { RuntimeConfigRepository } from "./runtime-config.repository.js";
 import type {
@@ -29,6 +30,7 @@ export class RuntimeConfigService {
   constructor(
     private readonly repository = new RuntimeConfigRepository(),
     private readonly conversations = new ConversationRepository(),
+    private readonly primeStates = new PrimeFigureStateRepository(),
   ) {}
 
   async getUserConfig(ownerUserId: string): Promise<UserRuntimeConfigView> {
@@ -58,6 +60,11 @@ export class RuntimeConfigService {
     };
     validateUserConfig(next);
     await this.repository.saveUserConfig(ownerUserId, next);
+    const disabled = disabledWakeups(current.primeFigure, next.primeFigure);
+    await this.primeStates.clearDisabledWakeupsForOwner({
+      ownerUserId,
+      ...disabled,
+    });
     return redactUserConfig(next);
   }
 
@@ -93,7 +100,11 @@ export class RuntimeConfigService {
       ownerUserId,
       conversationId,
     );
-    let custom = stored?.customConfig ?? null;
+    let custom = stored?.customConfig
+      ? normalizeFigureConfig(conversation.type, stored.customConfig)
+      : null;
+    const previousConfig =
+      stored?.mode === "custom" && custom ? custom : global;
     if (input.mode === "custom") {
       custom ??= structuredClone(global);
       if (input.config)
@@ -106,6 +117,16 @@ export class RuntimeConfigService {
       mode: input.mode,
       customConfig: custom,
     });
+    const nextConfig = input.mode === "custom" ? custom! : global;
+    if (conversation.type === "prime-figure")
+      await this.primeStates.clearDisabledWakeupsForConversation({
+        ownerUserId,
+        conversationId,
+        ...disabledWakeups(
+          previousConfig as StoredPrimeFigureRuntimeConfig,
+          nextConfig as StoredPrimeFigureRuntimeConfig,
+        ),
+      });
     return {
       mode: input.mode,
       conversationType: conversation.type,
@@ -133,7 +154,9 @@ export class RuntimeConfigService {
       ownerUserId,
       conversationId,
     );
-    const custom = stored?.customConfig;
+    const custom = stored?.customConfig
+      ? normalizeFigureConfig(conversation.type, stored.customConfig)
+      : null;
     const mode = stored?.mode === "custom" && custom ? "custom" : "global";
     const config = mode === "custom" ? custom! : global;
     validateFigureConfig(conversation.type, config);
@@ -142,7 +165,12 @@ export class RuntimeConfigService {
 
   private async ensureUserConfig(ownerUserId: string) {
     const existing = await this.repository.findUserConfig(ownerUserId);
-    if (existing) return existing;
+    if (existing) {
+      const normalized = normalizeUserConfig(existing);
+      if (JSON.stringify(normalized) !== JSON.stringify(existing))
+        await this.repository.saveUserConfig(ownerUserId, normalized);
+      return normalized;
+    }
     await this.repository.insertUserConfigIfAbsent(
       ownerUserId,
       buildRuntimeConfigDefaults(),
@@ -167,6 +195,58 @@ export class RuntimeConfigService {
   }
 }
 
+function disabledWakeups(
+  previous: StoredPrimeFigureRuntimeConfig,
+  next: StoredPrimeFigureRuntimeConfig,
+) {
+  return {
+    proactive:
+      previous.wakeups.proactive.enabled && !next.wakeups.proactive.enabled,
+    passive: previous.wakeups.passive.enabled && !next.wakeups.passive.enabled,
+  };
+}
+
+function normalizeUserConfig(
+  config: StoredUserRuntimeConfig,
+): StoredUserRuntimeConfig {
+  return {
+    ...config,
+    primeFigure: normalizePrimeConfig(config.primeFigure),
+  };
+}
+
+function normalizeFigureConfig(
+  type: AgentType,
+  config: StoredFigureRuntimeConfig,
+): StoredFigureRuntimeConfig {
+  return type === "prime-figure"
+    ? normalizePrimeConfig(config as StoredPrimeFigureRuntimeConfig)
+    : config;
+}
+
+function normalizePrimeConfig(
+  config: StoredPrimeFigureRuntimeConfig,
+): StoredPrimeFigureRuntimeConfig {
+  const defaults = buildRuntimeConfigDefaults().primeFigure;
+  const legacy = config as StoredPrimeFigureRuntimeConfig & {
+    wakeups?: StoredPrimeFigureRuntimeConfig["wakeups"];
+  };
+  return {
+    ...config,
+    version: 3,
+    wakeups: {
+      proactive: {
+        ...defaults.wakeups.proactive,
+        ...legacy.wakeups?.proactive,
+      },
+      passive: {
+        ...defaults.wakeups.passive,
+        ...legacy.wakeups?.passive,
+      },
+    },
+  };
+}
+
 function patchSliceConfig(
   current: StoredSliceFigureRuntimeConfig,
   patch: SliceFigureRuntimeConfigPatch,
@@ -184,6 +264,7 @@ function patchPrimeConfig(
 ): StoredPrimeFigureRuntimeConfig {
   return {
     ...current,
+    version: 3,
     decisionModel: patch.decisionModel
       ? patchTextModel(current.decisionModel, patch.decisionModel)
       : current.decisionModel,
@@ -230,6 +311,16 @@ function patchPrimeConfig(
     typingCharsPerMinute:
       patch.typingCharsPerMinute ?? current.typingCharsPerMinute,
     messageCoalesceMs: patch.messageCoalesceMs ?? current.messageCoalesceMs,
+    wakeups: {
+      proactive: {
+        ...current.wakeups.proactive,
+        ...patch.wakeups?.proactive,
+      },
+      passive: {
+        ...current.wakeups.passive,
+        ...patch.wakeups?.passive,
+      },
+    },
   };
 }
 
@@ -428,6 +519,16 @@ function validateFigureConfig(
     positiveInteger(value.context.maximumMessages, "最大上下文消息数");
     positiveNumber(value.typingCharsPerMinute, "每分钟打字字符数");
     nonnegativeNumber(value.messageCoalesceMs, "消息合并间隔");
+    nonnegativeInteger(
+      value.wakeups.proactive.interactionInvalidationWindowMinutes,
+      "主动唤醒互动失效窗口",
+    );
+    const [first, second, third] = value.wakeups.passive.milestonesMinutes;
+    positiveInteger(first, "第一次被动唤醒时间");
+    positiveInteger(second, "第二次被动唤醒时间");
+    positiveInteger(third, "第三次被动唤醒时间");
+    if (!(first < second && second < third))
+      invalid("被动唤醒时间必须严格递增。");
     if (value.context.maximumMessages < value.context.minimumMessages)
       invalid("最大上下文消息数不能小于最小上下文消息数。");
   }
@@ -454,6 +555,10 @@ function positiveNumber(value: number, label: string) {
 
 function nonnegativeNumber(value: number, label: string) {
   if (!Number.isFinite(value) || value < 0) invalid(`${label}不能小于 0。`);
+}
+
+function nonnegativeInteger(value: number, label: string) {
+  if (!Number.isInteger(value) || value < 0) invalid(`${label}不能小于 0。`);
 }
 
 function finiteNumber(value: number, label: string) {

@@ -16,10 +16,14 @@ export interface AgentRunJob {
   trigger?:
     | "end_user_message"
     | "mute_ended"
+    | "scheduled_wakeup"
+    | "passive_wakeup"
     | "coalesced_messages"
     | "debug_hint"
     | "memory_summary";
   debugInstruction?: string;
+  wakeupToken?: string;
+  passiveStage?: 1 | 2 | 3;
 }
 
 export interface AgentRunActivity {
@@ -47,6 +51,8 @@ export class AgentRunQueue {
         attempts: String(job.attempts ?? 0),
         trigger: job.trigger ?? "end_user_message",
         debugInstruction: job.debugInstruction ?? "",
+        wakeupToken: job.wakeupToken ?? "",
+        passiveStage: job.passiveStage ? String(job.passiveStage) : "",
       },
       {
         TRIM: { strategy: "MAXLEN", strategyModifier: "~", threshold: 100_000 },
@@ -111,6 +117,16 @@ export class AgentRunQueue {
             ...(entry.message.assistantMessageId
               ? { assistantMessageId: entry.message.assistantMessageId }
               : {}),
+            ...(entry.message.wakeupToken
+              ? { wakeupToken: entry.message.wakeupToken }
+              : {}),
+            ...(entry.message.passiveStage
+              ? {
+                  passiveStage: Number(
+                    entry.message.passiveStage,
+                  ) as AgentRunJob["passiveStage"],
+                }
+              : {}),
           };
           const task = this.handleEntry(
             job,
@@ -168,10 +184,19 @@ export class AgentRunQueue {
       PX: 10 * 60_000,
     });
     if (!acquired) {
-      if (job.kind === "prime-figure" && job.trigger !== "debug_hint") {
+      if (
+        job.kind === "prime-figure" &&
+        job.trigger !== "debug_hint" &&
+        job.trigger !== "scheduled_wakeup" &&
+        job.trigger !== "passive_wakeup"
+      ) {
         await redis.set(dirtyKey, "1", { EX: 10 * 60 });
       } else {
-        await delay(100);
+        await delay(
+          job.trigger === "scheduled_wakeup" || job.trigger === "passive_wakeup"
+            ? 5_000
+            : 100,
+        );
         await this.enqueue(job);
       }
       return;
@@ -196,6 +221,8 @@ export class AgentRunQueue {
           ...job,
           trigger: "coalesced_messages",
           debugInstruction: undefined,
+          wakeupToken: undefined,
+          passiveStage: undefined,
         };
       } while (job.kind === "prime-figure" && (await redis.getDel(dirtyKey)));
     } finally {

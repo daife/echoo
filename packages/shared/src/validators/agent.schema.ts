@@ -157,6 +157,52 @@ export const primeFigureStateSchema = z.object({
   relationshipStatus: optionalText(),
   silenceStartedAtMs: z.number().nonnegative().optional(),
   silenceUntilMs: z.number().nonnegative().optional(),
+  lastFigureActivityAtMs: z.number().nonnegative().optional(),
+  proactiveWakeup: z
+    .object({
+      token: z.string().trim().min(1),
+      scheduledAtMs: z.number().nonnegative(),
+      dueAtMs: z.number().nonnegative(),
+      interactionAfterSequence: z.number().int().nonnegative(),
+      interactionInvalidationWindowMinutes: z.number().int().nonnegative(),
+      lease: z
+        .object({
+          leaseUntilMs: z.number().nonnegative(),
+          deliveryAttempts: z.number().int().positive(),
+        })
+        .optional(),
+    })
+    .optional(),
+  passiveWakeup: z
+    .object({
+      token: z.string().trim().min(1),
+      stage: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+      anchorActivityAtMs: z.number().nonnegative(),
+      dueAtMs: z.number().nonnegative(),
+      baselineEndUserSequence: z.number().int().nonnegative(),
+      milestonesMinutes: z
+        .tuple([
+          z.number().int().positive(),
+          z.number().int().positive(),
+          z.number().int().positive(),
+        ])
+        .refine(
+          ([first, second, third]) => first < second && second < third,
+          "被动唤醒时间必须严格递增。",
+        ),
+      lease: z
+        .object({
+          leaseUntilMs: z.number().nonnegative(),
+          deliveryAttempts: z.number().int().positive(),
+        })
+        .optional(),
+    })
+    .optional(),
+  passiveWakeupExhaustedAfterEndUserSequence: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional(),
   updatedAt: z.number().nonnegative(),
 });
 
@@ -356,6 +402,10 @@ const primeFigureActionOutputSchema = z.discriminatedUnion("type", [
     type: z.literal("mute"),
     revisitAfterMinutes: z.number().int().min(1).nullable(),
   }),
+  z.object({
+    type: z.literal("schedule_wakeup"),
+    afterMinutes: z.number().int().min(1).nullable(),
+  }),
 ]);
 
 export const primeFigureActionSchema = z.preprocess(
@@ -386,7 +436,8 @@ function normalizePrimeFigureAction(value: unknown) {
   if (
     action.type === "send_message" ||
     action.type === "silence" ||
-    action.type === "mute"
+    action.type === "mute" ||
+    action.type === "schedule_wakeup"
   )
     return { ...action, message: normalizedMessage };
   return { ...action, type: "send_message", message: normalizedMessage };

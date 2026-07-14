@@ -203,6 +203,22 @@ export function PrimeRuntimeConfigForm({
         },
         typingCharsPerMinute: Number(draft.typingCharsPerMinute),
         messageCoalesceMs: Number(draft.messageCoalesceMs),
+        wakeups: {
+          proactive: {
+            enabled: draft.proactiveWakeupEnabled,
+            interactionInvalidationWindowMinutes: Number(
+              draft.interactionInvalidationWindowMinutes,
+            ),
+          },
+          passive: {
+            enabled: draft.passiveWakeupEnabled,
+            milestonesMinutes: [
+              Number(draft.passiveFirstMinutes),
+              Number(draft.passiveSecondMinutes),
+              Number(draft.passiveThirdMinutes),
+            ],
+          },
+        },
       });
     } finally {
       setSaving(false);
@@ -417,6 +433,58 @@ export function PrimeRuntimeConfigForm({
             setDraft({ ...draft, messageCoalesceMs })
           }
         />
+      </ConfigSection>
+      <ConfigSection title="定时唤醒">
+        <ToggleInput
+          label="允许 figure 主动设置定时唤醒"
+          checked={draft.proactiveWakeupEnabled}
+          onChange={(proactiveWakeupEnabled) =>
+            setDraft({ ...draft, proactiveWakeupEnabled })
+          }
+        />
+        <NumberInput
+          label="主动计时互动失效窗口（分钟）"
+          min="0"
+          value={draft.interactionInvalidationWindowMinutes}
+          onChange={(interactionInvalidationWindowMinutes) =>
+            setDraft({ ...draft, interactionInvalidationWindowMinutes })
+          }
+        />
+        <ToggleInput
+          label="启用系统被动定时唤醒"
+          checked={draft.passiveWakeupEnabled}
+          onChange={(passiveWakeupEnabled) =>
+            setDraft({ ...draft, passiveWakeupEnabled })
+          }
+        />
+        <div className="hidden md:block" />
+        <NumberInput
+          label="第一次被动唤醒（累计分钟）"
+          min="1"
+          value={draft.passiveFirstMinutes}
+          onChange={(passiveFirstMinutes) =>
+            setDraft({ ...draft, passiveFirstMinutes })
+          }
+        />
+        <NumberInput
+          label="第二次被动唤醒（累计分钟）"
+          min="1"
+          value={draft.passiveSecondMinutes}
+          onChange={(passiveSecondMinutes) =>
+            setDraft({ ...draft, passiveSecondMinutes })
+          }
+        />
+        <NumberInput
+          label="第三次被动唤醒（累计分钟）"
+          min="1"
+          value={draft.passiveThirdMinutes}
+          onChange={(passiveThirdMinutes) =>
+            setDraft({ ...draft, passiveThirdMinutes })
+          }
+        />
+        <p className="text-xs text-white/38 md:col-span-2">
+          三个时间是从周期开始计算的累计里程碑，必须严格递增；已有计时沿用创建时的配置。
+        </p>
       </ConfigSection>
       <FormFooter
         disabled={disabled || saving}
@@ -823,6 +891,14 @@ function primeDraft(value: PrimeFigureRuntimeConfigView) {
     maximumMessages: String(value.context.maximumMessages),
     typingCharsPerMinute: String(value.typingCharsPerMinute),
     messageCoalesceMs: String(value.messageCoalesceMs),
+    proactiveWakeupEnabled: value.wakeups.proactive.enabled,
+    interactionInvalidationWindowMinutes: String(
+      value.wakeups.proactive.interactionInvalidationWindowMinutes,
+    ),
+    passiveWakeupEnabled: value.wakeups.passive.enabled,
+    passiveFirstMinutes: String(value.wakeups.passive.milestonesMinutes[0]),
+    passiveSecondMinutes: String(value.wakeups.passive.milestonesMinutes[1]),
+    passiveThirdMinutes: String(value.wakeups.passive.milestonesMinutes[2]),
   };
 }
 

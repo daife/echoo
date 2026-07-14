@@ -33,7 +33,7 @@ export interface StoredSliceFigureRuntimeConfig {
 }
 
 export interface StoredPrimeFigureRuntimeConfig {
-  version: 2;
+  version: 3;
   decisionModel: StoredTextModelConfig;
   outputs: {
     image: {
@@ -75,6 +75,16 @@ export interface StoredPrimeFigureRuntimeConfig {
   };
   typingCharsPerMinute: number;
   messageCoalesceMs: number;
+  wakeups: {
+    proactive: {
+      enabled: boolean;
+      interactionInvalidationWindowMinutes: number;
+    };
+    passive: {
+      enabled: boolean;
+      milestonesMinutes: [number, number, number];
+    };
+  };
 }
 
 export interface StoredPrimeWorldRuntimeConfig {

@@ -15,9 +15,14 @@ import { ConversationRepository } from "../../../conversations/conversation.repo
 import { MessageRepository } from "../../../messaging/message.repository.js";
 import { AppPushService } from "../../../realtime/delivery.service.js";
 import { PrimeActionLogRepository } from "./prime-action-log.repository.js";
-import { PrimeFigureStateRepository } from "./prime-figure-state.repository.js";
+import {
+  invalidatesProactiveWakeup,
+  PrimeFigureStateRepository,
+} from "./prime-figure-state.repository.js";
 import { PrimeFigureRepository } from "./prime-figure.repository.js";
 import { parseReadableMinute } from "./prime-time.js";
+import type { StoredPrimeFigureRuntimeConfig } from "../../../runtime-config/runtime-config.types.js";
+import type { PrimeDecisionTrigger } from "./prime-figure-runtime.service.js";
 import type {
   ResolvedPrimeImageMedia,
   ResolvedPrimeVoiceMedia,
@@ -48,9 +53,17 @@ export class PrimeActionExecutor {
     ttsErrors?: Map<number, string>;
     imageMedia?: Map<number, ResolvedPrimeImageMedia>;
     imageGenerationErrors?: Map<number, string>;
+    trigger?: PrimeDecisionTrigger;
+    runtimeConfig?: StoredPrimeFigureRuntimeConfig;
+    wakeupToken?: string;
+    passiveStage?: 1 | 2 | 3;
+    inputThroughEndUserSeq?: number;
+    interactionBaselineSequence?: number;
   }) {
     const decision = input.decision;
     const now = Date.now();
+    const trigger = input.trigger ?? "end_user_message";
+    const wakeups = input.runtimeConfig?.wakeups ?? DEFAULT_WAKEUP_CONFIG;
     const state: PrimeFigureState = {
       ...input.state,
       variables: applyVariableSnapshot(
@@ -165,6 +178,72 @@ export class PrimeActionExecutor {
         }
       }
 
+      const latestState = this.states.findByAgent
+        ? await this.states.findByAgent(input.ownerUserId, input.agent.id)
+        : null;
+      if (latestState) syncWakeupState(state, latestState);
+
+      for (const created of deliveredMessages) {
+        if (
+          state.proactiveWakeup &&
+          created.message.sequence !== undefined &&
+          invalidatesProactiveWakeup(
+            state.proactiveWakeup,
+            created.message.sequence,
+            created.message.createdAt,
+          )
+        )
+          delete state.proactiveWakeup;
+      }
+
+      const proactiveBeforeDecision = state.proactiveWakeup;
+      if (
+        trigger === "scheduled_wakeup" &&
+        proactiveBeforeDecision?.token === input.wakeupToken
+      )
+        delete state.proactiveWakeup;
+
+      const scheduleWakeupAction = [...decision.actions]
+        .reverse()
+        .find((action) => action.type === "schedule_wakeup");
+      const interactionBaselineSequence = Math.max(
+        input.interactionBaselineSequence ?? 0,
+        ...createdMessages.map((created) => created.message.sequence ?? 0),
+      );
+      if (
+        wakeups.proactive.enabled &&
+        scheduleWakeupAction?.type === "schedule_wakeup"
+      ) {
+        if (scheduleWakeupAction.afterMinutes === null) {
+          delete state.proactiveWakeup;
+        } else {
+          state.proactiveWakeup = {
+            token: createId("wake"),
+            scheduledAtMs: now,
+            dueAtMs: now + scheduleWakeupAction.afterMinutes * 60_000,
+            interactionAfterSequence: interactionBaselineSequence,
+            interactionInvalidationWindowMinutes:
+              wakeups.proactive.interactionInvalidationWindowMinutes,
+          };
+          delete state.passiveWakeup;
+          delete state.passiveWakeupExhaustedAfterEndUserSequence;
+        }
+      }
+
+      state.lastFigureActivityAtMs = now;
+      applyPassiveWakeupAfterDecision({
+        state,
+        trigger,
+        wakeups,
+        wakeupToken: input.wakeupToken,
+        passiveStage: input.passiveStage,
+        baselineEndUserSequence: input.inputThroughEndUserSeq ?? 0,
+        now,
+        explicitlyCancelledProactive:
+          scheduleWakeupAction?.type === "schedule_wakeup" &&
+          scheduleWakeupAction.afterMinutes === null,
+      });
+
       await this.figures.applyRuntimeUpdates(
         input.agent.id,
         input.agent.detail,
@@ -216,6 +295,118 @@ export class PrimeActionExecutor {
     return state;
   }
 }
+
+function syncWakeupState(target: PrimeFigureState, source: PrimeFigureState) {
+  target.proactiveWakeup = source.proactiveWakeup;
+  target.passiveWakeup = source.passiveWakeup;
+  target.passiveWakeupExhaustedAfterEndUserSequence =
+    source.passiveWakeupExhaustedAfterEndUserSequence;
+}
+
+function applyPassiveWakeupAfterDecision(input: {
+  state: PrimeFigureState;
+  trigger: PrimeDecisionTrigger;
+  wakeups: StoredPrimeFigureRuntimeConfig["wakeups"];
+  wakeupToken?: string;
+  passiveStage?: 1 | 2 | 3;
+  baselineEndUserSequence: number;
+  now: number;
+  explicitlyCancelledProactive: boolean;
+}) {
+  const { state } = input;
+  if (
+    input.trigger !== "passive_wakeup" &&
+    state.passiveWakeup &&
+    input.baselineEndUserSequence > state.passiveWakeup.baselineEndUserSequence
+  )
+    delete state.passiveWakeup;
+  if (
+    state.passiveWakeupExhaustedAfterEndUserSequence !== undefined &&
+    input.baselineEndUserSequence >
+      state.passiveWakeupExhaustedAfterEndUserSequence
+  )
+    delete state.passiveWakeupExhaustedAfterEndUserSequence;
+  if (!input.wakeups.passive.enabled) {
+    delete state.passiveWakeup;
+    delete state.passiveWakeupExhaustedAfterEndUserSequence;
+    return;
+  }
+  if (state.proactiveWakeup) {
+    delete state.passiveWakeup;
+    return;
+  }
+
+  if (input.trigger === "passive_wakeup") {
+    const current = state.passiveWakeup;
+    if (
+      !current ||
+      current.token !== input.wakeupToken ||
+      current.stage !== input.passiveStage
+    )
+      return;
+    if (current.stage === 3) {
+      delete state.passiveWakeup;
+      state.passiveWakeupExhaustedAfterEndUserSequence =
+        input.baselineEndUserSequence;
+      return;
+    }
+    const nextStage = (current.stage + 1) as 2 | 3;
+    const waitMinutes =
+      current.milestonesMinutes[nextStage - 1] -
+      current.milestonesMinutes[current.stage - 1];
+    state.passiveWakeup = {
+      token: createId("wake"),
+      stage: nextStage,
+      anchorActivityAtMs: input.now,
+      dueAtMs: input.now + waitMinutes * 60_000,
+      baselineEndUserSequence: input.baselineEndUserSequence,
+      milestonesMinutes: current.milestonesMinutes,
+    };
+    return;
+  }
+
+  const activeWakeupCompleted =
+    input.trigger === "scheduled_wakeup" || input.explicitlyCancelledProactive;
+  if (activeWakeupCompleted) {
+    delete state.passiveWakeupExhaustedAfterEndUserSequence;
+    startPassiveWakeup(input);
+    return;
+  }
+
+  if (
+    !state.passiveWakeup &&
+    state.passiveWakeupExhaustedAfterEndUserSequence === undefined
+  )
+    startPassiveWakeup(input);
+}
+
+function startPassiveWakeup(input: {
+  state: PrimeFigureState;
+  wakeups: StoredPrimeFigureRuntimeConfig["wakeups"];
+  baselineEndUserSequence: number;
+  now: number;
+}) {
+  const milestones = input.wakeups.passive.milestonesMinutes;
+  input.state.passiveWakeup = {
+    token: createId("wake"),
+    stage: 1,
+    anchorActivityAtMs: input.now,
+    dueAtMs: input.now + milestones[0] * 60_000,
+    baselineEndUserSequence: input.baselineEndUserSequence,
+    milestonesMinutes: [...milestones],
+  };
+}
+
+const DEFAULT_WAKEUP_CONFIG: StoredPrimeFigureRuntimeConfig["wakeups"] = {
+  proactive: {
+    enabled: false,
+    interactionInvalidationWindowMinutes: 10,
+  },
+  passive: {
+    enabled: false,
+    milestonesMinutes: [15, 180, 1_440],
+  },
+};
 
 function toPrimeMessageContent(
   message: PrimeFigureOutgoingMessage,

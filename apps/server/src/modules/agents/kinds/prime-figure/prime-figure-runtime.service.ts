@@ -61,7 +61,12 @@ const PRIME_VISIBLE_MEMORY_LIMIT = 20;
 const RECALL_HINT_PATTERN = /记得|不记得|忘了|还记得|remember|forgot|recal+l/i;
 
 export type PrimeDecisionTrigger =
-  "end_user_message" | "mute_ended" | "coalesced_messages" | "debug_hint";
+  | "end_user_message"
+  | "mute_ended"
+  | "scheduled_wakeup"
+  | "passive_wakeup"
+  | "coalesced_messages"
+  | "debug_hint";
 
 type PendingMediaAnnotation = PrimePendingMedia;
 
@@ -70,6 +75,8 @@ interface PrimeDecisionRequest {
   conversationId: string;
   trigger: PrimeDecisionTrigger;
   debugInstruction?: string;
+  wakeupToken?: string;
+  passiveStage?: 1 | 2 | 3;
   onModelActivityChange?: (active: boolean) => void;
   agent: PrimeFigureAgent;
   state: PrimeFigureState;
@@ -104,6 +111,8 @@ export class PrimeFigureRuntimeService {
     conversationId: string;
     trigger?: PrimeDecisionTrigger;
     debugInstruction?: string;
+    wakeupToken?: string;
+    passiveStage?: 1 | 2 | 3;
     onModelActivityChange?: (active: boolean) => void;
   }): Promise<PrimeFigureDecision | null> {
     const trigger = input.trigger ?? "end_user_message";
@@ -123,19 +132,54 @@ export class PrimeFigureRuntimeService {
       });
       return null;
     }
-    if (
-      trigger !== "debug_hint" &&
-      state.silenceUntilMs &&
-      state.silenceUntilMs > Date.now()
-    )
-      return null;
-
     const runtimeConfig = (
       await this.runtimeConfigs.resolveConversationConfig(
         input.ownerUserId,
         input.conversationId,
       )
     ).config as StoredPrimeFigureRuntimeConfig;
+
+    if (trigger === "scheduled_wakeup") {
+      if (
+        !runtimeConfig.wakeups.proactive.enabled ||
+        !input.wakeupToken ||
+        state.proactiveWakeup?.token !== input.wakeupToken
+      ) {
+        if (state.proactiveWakeup?.token === input.wakeupToken)
+          await this.states.clearWakeup({
+            ownerUserId: input.ownerUserId,
+            agentId: agent.id,
+            kind: "proactive",
+            token: input.wakeupToken,
+          });
+        return null;
+      }
+    }
+    if (trigger === "passive_wakeup") {
+      if (
+        !runtimeConfig.wakeups.passive.enabled ||
+        !input.wakeupToken ||
+        state.passiveWakeup?.token !== input.wakeupToken ||
+        state.passiveWakeup.stage !== input.passiveStage
+      ) {
+        if (state.passiveWakeup?.token === input.wakeupToken)
+          await this.states.clearWakeup({
+            ownerUserId: input.ownerUserId,
+            agentId: agent.id,
+            kind: "passive",
+            token: input.wakeupToken,
+          });
+        return null;
+      }
+    }
+    if (
+      trigger !== "debug_hint" &&
+      trigger !== "scheduled_wakeup" &&
+      trigger !== "passive_wakeup" &&
+      state.silenceUntilMs &&
+      state.silenceUntilMs > Date.now()
+    )
+      return null;
 
     if (trigger !== "debug_hint")
       await this.waitForEndUserQuiet(
@@ -376,6 +420,12 @@ export class PrimeFigureRuntimeService {
         ttsErrors: streamed.ttsErrors,
         imageMedia: streamed.imageMedia,
         imageGenerationErrors: streamed.imageGenerationErrors,
+        trigger: input.trigger,
+        runtimeConfig: input.runtimeConfig,
+        wakeupToken: input.wakeupToken,
+        passiveStage: input.passiveStage,
+        inputThroughEndUserSeq: context.inputThroughEndUserSeq,
+        interactionBaselineSequence: context.inputThroughSequence,
       });
       await this.persistMediaAnnotations(
         input,
@@ -422,7 +472,11 @@ export class PrimeFigureRuntimeService {
     ]);
     if (
       !unhandledEndUserMessages.length &&
-      !(input.trigger === "debug_hint" && input.debugInstruction?.trim())
+      !(
+        (input.trigger === "debug_hint" && input.debugInstruction?.trim()) ||
+        input.trigger === "scheduled_wakeup" ||
+        input.trigger === "passive_wakeup"
+      )
     )
       return null;
     const timeline = mergePrimeTimeline(
@@ -444,6 +498,10 @@ export class PrimeFigureRuntimeService {
           message.sender === "end_user"
             ? Math.max(latest, message.occurredAtMs)
             : latest,
+        0,
+      ),
+      inputThroughSequence: timeline.reduce(
+        (latest, message) => Math.max(latest, message.sequence ?? 0),
         0,
       ),
     };
@@ -730,6 +788,27 @@ export async function buildPrimeChatMessages(
   } else if (trigger === "coalesced_messages") {
     hints.push(
       "figure回复期间又收到了新的 end_user 消息，需要根据新消息继续作出一次决策。",
+    );
+  } else if (trigger === "scheduled_wakeup") {
+    const wakeup = state.proactiveWakeup;
+    const waitedMinutes = wakeup
+      ? Math.max(
+          1,
+          Math.round((wakeup.dueAtMs - wakeup.scheduledAtMs) / 60_000),
+        )
+      : undefined;
+    hints.push(
+      `这是 figure 此前主动安排的系统定时唤醒${waitedMinutes ? `，原计划等待约 ${waitedMinutes} 分钟后重新查看当前会话` : ""}。请结合当前状态自行判断是否采取行动。`,
+    );
+  } else if (trigger === "passive_wakeup") {
+    const latestMessageAt = timeline.reduce(
+      (latest, message) => Math.max(latest, message.occurredAtMs),
+      0,
+    );
+    const inactivitySince =
+      latestMessageAt || state.passiveWakeup?.anchorActivityAtMs || now;
+    hints.push(
+      `这是一次系统定时唤醒。figure 与 end_user 已有${formatElapsedDuration(inactivitySince, now)}未发生消息交流；请结合当前状态判断是否考虑采取行动。`,
     );
   }
 
@@ -1256,6 +1335,9 @@ export function buildPrimeDecisionResponseFormat(
                 ),
                 buildSilenceActionSchema(),
                 buildMuteActionSchema(),
+                ...(runtimeConfig.wakeups.proactive.enabled
+                  ? [buildScheduleWakeupActionSchema()]
+                  : []),
               ],
             },
           },
@@ -1477,6 +1559,23 @@ function buildMuteActionSchema() {
   } as const;
 }
 
+function buildScheduleWakeupActionSchema() {
+  return {
+    type: "object",
+    description: "安排或取消一次由 figure 主动设置的定时唤醒。",
+    properties: {
+      type: { const: "schedule_wakeup" },
+      afterMinutes: {
+        description:
+          "使用正整数安排若干分钟后唤醒；使用 null 取消已有主动计时。",
+        anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }],
+      },
+    },
+    required: ["type", "afterMinutes"],
+    additionalProperties: false,
+  } as const;
+}
+
 function buildVariableSchema(definition: PrimeFigureVariableDefinition) {
   const description = `${definition.description}${
     definition.type === "json" ? " 返回编码为紧凑字符串的有效 JSON。" : ""
@@ -1580,6 +1679,15 @@ function normalizeMediaAnnotations(
 
 function toLlmSender(sender: PrimeMessage["sender"]) {
   return sender === "prime_figure" ? "figure" : sender;
+}
+
+function formatElapsedDuration(fromMs: number, nowMs: number) {
+  const minutes = Math.max(0, Math.round((nowMs - fromMs) / 60_000));
+  if (minutes < 2) return "不到 2 分钟";
+  if (minutes < 60) return `约 ${minutes} 分钟`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `约 ${hours} 小时`;
+  return `约 ${Math.round(hours / 24)} 天`;
 }
 
 function describePrimeContent(content: PrimeMessageContent) {
