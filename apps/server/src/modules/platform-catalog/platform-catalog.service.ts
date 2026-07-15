@@ -3,6 +3,7 @@ import type {
   RuntimeConfigWarning,
 } from "@echoo/shared";
 import type { RowDataPacket } from "mysql2";
+import { environment } from "../../infra/config/environment.js";
 import {
   execute,
   queryOne,
@@ -397,14 +398,9 @@ export class PlatformCatalogService {
 }
 
 async function openRouterFetch<T>(path: string): Promise<T> {
-  const apiKey =
-    process.env.PLATFORM_OPENROUTER_API_KEY ?? process.env.OPENROUTER_API_KEY;
+  const apiKey = environment.platformOpenRouterApiKey;
   if (!apiKey) throw new Error("PLATFORM_OPENROUTER_API_KEY 尚未配置。");
-  const baseUrl = (
-    process.env.PLATFORM_OPENROUTER_BASE_URL ??
-    process.env.OPENROUTER_BASE_URL ??
-    "https://openrouter.ai/api/v1"
-  ).replace(/\/+$/, "");
+  const baseUrl = environment.platformOpenRouterBaseUrl.replace(/\/+$/, "");
   const response = await fetch(`${baseUrl}${path}`, {
     headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
   });

@@ -1,4 +1,5 @@
 import type { Message } from "@echoo/shared";
+import { environment } from "../config/environment.js";
 import { getRedis } from "./redis.js";
 
 export interface CachedMessage {
@@ -19,14 +20,8 @@ return 1
 `;
 
 export class MessageCache {
-  private readonly maximum = Math.max(
-    1,
-    Math.trunc(Number(process.env.MESSAGE_CACHE_MAX_PER_CONVERSATION ?? 200)),
-  );
-  private readonly ttlMs = Math.max(
-    60_000,
-    Number(process.env.MESSAGE_CACHE_TTL_MS ?? 6 * 60 * 60_000),
-  );
+  private readonly maximum = environment.messageCacheMaxPerConversation;
+  private readonly ttlMs = Math.max(60_000, environment.messageCacheTtlMs);
 
   async getRecent(
     ownerUserId: string,

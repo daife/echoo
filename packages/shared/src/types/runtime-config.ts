@@ -127,6 +127,11 @@ export interface UserRuntimeConfigView {
   warnings?: RuntimeConfigWarning[];
 }
 
+export interface AdminRuntimeDefaultsView {
+  config: UserRuntimeConfigView;
+  updatedAt: number;
+}
+
 export interface ModelEndpointConfigPatch {
   source?: CredentialSource;
   routingProvider?: string | null;

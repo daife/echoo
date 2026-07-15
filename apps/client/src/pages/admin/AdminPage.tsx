@@ -1,9 +1,16 @@
 import type {
+  AdminRuntimeDefaultsView,
   ModelRecommendationCategory,
+  PrimeFigureRuntimeConfigPatch,
   RecommendedModelView,
+  SliceFigureRuntimeConfigPatch,
   WalletView,
 } from "@echoo/shared";
 import { useEffect, useState, type FormEvent } from "react";
+import {
+  PrimeRuntimeConfigForm,
+  SliceRuntimeConfigForm,
+} from "../../features/runtime-config/RuntimeConfigForms";
 
 type AdminUser = {
   id: string;
@@ -113,7 +120,7 @@ function AdminConsole({
   onExpired: () => void;
 }) {
   const [section, setSection] = useState<
-    "billing" | "models" | "recommendations"
+    "billing" | "models" | "recommendations" | "runtime-defaults"
   >("billing");
   return (
     <main className="min-h-screen bg-[#09090b] p-5 text-[#e5e2e1] md:p-10">
@@ -138,6 +145,7 @@ function AdminConsole({
               ["billing", "用户与余额"],
               ["models", "OpenRouter 模型"],
               ["recommendations", "推荐与计费"],
+              ["runtime-defaults", "新用户默认配置"],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -158,8 +166,85 @@ function AdminConsole({
         {section === "recommendations" ? (
           <RecommendationsPanel token={token} onExpired={onExpired} />
         ) : null}
+        {section === "runtime-defaults" ? (
+          <RuntimeDefaultsPanel token={token} onExpired={onExpired} />
+        ) : null}
       </div>
     </main>
+  );
+}
+
+function RuntimeDefaultsPanel({ token, onExpired }: PanelProps) {
+  const [value, setValue] = useState<AdminRuntimeDefaultsView | null>(null);
+  const [status, setStatus] = useState("");
+
+  const load = async () => {
+    try {
+      setValue(
+        await authed<AdminRuntimeDefaultsView>(token, "/runtime-defaults"),
+      );
+      setStatus("");
+    } catch (error) {
+      handlePanelError(error, setStatus, onExpired);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const save = async (patch: {
+    sliceFigure?: SliceFigureRuntimeConfigPatch;
+    primeFigure?: PrimeFigureRuntimeConfigPatch;
+  }) => {
+    try {
+      const next = await authed<AdminRuntimeDefaultsView>(
+        token,
+        "/runtime-defaults",
+        { method: "PATCH", body: patch },
+      );
+      setValue(next);
+      setStatus("新用户默认配置已保存；既有用户配置不受影响。");
+    } catch (error) {
+      handlePanelError(error, setStatus, onExpired);
+      throw error;
+    }
+  };
+
+  if (!value)
+    return (
+      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+        <p className="text-sm text-white/50">{status || "正在加载默认配置…"}</p>
+      </section>
+    );
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+        <h2 className="text-xl font-semibold">新用户配置快照</h2>
+        <p className="mt-2 text-sm leading-6 text-white/45">
+          这里只允许平台来源，不保存 API Key。保存后仅影响之后注册的用户。
+          最后更新：{new Date(value.updatedAt).toLocaleString()}
+        </p>
+        {status ? <p className="mt-3 text-sm text-white/60">{status}</p> : null}
+      </section>
+      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+        <h2 className="mb-5 text-xl font-semibold">切片角色默认配置</h2>
+        <SliceRuntimeConfigForm
+          platformOnly
+          value={value.config.sliceFigure}
+          onSave={(sliceFigure) => save({ sliceFigure })}
+        />
+      </section>
+      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+        <h2 className="mb-5 text-xl font-semibold">本初角色默认配置</h2>
+        <PrimeRuntimeConfigForm
+          platformOnly
+          value={value.config.primeFigure}
+          onSave={(primeFigure) => save({ primeFigure })}
+        />
+      </section>
+    </div>
   );
 }
 

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { environment } from "../../infra/config/environment.js";
 import { getRedis } from "../../infra/redis/redis.js";
 import {
   InvalidMediaUploadError,
@@ -32,8 +33,8 @@ export async function registerResourceRoutes(app: FastifyInstance) {
   const resources = new ResourceRepository();
   const processingQueue = new ResourceProcessingQueue(resources);
   const directObjectStorageDownloads =
-    process.env.RESOURCE_STORAGE_PROVIDER === "s3" &&
-    process.env.RESOURCE_S3_DIRECT_DOWNLOADS === "true";
+    environment.resourceStorageProvider === "s3" &&
+    environment.resourceS3DirectDownloads;
 
   app.post<{ Body: unknown }>("/uploads", async (request, reply) => {
     const userId = await request.requireUserId(reply);

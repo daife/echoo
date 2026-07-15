@@ -1,12 +1,17 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import type { ModelRecommendationCategory } from "@echoo/shared";
+import {
+  userRuntimeConfigPatchSchema,
+  type ModelRecommendationCategory,
+} from "@echoo/shared";
 import type { FastifyInstance } from "fastify";
 import type { RowDataPacket } from "mysql2";
 import { z } from "zod";
+import { environment } from "../../infra/config/environment.js";
 import { queryRows } from "../../infra/database/mysql.js";
 import { BillingService, formatMicroUsd } from "../billing/billing.service.js";
 import { isRecommendationCategory } from "../platform-catalog/platform-catalog.controller.js";
 import { PlatformCatalogService } from "../platform-catalog/platform-catalog.service.js";
+import { RuntimeConfigService } from "../runtime-config/runtime-config.service.js";
 
 interface AdminUserRow extends RowDataPacket {
   id: string;
@@ -39,22 +44,21 @@ const recommendationsSchema = z.object({
 export async function registerAdminRoutes(app: FastifyInstance) {
   const billing = new BillingService();
   const catalog = new PlatformCatalogService();
+  const runtimeConfigs = new RuntimeConfigService();
 
   app.post<{ Body: { password?: string } }>(
     "/login",
     async (request, reply) => {
-      const configured = process.env.ADMIN_PASSWORD;
+      const configured = environment.adminPassword;
       if (!configured)
         return reply
           .code(503)
           .send({ error: "ADMIN_DISABLED", message: "管理员后台尚未配置。" });
       if (!safeEqual(request.body?.password ?? "", configured))
-        return reply
-          .code(401)
-          .send({
-            error: "INVALID_ADMIN_PASSWORD",
-            message: "管理员密码错误。",
-          });
+        return reply.code(401).send({
+          error: "INVALID_ADMIN_PASSWORD",
+          message: "管理员密码错误。",
+        });
       return {
         accessToken: app.jwt.sign(
           { sub: "admin", type: "admin" },
@@ -131,17 +135,34 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get("/runtime-defaults", async (request, reply) => {
+    if (!(await request.requireAdmin(reply))) return;
+    return runtimeConfigs.getAdminRuntimeDefaults();
+  });
+
+  app.patch<{ Body: unknown }>("/runtime-defaults", async (request, reply) => {
+    if (!(await request.requireAdmin(reply))) return;
+    try {
+      return await runtimeConfigs.updateAdminRuntimeDefaults(
+        userRuntimeConfigPatchSchema.parse(request.body),
+      );
+    } catch (error) {
+      return reply.code(400).send({
+        error: "INVALID_RUNTIME_DEFAULTS",
+        message: errorMessage(error),
+      });
+    }
+  });
+
   app.post("/openrouter/sync-models", async (request, reply) => {
     if (!(await request.requireAdmin(reply))) return;
     try {
       return await catalog.syncModels();
     } catch (error) {
-      return reply
-        .code(502)
-        .send({
-          error: "OPENROUTER_SYNC_FAILED",
-          message: errorMessage(error),
-        });
+      return reply.code(502).send({
+        error: "OPENROUTER_SYNC_FAILED",
+        message: errorMessage(error),
+      });
     }
   });
 
@@ -152,12 +173,10 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       try {
         return await catalog.syncEndpoints(request.body?.modelId?.trim() ?? "");
       } catch (error) {
-        return reply
-          .code(502)
-          .send({
-            error: "OPENROUTER_SYNC_FAILED",
-            message: errorMessage(error),
-          });
+        return reply.code(502).send({
+          error: "OPENROUTER_SYNC_FAILED",
+          message: errorMessage(error),
+        });
       }
     },
   );
@@ -200,12 +219,10 @@ export async function registerAdminRoutes(app: FastifyInstance) {
           body.items,
         );
       } catch (error) {
-        return reply
-          .code(400)
-          .send({
-            error: "INVALID_RECOMMENDATIONS",
-            message: errorMessage(error),
-          });
+        return reply.code(400).send({
+          error: "INVALID_RECOMMENDATIONS",
+          message: errorMessage(error),
+        });
       }
     },
   );

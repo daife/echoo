@@ -14,6 +14,8 @@ import { PrimeFigureStateRepository } from "../agents/kinds/prime-figure/prime-f
 import { buildRuntimeConfigDefaults } from "./runtime-config.defaults.js";
 import { RuntimeConfigRepository } from "./runtime-config.repository.js";
 import { PlatformCatalogService } from "../platform-catalog/platform-catalog.service.js";
+import { environment } from "../../infra/config/environment.js";
+import { PlatformSettingsService } from "../platform-settings/platform-settings.service.js";
 import type {
   StoredFigureRuntimeConfig,
   StoredFishAudioConfig,
@@ -33,6 +35,7 @@ export class RuntimeConfigService {
     private readonly conversations = new ConversationRepository(),
     private readonly primeStates = new PrimeFigureStateRepository(),
     private readonly catalog = new PlatformCatalogService(),
+    private readonly platformSettings = new PlatformSettingsService(),
   ) {}
 
   async getUserConfig(ownerUserId: string): Promise<UserRuntimeConfigView> {
@@ -40,10 +43,40 @@ export class RuntimeConfigService {
   }
 
   async initializeUserConfig(ownerUserId: string) {
-    await this.repository.insertUserConfigIfAbsent(
-      ownerUserId,
-      buildRuntimeConfigDefaults(),
-    );
+    const defaults = await this.readNewUserDefaults();
+    await this.repository.insertUserConfigIfAbsent(ownerUserId, defaults);
+  }
+
+  async getAdminRuntimeDefaults() {
+    const stored = await this.platformSettings.getNewUserRuntimeDefaults();
+    const config = this.normalizePlatformDefaults(stored.config);
+    return {
+      config: redactUserConfig(config),
+      updatedAt: stored.updatedAt,
+    };
+  }
+
+  async updateAdminRuntimeDefaults(patch: UserRuntimeConfigPatch) {
+    const current = await this.readNewUserDefaults();
+    const next = forcePlatformDefaults({
+      ...current,
+      sliceFigure: patch.sliceFigure
+        ? patchSliceConfig(current.sliceFigure, patch.sliceFigure)
+        : current.sliceFigure,
+      primeFigure: patch.primeFigure
+        ? patchPrimeConfig(current.primeFigure, patch.primeFigure)
+        : current.primeFigure,
+    });
+    validateUserConfig(next);
+    const warnings = await this.validateCatalogUser(next);
+    const saved = await this.platformSettings.setNewUserRuntimeDefaults(next);
+    return {
+      config: {
+        ...redactUserConfig(saved.config),
+        ...(warnings.length ? { warnings } : {}),
+      },
+      updatedAt: saved.updatedAt,
+    };
   }
 
   async updateUserConfig(
@@ -171,25 +204,33 @@ export class RuntimeConfigService {
     conversationType: AgentType;
     config: StoredFigureRuntimeConfig;
   }> {
-    const conversation = await this.requireFigureConversation(
+    let stored = await this.repository.findResolvedConversationConfig(
       ownerUserId,
       conversationId,
     );
-    const global = selectFigureConfig(
-      await this.ensureUserConfig(ownerUserId),
-      conversation.type,
-    );
-    const stored = await this.repository.findConversationConfig(
-      ownerUserId,
-      conversationId,
-    );
-    const custom = stored?.customConfig
-      ? normalizeFigureConfig(conversation.type, stored.customConfig)
+    if (!stored || !isAgentType(stored.conversationType))
+      throw new RuntimeConfigNotFoundError("未找到可配置的角色会话。");
+    if (!stored.userConfig) {
+      await this.initializeUserConfig(ownerUserId);
+      stored = await this.repository.findResolvedConversationConfig(
+        ownerUserId,
+        conversationId,
+      );
+    }
+    if (!stored?.userConfig)
+      throw new RuntimeConfigNotFoundError("无法初始化用户运行配置。");
+    const userConfig = normalizeUserConfig(stored.userConfig);
+    if (JSON.stringify(userConfig) !== JSON.stringify(stored.userConfig))
+      await this.repository.saveUserConfig(ownerUserId, userConfig);
+    const conversationType = stored.conversationType as AgentType;
+    const global = selectFigureConfig(userConfig, conversationType);
+    const custom = stored.customConfig
+      ? normalizeFigureConfig(conversationType, stored.customConfig)
       : null;
     const mode = stored?.mode === "custom" && custom ? "custom" : "global";
     const config = mode === "custom" ? custom! : global;
-    validateFigureConfig(conversation.type, config);
-    return { mode, conversationType: conversation.type, config };
+    validateFigureConfig(conversationType, config);
+    return { mode, conversationType, config };
   }
 
   private async ensureUserConfig(ownerUserId: string) {
@@ -202,12 +243,31 @@ export class RuntimeConfigService {
     }
     await this.repository.insertUserConfigIfAbsent(
       ownerUserId,
-      buildRuntimeConfigDefaults(),
+      await this.readNewUserDefaults(),
     );
     const created = await this.repository.findUserConfig(ownerUserId);
     if (!created)
       throw new RuntimeConfigNotFoundError("无法初始化用户运行配置。");
     return created;
+  }
+
+  private async readNewUserDefaults() {
+    const stored = await this.platformSettings.getNewUserRuntimeDefaults();
+    return this.normalizePlatformDefaults(stored.config);
+  }
+
+  private normalizePlatformDefaults(config: StoredUserRuntimeConfig) {
+    try {
+      const normalized = forcePlatformDefaults(normalizeUserConfig(config));
+      validateUserConfig(normalized);
+      return normalized;
+    } catch (error) {
+      console.warn(
+        "Stored new-user runtime defaults are invalid; using built-in defaults.",
+        error,
+      );
+      return forcePlatformDefaults(buildRuntimeConfigDefaults());
+    }
   }
 
   private async requireFigureConversation(
@@ -270,6 +330,66 @@ function normalizeUserConfig(
       llm: normalizeEndpoint(config.sliceFigure.llm),
     },
     primeFigure: normalizePrimeConfig(config.primeFigure),
+  };
+}
+
+export function forcePlatformDefaults(
+  config: StoredUserRuntimeConfig,
+): StoredUserRuntimeConfig {
+  const endpoint = <T extends StoredModelEndpointConfig>(value: T): T => ({
+    ...value,
+    source: "platform",
+    baseUrl: "https://openrouter.ai/api/v1",
+    apiKey: "",
+  });
+  const prime = config.primeFigure;
+  return {
+    ...config,
+    sliceFigure: {
+      ...config.sliceFigure,
+      llm: endpoint(config.sliceFigure.llm),
+    },
+    primeFigure: {
+      ...prime,
+      decisionModel: endpoint(prime.decisionModel),
+      outputs: {
+        ...prime.outputs,
+        image: {
+          ...prime.outputs.image,
+          generator: endpoint(prime.outputs.image.generator),
+        },
+        voice: {
+          ...prime.outputs.voice,
+          tts: {
+            ...prime.outputs.voice.tts,
+            source: "platform",
+            apiKey: "",
+            httpUrl: "https://api.fish.audio/v1/tts",
+            wsUrl: "wss://api.fish.audio/v1/tts/live",
+          },
+        },
+      },
+      optimization: {
+        image: {
+          ...prime.optimization.image,
+          model: endpoint(prime.optimization.image.model),
+        },
+        voice: {
+          ...prime.optimization.voice,
+          model: endpoint(prime.optimization.voice.model),
+        },
+      },
+      understanding: {
+        visual: {
+          ...prime.understanding.visual,
+          model: endpoint(prime.understanding.visual.model),
+        },
+        audio: {
+          ...prime.understanding.audio,
+          model: endpoint(prime.understanding.audio.model),
+        },
+      },
+    },
   };
 }
 
@@ -721,14 +841,8 @@ function resolvePlatformFigureConfig(
     value.source === "platform"
       ? {
           ...value,
-          baseUrl:
-            process.env.PLATFORM_OPENROUTER_BASE_URL ??
-            process.env.OPENROUTER_BASE_URL ??
-            "https://openrouter.ai/api/v1",
-          apiKey:
-            process.env.PLATFORM_OPENROUTER_API_KEY ??
-            process.env.OPENROUTER_API_KEY ??
-            "",
+          baseUrl: environment.platformOpenRouterBaseUrl,
+          apiKey: environment.platformOpenRouterApiKey,
         }
       : value;
   const resolveText = (value: StoredTextModelConfig) => resolveEndpoint(value);
@@ -750,17 +864,9 @@ function resolvePlatformFigureConfig(
           tts.source === "platform"
             ? {
                 ...tts,
-                httpUrl:
-                  process.env.PLATFORM_FISH_AUDIO_HTTP_URL ??
-                  "https://api.fish.audio/v1/tts",
-                wsUrl:
-                  process.env.PLATFORM_FISH_AUDIO_WS_URL ??
-                  process.env.FISH_AUDIO_WS_URL ??
-                  "wss://api.fish.audio/v1/tts/live",
-                apiKey:
-                  process.env.PLATFORM_FISH_AUDIO_API_KEY ??
-                  process.env.FISH_AUDIO_API_KEY ??
-                  "",
+                httpUrl: environment.platformFishAudioHttpUrl,
+                wsUrl: environment.platformFishAudioWsUrl,
+                apiKey: environment.platformFishAudioApiKey,
               }
             : tts,
       },

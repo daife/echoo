@@ -9,6 +9,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createReadStream, mkdirSync, promises as fsPromises } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { Readable } from "node:stream";
+import { environment } from "../../infra/config/environment.js";
 
 export interface StoredObjectInfo {
   size: number;
@@ -45,9 +46,7 @@ export interface ResourceStorage {
 }
 
 export function createResourceStorage(
-  provider: "local" | "s3" = process.env.RESOURCE_STORAGE_PROVIDER === "s3"
-    ? "s3"
-    : "local",
+  provider: "local" | "s3" = environment.resourceStorageProvider,
 ): ResourceStorage {
   return provider === "s3"
     ? new S3ResourceStorage()
@@ -58,7 +57,7 @@ class LocalResourceStorage implements ResourceStorage {
   readonly provider = "local" as const;
   private readonly root = resolve(
     process.cwd(),
-    process.env.RESOURCE_STORAGE_DIR ?? ".data/resources",
+    environment.resourceStorageDir,
   );
 
   async put(key: string, data: Uint8Array, _mimeType: string) {
@@ -122,16 +121,16 @@ class LocalResourceStorage implements ResourceStorage {
 
 class S3ResourceStorage implements ResourceStorage {
   readonly provider = "s3" as const;
-  private readonly bucket = requiredEnv("RESOURCE_S3_BUCKET");
+  private readonly bucket = environment.resourceS3Bucket!;
   private readonly client = new S3Client({
-    region: process.env.RESOURCE_S3_REGION ?? "us-east-1",
-    ...(process.env.RESOURCE_S3_ENDPOINT
-      ? { endpoint: process.env.RESOURCE_S3_ENDPOINT }
+    region: environment.resourceS3Region,
+    ...(environment.resourceS3Endpoint
+      ? { endpoint: environment.resourceS3Endpoint }
       : {}),
-    forcePathStyle: process.env.RESOURCE_S3_FORCE_PATH_STYLE === "true",
+    forcePathStyle: environment.resourceS3ForcePathStyle,
     credentials: {
-      accessKeyId: requiredEnv("RESOURCE_S3_ACCESS_KEY_ID"),
-      secretAccessKey: requiredEnv("RESOURCE_S3_SECRET_ACCESS_KEY"),
+      accessKeyId: environment.resourceS3AccessKeyId!,
+      secretAccessKey: environment.resourceS3SecretAccessKey!,
     },
   });
 
@@ -235,12 +234,6 @@ function parseByteRange(value: string | undefined, size: number) {
   )
     return null;
   return { start, end };
-}
-
-function requiredEnv(name: string) {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is required for S3 resource storage.`);
-  return value;
 }
 
 function stripEtag(value?: string) {

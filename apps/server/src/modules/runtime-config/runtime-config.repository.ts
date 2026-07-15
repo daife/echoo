@@ -14,7 +14,42 @@ interface ConversationConfigRow extends RowDataPacket {
   custom_config: unknown | null;
 }
 
+interface ResolvedConversationConfigRow extends RowDataPacket {
+  conversation_type: string;
+  user_config: unknown | null;
+  mode: "global" | "custom" | null;
+  custom_config: unknown | null;
+}
+
 export class RuntimeConfigRepository {
+  async findResolvedConversationConfig(
+    ownerUserId: string,
+    conversationId: string,
+  ) {
+    const row = await queryOne<ResolvedConversationConfigRow>(
+      `SELECT c.type AS conversation_type, u.config AS user_config,
+              cc.mode, cc.custom_config
+         FROM conversations c
+         LEFT JOIN user_runtime_configs u ON u.owner_user_id = c.owner_user_id
+         LEFT JOIN conversation_runtime_configs cc
+           ON cc.owner_user_id = c.owner_user_id AND cc.conversation_id = c.id
+        WHERE c.owner_user_id = ? AND c.id = ?`,
+      [ownerUserId, conversationId],
+    );
+    return row
+      ? {
+          conversationType: row.conversation_type,
+          userConfig: row.user_config
+            ? parseJson<StoredUserRuntimeConfig>(row.user_config)
+            : null,
+          mode: row.mode,
+          customConfig: row.custom_config
+            ? parseJson<StoredFigureRuntimeConfig>(row.custom_config)
+            : null,
+        }
+      : null;
+  }
+
   async findUserConfig(ownerUserId: string) {
     const row = await queryOne<UserConfigRow>(
       "SELECT config FROM user_runtime_configs WHERE owner_user_id = ?",

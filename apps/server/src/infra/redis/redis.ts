@@ -1,4 +1,5 @@
 import { createClient, type RedisClientType } from "redis";
+import { environment } from "../config/environment.js";
 
 let client: RedisClientType | null = null;
 let subscriber: RedisClientType | null = null;
@@ -8,7 +9,7 @@ const dedicatedWorkers = new Set<RedisClientType>();
 export async function getRedis() {
   if (!client) {
     client = createClient({
-      url: process.env.REDIS_URL ?? "redis://127.0.0.1:6379",
+      url: environment.redisUrl,
     });
     client.on("error", (error) => console.error("Redis error", error));
   }

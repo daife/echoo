@@ -1,4 +1,5 @@
 import { AgentRunQueue } from "../../../../infra/redis/run-queue.js";
+import { environment } from "../../../../infra/config/environment.js";
 import { AppPushService } from "../../../realtime/delivery.service.js";
 import { PrimeFigureStateRepository } from "./prime-figure-state.repository.js";
 
@@ -14,14 +15,7 @@ export class PrimeFigureWakeupScheduler {
 
   start() {
     if (this.timer) return;
-    const intervalMs = Math.max(
-      Number(
-        process.env.PRIME_WAKEUP_POLL_MS ??
-          process.env.PRIME_SILENCE_POLL_MS ??
-          1000,
-      ),
-      250,
-    );
+    const intervalMs = Math.max(environment.primeSilencePollMs, 250);
     this.timer = setInterval(
       () =>
         void this.tick().catch((error) =>

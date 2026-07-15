@@ -134,6 +134,19 @@ const migrations: Migration[] = [
        VALUES ('billing_multiplier', JSON_OBJECT('value', 1.0), 0)`,
     ],
   },
+  {
+    id: "004_platform_settings_and_billing_accounts",
+    statements: [
+      `INSERT IGNORE INTO billing_accounts
+         (owner_user_id, balance_micro_usd, created_at, updated_at)
+       SELECT id, 0, created_at, created_at FROM users`,
+      `UPDATE platform_settings
+          SET value_json = JSON_EXTRACT(value_json, '$.value')
+        WHERE setting_key = 'billing_multiplier'
+          AND JSON_TYPE(value_json) = 'OBJECT'
+          AND JSON_EXTRACT(value_json, '$.value') IS NOT NULL`,
+    ],
+  },
 ];
 
 export async function runDatabaseMigrations(connection: PoolConnection) {

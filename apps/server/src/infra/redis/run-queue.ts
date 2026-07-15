@@ -1,4 +1,5 @@
 import { hostname } from "node:os";
+import { environment } from "../config/environment.js";
 import { createId } from "../../shared/utils/id.js";
 import { getRedis, getRedisWorker } from "./redis.js";
 
@@ -84,10 +85,7 @@ export class AgentRunQueue {
       if (!String(error).includes("BUSYGROUP")) throw error;
     }
 
-    const concurrency = Math.max(
-      1,
-      Math.trunc(Number(process.env.AGENT_RUN_CONCURRENCY ?? 8)),
-    );
+    const concurrency = environment.agentRunConcurrency;
     while (this.running) {
       if (this.inFlight.size >= concurrency) {
         await Promise.race(this.inFlight);

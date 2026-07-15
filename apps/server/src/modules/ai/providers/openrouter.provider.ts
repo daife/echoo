@@ -10,6 +10,7 @@ import {
   streamOpenAiCompatibleChatCompletion,
 } from "./openai-compatible-chat.js";
 import { BillingService } from "../../billing/billing.service.js";
+import { environment } from "../../../infra/config/environment.js";
 
 export class OpenRouterProvider implements AiTextProvider {
   readonly id = "openrouter";
@@ -80,11 +81,8 @@ export class OpenRouterProvider implements AiTextProvider {
       baseUrl: this.config.baseUrl,
       completion: input,
       headers: {
-        "HTTP-Referer":
-          process.env.OPENROUTER_SITE_URL ??
-          process.env.CLIENT_URL ??
-          "http://localhost:5173",
-        "X-OpenRouter-Title": process.env.OPENROUTER_APP_TITLE ?? "Echoo",
+        "HTTP-Referer": environment.openRouterSiteUrl,
+        "X-OpenRouter-Title": environment.openRouterAppTitle,
         ...(sessionId ? { "x-session-id": sessionId } : {}),
       },
       extraBody:

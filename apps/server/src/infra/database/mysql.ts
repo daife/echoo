@@ -7,22 +7,21 @@ import mysql, {
   type ResultSetHeader,
   type RowDataPacket,
 } from "mysql2/promise";
+import { environment } from "../config/environment.js";
 import { runDatabaseMigrations } from "./migrations.js";
 
 let pool: Pool | null = null;
 
 export function getDatabase() {
   if (pool) return pool;
-  const url = new URL(
-    process.env.MYSQL_URL ?? "mysql://echoo:echoo@127.0.0.1:3306/echoo",
-  );
+  const url = new URL(environment.mysqlUrl);
   pool = mysql.createPool({
     host: url.hostname,
     port: Number(url.port || 3306),
     user: decodeURIComponent(url.username),
     password: decodeURIComponent(url.password),
     database: url.pathname.replace(/^\//, ""),
-    connectionLimit: Number(process.env.MYSQL_POOL_SIZE ?? 20),
+    connectionLimit: environment.mysqlPoolSize,
     enableKeepAlive: true,
     keepAliveInitialDelay: 0,
     namedPlaceholders: false,

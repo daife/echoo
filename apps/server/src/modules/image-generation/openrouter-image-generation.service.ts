@@ -10,6 +10,7 @@ export interface GeneratedImage {
 }
 import type { StoredModelEndpointConfig } from "../runtime-config/runtime-config.types.js";
 import { BillingService } from "../billing/billing.service.js";
+import { environment } from "../../infra/config/environment.js";
 
 interface OpenRouterImageResponse {
   id?: string;
@@ -54,11 +55,8 @@ export class OpenRouterImageGenerationService {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        "HTTP-Referer":
-          process.env.OPENROUTER_SITE_URL ??
-          process.env.CLIENT_URL ??
-          "http://localhost:5173",
-        "X-OpenRouter-Title": process.env.OPENROUTER_APP_TITLE ?? "Echoo",
+        "HTTP-Referer": environment.openRouterSiteUrl,
+        "X-OpenRouter-Title": environment.openRouterAppTitle,
         ...(input.sessionId ? { "x-session-id": input.sessionId } : {}),
       },
       body: JSON.stringify({

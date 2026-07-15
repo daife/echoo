@@ -6,7 +6,8 @@ import {
   queryRows,
   withTransaction,
 } from "../../infra/database/mysql.js";
-import { BillingContext } from "./billing-context.js";
+import { BillingContext, type BillingRunContext } from "./billing-context.js";
+import { PlatformSettingsService } from "../platform-settings/platform-settings.service.js";
 
 interface AccountRow extends RowDataPacket {
   balance_micro_usd: number;
@@ -23,19 +24,24 @@ interface LedgerRow extends RowDataPacket {
   created_at: number;
 }
 
-interface SettingRow extends RowDataPacket {
-  value_json: unknown;
-}
-
 export class InsufficientPlatformBalanceError extends Error {
   readonly code = "INSUFFICIENT_PLATFORM_BALANCE";
 }
 
 export class BillingService {
+  constructor(
+    private readonly platformSettings = new PlatformSettingsService(),
+  ) {}
+
+  async initializeAccount(ownerUserId: string) {
+    await this.insertAccountIfAbsent(ownerUserId);
+  }
+
   async assertPlatformBalance() {
     const context = BillingContext.current();
     if (!context) return;
-    const balance = await this.ensureAccount(context.ownerUserId);
+    context.balanceSnapshot ??= this.ensureAccount(context.ownerUserId);
+    const balance = await context.balanceSnapshot;
     if (balance <= 0)
       throw new InsufficientPlatformBalanceError(
         "平台余额不足，请充值后再使用平台提供的 AI 服务。",
@@ -51,56 +57,79 @@ export class BillingService {
   }) {
     const context = BillingContext.current();
     if (!context || !Number.isFinite(input.upstreamCostUsd)) return;
-    const multiplier = await this.getMultiplier();
+    if (input.upstreamCostUsd <= 0) return;
+    context.multiplierSnapshot ??= this.platformSettings.getBillingMultiplier();
+    const multiplier = await context.multiplierSnapshot;
     const chargeMicroUsd = Math.max(
       0,
       Math.round(input.upstreamCostUsd * multiplier * 1_000_000),
     );
     if (!chargeMicroUsd) return;
-    await withTransaction(async (connection) => {
-      await this.ensureAccount(context.ownerUserId, connection);
-      const duplicate = await queryOne<RowDataPacket & { id: string }>(
-        "SELECT id FROM billing_ledger WHERE service = ? AND upstream_request_id = ?",
-        [input.service, input.upstreamRequestId],
-        connection,
-      );
-      if (duplicate) return;
-      const account = await queryOne<AccountRow>(
-        "SELECT balance_micro_usd FROM billing_accounts WHERE owner_user_id = ? FOR UPDATE",
-        [context.ownerUserId],
-        connection,
-      );
-      const nextBalance = (account?.balance_micro_usd ?? 0) - chargeMicroUsd;
-      const now = Date.now();
-      await execute(
-        "UPDATE billing_accounts SET balance_micro_usd = ?, updated_at = ? WHERE owner_user_id = ?",
-        [nextBalance, now, context.ownerUserId],
-        connection,
-      );
-      await execute(
-        `INSERT INTO billing_ledger
-         (id, owner_user_id, kind, amount_micro_usd, balance_after_micro_usd,
-          service, model, upstream_request_id, metadata, created_at)
-         VALUES (?, ?, 'usage', ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          `bill_${randomUUID()}`,
-          context.ownerUserId,
-          -chargeMicroUsd,
-          nextBalance,
-          input.service,
-          input.model,
-          input.upstreamRequestId,
-          JSON.stringify({
-            upstreamCostUsd: input.upstreamCostUsd,
-            multiplier,
-            conversationId: context.conversationId,
-            ...input.metadata,
-          }),
-          now,
-        ],
-        connection,
-      );
-    });
+    await this.settleCharge(context, input, multiplier, chargeMicroUsd);
+  }
+
+  protected async settleCharge(
+    context: BillingRunContext,
+    input: {
+      service: "openrouter" | "fish_audio";
+      model: string;
+      upstreamRequestId: string;
+      upstreamCostUsd: number;
+      metadata?: Record<string, unknown>;
+    },
+    multiplier: number,
+    chargeMicroUsd: number,
+  ) {
+    try {
+      await withTransaction(async (connection) => {
+        let account = await queryOne<AccountRow>(
+          "SELECT balance_micro_usd FROM billing_accounts WHERE owner_user_id = ? FOR UPDATE",
+          [context.ownerUserId],
+          connection,
+        );
+        if (!account) {
+          await this.insertAccountIfAbsent(context.ownerUserId, connection);
+          account = await queryOne<AccountRow>(
+            "SELECT balance_micro_usd FROM billing_accounts WHERE owner_user_id = ? FOR UPDATE",
+            [context.ownerUserId],
+            connection,
+          );
+        }
+        const nextBalance = (account?.balance_micro_usd ?? 0) - chargeMicroUsd;
+        const now = Date.now();
+        await execute(
+          "UPDATE billing_accounts SET balance_micro_usd = ?, updated_at = ? WHERE owner_user_id = ?",
+          [nextBalance, now, context.ownerUserId],
+          connection,
+        );
+        await execute(
+          `INSERT INTO billing_ledger
+           (id, owner_user_id, kind, amount_micro_usd, balance_after_micro_usd,
+            service, model, upstream_request_id, metadata, created_at)
+           VALUES (?, ?, 'usage', ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            `bill_${randomUUID()}`,
+            context.ownerUserId,
+            -chargeMicroUsd,
+            nextBalance,
+            input.service,
+            input.model,
+            input.upstreamRequestId,
+            JSON.stringify({
+              upstreamCostUsd: input.upstreamCostUsd,
+              multiplier,
+              conversationId: context.conversationId,
+              ...input.metadata,
+            }),
+            now,
+          ],
+          connection,
+        );
+      });
+    } catch (error) {
+      if (isDuplicateEntry(error)) return;
+      throw error;
+    }
   }
 
   async adjustBalance(input: {
@@ -168,28 +197,37 @@ export class BillingService {
   }
 
   async getMultiplier() {
-    const row = await queryOne<SettingRow>(
-      "SELECT value_json FROM platform_settings WHERE setting_key = 'billing_multiplier'",
-    );
-    const value = parseJson(row?.value_json) as { value?: unknown } | null;
-    return typeof value?.value === "number" && value.value > 0
-      ? value.value
-      : 1;
+    return this.platformSettings.getBillingMultiplier();
   }
 
   async setMultiplier(value: number) {
-    if (!Number.isFinite(value) || value <= 0 || value > 100)
-      throw new Error("计费倍率必须在 0 到 100 之间。");
-    await execute(
-      `INSERT INTO platform_settings (setting_key, value_json, updated_at)
-       VALUES ('billing_multiplier', ?, ?)
-       ON DUPLICATE KEY UPDATE value_json = VALUES(value_json), updated_at = VALUES(updated_at)`,
-      [JSON.stringify({ value }), Date.now()],
-    );
-    return { billingMultiplier: value };
+    return {
+      billingMultiplier:
+        await this.platformSettings.setBillingMultiplier(value),
+    };
   }
 
-  private async ensureAccount(
+  protected async ensureAccount(
+    ownerUserId: string,
+    connection?: PoolConnection,
+  ) {
+    let row = await queryOne<AccountRow>(
+      "SELECT balance_micro_usd FROM billing_accounts WHERE owner_user_id = ?",
+      [ownerUserId],
+      connection,
+    );
+    if (!row) {
+      await this.insertAccountIfAbsent(ownerUserId, connection);
+      row = await queryOne<AccountRow>(
+        "SELECT balance_micro_usd FROM billing_accounts WHERE owner_user_id = ?",
+        [ownerUserId],
+        connection,
+      );
+    }
+    return row?.balance_micro_usd ?? 0;
+  }
+
+  private async insertAccountIfAbsent(
     ownerUserId: string,
     connection?: PoolConnection,
   ) {
@@ -200,12 +238,6 @@ export class BillingService {
       [ownerUserId, now, now],
       connection,
     );
-    const row = await queryOne<AccountRow>(
-      "SELECT balance_micro_usd FROM billing_accounts WHERE owner_user_id = ?",
-      [ownerUserId],
-      connection,
-    );
-    return row?.balance_micro_usd ?? 0;
   }
 }
 
@@ -224,11 +256,16 @@ function parseUsdToMicro(value: string) {
   return negative ? -micro : micro;
 }
 
-function parseJson(value: unknown) {
-  if (typeof value !== "string") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
+function isDuplicateEntry(error: unknown) {
+  const value = error as {
+    code?: string;
+    errno?: number;
+    message?: string;
+    sqlMessage?: string;
+  };
+  const duplicate = value?.code === "ER_DUP_ENTRY" || value?.errno === 1062;
+  return (
+    duplicate &&
+    `${value.sqlMessage ?? value.message ?? ""}`.includes("uq_billing_upstream")
+  );
 }

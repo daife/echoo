@@ -7,6 +7,7 @@ import {
   type AuthSession,
 } from "@echoo/shared";
 import type { FastifyInstance } from "fastify";
+import { environment } from "../../infra/config/environment.js";
 import { EmailService } from "./email.service.js";
 import { PasswordService } from "./password.service.js";
 import { accessTokenTtlMs, TokenService } from "./token.service.js";
@@ -19,6 +20,7 @@ import type {
 } from "./auth.types.js";
 import { toUserProfile, UserRepository } from "./user.repository.js";
 import { RuntimeConfigService } from "../runtime-config/runtime-config.service.js";
+import { BillingService } from "../billing/billing.service.js";
 
 export class AuthService {
   private readonly tokenService: TokenService;
@@ -29,6 +31,7 @@ export class AuthService {
     app: FastifyInstance,
     private readonly users = new UserRepository(),
     private readonly runtimeConfigs = new RuntimeConfigService(),
+    private readonly billing = new BillingService(),
   ) {
     this.tokenService = new TokenService(app);
   }
@@ -52,11 +55,12 @@ export class AuthService {
     // Registration must never copy server-owned API keys into a user's config.
     // INSERT IGNORE preserves any config already created during an earlier attempt.
     await this.runtimeConfigs.initializeUserConfig(user.id);
+    await this.billing.initializeAccount(user.id);
 
     const verificationToken = await this.users.createEmailVerificationToken(
       user.id,
     );
-    const clientUrl = process.env.CLIENT_URL ?? "http://localhost:5173";
+    const clientUrl = environment.clientUrl;
     const verificationUrl = `${clientUrl}/?verificationToken=${encodeURIComponent(verificationToken.token)}`;
     await this.emailService.sendVerificationEmail(
       toUserProfile(user),
@@ -65,7 +69,7 @@ export class AuthService {
 
     return {
       ok: true as const,
-      ...(process.env.NODE_ENV === "production"
+      ...(environment.production
         ? {}
         : { verificationToken: verificationToken.token }),
     };
@@ -102,7 +106,7 @@ export class AuthService {
     if (!user) return { ok: true as const };
 
     const resetToken = await this.users.createPasswordResetToken(user.id);
-    const clientUrl = process.env.CLIENT_URL ?? "http://localhost:5173";
+    const clientUrl = environment.clientUrl;
     const resetUrl = `${clientUrl}/?resetToken=${encodeURIComponent(resetToken.token)}`;
     await this.emailService.sendPasswordResetEmail(
       toUserProfile(user),
@@ -111,9 +115,7 @@ export class AuthService {
 
     return {
       ok: true as const,
-      ...(process.env.NODE_ENV === "production"
-        ? {}
-        : { resetToken: resetToken.token }),
+      ...(environment.production ? {} : { resetToken: resetToken.token }),
     };
   }
 

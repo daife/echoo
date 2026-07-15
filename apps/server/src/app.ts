@@ -2,6 +2,7 @@ import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
+import { environment } from "./infra/config/environment.js";
 import { closeDatabase, initializeDatabase } from "./infra/database/mysql.js";
 import { AgentRunQueue } from "./infra/redis/run-queue.js";
 import { closeRedis, getRedis } from "./infra/redis/redis.js";
@@ -55,7 +56,7 @@ export async function buildApp() {
       "ETag",
     ],
   });
-  await app.register(jwt, { secret: process.env.JWT_SECRET ?? "dev-secret" });
+  await app.register(jwt, { secret: environment.jwtSecret });
   await app.register(websocket);
   registerAuthDecorators(app);
 
@@ -63,8 +64,7 @@ export async function buildApp() {
     ok: true,
     name: "echoo-server",
     storage: "mysql",
-    mediaStorage:
-      process.env.RESOURCE_STORAGE_PROVIDER === "s3" ? "s3" : "local",
+    mediaStorage: environment.resourceStorageProvider,
     queue: "redis",
   }));
 

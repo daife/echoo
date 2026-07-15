@@ -21,9 +21,11 @@ export function SliceRuntimeConfigForm({
   disabled,
   error,
   notice,
+  platformOnly = false,
 }: FormStatusProps & {
   value: SliceFigureRuntimeConfigView;
   onSave: (patch: SliceFigureRuntimeConfigPatch) => Promise<void>;
+  platformOnly?: boolean;
 }) {
   const [draft, setDraft] = useState(() => sliceDraft(value));
   const [apiKey, setApiKey] = useState("");
@@ -74,6 +76,7 @@ export function SliceRuntimeConfigForm({
             if (patch.value !== undefined) setApiKey(patch.value);
             if (patch.clear !== undefined) setClearApiKey(patch.clear);
           }}
+          platformOnly={platformOnly}
         />
       </ConfigSection>
       <ConfigSection title="上下文与记忆">
@@ -111,9 +114,11 @@ export function PrimeRuntimeConfigForm({
   disabled,
   error,
   notice,
+  platformOnly = false,
 }: FormStatusProps & {
   value: PrimeFigureRuntimeConfigView;
   onSave: (patch: PrimeFigureRuntimeConfigPatch) => Promise<void>;
+  platformOnly?: boolean;
 }) {
   const [draft, setDraft] = useState(() => primeDraft(value));
   const [secrets, setSecrets] = useState(() => emptyPrimeSecrets());
@@ -215,6 +220,7 @@ export function PrimeRuntimeConfigForm({
           status={value.decisionModel.apiKey}
           secret={secrets.decision}
           onSecret={(patch) => updateSecret("decision", patch)}
+          platformOnly={platformOnly}
         />
       </ConfigSection>
       <ConfigSection title="Figure 媒体能力">
@@ -264,6 +270,7 @@ export function PrimeRuntimeConfigForm({
             status={value.outputs.image.generator.apiKey}
             secret={secrets.imageGenerator}
             onSecret={(patch) => updateSecret("imageGenerator", patch)}
+            platformOnly={platformOnly}
           />
         </ConfigSection>
       ) : null}
@@ -275,6 +282,7 @@ export function PrimeRuntimeConfigForm({
             status={value.outputs.voice.tts.apiKey}
             secret={secrets.tts}
             onSecret={(patch) => updateSecret("tts", patch)}
+            platformOnly={platformOnly}
           />
         </ConfigSection>
       ) : null}
@@ -341,6 +349,7 @@ export function PrimeRuntimeConfigForm({
             status={value.optimization.image.model.apiKey}
             secret={secrets.imageOptimizer}
             onSecret={(patch) => updateSecret("imageOptimizer", patch)}
+            platformOnly={platformOnly}
           />
         </ConfigSection>
       ) : null}
@@ -355,6 +364,7 @@ export function PrimeRuntimeConfigForm({
             status={value.optimization.voice.model.apiKey}
             secret={secrets.voiceOptimizer}
             onSecret={(patch) => updateSecret("voiceOptimizer", patch)}
+            platformOnly={platformOnly}
           />
         </ConfigSection>
       ) : null}
@@ -381,6 +391,7 @@ export function PrimeRuntimeConfigForm({
             status={value.understanding.visual.model.apiKey}
             secret={secrets.visualModel}
             onSecret={(patch) => updateSecret("visualModel", patch)}
+            platformOnly={platformOnly}
           />
         </ConfigSection>
       ) : null}
@@ -393,6 +404,7 @@ export function PrimeRuntimeConfigForm({
             status={value.understanding.audio.model.apiKey}
             secret={secrets.audioModel}
             onSecret={(patch) => updateSecret("audioModel", patch)}
+            platformOnly={platformOnly}
           />
         </ConfigSection>
       ) : null}
@@ -516,6 +528,7 @@ function ModelFields({
   status,
   secret,
   onSecret,
+  platformOnly = false,
 }: {
   category: ModelRecommendationCategory;
   draft: EndpointDraft | TextModelDraft;
@@ -523,17 +536,20 @@ function ModelFields({
   status: RuntimeSecretView;
   secret: SecretDraft;
   onSecret: (patch: Partial<SecretDraft>) => void;
+  platformOnly?: boolean;
 }) {
   const update = (key: string, value: string) =>
     onChange({ ...draft, [key]: value });
   return (
     <>
-      <SelectInput
-        label="费用承担方式"
-        value={draft.source}
-        options={CREDENTIAL_SOURCE_OPTIONS}
-        onChange={(value) => update("source", value)}
-      />
+      {!platformOnly ? (
+        <SelectInput
+          label="费用承担方式"
+          value={draft.source}
+          options={CREDENTIAL_SOURCE_OPTIONS}
+          onChange={(value) => update("source", value)}
+        />
+      ) : null}
       {draft.source === "platform" ? (
         <RecommendationChooser
           category={category}
@@ -599,23 +615,27 @@ function TtsFields({
   status,
   secret,
   onSecret,
+  platformOnly = false,
 }: {
   draft: ReturnType<typeof ttsDraft>;
   onChange: (value: ReturnType<typeof ttsDraft>) => void;
   status: RuntimeSecretView;
   secret: SecretDraft;
   onSecret: (patch: Partial<SecretDraft>) => void;
+  platformOnly?: boolean;
 }) {
   const update = (key: keyof typeof draft, value: string) =>
     onChange({ ...draft, [key]: value });
   return (
     <>
-      <SelectInput
-        label="费用承担方式"
-        value={draft.source}
-        options={CREDENTIAL_SOURCE_OPTIONS}
-        onChange={(value) => update("source", value)}
-      />
+      {!platformOnly ? (
+        <SelectInput
+          label="费用承担方式"
+          value={draft.source}
+          options={CREDENTIAL_SOURCE_OPTIONS}
+          onChange={(value) => update("source", value)}
+        />
+      ) : null}
       {draft.source === "platform" ? (
         <RecommendationChooser
           category="fish_tts"

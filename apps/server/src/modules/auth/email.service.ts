@@ -1,4 +1,5 @@
 import type { UserProfile } from "@echoo/shared";
+import { environment } from "../../infra/config/environment.js";
 
 interface ResendEmailBody {
   from: string;
@@ -41,9 +42,8 @@ export class EmailService {
     action: string;
     skippedMessage: string;
   }) {
-    const apiKey = process.env.RESEND_API_KEY;
-    const from =
-      process.env.RESEND_FROM_EMAIL ?? "Echoo <onboarding@resend.dev>";
+    const apiKey = environment.resendApiKey;
+    const from = environment.resendFromEmail;
     const html = `
       <div style="font-family:Inter,Arial,sans-serif;background:#09090b;color:#e5e2e1;padding:32px">
         <div style="max-width:520px;margin:0 auto;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:28px;background:rgba(255,255,255,.04)">

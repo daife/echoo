@@ -28,6 +28,9 @@ pnpm dev:client
 pnpm dev:server
 ```
 
+Environment variables, administrator settings, and user runtime settings are
+separated by lifecycle and ownership. See [docs/configuration.md](docs/configuration.md).
+
 The client uses the Luminous Monochrome design direction from `reference/frontend-refer`.
 The Android keepalive plugin is intentionally separated from frontend storage logic: it should only maintain background connection, show notifications, and ACK server messages.
 

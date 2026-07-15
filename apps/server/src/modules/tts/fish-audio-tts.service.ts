@@ -11,6 +11,9 @@ export interface FishAudioTtsResult {
   format: "mp3";
 }
 
+export const FISH_AUDIO_PAID_USD_PER_MILLION_UTF8_BYTES = 15;
+const FREE_FISH_AUDIO_MODELS = new Set(["s2.1-pro-free"]);
+
 type FishServerEvent = {
   event?: unknown;
   audio?: unknown;
@@ -48,7 +51,10 @@ export class FishAudioTtsService {
     transcript: string,
     onAudio: (chunk: Buffer) => void,
   ): Promise<FishAudioTtsResult> {
-    if (this.config.source === "platform")
+    const pricePerMillionUtf8Bytes = fishAudioPricePerMillionUtf8Bytes(
+      this.config.model,
+    );
+    if (this.config.source === "platform" && pricePerMillionUtf8Bytes > 0)
       await this.billing.assertPlatformBalance();
     const apiKey = this.config.apiKey;
     if (!apiKey) throw new Error("Fish Audio API key is not configured.");
@@ -91,8 +97,12 @@ export class FishAudioTtsService {
         service: "fish_audio",
         model: this.config.model,
         upstreamRequestId: `fish_${randomUUID()}`,
-        upstreamCostUsd: fishAudioCost(transcript, this.config.model),
-        metadata: { utf8Bytes: Buffer.byteLength(transcript, "utf8") },
+        upstreamCostUsd: fishAudioCostUsd(transcript, this.config.model),
+        metadata: {
+          utf8Bytes: Buffer.byteLength(transcript, "utf8"),
+          pricePerMillionUtf8Bytes,
+          streaming: false,
+        },
       });
     return audioResult(audioChunks);
   }
@@ -146,7 +156,8 @@ export class FishAudioTtsStream {
     });
     this.ready = Promise.all([
       socketReady,
-      this.config.source === "platform"
+      this.config.source === "platform" &&
+      fishAudioPricePerMillionUtf8Bytes(this.config.model) > 0
         ? this.billing.assertPlatformBalance()
         : Promise.resolve(),
     ]).then(() => {
@@ -193,9 +204,12 @@ export class FishAudioTtsStream {
         service: "fish_audio",
         model: this.config.model,
         upstreamRequestId: this.usageId,
-        upstreamCostUsd: fishAudioCost(transcript, this.config.model),
+        upstreamCostUsd: fishAudioCostUsd(transcript, this.config.model),
         metadata: {
           utf8Bytes: Buffer.byteLength(transcript, "utf8"),
+          pricePerMillionUtf8Bytes: fishAudioPricePerMillionUtf8Bytes(
+            this.config.model,
+          ),
           streaming: true,
         },
       });
@@ -308,9 +322,13 @@ function toError(error: unknown) {
   return error instanceof Error ? error : new Error(String(error));
 }
 
-function fishAudioCost(text: string, model: string) {
-  const pricePerMillionBytes = model.toLowerCase().includes("free") ? 0 : 15;
-  return (
-    (Buffer.byteLength(text, "utf8") * pricePerMillionBytes) / 1_000_000
-  );
+export function fishAudioPricePerMillionUtf8Bytes(model: string) {
+  return FREE_FISH_AUDIO_MODELS.has(model.trim().toLowerCase())
+    ? 0
+    : FISH_AUDIO_PAID_USD_PER_MILLION_UTF8_BYTES;
+}
+
+export function fishAudioCostUsd(text: string, model: string) {
+  const pricePerMillionBytes = fishAudioPricePerMillionUtf8Bytes(model);
+  return (Buffer.byteLength(text, "utf8") * pricePerMillionBytes) / 1_000_000;
 }
