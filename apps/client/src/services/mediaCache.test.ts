@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getCacheableMediaKey,
   MediaCache,
@@ -41,6 +41,10 @@ class MemoryMediaStore implements MediaCacheStore {
 
 const mediaUrl = "/api/resources/res_1/file";
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 function configure(cache: MediaCache) {
   cache.configure({ userId: "user_1", getAccessToken: async () => "token" });
   return cache;
@@ -68,6 +72,41 @@ function accessAwareFetcher(blob: Blob) {
 }
 
 describe("persistent media cache", () => {
+  it("does not invoke the browser fetch function with MediaCache as its receiver", async () => {
+    const blob = new Blob(["browser"], { type: "image/jpeg" });
+    const browserFetch = vi.fn(function (
+      this: unknown,
+      input: RequestInfo | URL,
+    ) {
+      if (this instanceof MediaCache) throw new TypeError("Illegal invocation");
+      const url = String(input);
+      return Promise.resolve(
+        url.endsWith("/api/resources/access")
+          ? new Response(
+              JSON.stringify({
+                items: [
+                  {
+                    resourceId: "res_1",
+                    variant: "display",
+                    url: "https://cdn.example/res_1-display",
+                    expiresAt: Date.now() + 600_000,
+                    mimeType: blob.type,
+                  },
+                ],
+              }),
+            )
+          : new Response(blob),
+      );
+    });
+    vi.stubGlobal("fetch", browserFetch);
+    const cache = configure(
+      new MediaCache(new MemoryMediaStore(), undefined, Date.now, 100),
+    );
+
+    await expect(cache.get(mediaUrl)).resolves.toEqual(blob);
+    expect(browserFetch).toHaveBeenCalledTimes(2);
+  });
+
   it("returns a stored body without fetching it again", async () => {
     const store = new MemoryMediaStore();
     const blob = new Blob(["cached"], { type: "image/jpeg" });

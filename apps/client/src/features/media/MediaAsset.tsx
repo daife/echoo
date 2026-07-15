@@ -1,5 +1,5 @@
 import type { MediaVariant } from "@echoo/shared";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   getResourceId,
   mediaCache,
@@ -19,41 +19,14 @@ export function MediaAsset({
   alt: string;
   eager?: boolean;
 }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [shouldLoad, setShouldLoad] = useState(
-    eager || !getResourceId(mediaUrl),
-  );
   const { source, fallbackToDirect } = useMediaObjectUrl(
     mediaUrl,
     variant,
-    shouldLoad,
+    true,
   );
 
-  useEffect(() => {
-    if (eager || !getResourceId(mediaUrl)) {
-      setShouldLoad(true);
-      return;
-    }
-    setShouldLoad(false);
-    const container = containerRef.current;
-    if (!container || typeof IntersectionObserver === "undefined") {
-      setShouldLoad(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return;
-        setShouldLoad(true);
-        observer.disconnect();
-      },
-      { rootMargin: "400px 0px" },
-    );
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [eager, mediaUrl]);
-
   return (
-    <div ref={containerRef} className="h-full w-full bg-white/[0.025]">
+    <div className="h-full w-full bg-white/[0.025]">
       {source ? (
         <img
           className={className}

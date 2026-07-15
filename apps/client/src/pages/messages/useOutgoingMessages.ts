@@ -82,6 +82,18 @@ export function useOutgoingMessages(input: {
     URL.revokeObjectURL(payload.objectUrl);
   };
 
+  const releaseMediaAfterPaint = (
+    clientMessageId: string,
+    payload: PendingMediaPayload,
+  ) => {
+    pendingMediaRef.current.delete(clientMessageId);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        URL.revokeObjectURL(payload.objectUrl);
+      });
+    });
+  };
+
   const cacheSentMedia = (payload: PendingMediaPayload, mediaUrl?: string) => {
     if (mediaUrl) void mediaCache.put(mediaUrl, payload.blob);
   };
@@ -188,12 +200,15 @@ export function useOutgoingMessages(input: {
     input.setMessages((current) => mergeLocalMessage(current, pending));
     try {
       const result = await transmitMedia(payload, clientMessageId);
-      await cacheSentMedia(payload, result.message.content.mediaUrl);
-      releaseMedia(clientMessageId, payload);
-      if (input.activeConversationIdRef.current !== conversationId) return;
+      cacheSentMedia(payload, result.message.content.mediaUrl);
+      if (input.activeConversationIdRef.current !== conversationId) {
+        releaseMedia(clientMessageId, payload);
+        return;
+      }
       input.setMessages((current) =>
         mergeSentMessageResult(current, clientMessageId, result),
       );
+      releaseMediaAfterPaint(clientMessageId, payload);
     } catch (error) {
       if (input.activeConversationIdRef.current !== conversationId) {
         releaseMedia(clientMessageId, payload);
@@ -304,13 +319,16 @@ export function useOutgoingMessages(input: {
             clientMessageId,
           });
       if (mediaPayload) {
-        await cacheSentMedia(mediaPayload, result.message.content.mediaUrl);
-        releaseMedia(clientMessageId, mediaPayload);
+        cacheSentMedia(mediaPayload, result.message.content.mediaUrl);
       }
-      if (input.activeConversationIdRef.current !== conversationId) return;
+      if (input.activeConversationIdRef.current !== conversationId) {
+        if (mediaPayload) releaseMedia(clientMessageId, mediaPayload);
+        return;
+      }
       input.setMessages((current) =>
         mergeSentMessageResult(current, clientMessageId, result),
       );
+      if (mediaPayload) releaseMediaAfterPaint(clientMessageId, mediaPayload);
     } catch (error) {
       if (input.activeConversationIdRef.current !== conversationId) return;
       input.setError(error instanceof Error ? error.message : "重试失败。");

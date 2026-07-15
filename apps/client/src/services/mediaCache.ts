@@ -57,7 +57,10 @@ export class MediaCache {
 
   constructor(
     private readonly store: MediaCacheStore = new BrowserMediaCacheStore(),
-    private readonly fetcher: MediaFetcher = fetch,
+    // Calling a saved Window.fetch as `this.fetcher()` gives it MediaCache as
+    // its receiver. Chromium rejects that with "Illegal invocation".
+    private readonly fetcher: MediaFetcher = (input, init) =>
+      fetch(input, init),
     private readonly now: () => number = Date.now,
     private readonly fixedBudgetBytes?: number,
   ) {}

@@ -511,6 +511,7 @@ export class ResourceRepository {
   async createAccessUrl(
     record: ResourceRecord,
     variant: ResourceVariantRecord["variant"],
+    signDirectUrl = true,
   ) {
     const selected =
       (await this.findVariant(record.id, variant)) ??
@@ -522,7 +523,7 @@ export class ResourceRepository {
     );
     const key = selected?.storageKey ?? record.storageKey;
     return {
-      url: await this.storage.signGet(key, 10 * 60),
+      url: signDirectUrl ? await this.storage.signGet(key, 10 * 60) : null,
       variant: selected?.variant ?? "original",
       mimeType: selected?.mimeType ?? record.mimeType,
       byteSize: selected?.byteSize ?? record.byteSize,

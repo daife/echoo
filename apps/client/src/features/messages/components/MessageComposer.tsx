@@ -123,6 +123,26 @@ export function MessageComposer({
     }
   };
 
+  const selectSticker = async (file?: File) => {
+    if (!file) return;
+    if (!IMAGE_MIME_TYPES.has(file.type)) {
+      setNotice("请选择 JPEG、PNG、WebP 或 GIF 图片。");
+      return;
+    }
+    setNotice(null);
+    setIsCompressingImage(true);
+    try {
+      // Decode while the native file-picker handle is still live. Some
+      // WebViews invalidate delayed File reads after the picker is dismissed.
+      setPendingStickerFile(await compressImageToJpeg(file));
+    } catch (caught) {
+      setNotice(caught instanceof Error ? caught.message : "图片压缩失败。");
+    } finally {
+      setIsCompressingImage(false);
+      if (stickerFileInputRef.current) stickerFileInputRef.current.value = "";
+    }
+  };
+
   const isRecording =
     pushToTalk.phase === "recording" || pushToTalk.phase === "requesting";
 
@@ -372,9 +392,9 @@ export function MessageComposer({
                 className="sr-only"
                 type="file"
                 accept="image/jpeg,image/png,image/webp,image/gif"
-                disabled={stickers.length >= 20}
+                disabled={stickers.length >= 20 || isCompressingImage}
                 onChange={(event) => {
-                  setPendingStickerFile(event.target.files?.[0] ?? null);
+                  void selectSticker(event.currentTarget.files?.[0]);
                 }}
               />
             </label>

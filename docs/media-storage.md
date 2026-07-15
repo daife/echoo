@@ -31,9 +31,12 @@ Use a private S3-compatible bucket and application-specific credentials with
 access limited to that bucket. Keep all credentials in the deployment secret
 store, not in Compose files or source control.
 
-- `RESOURCE_S3_ENDPOINT` must be an HTTPS address reachable by browsers because
-  signed uploads and downloads go directly to object storage. It must not be
-  `127.0.0.1` in production. Omit it for AWS S3.
+- `RESOURCE_S3_ENDPOINT` must be reachable by the server. It must not be
+  `127.0.0.1` when MinIO runs on another host or container. Omit it for AWS S3.
+- Downloads use the authenticated Echoo media endpoint by default. This keeps
+  images, stickers, and ranged audio working when clients cannot reach MinIO
+  directly. Set `RESOURCE_S3_DIRECT_DOWNLOADS=true` only when the configured
+  endpoint is browser-reachable (normally HTTPS) and its CORS policy is set.
 - Set `RESOURCE_S3_FORCE_PATH_STYLE=false` for AWS S3. MinIO and some compatible
   providers require `true`.
 - Allow CORS only for the deployed Web and Tauri origins and the required
@@ -59,11 +62,12 @@ message or agent reference for at least 24 hours.
 ## Delivery
 
 `POST /api/resources/access` verifies ownership and returns ten-minute access
-URLs keyed by resource and variant. Object storage serves these URLs directly.
-The authenticated server media endpoint supports `Range`, `206`,
-`Content-Range`, and `Accept-Ranges` for local mode and controlled proxy access.
+URLs keyed by resource and variant. By default the authenticated server media
+endpoint proxies both local and object-storage resources and supports `Range`,
+`206`, `Content-Range`, and `Accept-Ranges`. Deployments may explicitly enable
+direct object-storage download URLs when every client can reach that endpoint.
 
 Images normally request `thumb` or `display`; `original` is reserved for an
-explicit full-image action. Audio uses a direct signed URL so the browser can
-issue byte-range requests. The client stores recent response bodies in Cache
-Storage and only LRU metadata in IndexedDB.
+explicit full-image action. Audio uses the authenticated media URL so the
+browser can issue byte-range requests through the API proxy. The client stores
+recent response bodies in Cache Storage and only LRU metadata in IndexedDB.

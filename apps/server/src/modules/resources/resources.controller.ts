@@ -31,6 +31,9 @@ const accessSchema = z.object({
 export async function registerResourceRoutes(app: FastifyInstance) {
   const resources = new ResourceRepository();
   const processingQueue = new ResourceProcessingQueue(resources);
+  const directObjectStorageDownloads =
+    process.env.RESOURCE_STORAGE_PROVIDER === "s3" &&
+    process.env.RESOURCE_S3_DIRECT_DOWNLOADS === "true";
 
   app.post<{ Body: unknown }>("/uploads", async (request, reply) => {
     const userId = await request.requireUserId(reply);
@@ -150,7 +153,11 @@ export async function registerResourceRoutes(app: FastifyInstance) {
             resourceId: item.resourceId,
             error: "RESOURCE_NOT_FOUND" as const,
           };
-        const access = await resources.createAccessUrl(resource, item.variant);
+        const access = await resources.createAccessUrl(
+          resource,
+          item.variant,
+          directObjectStorageDownloads,
+        );
         const token = app.jwt.sign(
           { mediaResourceId: resource.id, ownerUserId: userId },
           { expiresIn: "10m" },
@@ -195,7 +202,7 @@ export async function registerResourceRoutes(app: FastifyInstance) {
       variant,
       request.headers.range,
     );
-    const selected = await resources.createAccessUrl(resource, variant);
+    const selected = await resources.createAccessUrl(resource, variant, false);
     reply.code(opened.statusCode);
     reply.header("Content-Type", selected.mimeType);
     reply.header("Content-Length", opened.size);
