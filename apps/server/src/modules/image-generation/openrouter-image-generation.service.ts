@@ -9,8 +9,16 @@ export interface GeneratedImage {
   model: string;
 }
 import type { StoredModelEndpointConfig } from "../runtime-config/runtime-config.types.js";
+import { BillingService } from "../billing/billing.service.js";
 
 interface OpenRouterImageResponse {
+  id?: string;
+  usage?: {
+    cost?: number;
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
   choices?: Array<{
     message?: {
       images?: Array<{
@@ -26,6 +34,7 @@ export class OpenRouterImageGenerationService {
   constructor(
     private readonly config: StoredModelEndpointConfig,
     private readonly fetcher: typeof fetch = fetch,
+    private readonly billing = new BillingService(),
   ) {}
 
   async generate(input: {
@@ -33,6 +42,8 @@ export class OpenRouterImageGenerationService {
     references: ImageGenerationReference[];
     sessionId?: string;
   }): Promise<GeneratedImage> {
+    if (this.config.source === "platform")
+      await this.billing.assertPlatformBalance();
     const apiKey = this.config.apiKey;
     if (!apiKey) throw new Error("Image generation API key is not configured.");
     const model = this.config.model;
@@ -88,6 +99,23 @@ export class OpenRouterImageGenerationService {
     const data = Buffer.from(stripDataUrlPrefix(imageUrl), "base64");
     if (!data.length)
       throw new Error("OpenRouter image generation returned an empty image.");
+    if (
+      this.config.source === "platform" &&
+      payload.id &&
+      typeof payload.usage?.cost === "number"
+    )
+      await this.billing.chargeUsage({
+        service: "openrouter",
+        model,
+        upstreamRequestId: payload.id,
+        upstreamCostUsd: payload.usage.cost,
+        metadata: {
+          kind: "image_generation",
+          promptTokens: payload.usage.prompt_tokens,
+          completionTokens: payload.usage.completion_tokens,
+          totalTokens: payload.usage.total_tokens,
+        },
+      });
     return { mimeType, data, model };
   }
 }

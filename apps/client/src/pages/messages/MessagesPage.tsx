@@ -660,12 +660,13 @@ function RuntimeConfigDialog({
     setError(null);
     setNotice(null);
     try {
-      setResponse(await update({ mode }));
-      setNotice(
+      const next = await update({ mode });
+      setResponse(next);
+      const base =
         mode === "global"
           ? "该会话已实时使用用户全局配置。"
-          : "已创建该会话的独立配置。",
-      );
+          : "已创建该会话的独立配置。";
+      setNotice(withConfigWarnings(base, next.warnings));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "模式切换失败。");
     } finally {
@@ -679,8 +680,9 @@ function RuntimeConfigDialog({
     setError(null);
     setNotice(null);
     try {
-      setResponse(await update({ mode: "custom", config }));
-      setNotice("会话独立配置已保存。");
+      const next = await update({ mode: "custom", config });
+      setResponse(next);
+      setNotice(withConfigWarnings("会话独立配置已保存。", next.warnings));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "配置保存失败。");
       throw caught;
@@ -774,6 +776,15 @@ function RuntimeConfigDialog({
       </div>
     </div>
   );
+}
+
+function withConfigWarnings(
+  base: string,
+  warnings?: Array<{ message: string }>,
+) {
+  return warnings?.length
+    ? `${base} 提示：${warnings.map((warning) => warning.message).join("；")}`
+    : base;
 }
 
 function EditSliceFigureDialog({

@@ -3,6 +3,7 @@ import type {
   ConversationRuntimeConfigResponse,
   UserRuntimeConfigPatch,
   UserRuntimeConfigView,
+  WalletView,
 } from "@echoo/shared";
 import type { ApiClient } from "./client";
 
@@ -33,5 +34,9 @@ export class RuntimeConfigApi {
       `/conversations/${conversationId}/runtime-config`,
       patch,
     );
+  }
+
+  getWallet(): Promise<WalletView> {
+    return this.client.get("/users/me/wallet");
   }
 }

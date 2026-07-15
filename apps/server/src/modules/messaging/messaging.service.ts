@@ -21,6 +21,7 @@ import {
 import { MessageRepository } from "./message.repository.js";
 import { PrimeRunProcessor } from "./prime-run.processor.js";
 import { SliceReplyProcessor } from "./slice-reply.processor.js";
+import { BillingContext } from "../billing/billing-context.js";
 
 export interface CreateUserTextMessageInput {
   ownerUserId: string;
@@ -558,9 +559,13 @@ export class MessagingService {
   }
 
   async processQueuedRun(job: AgentRunJob) {
-    return job.kind === "prime-figure"
-      ? this.primeRuns.process(job)
-      : this.sliceReplies.process(job);
+    return BillingContext.run(
+      { ownerUserId: job.ownerUserId, conversationId: job.conversationId },
+      () =>
+        job.kind === "prime-figure"
+          ? this.primeRuns.process(job)
+          : this.sliceReplies.process(job),
+    );
   }
 
   publishAgentActivity(input: {

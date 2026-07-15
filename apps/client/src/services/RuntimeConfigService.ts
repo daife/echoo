@@ -11,6 +11,10 @@ export class RuntimeConfigService {
     return this.api.getUserConfig();
   }
 
+  getWallet() {
+    return this.api.getWallet();
+  }
+
   updateUserConfig(patch: UserRuntimeConfigPatch) {
     return this.api.updateUserConfig(patch);
   }

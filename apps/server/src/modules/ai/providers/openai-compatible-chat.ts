@@ -18,7 +18,16 @@ interface OpenAiCompatibleChoice {
 }
 
 interface OpenAiCompatibleResponse {
+  id?: string;
   choices?: OpenAiCompatibleChoice[];
+  usage?: OpenAiCompatibleUsage;
+}
+
+interface OpenAiCompatibleUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  cost?: number;
 }
 
 interface OpenAiCompatibleStreamChoice {
@@ -34,7 +43,9 @@ interface OpenAiCompatibleStreamChoice {
 }
 
 interface OpenAiCompatibleStreamChunk {
+  id?: string;
   choices?: OpenAiCompatibleStreamChoice[];
+  usage?: OpenAiCompatibleUsage;
 }
 
 interface OpenAiCompatibleRequestInput {
@@ -89,6 +100,9 @@ export async function createOpenAiCompatibleChatCompletion(input: {
     model: input.completion.model,
     text,
     ...(toolCalls?.length ? { toolCalls } : {}),
+    ...(payload.id || payload.usage
+      ? { usage: normalizeUsage(payload.id, payload.usage) }
+      : {}),
   };
 }
 
@@ -123,10 +137,13 @@ export async function* streamOpenAiCompatibleChatCompletion(
       const payload = parseStreamChunk(event);
       const delta = payload?.choices?.[0]?.delta;
       const text = normalizeDeltaContent(delta?.content);
-      if (text || delta?.tool_calls?.length)
+      if (text || delta?.tool_calls?.length || payload?.usage)
         yield {
           ...(text ? { text } : {}),
           ...(delta?.tool_calls?.length ? { toolCalls: delta.tool_calls } : {}),
+          ...(payload?.id || payload?.usage
+            ? { usage: normalizeUsage(payload.id, payload.usage) }
+            : {}),
         };
     }
   }
@@ -137,10 +154,13 @@ export async function* streamOpenAiCompatibleChatCompletion(
     const payload = parseStreamChunk(event);
     const delta = payload?.choices?.[0]?.delta;
     const text = normalizeDeltaContent(delta?.content);
-    if (text || delta?.tool_calls?.length)
+    if (text || delta?.tool_calls?.length || payload?.usage)
       yield {
         ...(text ? { text } : {}),
         ...(delta?.tool_calls?.length ? { toolCalls: delta.tool_calls } : {}),
+        ...(payload?.id || payload?.usage
+          ? { usage: normalizeUsage(payload.id, payload.usage) }
+          : {}),
       };
   }
 }
@@ -255,4 +275,20 @@ function parseStreamChunk(event: string) {
   } catch {
     return null;
   }
+}
+
+function normalizeUsage(id?: string, usage?: OpenAiCompatibleUsage) {
+  return {
+    ...(id ? { upstreamRequestId: id } : {}),
+    ...(typeof usage?.prompt_tokens === "number"
+      ? { promptTokens: usage.prompt_tokens }
+      : {}),
+    ...(typeof usage?.completion_tokens === "number"
+      ? { completionTokens: usage.completion_tokens }
+      : {}),
+    ...(typeof usage?.total_tokens === "number"
+      ? { totalTokens: usage.total_tokens }
+      : {}),
+    ...(typeof usage?.cost === "number" ? { costUsd: usage.cost } : {}),
+  };
 }

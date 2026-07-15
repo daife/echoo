@@ -9,22 +9,65 @@ import {
   createOpenAiCompatibleChatCompletion,
   streamOpenAiCompatibleChatCompletion,
 } from "./openai-compatible-chat.js";
+import { BillingService } from "../../billing/billing.service.js";
 
 export class OpenRouterProvider implements AiTextProvider {
-  readonly id: string;
+  readonly id = "openrouter";
 
-  constructor(private readonly config: StoredTextModelConfig) {
-    this.id = config.provider;
-  }
+  constructor(
+    private readonly config: StoredTextModelConfig,
+    private readonly billing = new BillingService(),
+  ) {}
 
   async createChatCompletion(
     input: ChatCompletionInput,
   ): Promise<ChatCompletionResult> {
-    return createOpenAiCompatibleChatCompletion(this.buildRequest(input));
+    await this.beforePlatformCall();
+    const result = await createOpenAiCompatibleChatCompletion(
+      this.buildRequest(input),
+    );
+    await this.settle(result.usage);
+    return result;
   }
 
-  streamChatCompletion(input: ChatCompletionInput): AsyncIterable<ChatDelta> {
-    return streamOpenAiCompatibleChatCompletion(this.buildRequest(input));
+  async *streamChatCompletion(
+    input: ChatCompletionInput,
+  ): AsyncIterable<ChatDelta> {
+    await this.beforePlatformCall();
+    let finalUsage: ChatDelta["usage"];
+    for await (const delta of streamOpenAiCompatibleChatCompletion(
+      this.buildRequest(input),
+    )) {
+      if (delta.usage) finalUsage = { ...finalUsage, ...delta.usage };
+      yield delta;
+    }
+    await this.settle(finalUsage);
+  }
+
+  private beforePlatformCall() {
+    return this.config.source === "platform"
+      ? this.billing.assertPlatformBalance()
+      : Promise.resolve();
+  }
+
+  private async settle(usage?: ChatDelta["usage"]) {
+    if (
+      this.config.source !== "platform" ||
+      !usage?.upstreamRequestId ||
+      typeof usage.costUsd !== "number"
+    )
+      return;
+    await this.billing.chargeUsage({
+      service: "openrouter",
+      model: this.config.model,
+      upstreamRequestId: usage.upstreamRequestId,
+      upstreamCostUsd: usage.costUsd,
+      metadata: {
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        totalTokens: usage.totalTokens,
+      },
+    });
   }
 
   private buildRequest(input: ChatCompletionInput) {

@@ -2,14 +2,14 @@ import type { StoredUserRuntimeConfig } from "./runtime-config.types.js";
 
 export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
   const sharedEndpoint = {
-    provider: "openrouter",
+    source: "platform" as const,
     baseUrl: "https://openrouter.ai/api/v1",
     apiKey: "",
   };
   return {
-    version: 1,
+    version: 2,
     sliceFigure: {
-      version: 1,
+      version: 2,
       llm: {
         ...sharedEndpoint,
         model: "openai/gpt-4o-mini",
@@ -23,10 +23,10 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
       },
     },
     primeFigure: {
-      version: 4,
+      version: 5,
       decisionModel: {
         ...sharedEndpoint,
-        model: "openai/gpt-4o-mini",
+        model: "google/gemini-2.5-flash-lite",
         temperature: 0.4,
         maxTokens: 1600,
       },
@@ -43,7 +43,7 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
           enabled: true,
           guidanceLevel: "medium",
           tts: {
-            provider: "fish-audio",
+            source: "platform",
             apiKey: "",
             referenceId: "",
             model: "s2.1-pro-free",
@@ -96,7 +96,7 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
           mode: "native",
           model: {
             ...sharedEndpoint,
-            model: "openai/gpt-4o-mini",
+            model: "google/gemini-2.5-flash-lite",
             temperature: 0.1,
             maxTokens: 2400,
           },

@@ -1,5 +1,5 @@
 export interface StoredModelEndpointConfig {
-  provider: string;
+  source: "platform" | "custom";
   routingProvider?: string;
   baseUrl: string;
   apiKey: string;
@@ -12,7 +12,7 @@ export interface StoredTextModelConfig extends StoredModelEndpointConfig {
 }
 
 export interface StoredFishAudioConfig {
-  provider: string;
+  source: "platform" | "custom";
   apiKey: string;
   referenceId: string;
   model: string;
@@ -23,7 +23,7 @@ export interface StoredFishAudioConfig {
 }
 
 export interface StoredSliceFigureRuntimeConfig {
-  version: 1;
+  version: 2;
   llm: StoredTextModelConfig;
   context: {
     minimumRounds: number;
@@ -33,7 +33,7 @@ export interface StoredSliceFigureRuntimeConfig {
 }
 
 export interface StoredPrimeFigureRuntimeConfig {
-  version: 4;
+  version: 5;
   decisionModel: StoredTextModelConfig;
   outputs: {
     image: {
@@ -98,7 +98,7 @@ export interface StoredPrimeWorldRuntimeConfig {
 }
 
 export interface StoredUserRuntimeConfig {
-  version: 1;
+  version: 2;
   sliceFigure: StoredSliceFigureRuntimeConfig;
   primeFigure: StoredPrimeFigureRuntimeConfig;
   primeWorld: StoredPrimeWorldRuntimeConfig;

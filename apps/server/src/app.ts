@@ -18,6 +18,9 @@ import { registerResourceRoutes } from "./modules/resources/resources.controller
 import { ResourceProcessingQueue } from "./modules/resources/resource-processing.queue.js";
 import { ResourceCleanupQueue } from "./modules/resources/resource-cleanup.queue.js";
 import { registerRuntimeConfigRoutes } from "./modules/runtime-config/runtime-config.controller.js";
+import { registerAdminRoutes } from "./modules/admin/admin.controller.js";
+import { registerBillingRoutes } from "./modules/billing/billing.controller.js";
+import { registerPlatformCatalogRoutes } from "./modules/platform-catalog/platform-catalog.controller.js";
 
 export async function buildApp() {
   await initializeDatabase();
@@ -76,6 +79,9 @@ export async function buildApp() {
   });
   await app.register(registerResourceRoutes, { prefix: "/api/resources" });
   await app.register(registerRuntimeConfigRoutes, { prefix: "/api" });
+  await app.register(registerBillingRoutes, { prefix: "/api" });
+  await app.register(registerPlatformCatalogRoutes, { prefix: "/api" });
+  await app.register(registerAdminRoutes, { prefix: "/api/admin" });
   await app.register(registerRealtimeGateway);
   app.addHook("onReady", async () => {
     await startRealtimeEventBus().catch((error) => {

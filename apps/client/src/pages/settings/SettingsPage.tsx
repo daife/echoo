@@ -2,6 +2,7 @@ import type {
   PrimeFigureRuntimeConfigPatch,
   SliceFigureRuntimeConfigPatch,
   UserRuntimeConfigView,
+  WalletView,
 } from "@echoo/shared";
 import { useEffect, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
@@ -23,14 +24,20 @@ export function SettingsPage({
   >("slice-figure");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [wallet, setWallet] = useState<WalletView | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    void runtimeConfigService
-      .getUserConfig()
-      .then((value) => {
-        if (!cancelled) setConfig(value);
+    void Promise.all([
+      runtimeConfigService.getUserConfig(),
+      runtimeConfigService.getWallet(),
+    ])
+      .then(([value, walletValue]) => {
+        if (!cancelled) {
+          setConfig(value);
+          setWallet(walletValue);
+        }
       })
       .catch((caught) => {
         if (!cancelled)
@@ -45,10 +52,11 @@ export function SettingsPage({
     setError(null);
     setNotice(null);
     try {
-      setConfig(
-        await runtimeConfigService.updateUserConfig({ sliceFigure: patch }),
-      );
-      setNotice("切片角色全局配置已保存。");
+      const next = await runtimeConfigService.updateUserConfig({
+        sliceFigure: patch,
+      });
+      setConfig(next);
+      setNotice(saveNotice("切片角色全局配置已保存。", next));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "配置保存失败。");
       throw caught;
@@ -59,10 +67,11 @@ export function SettingsPage({
     setError(null);
     setNotice(null);
     try {
-      setConfig(
-        await runtimeConfigService.updateUserConfig({ primeFigure: patch }),
-      );
-      setNotice("本初角色全局配置已保存。");
+      const next = await runtimeConfigService.updateUserConfig({
+        primeFigure: patch,
+      });
+      setConfig(next);
+      setNotice(saveNotice("本初角色全局配置已保存。", next));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "配置保存失败。");
       throw caught;
@@ -88,6 +97,52 @@ export function SettingsPage({
         >
           退出登录
         </button>
+      </div>
+      <div className="glass-panel rounded-2xl p-5">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-white/35">
+              Platform balance
+            </p>
+            <p
+              className={`mt-2 font-mono text-3xl ${Number(wallet?.balanceUsd ?? 0) > 0 ? "text-emerald-100" : "text-red-200"}`}
+            >
+              ${wallet?.balanceUsd ?? "0"}
+            </p>
+          </div>
+          <p className="max-w-md text-sm leading-6 text-white/40">
+            仅平台提供的模型与 TTS 会扣除此余额；自定义地址和 Key
+            不计入平台账单。
+          </p>
+        </div>
+        {wallet?.entries.length ? (
+          <details className="mt-4 border-t border-white/8 pt-4">
+            <summary className="cursor-pointer text-sm text-white/55">
+              最近账单
+            </summary>
+            <div className="mt-3 max-h-64 space-y-2 overflow-auto">
+              {wallet.entries.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="flex items-start justify-between gap-4 rounded-lg bg-black/15 p-3 text-xs"
+                >
+                  <span>
+                    <strong className="block text-white/70">
+                      {entry.note ??
+                        `${entry.service ?? "平台"} · ${entry.model ?? "余额调整"}`}
+                    </strong>
+                    <small className="text-white/30">
+                      {new Date(entry.createdAt).toLocaleString()}
+                    </small>
+                  </span>
+                  <span className="font-mono text-white/60">
+                    {entry.amountUsd} USD
+                  </span>
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
       </div>
       <div className="glass-panel rounded-2xl p-5 md:p-6">
         <div className="mb-6">
@@ -155,4 +210,10 @@ export function SettingsPage({
       </div>
     </section>
   );
+}
+
+function saveNotice(base: string, config: UserRuntimeConfigView) {
+  return config.warnings?.length
+    ? `${base} 提示：${config.warnings.map((warning) => warning.message).join("；")}`
+    : base;
 }

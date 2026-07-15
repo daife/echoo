@@ -13,6 +13,7 @@ import { ConversationRepository } from "../conversations/conversation.repository
 import { PrimeFigureStateRepository } from "../agents/kinds/prime-figure/prime-figure-state.repository.js";
 import { buildRuntimeConfigDefaults } from "./runtime-config.defaults.js";
 import { RuntimeConfigRepository } from "./runtime-config.repository.js";
+import { PlatformCatalogService } from "../platform-catalog/platform-catalog.service.js";
 import type {
   StoredFigureRuntimeConfig,
   StoredFishAudioConfig,
@@ -31,6 +32,7 @@ export class RuntimeConfigService {
     private readonly repository = new RuntimeConfigRepository(),
     private readonly conversations = new ConversationRepository(),
     private readonly primeStates = new PrimeFigureStateRepository(),
+    private readonly catalog = new PlatformCatalogService(),
   ) {}
 
   async getUserConfig(ownerUserId: string): Promise<UserRuntimeConfigView> {
@@ -59,20 +61,24 @@ export class RuntimeConfigService {
         : current.primeFigure,
     };
     validateUserConfig(next);
+    const warnings = await this.validateCatalogUser(next);
     await this.repository.saveUserConfig(ownerUserId, next);
     const disabled = disabledWakeups(current.primeFigure, next.primeFigure);
     await this.primeStates.clearDisabledWakeupsForOwner({
       ownerUserId,
       ...disabled,
     });
-    return redactUserConfig(next);
+    return {
+      ...redactUserConfig(next),
+      ...(warnings.length ? { warnings } : {}),
+    };
   }
 
   async getConversationConfig(
     ownerUserId: string,
     conversationId: string,
   ): Promise<ConversationRuntimeConfigResponse> {
-    const resolved = await this.resolveConversationConfig(
+    const resolved = await this.resolveStoredConversationConfig(
       ownerUserId,
       conversationId,
     );
@@ -111,13 +117,17 @@ export class RuntimeConfigService {
         custom = patchFigureConfig(conversation.type, custom, input.config);
       validateFigureConfig(conversation.type, custom);
     }
+    const nextConfig = input.mode === "custom" ? custom! : global;
+    const warnings = await this.validateCatalogFigure(
+      conversation.type,
+      nextConfig,
+    );
     await this.repository.saveConversationConfig({
       ownerUserId,
       conversationId,
       mode: input.mode,
       customConfig: custom,
     });
-    const nextConfig = input.mode === "custom" ? custom! : global;
     if (conversation.type === "prime-figure")
       await this.primeStates.clearDisabledWakeupsForConversation({
         ownerUserId,
@@ -131,10 +141,29 @@ export class RuntimeConfigService {
       mode: input.mode,
       conversationType: conversation.type,
       config: redactFigureConfig(input.mode === "custom" ? custom! : global),
+      ...(warnings.length ? { warnings } : {}),
     };
   }
 
   async resolveConversationConfig(
+    ownerUserId: string,
+    conversationId: string,
+  ): Promise<{
+    mode: "global" | "custom";
+    conversationType: AgentType;
+    config: StoredFigureRuntimeConfig;
+  }> {
+    const resolved = await this.resolveStoredConversationConfig(
+      ownerUserId,
+      conversationId,
+    );
+    return {
+      ...resolved,
+      config: resolvePlatformFigureConfig(resolved.config),
+    };
+  }
+
+  private async resolveStoredConversationConfig(
     ownerUserId: string,
     conversationId: string,
   ): Promise<{
@@ -193,6 +222,29 @@ export class RuntimeConfigService {
       throw new RuntimeConfigNotFoundError("未找到可配置的角色会话。");
     return { ...conversation, type: conversation.type };
   }
+
+  private async validateCatalogUser(config: StoredUserRuntimeConfig) {
+    try {
+      return await this.catalog.validateUserConfig(config);
+    } catch (error) {
+      throw new RuntimeConfigValidationError(
+        error instanceof Error ? error.message : "模型能力校验失败。",
+      );
+    }
+  }
+
+  private async validateCatalogFigure(
+    type: AgentType,
+    config: StoredFigureRuntimeConfig,
+  ) {
+    try {
+      return await this.catalog.validateFigureConfig(type, config);
+    } catch (error) {
+      throw new RuntimeConfigValidationError(
+        error instanceof Error ? error.message : "模型能力校验失败。",
+      );
+    }
+  }
 }
 
 function disabledWakeups(
@@ -211,6 +263,12 @@ function normalizeUserConfig(
 ): StoredUserRuntimeConfig {
   return {
     ...config,
+    version: 2,
+    sliceFigure: {
+      ...config.sliceFigure,
+      version: 2,
+      llm: normalizeEndpoint(config.sliceFigure.llm),
+    },
     primeFigure: normalizePrimeConfig(config.primeFigure),
   };
 }
@@ -237,9 +295,18 @@ function normalizePrimeConfig(
   };
   return {
     ...config,
-    version: 4,
+    version: 5,
+    decisionModel: normalizeTextEndpoint(config.decisionModel),
     outputs: {
       ...config.outputs,
+      image: {
+        ...config.outputs.image,
+        generator: normalizeEndpoint(config.outputs.image.generator),
+      },
+      voice: {
+        ...config.outputs.voice,
+        tts: normalizeFishAudio(config.outputs.voice.tts),
+      },
       sticker: {
         ...defaults.outputs.sticker,
         ...legacy.outputs?.sticker,
@@ -247,6 +314,26 @@ function normalizePrimeConfig(
       transfer: {
         ...defaults.outputs.transfer,
         ...legacy.outputs?.transfer,
+      },
+    },
+    optimization: {
+      image: {
+        ...config.optimization.image,
+        model: normalizeTextEndpoint(config.optimization.image.model),
+      },
+      voice: {
+        ...config.optimization.voice,
+        model: normalizeTextEndpoint(config.optimization.voice.model),
+      },
+    },
+    understanding: {
+      visual: {
+        ...config.understanding.visual,
+        model: normalizeTextEndpoint(config.understanding.visual.model),
+      },
+      audio: {
+        ...config.understanding.audio,
+        model: normalizeTextEndpoint(config.understanding.audio.model),
       },
     },
     wakeups: {
@@ -268,6 +355,7 @@ function patchSliceConfig(
 ): StoredSliceFigureRuntimeConfig {
   return {
     ...current,
+    version: 2,
     llm: patch.llm ? patchTextModel(current.llm, patch.llm) : current.llm,
     context: { ...current.context, ...patch.context },
   };
@@ -279,7 +367,7 @@ function patchPrimeConfig(
 ): StoredPrimeFigureRuntimeConfig {
   return {
     ...current,
-    version: 4,
+    version: 5,
     decisionModel: patch.decisionModel
       ? patchTextModel(current.decisionModel, patch.decisionModel)
       : current.decisionModel,
@@ -381,7 +469,7 @@ function patchEndpoint<T extends StoredModelEndpointConfig>(
 ): T {
   const next = {
     ...current,
-    ...(patch.provider !== undefined ? { provider: patch.provider } : {}),
+    ...(patch.source !== undefined ? { source: patch.source } : {}),
     ...(patch.baseUrl !== undefined ? { baseUrl: patch.baseUrl } : {}),
     ...(patch.model !== undefined ? { model: patch.model } : {}),
     ...(patch.apiKey !== undefined ? { apiKey: patch.apiKey ?? "" } : {}),
@@ -389,6 +477,7 @@ function patchEndpoint<T extends StoredModelEndpointConfig>(
   if (patch.routingProvider === null) delete next.routingProvider;
   else if (patch.routingProvider !== undefined)
     next.routingProvider = patch.routingProvider;
+  if (next.source === "custom") delete next.routingProvider;
   return next;
 }
 
@@ -451,10 +540,7 @@ function redactFigureConfig(config: StoredFigureRuntimeConfig): any {
       },
       voice: {
         ...config.outputs.voice,
-        tts: {
-          ...config.outputs.voice.tts,
-          apiKey: redactSecret(config.outputs.voice.tts.apiKey),
-        },
+        tts: redactFishAudio(config.outputs.voice.tts),
       },
       sticker: config.outputs.sticker,
       transfer: config.outputs.transfer,
@@ -484,7 +570,32 @@ function redactFigureConfig(config: StoredFigureRuntimeConfig): any {
 
 function redactEndpoint(config: StoredModelEndpointConfig) {
   const { apiKey, ...rest } = config;
-  return { ...rest, apiKey: redactSecret(apiKey) };
+  const visible =
+    config.source === "platform"
+      ? (({ baseUrl: _baseUrl, ...value }) => value)(rest)
+      : rest;
+  return {
+    ...visible,
+    apiKey:
+      config.source === "platform"
+        ? { configured: false }
+        : redactSecret(apiKey),
+  };
+}
+
+function redactFishAudio(config: StoredFishAudioConfig) {
+  const { apiKey, ...rest } = config;
+  const visible =
+    config.source === "platform"
+      ? (({ httpUrl: _httpUrl, wsUrl: _wsUrl, ...value }) => value)(rest)
+      : rest;
+  return {
+    ...visible,
+    apiKey:
+      config.source === "platform"
+        ? { configured: false }
+        : redactSecret(apiKey),
+  };
 }
 
 function redactSecret(secret: string) {
@@ -520,12 +631,13 @@ function validateFigureConfig(
     if (value.outputs.voice.enabled) {
       const tts = value.outputs.voice.tts;
       if (
-        !tts.provider.trim() ||
         !tts.model.trim() ||
-        !tts.httpUrl.trim() ||
-        !tts.wsUrl.trim()
+        (tts.source === "custom" &&
+          (!tts.httpUrl.trim() || !tts.wsUrl.trim() || !tts.apiKey.trim()))
       )
-        invalid("语音输出开启时 TTS 提供商、模型及地址不能为空。");
+        invalid(
+          "语音输出开启时模型不能为空；自定义 TTS 还必须配置地址和 API Key。",
+        );
       positiveInteger(tts.chunkLength, "Fish Audio 分块长度");
     }
     if (value.optimization.image.enabled)
@@ -566,8 +678,114 @@ function validateTextModel(config: StoredTextModelConfig) {
 }
 
 function validateEndpoint(config: StoredModelEndpointConfig) {
-  if (!config.provider.trim() || !config.baseUrl.trim() || !config.model.trim())
-    invalid("模型提供商、地址和模型不能为空。");
+  if (!config.model.trim()) invalid("模型不能为空。");
+  if (
+    config.source === "custom" &&
+    (!config.baseUrl.trim() || !config.apiKey.trim())
+  )
+    invalid("自定义模型必须配置 API 地址和 API Key。");
+}
+
+function normalizeEndpoint<T extends StoredModelEndpointConfig>(config: T): T {
+  const legacy = config as T & {
+    provider?: string;
+    source?: "platform" | "custom";
+  };
+  const { provider: _provider, ...rest } = legacy;
+  return {
+    ...rest,
+    source: legacy.source ?? (legacy.apiKey?.trim() ? "custom" : "platform"),
+  } as T;
+}
+
+function normalizeTextEndpoint(config: StoredTextModelConfig) {
+  return normalizeEndpoint(config);
+}
+
+function normalizeFishAudio(config: StoredFishAudioConfig) {
+  const legacy = config as StoredFishAudioConfig & {
+    provider?: string;
+    source?: "platform" | "custom";
+  };
+  const { provider: _provider, ...rest } = legacy;
+  return {
+    ...rest,
+    source: legacy.source ?? (legacy.apiKey?.trim() ? "custom" : "platform"),
+  };
+}
+
+function resolvePlatformFigureConfig(
+  config: StoredFigureRuntimeConfig,
+): StoredFigureRuntimeConfig {
+  const resolveEndpoint = <T extends StoredModelEndpointConfig>(value: T): T =>
+    value.source === "platform"
+      ? {
+          ...value,
+          baseUrl:
+            process.env.PLATFORM_OPENROUTER_BASE_URL ??
+            process.env.OPENROUTER_BASE_URL ??
+            "https://openrouter.ai/api/v1",
+          apiKey:
+            process.env.PLATFORM_OPENROUTER_API_KEY ??
+            process.env.OPENROUTER_API_KEY ??
+            "",
+        }
+      : value;
+  const resolveText = (value: StoredTextModelConfig) => resolveEndpoint(value);
+  if ("llm" in config) return { ...config, llm: resolveText(config.llm) };
+  if (!("decisionModel" in config)) return config;
+  const tts = config.outputs.voice.tts;
+  return {
+    ...config,
+    decisionModel: resolveText(config.decisionModel),
+    outputs: {
+      ...config.outputs,
+      image: {
+        ...config.outputs.image,
+        generator: resolveEndpoint(config.outputs.image.generator),
+      },
+      voice: {
+        ...config.outputs.voice,
+        tts:
+          tts.source === "platform"
+            ? {
+                ...tts,
+                httpUrl:
+                  process.env.PLATFORM_FISH_AUDIO_HTTP_URL ??
+                  "https://api.fish.audio/v1/tts",
+                wsUrl:
+                  process.env.PLATFORM_FISH_AUDIO_WS_URL ??
+                  process.env.FISH_AUDIO_WS_URL ??
+                  "wss://api.fish.audio/v1/tts/live",
+                apiKey:
+                  process.env.PLATFORM_FISH_AUDIO_API_KEY ??
+                  process.env.FISH_AUDIO_API_KEY ??
+                  "",
+              }
+            : tts,
+      },
+    },
+    optimization: {
+      image: {
+        ...config.optimization.image,
+        model: resolveText(config.optimization.image.model),
+      },
+      voice: {
+        ...config.optimization.voice,
+        model: resolveText(config.optimization.voice.model),
+      },
+    },
+    understanding: {
+      visual: {
+        ...config.understanding.visual,
+        model: resolveText(config.understanding.visual.model),
+      },
+      audio: {
+        ...config.understanding.audio,
+        model: resolveText(config.understanding.audio.model),
+      },
+    },
+  };
 }
 
 function positiveInteger(value: number, label: string) {

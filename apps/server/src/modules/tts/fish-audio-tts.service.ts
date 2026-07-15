@@ -1,7 +1,9 @@
 import { decode, encode } from "@msgpack/msgpack";
+import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import type { ClientOptions } from "ws";
 import type { StoredFishAudioConfig } from "../runtime-config/runtime-config.types.js";
+import { BillingService } from "../billing/billing.service.js";
 
 export interface FishAudioTtsResult {
   audio: Buffer;
@@ -26,6 +28,7 @@ export class FishAudioTtsService {
     private readonly config: StoredFishAudioConfig,
     private readonly createSocket: FishAudioWebSocketFactory = (url, options) =>
       new WebSocket(url, options),
+    private readonly billing = new BillingService(),
   ) {}
 
   isConfigured() {
@@ -33,13 +36,20 @@ export class FishAudioTtsService {
   }
 
   createStream(onAudio: (chunk: Buffer) => void) {
-    return new FishAudioTtsStream(this.config, onAudio, this.createSocket);
+    return new FishAudioTtsStream(
+      this.config,
+      onAudio,
+      this.createSocket,
+      this.billing,
+    );
   }
 
   async synthesize(
     transcript: string,
     onAudio: (chunk: Buffer) => void,
   ): Promise<FishAudioTtsResult> {
+    if (this.config.source === "platform")
+      await this.billing.assertPlatformBalance();
     const apiKey = this.config.apiKey;
     if (!apiKey) throw new Error("Fish Audio API key is not configured.");
     const referenceId = this.config.referenceId.trim();
@@ -76,6 +86,14 @@ export class FishAudioTtsService {
 
     if (!audioChunks.length)
       throw new Error("Fish Audio TTS returned no audio data.");
+    if (this.config.source === "platform")
+      await this.billing.chargeUsage({
+        service: "fish_audio",
+        model: this.config.model,
+        upstreamRequestId: `fish_${randomUUID()}`,
+        upstreamCostUsd: fishAudioCost(transcript, this.config.model),
+        metadata: { utf8Bytes: Buffer.byteLength(transcript, "utf8") },
+      });
     return audioResult(audioChunks);
   }
 }
@@ -89,6 +107,8 @@ export class FishAudioTtsStream {
   private sendQueue = Promise.resolve();
   private readonly audioChunks: Buffer[] = [];
   private bufferedCharacters = 0;
+  private readonly transcriptParts: string[] = [];
+  private readonly usageId = `fish_${randomUUID()}`;
   private stopped = false;
   private settled = false;
 
@@ -97,6 +117,7 @@ export class FishAudioTtsStream {
     private readonly onAudio: (chunk: Buffer) => void,
     createSocket: FishAudioWebSocketFactory = (url, options) =>
       new WebSocket(url, options),
+    private readonly billing = new BillingService(),
   ) {
     const apiKey = this.config.apiKey;
     if (!apiKey) throw new Error("Fish Audio API key is not configured.");
@@ -117,19 +138,22 @@ export class FishAudioTtsStream {
       },
     });
     this.socket.binaryType = "arraybuffer";
-    this.ready = new Promise((resolve, reject) => {
+    const socketReady = new Promise<void>((resolve, reject) => {
       this.socket.once("open", () => {
-        try {
-          this.send({
-            event: "start",
-            request: ttsRequest(this.config, referenceId, ""),
-          });
-          resolve();
-        } catch (error) {
-          reject(toError(error));
-        }
+        resolve();
       });
       this.socket.once("error", (error) => reject(error));
+    });
+    this.ready = Promise.all([
+      socketReady,
+      this.config.source === "platform"
+        ? this.billing.assertPlatformBalance()
+        : Promise.resolve(),
+    ]).then(() => {
+      this.send({
+        event: "start",
+        request: ttsRequest(this.config, referenceId, ""),
+      });
     });
 
     this.socket.on("message", (data) => this.handleMessage(data));
@@ -143,6 +167,7 @@ export class FishAudioTtsStream {
   write(text: string) {
     if (!text || this.stopped) return;
     this.enqueue(async () => {
+      this.transcriptParts.push(text);
       this.bufferedCharacters += Array.from(text).length;
       this.send({ event: "text", text });
       if (this.shouldFlush(text)) {
@@ -161,7 +186,21 @@ export class FishAudioTtsStream {
       });
     }
     await this.sendQueue;
-    return this.completed;
+    const result = await this.completed;
+    if (this.config.source === "platform") {
+      const transcript = this.transcriptParts.join("");
+      await this.billing.chargeUsage({
+        service: "fish_audio",
+        model: this.config.model,
+        upstreamRequestId: this.usageId,
+        upstreamCostUsd: fishAudioCost(transcript, this.config.model),
+        metadata: {
+          utf8Bytes: Buffer.byteLength(transcript, "utf8"),
+          streaming: true,
+        },
+      });
+    }
+    return result;
   }
 
   abort() {
@@ -267,4 +306,11 @@ async function readErrorDetail(response: Response) {
 
 function toError(error: unknown) {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function fishAudioCost(text: string, model: string) {
+  const pricePerMillionBytes = model.toLowerCase().includes("free") ? 0 : 15;
+  return (
+    (Buffer.byteLength(text, "utf8") * pricePerMillionBytes) / 1_000_000
+  );
 }

@@ -5,7 +5,7 @@ const optionalPositive = z.number().finite().positive().optional();
 const optionalNonnegative = z.number().finite().nonnegative().optional();
 
 const modelEndpointPatchSchema = z.object({
-  provider: optionalText,
+  source: z.enum(["platform", "custom"]).optional(),
   routingProvider: optionalText.nullable(),
   baseUrl: optionalText,
   model: optionalText,
@@ -18,7 +18,7 @@ const textModelPatchSchema = modelEndpointPatchSchema.extend({
 });
 
 const fishAudioPatchSchema = z.object({
-  provider: optionalText,
+  source: z.enum(["platform", "custom"]).optional(),
   apiKey: z.string().max(8192).nullable().optional(),
   referenceId: optionalText,
   model: optionalText,

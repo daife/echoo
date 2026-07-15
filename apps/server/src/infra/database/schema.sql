@@ -86,6 +86,76 @@ CREATE TABLE IF NOT EXISTS conversation_runtime_configs (
   CONSTRAINT fk_conversation_runtime_configs_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS billing_accounts (
+  owner_user_id VARCHAR(64) PRIMARY KEY,
+  balance_micro_usd BIGINT NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  CONSTRAINT fk_billing_accounts_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS billing_ledger (
+  id VARCHAR(64) PRIMARY KEY,
+  owner_user_id VARCHAR(64) NOT NULL,
+  kind ENUM('admin_credit', 'admin_debit', 'usage') NOT NULL,
+  amount_micro_usd BIGINT NOT NULL,
+  balance_after_micro_usd BIGINT NOT NULL,
+  service VARCHAR(48) NULL,
+  model VARCHAR(255) NULL,
+  upstream_request_id VARCHAR(255) NULL,
+  note VARCHAR(500) NULL,
+  metadata JSON NULL,
+  created_at BIGINT NOT NULL,
+  UNIQUE KEY uq_billing_upstream (service, upstream_request_id),
+  INDEX idx_billing_ledger_owner_created (owner_user_id, created_at DESC),
+  CONSTRAINT fk_billing_ledger_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS platform_models (
+  model_id VARCHAR(255) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  description TEXT NULL,
+  input_modalities JSON NOT NULL,
+  output_modalities JSON NOT NULL,
+  pricing JSON NOT NULL,
+  supported_parameters JSON NOT NULL,
+  context_length INT UNSIGNED NULL,
+  available BOOLEAN NOT NULL DEFAULT TRUE,
+  synced_at BIGINT NOT NULL,
+  INDEX idx_platform_models_available_name (available, name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS platform_model_endpoints (
+  model_id VARCHAR(255) NOT NULL,
+  provider_slug VARCHAR(160) NOT NULL,
+  provider_name VARCHAR(255) NOT NULL,
+  pricing JSON NOT NULL,
+  status INT NOT NULL DEFAULT 0,
+  latency_ms DOUBLE NULL,
+  throughput DOUBLE NULL,
+  synced_at BIGINT NOT NULL,
+  PRIMARY KEY (model_id, provider_slug),
+  CONSTRAINT fk_platform_model_endpoints_model FOREIGN KEY (model_id) REFERENCES platform_models(model_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS platform_recommendations (
+  category VARCHAR(64) NOT NULL,
+  model_id VARCHAR(255) NOT NULL,
+  service ENUM('openrouter', 'fish_audio') NOT NULL DEFAULT 'openrouter',
+  provider_slugs JSON NOT NULL,
+  display_order INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  PRIMARY KEY (category, model_id),
+  INDEX idx_platform_recommendations_order (category, display_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS platform_settings (
+  setting_key VARCHAR(80) PRIMARY KEY,
+  value_json JSON NOT NULL,
+  updated_at BIGINT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS messages (
   seq BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   id VARCHAR(64) NOT NULL,

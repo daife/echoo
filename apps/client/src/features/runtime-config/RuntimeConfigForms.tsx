@@ -2,6 +2,8 @@ import type {
   PrimeFigureRuntimeConfigPatch,
   PrimeFigureRuntimeConfigView,
   RuntimeSecretView,
+  RecommendedModelView,
+  ModelRecommendationCategory,
   SliceFigureRuntimeConfigPatch,
   SliceFigureRuntimeConfigView,
 } from "@echoo/shared";
@@ -39,8 +41,9 @@ export function SliceRuntimeConfigForm({
     try {
       await onSave({
         llm: {
-          provider: draft.provider,
-          routingProvider: draft.routingProvider || null,
+          source: draft.source,
+          routingProvider:
+            draft.source === "platform" ? draft.routingProvider || null : null,
           baseUrl: draft.baseUrl,
           model: draft.model,
           temperature: Number(draft.temperature),
@@ -61,46 +64,16 @@ export function SliceRuntimeConfigForm({
   return (
     <form className="space-y-5" onSubmit={submit}>
       <ConfigSection title="文本模型">
-        <TextInput
-          label="服务提供商"
-          value={draft.provider}
-          onChange={(provider) => setDraft({ ...draft, provider })}
-        />
-        <TextInput
-          required={false}
-          label="上游路由商（可选）"
-          value={draft.routingProvider}
-          onChange={(routingProvider) =>
-            setDraft({ ...draft, routingProvider })
-          }
-        />
-        <TextInput
-          label="API 地址"
-          value={draft.baseUrl}
-          onChange={(baseUrl) => setDraft({ ...draft, baseUrl })}
-        />
-        <TextInput
-          label="模型"
-          value={draft.model}
-          onChange={(model) => setDraft({ ...draft, model })}
-        />
-        <NumberInput
-          label="温度"
-          value={draft.temperature}
-          step="0.1"
-          onChange={(temperature) => setDraft({ ...draft, temperature })}
-        />
-        <NumberInput
-          label="最大输出 Tokens"
-          value={draft.maxTokens}
-          onChange={(maxTokens) => setDraft({ ...draft, maxTokens })}
-        />
-        <SecretInput
+        <ModelFields
+          category="slice_text"
+          draft={draft}
+          onChange={setDraft}
           status={value.llm.apiKey}
-          value={apiKey}
-          clear={clearApiKey}
-          onValue={setApiKey}
-          onClear={setClearApiKey}
+          secret={{ value: apiKey, clear: clearApiKey }}
+          onSecret={(patch) => {
+            if (patch.value !== undefined) setApiKey(patch.value);
+            if (patch.clear !== undefined) setClearApiKey(patch.clear);
+          }}
         />
       </ConfigSection>
       <ConfigSection title="上下文与记忆">
@@ -236,6 +209,7 @@ export function PrimeRuntimeConfigForm({
     <form className="space-y-5" onSubmit={submit}>
       <ConfigSection title="决策模型">
         <ModelFields
+          category="prime_decision"
           draft={draft.decision}
           onChange={(decision) => setDraft({ ...draft, decision })}
           status={value.decisionModel.apiKey}
@@ -282,6 +256,7 @@ export function PrimeRuntimeConfigForm({
       {draft.imageEnabled ? (
         <ConfigSection title="图像生成模型">
           <ModelFields
+            category="image_generation"
             draft={draft.imageGenerator}
             onChange={(imageGenerator) =>
               setDraft({ ...draft, imageGenerator })
@@ -358,6 +333,7 @@ export function PrimeRuntimeConfigForm({
       {draft.imageEnabled && draft.imageOptimizationEnabled ? (
         <ConfigSection title="额外生图优化模型">
           <ModelFields
+            category="image_optimization"
             draft={draft.imageOptimizer}
             onChange={(imageOptimizer) =>
               setDraft({ ...draft, imageOptimizer })
@@ -371,6 +347,7 @@ export function PrimeRuntimeConfigForm({
       {draft.voiceEnabled && draft.voiceOptimizationEnabled ? (
         <ConfigSection title="额外语音优化模型">
           <ModelFields
+            category="voice_optimization"
             draft={draft.voiceOptimizer}
             onChange={(voiceOptimizer) =>
               setDraft({ ...draft, voiceOptimizer })
@@ -398,6 +375,7 @@ export function PrimeRuntimeConfigForm({
       {draft.visualMode === "auxiliary" ? (
         <ConfigSection title="视觉辅助理解模型">
           <ModelFields
+            category="visual_understanding"
             draft={draft.visualModel}
             onChange={(visualModel) => setDraft({ ...draft, visualModel })}
             status={value.understanding.visual.model.apiKey}
@@ -409,6 +387,7 @@ export function PrimeRuntimeConfigForm({
       {draft.audioMode === "auxiliary" ? (
         <ConfigSection title="听觉辅助理解模型">
           <ModelFields
+            category="audio_understanding"
             draft={draft.audioModel}
             onChange={(audioModel) => setDraft({ ...draft, audioModel })}
             status={value.understanding.audio.model.apiKey}
@@ -511,7 +490,7 @@ export function PrimeRuntimeConfigForm({
 }
 
 type EndpointDraft = {
-  provider: string;
+  source: "platform" | "custom";
   routingProvider: string;
   baseUrl: string;
   model: string;
@@ -531,12 +510,14 @@ type PrimeSecretKey =
   | "audioModel";
 
 function ModelFields({
+  category,
   draft,
   onChange,
   status,
   secret,
   onSecret,
 }: {
+  category: ModelRecommendationCategory;
   draft: EndpointDraft | TextModelDraft;
   onChange: (value: any) => void;
   status: RuntimeSecretView;
@@ -547,22 +528,34 @@ function ModelFields({
     onChange({ ...draft, [key]: value });
   return (
     <>
-      <TextInput
-        label="服务提供商"
-        value={draft.provider}
-        onChange={(value) => update("provider", value)}
+      <SelectInput
+        label="费用承担方式"
+        value={draft.source}
+        options={CREDENTIAL_SOURCE_OPTIONS}
+        onChange={(value) => update("source", value)}
       />
-      <TextInput
-        required={false}
-        label="上游路由商（可选）"
-        value={draft.routingProvider}
-        onChange={(value) => update("routingProvider", value)}
-      />
-      <TextInput
-        label="API 地址"
-        value={draft.baseUrl}
-        onChange={(value) => update("baseUrl", value)}
-      />
+      {draft.source === "platform" ? (
+        <RecommendationChooser
+          category={category}
+          draft={draft}
+          onChange={onChange}
+        />
+      ) : null}
+      {draft.source === "platform" ? (
+        <TextInput
+          required={false}
+          label="OpenRouter 推理服务商 slug（可选）"
+          value={draft.routingProvider}
+          onChange={(value) => update("routingProvider", value)}
+        />
+      ) : null}
+      {draft.source === "custom" ? (
+        <TextInput
+          label="API 地址"
+          value={draft.baseUrl}
+          onChange={(value) => update("baseUrl", value)}
+        />
+      ) : null}
       <TextInput
         label="模型"
         value={draft.model}
@@ -583,13 +576,19 @@ function ModelFields({
           />
         </>
       ) : null}
-      <SecretInput
-        status={status}
-        value={secret.value}
-        clear={secret.clear}
-        onValue={(value) => onSecret({ value })}
-        onClear={(clear) => onSecret({ clear })}
-      />
+      {draft.source === "custom" ? (
+        <SecretInput
+          status={status}
+          value={secret.value}
+          clear={secret.clear}
+          onValue={(value) => onSecret({ value })}
+          onClear={(clear) => onSecret({ clear })}
+        />
+      ) : (
+        <p className="self-end rounded-lg border border-emerald-300/10 bg-emerald-300/[0.04] px-3 py-2.5 text-xs text-emerald-100/65">
+          地址与 API Key 由平台安全提供，调用费用从余额扣除。
+        </p>
+      )}
     </>
   );
 }
@@ -611,11 +610,19 @@ function TtsFields({
     onChange({ ...draft, [key]: value });
   return (
     <>
-      <TextInput
-        label="服务提供商"
-        value={draft.provider}
-        onChange={(value) => update("provider", value)}
+      <SelectInput
+        label="费用承担方式"
+        value={draft.source}
+        options={CREDENTIAL_SOURCE_OPTIONS}
+        onChange={(value) => update("source", value)}
       />
+      {draft.source === "platform" ? (
+        <RecommendationChooser
+          category="fish_tts"
+          draft={draft}
+          onChange={onChange}
+        />
+      ) : null}
       <TextInput
         required={false}
         label="音色 Reference ID"
@@ -627,16 +634,20 @@ function TtsFields({
         value={draft.model}
         onChange={(value) => update("model", value)}
       />
-      <TextInput
-        label="HTTP 地址"
-        value={draft.httpUrl}
-        onChange={(value) => update("httpUrl", value)}
-      />
-      <TextInput
-        label="WebSocket 地址"
-        value={draft.wsUrl}
-        onChange={(value) => update("wsUrl", value)}
-      />
+      {draft.source === "custom" ? (
+        <>
+          <TextInput
+            label="HTTP 地址"
+            value={draft.httpUrl}
+            onChange={(value) => update("httpUrl", value)}
+          />
+          <TextInput
+            label="WebSocket 地址"
+            value={draft.wsUrl}
+            onChange={(value) => update("wsUrl", value)}
+          />
+        </>
+      ) : null}
       <TextInput
         label="延迟模式"
         value={draft.latency}
@@ -647,14 +658,123 @@ function TtsFields({
         value={draft.chunkLength}
         onChange={(value) => update("chunkLength", value)}
       />
-      <SecretInput
-        status={status}
-        value={secret.value}
-        clear={secret.clear}
-        onValue={(value) => onSecret({ value })}
-        onClear={(clear) => onSecret({ clear })}
-      />
+      {draft.source === "custom" ? (
+        <SecretInput
+          status={status}
+          value={secret.value}
+          clear={secret.clear}
+          onValue={(value) => onSecret({ value })}
+          onClear={(clear) => onSecret({ clear })}
+        />
+      ) : null}
     </>
+  );
+}
+
+function RecommendationChooser<
+  T extends { model: string } & Record<string, unknown>,
+>({
+  category,
+  draft,
+  onChange,
+}: {
+  category: ModelRecommendationCategory;
+  draft: T;
+  onChange: (value: T) => void;
+}) {
+  const [models, setModels] = useState<RecommendedModelView[] | null>(null);
+  const [error, setError] = useState("");
+  const load = async () => {
+    setError("");
+    try {
+      const base =
+        import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787/api";
+      const response = await fetch(
+        `${base.replace(/\/+$/, "")}/platform/recommendations?category=${encodeURIComponent(category)}`,
+      );
+      if (!response.ok) throw new Error("无法获取平台推荐模型。");
+      setModels((await response.json()) as RecommendedModelView[]);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "获取推荐模型失败。");
+    }
+  };
+  const select = (modelId: string) => {
+    const selected = models?.find((model) => model.modelId === modelId);
+    if (!selected) return;
+    onChange({
+      ...draft,
+      model: selected.modelId,
+      ...("routingProvider" in draft && selected.recommendedProviders[0]
+        ? { routingProvider: selected.recommendedProviders[0].slug }
+        : {}),
+    });
+  };
+  const selectedModel = models?.find((model) => model.modelId === draft.model);
+  return (
+    <div className="space-y-1.5 text-sm text-white/58">
+      <span>平台推荐</span>
+      {models ? (
+        <div className="space-y-2">
+          <select
+            value={selectedModel ? draft.model : ""}
+            onChange={(event) => select(event.target.value)}
+            className="w-full rounded-lg border border-white/10 bg-[#15151a] px-3 py-2.5 text-white outline-none"
+          >
+            <option value="">选择推荐模型</option>
+            {models.map((model) => (
+              <option key={model.modelId} value={model.modelId}>
+                {model.name} · {model.inputModalities.join("+")}→
+                {model.outputModalities.join("+")}
+              </option>
+            ))}
+          </select>
+          {selectedModel?.recommendedProviders.length &&
+          "routingProvider" in draft ? (
+            <select
+              value={
+                selectedModel.recommendedProviders.some(
+                  (provider) => provider.slug === draft.routingProvider,
+                )
+                  ? String(draft.routingProvider)
+                  : draft.routingProvider
+                    ? "__custom"
+                    : ""
+              }
+              onChange={(event) => {
+                if (event.target.value === "__custom") return;
+                onChange({
+                  ...draft,
+                  routingProvider: event.target.value,
+                });
+              }}
+              className="w-full rounded-lg border border-white/10 bg-[#15151a] px-3 py-2.5 text-white outline-none"
+            >
+              <option value="">OpenRouter 自动路由</option>
+              {selectedModel.recommendedProviders.map((provider) => (
+                <option key={provider.slug} value={provider.slug}>
+                  {provider.name} ({provider.slug})
+                </option>
+              ))}
+              {draft.routingProvider &&
+              !selectedModel.recommendedProviders.some(
+                (provider) => provider.slug === draft.routingProvider,
+              ) ? (
+                <option value="__custom">当前手填服务商</option>
+              ) : null}
+            </select>
+          ) : null}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="w-full rounded-lg border border-white/10 bg-white/[0.035] px-3 py-2.5 text-left text-white/75 hover:bg-white/[0.06]"
+        >
+          获取推荐模型
+        </button>
+      )}
+      {error ? <p className="text-xs text-red-200/70">{error}</p> : null}
+    </div>
   );
 }
 
@@ -712,6 +832,10 @@ const GUIDANCE_OPTIONS = [
   { value: "basic", label: "基础" },
   { value: "medium", label: "中等" },
   { value: "advanced", label: "高级" },
+] as const;
+const CREDENTIAL_SOURCE_OPTIONS = [
+  { value: "platform", label: "平台提供（余额计费）" },
+  { value: "custom", label: "自定义地址与 Key" },
 ] as const;
 const OPTIMIZATION_OPTIONS = [
   { value: "advanced", label: "高级" },
@@ -870,9 +994,9 @@ function secretChange(value: string, clear: boolean) {
 
 function sliceDraft(value: SliceFigureRuntimeConfigView) {
   return {
-    provider: value.llm.provider,
+    source: value.llm.source,
     routingProvider: value.llm.routingProvider ?? "",
-    baseUrl: value.llm.baseUrl,
+    baseUrl: value.llm.baseUrl ?? "",
     model: value.llm.model,
     temperature: String(value.llm.temperature),
     maxTokens: String(value.llm.maxTokens),
@@ -919,23 +1043,23 @@ function primeDraft(value: PrimeFigureRuntimeConfigView) {
 }
 
 function endpointDraft(value: {
-  provider: string;
+  source: "platform" | "custom";
   routingProvider?: string;
-  baseUrl: string;
+  baseUrl?: string;
   model: string;
 }): EndpointDraft {
   return {
-    provider: value.provider,
+    source: value.source,
     routingProvider: value.routingProvider ?? "",
-    baseUrl: value.baseUrl,
+    baseUrl: value.baseUrl ?? "",
     model: value.model,
   };
 }
 
 function textDraft(value: {
-  provider: string;
+  source: "platform" | "custom";
   routingProvider?: string;
-  baseUrl: string;
+  baseUrl?: string;
   model: string;
   temperature: number;
   maxTokens: number;
@@ -951,11 +1075,11 @@ function ttsDraft(
   value: PrimeFigureRuntimeConfigView["outputs"]["voice"]["tts"],
 ) {
   return {
-    provider: value.provider,
+    source: value.source,
     referenceId: value.referenceId,
     model: value.model,
-    httpUrl: value.httpUrl,
-    wsUrl: value.wsUrl,
+    httpUrl: value.httpUrl ?? "",
+    wsUrl: value.wsUrl ?? "",
     latency: value.latency,
     chunkLength: String(value.chunkLength),
   };
@@ -977,8 +1101,9 @@ function emptyPrimeSecrets(): Record<PrimeSecretKey, SecretDraft> {
 
 function endpointPatch(draft: EndpointDraft, secret: SecretDraft) {
   return {
-    provider: draft.provider,
-    routingProvider: draft.routingProvider || null,
+    source: draft.source,
+    routingProvider:
+      draft.source === "platform" ? draft.routingProvider || null : null,
     baseUrl: draft.baseUrl,
     model: draft.model,
     ...secretChange(secret.value, secret.clear),

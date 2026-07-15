@@ -1,6 +1,7 @@
 import type { AgentType } from "./agent.js";
 
 export type RuntimeConfigMode = "global" | "custom";
+export type CredentialSource = "platform" | "custom";
 
 export interface RuntimeSecretView {
   configured: boolean;
@@ -8,9 +9,9 @@ export interface RuntimeSecretView {
 }
 
 export interface ModelEndpointConfigView {
-  provider: string;
+  source: CredentialSource;
   routingProvider?: string;
-  baseUrl: string;
+  baseUrl?: string;
   model: string;
   apiKey: RuntimeSecretView;
 }
@@ -21,18 +22,18 @@ export interface TextModelConfigView extends ModelEndpointConfigView {
 }
 
 export interface FishAudioConfigView {
-  provider: string;
+  source: CredentialSource;
   apiKey: RuntimeSecretView;
   referenceId: string;
   model: string;
-  httpUrl: string;
-  wsUrl: string;
+  httpUrl?: string;
+  wsUrl?: string;
   latency: string;
   chunkLength: number;
 }
 
 export interface SliceFigureRuntimeConfigView {
-  version: 1;
+  version: 2;
   llm: TextModelConfigView;
   context: {
     minimumRounds: number;
@@ -89,7 +90,7 @@ export interface PrimeFigureUnderstandingConfigView {
 }
 
 export interface PrimeFigureRuntimeConfigView {
-  version: 4;
+  version: 5;
   decisionModel: TextModelConfigView;
   outputs: PrimeFigureOutputConfigView;
   optimization: PrimeFigureOptimizationConfigView;
@@ -119,14 +120,15 @@ export interface PrimeWorldRuntimeConfigView {
 }
 
 export interface UserRuntimeConfigView {
-  version: 1;
+  version: 2;
   sliceFigure: SliceFigureRuntimeConfigView;
   primeFigure: PrimeFigureRuntimeConfigView;
   primeWorld: PrimeWorldRuntimeConfigView;
+  warnings?: RuntimeConfigWarning[];
 }
 
 export interface ModelEndpointConfigPatch {
-  provider?: string;
+  source?: CredentialSource;
   routingProvider?: string | null;
   baseUrl?: string;
   model?: string;
@@ -140,7 +142,7 @@ export interface TextModelConfigPatch extends ModelEndpointConfigPatch {
 }
 
 export interface FishAudioConfigPatch {
-  provider?: string;
+  source?: CredentialSource;
   apiKey?: string | null;
   referenceId?: string;
   model?: string;
@@ -232,6 +234,47 @@ export interface ConversationRuntimeConfigResponse {
   mode: RuntimeConfigMode;
   conversationType: AgentType;
   config: FigureRuntimeConfigView;
+  warnings?: RuntimeConfigWarning[];
+}
+
+export interface RuntimeConfigWarning {
+  path: string;
+  code: "MODEL_NOT_IN_CATALOG" | "MODEL_METADATA_STALE" | "PROVIDER_UNVERIFIED";
+  message: string;
+}
+
+export type ModelRecommendationCategory =
+  | "slice_text"
+  | "prime_decision"
+  | "image_generation"
+  | "image_optimization"
+  | "voice_optimization"
+  | "visual_understanding"
+  | "audio_understanding"
+  | "fish_tts";
+
+export interface RecommendedModelView {
+  category: ModelRecommendationCategory;
+  modelId: string;
+  name: string;
+  inputModalities: string[];
+  outputModalities: string[];
+  pricing: Record<string, string | number | null>;
+  recommendedProviders: Array<{ slug: string; name: string }>;
+}
+
+export interface WalletView {
+  balanceUsd: string;
+  entries: Array<{
+    id: string;
+    kind: "admin_credit" | "admin_debit" | "usage";
+    amountUsd: string;
+    balanceAfterUsd: string;
+    service?: string;
+    model?: string;
+    note?: string;
+    createdAt: number;
+  }>;
 }
 
 export interface ConversationRuntimeConfigPatchRequest {

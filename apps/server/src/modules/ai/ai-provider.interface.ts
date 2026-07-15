@@ -72,6 +72,15 @@ export interface ChatCompletionResult {
   model: string;
   text: string;
   toolCalls?: ChatToolCall[];
+  usage?: AiUsage;
+}
+
+export interface AiUsage {
+  upstreamRequestId?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  costUsd?: number;
 }
 
 export interface ChatDelta {
@@ -82,6 +91,7 @@ export interface ChatDelta {
     type?: "function";
     function?: { name?: string; arguments?: string };
   }>;
+  usage?: AiUsage;
 }
 
 export interface AiTextProvider {

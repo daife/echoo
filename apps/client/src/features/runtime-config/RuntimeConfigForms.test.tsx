@@ -10,9 +10,9 @@ describe("runtime config forms", () => {
     const html = renderToStaticMarkup(
       <SliceRuntimeConfigForm
         value={{
-          version: 1,
+          version: 2,
           llm: {
-            provider: "openrouter",
+            source: "custom",
             baseUrl: "https://openrouter.test/api/v1",
             model: "text-model",
             temperature: 0.8,
@@ -36,7 +36,7 @@ describe("runtime config forms", () => {
 
   it("renders independent prime LLM, image, TTS, and message timing fields", () => {
     const endpoint = {
-      provider: "openrouter",
+      source: "custom" as const,
       baseUrl: "https://openrouter.test/api/v1",
       model: "model",
       apiKey: { configured: false },
@@ -44,7 +44,7 @@ describe("runtime config forms", () => {
     const html = renderToStaticMarkup(
       <PrimeRuntimeConfigForm
         value={{
-          version: 4,
+          version: 5,
           decisionModel: { ...endpoint, temperature: 0.4, maxTokens: 1600 },
           outputs: {
             image: {
@@ -56,7 +56,7 @@ describe("runtime config forms", () => {
               enabled: true,
               guidanceLevel: "medium",
               tts: {
-                provider: "fish-audio",
+                source: "custom",
                 apiKey: { configured: false },
                 referenceId: "voice",
                 model: "fish-model",
