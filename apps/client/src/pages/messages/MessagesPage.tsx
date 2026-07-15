@@ -1,4 +1,5 @@
 import {
+  ArrowDown,
   Copy,
   GearSix,
   PencilSimple,
@@ -53,6 +54,7 @@ import {
   SliceFigureFormFields,
 } from "../create-agent/CreateAgentPage";
 import { useConversationMessages } from "./useConversationMessages";
+import { isAwayFromLatestMessage } from "./conversationScrollPosition";
 import { imageFileToUpload } from "../../shared/utils/imageCompression";
 import {
   PrimeRuntimeConfigForm,
@@ -146,6 +148,8 @@ export function MessagesPage({
   const mainRef = useRef<HTMLElement | null>(null);
   const virtualListRef = useRef<HTMLDivElement | null>(null);
   const [virtualScrollMargin, setVirtualScrollMargin] = useState(0);
+  const [isAwayFromLatest, setIsAwayFromLatest] = useState(false);
+  const isAwayFromLatestRef = useRef(false);
   const shouldFollowBottomRef = useRef(true);
   const lastConversationRef = useRef<string | undefined>(undefined);
   const lastVisibleMessageIdRef = useRef<string | undefined>(undefined);
@@ -234,13 +238,16 @@ export function MessagesPage({
   useLayoutEffect(() => {
     const main = mainRef.current;
     if (!main || isInitialLoading) return;
+    const conversationChanged = lastConversationRef.current !== conversationId;
+    if (conversationChanged) pendingJumpToLatestRef.current = false;
     if (pendingJumpToLatestRef.current && !isJumpingToLatest && !hasNewer) {
       pendingJumpToLatestRef.current = false;
       messageVirtualizer.scrollToEnd();
       lastScrollTopRef.current = main.scrollTop;
       shouldFollowBottomRef.current = true;
+      isAwayFromLatestRef.current = false;
+      setIsAwayFromLatest(false);
     }
-    const conversationChanged = lastConversationRef.current !== conversationId;
     const scrollMarginChanged =
       lastVirtualScrollMarginRef.current !== virtualScrollMargin;
     const latest = visibleMessages.at(-1);
@@ -255,6 +262,8 @@ export function MessagesPage({
       messageVirtualizer.scrollToEnd();
       lastScrollTopRef.current = main.scrollTop;
       shouldFollowBottomRef.current = true;
+      isAwayFromLatestRef.current = false;
+      setIsAwayFromLatest(false);
     }
     lastConversationRef.current = conversationId;
     lastVisibleMessageIdRef.current = latest?.id;
@@ -270,6 +279,14 @@ export function MessagesPage({
 
   const handleJumpToLatest = async () => {
     if (isJumpingToLatest) return;
+    if (!hasNewer) {
+      messageVirtualizer.scrollToEnd();
+      shouldFollowBottomRef.current = true;
+      isAwayFromLatestRef.current = false;
+      setIsAwayFromLatest(false);
+      if (mainRef.current) lastScrollTopRef.current = mainRef.current.scrollTop;
+      return;
+    }
     pendingJumpToLatestRef.current = true;
     const succeeded = await jumpToLatest();
     if (!succeeded) pendingJumpToLatestRef.current = false;
@@ -280,8 +297,12 @@ export function MessagesPage({
     if (!main) return;
     const scrollingUp = main.scrollTop < lastScrollTopRef.current;
     lastScrollTopRef.current = main.scrollTop;
-    shouldFollowBottomRef.current =
-      main.scrollHeight - main.scrollTop - main.clientHeight <= 120;
+    const nextIsAwayFromLatest = isAwayFromLatestMessage(main);
+    shouldFollowBottomRef.current = !nextIsAwayFromLatest;
+    if (isAwayFromLatestRef.current !== nextIsAwayFromLatest) {
+      isAwayFromLatestRef.current = nextIsAwayFromLatest;
+      setIsAwayFromLatest(nextIsAwayFromLatest);
+    }
     if (
       !scrollingUp &&
       shouldFollowBottomRef.current &&
@@ -550,14 +571,20 @@ export function MessagesPage({
             </div>
           </div>
         ) : null}
-        {hasNewer ? (
+        {isAwayFromLatest || hasNewer ? (
           <button
-            className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full border border-white/10 bg-[#1a1a20]/95 px-4 py-2 text-xs text-white/75 shadow-lg backdrop-blur transition disabled:cursor-wait disabled:opacity-65"
+            aria-label="回到最新消息"
+            className="absolute bottom-4 right-4 z-10 grid h-11 w-11 place-items-center rounded-full border border-white/10 bg-[#1a1a20]/95 text-white/75 shadow-lg backdrop-blur transition hover:bg-[#24242b] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white disabled:cursor-wait disabled:opacity-65 md:right-6"
             type="button"
             disabled={isJumpingToLatest}
             onClick={() => void handleJumpToLatest()}
+            title={isJumpingToLatest ? "正在回到最新消息" : "回到最新消息"}
           >
-            {isJumpingToLatest ? "正在回到最新消息…" : "回到最新消息"}
+            <ArrowDown
+              className={isJumpingToLatest ? "animate-pulse" : undefined}
+              size={20}
+              weight="bold"
+            />
           </button>
         ) : null}
       </div>
