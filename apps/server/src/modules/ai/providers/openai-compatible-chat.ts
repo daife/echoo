@@ -78,7 +78,7 @@ export async function createOpenAiCompatibleChatCompletion(input: {
         Authorization: `Bearer ${input.apiKey}`,
         ...input.headers,
       },
-      body: JSON.stringify(buildRequestBody(input)),
+      body: JSON.stringify(buildOpenAiCompatibleRequestBody(input)),
     },
   );
 
@@ -183,7 +183,7 @@ async function requestChatCompletion(
         ...input.headers,
       },
       body: JSON.stringify({
-        ...buildRequestBody(input),
+        ...buildOpenAiCompatibleRequestBody(input),
         ...extraBody,
       }),
     },
@@ -197,7 +197,9 @@ async function requestChatCompletion(
   return response;
 }
 
-function buildRequestBody(input: OpenAiCompatibleRequestInput) {
+export function buildOpenAiCompatibleRequestBody(
+  input: OpenAiCompatibleRequestInput,
+): Record<string, unknown> {
   return {
     model: input.completion.model,
     ...input.extraBody,
@@ -209,12 +211,30 @@ function buildRequestBody(input: OpenAiCompatibleRequestInput) {
     tool_choice: input.completion.toolChoice,
     parallel_tool_calls: input.completion.tools?.length ? false : undefined,
     ...(input.completion.reasoningMode === "disabled"
-      ? {
-          reasoning: { enabled: false, exclude: true },
-          reasoning_effort: "none",
-        }
+      ? disabledReasoningConfig(input.baseUrl)
       : {}),
   };
+}
+
+function disabledReasoningConfig(baseUrl: string) {
+  if (isDeepSeekApiUrl(baseUrl)) {
+    // DeepSeek's OpenAI-compatible API does not accept `reasoning_effort:
+    // "none"`; it uses its provider-specific thinking switch instead.
+    return { thinking: { type: "disabled" } };
+  }
+
+  // OpenRouter's unified reasoning configuration is the current supported
+  // way to disable reasoning. `exclude` also prevents a reasoning trace from
+  // being returned should an upstream provider emit one.
+  return { reasoning: { effort: "none", exclude: true } };
+}
+
+function isDeepSeekApiUrl(baseUrl: string) {
+  try {
+    return new URL(baseUrl).hostname.toLowerCase() === "api.deepseek.com";
+  } catch {
+    return false;
+  }
 }
 
 function toOpenAiMessage(message: ChatCompletionMessage) {
