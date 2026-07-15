@@ -104,6 +104,7 @@ export class PrimeDecisionStreamSession {
   private readonly imageGeneration: OpenRouterImageGenerationService;
   private finalizing = false;
   private scheduledMessageCount = 0;
+  private readonly deferredDelivery: boolean;
 
   constructor(
     private readonly input: {
@@ -119,6 +120,9 @@ export class PrimeDecisionStreamSession {
     private readonly conversationMedia = new PrimeConversationMediaRepository(),
     private readonly messages = new MessageRepository(),
   ) {
+    this.deferredDelivery =
+      input.runtimeConfig.outputs.sticker.enabled ||
+      input.runtimeConfig.outputs.transfer.enabled;
     this.tts =
       tts ?? new FishAudioTtsService(input.runtimeConfig.outputs.voice.tts);
     this.imageGeneration =
@@ -314,6 +318,7 @@ export class PrimeDecisionStreamSession {
     );
 
     return {
+      deferredDelivery: this.deferredDelivery,
       messageIds: new Map(
         decision.actions.flatMap((action, index) => {
           if (action.type !== "send_message") return [];
@@ -451,11 +456,7 @@ export class PrimeDecisionStreamSession {
     if (state.created || !type) return;
     // These actions are persisted by the executor. Deferring the surrounding
     // messages too preserves mixed action ordering in the final timeline.
-    if (
-      this.input.runtimeConfig.outputs.sticker.enabled ||
-      this.input.runtimeConfig.outputs.transfer.enabled
-    )
-      return;
+    if (this.deferredDelivery) return;
     const hasPredecessor = this.scheduledMessageCount > 0;
     this.scheduledMessageCount += 1;
     state.created = true;

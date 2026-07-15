@@ -82,11 +82,8 @@ export function useOutgoingMessages(input: {
     URL.revokeObjectURL(payload.objectUrl);
   };
 
-  const cacheSentMedia = async (
-    payload: PendingMediaPayload,
-    mediaUrl?: string,
-  ) => {
-    if (mediaUrl) await mediaCache.put(mediaUrl, payload.blob);
+  const cacheSentMedia = (payload: PendingMediaPayload, mediaUrl?: string) => {
+    if (mediaUrl) void mediaCache.put(mediaUrl, payload.blob);
   };
 
   const sendMessage = async () => {

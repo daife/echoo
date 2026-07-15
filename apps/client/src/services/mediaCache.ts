@@ -8,6 +8,9 @@ const FALLBACK_BUDGET_BYTES = 128 * 1024 * 1024;
 const MAXIMUM_BUDGET_BYTES = 512 * 1024 * 1024;
 const TARGET_RATIO = 0.8;
 const MAX_CONCURRENT_DOWNLOADS = 4;
+const CACHE_READ_TIMEOUT_MS = 250;
+const CACHE_WRITE_TIMEOUT_MS = 1_000;
+const CACHE_TIMEOUT = Symbol("media-cache-timeout");
 
 export interface CachedMediaMetadata {
   key: string;
@@ -98,17 +101,17 @@ export class MediaCache {
     const budget = await this.getBudgetBytes();
     if (blob.size > budget * 0.25) return;
     const key = this.cacheKey(resourceId, variant);
-    try {
-      await this.store.put(key, new Response(blob), {
+    await this.storeBestEffort(
+      key,
+      new Response(blob),
+      {
         key,
         size: blob.size,
         mimeType: blob.type,
         lastAccessedAt: this.now(),
-      });
-      await this.prune(budget);
-    } catch {
-      // HTTP caching remains a best-effort fallback.
-    }
+      },
+      budget,
+    );
   }
 
   async delete(mediaUrls: Iterable<string | undefined>): Promise<void> {
@@ -140,8 +143,8 @@ export class MediaCache {
     signal?: AbortSignal,
   ) {
     try {
-      const cached = await this.store.get(key);
-      if (cached) {
+      const cached = await within(this.store.get(key), CACHE_READ_TIMEOUT_MS);
+      if (cached !== CACHE_TIMEOUT && cached) {
         void this.store
           .touch({
             ...cached.metadata,
@@ -168,18 +171,18 @@ export class MediaCache {
       if (!blob.size) return null;
       const budget = await this.getBudgetBytes();
       if (blob.size <= budget * 0.25) {
-        try {
-          await this.store.put(key, cacheResponse, {
+        void this.storeBestEffort(
+          key,
+          cacheResponse,
+          {
             key,
             size: blob.size,
             mimeType: blob.type || access.mimeType,
             lastAccessedAt: this.now(),
             ...(access.etag ? { etag: access.etag } : {}),
-          });
-          await this.prune(budget);
-        } catch {
-          // Returning the network body is more important than persistence.
-        }
+          },
+          budget,
+        );
       }
       return blob;
     } catch {
@@ -270,6 +273,24 @@ export class MediaCache {
   private cacheKey(resourceId: string, variant: MediaVariant) {
     return `${this.session!.userId}:${resourceId}:${variant}`;
   }
+
+  private async storeBestEffort(
+    key: string,
+    response: Response,
+    metadata: CachedMediaMetadata,
+    budget: number,
+  ) {
+    try {
+      const stored = await within(
+        this.store.put(key, response, metadata),
+        CACHE_WRITE_TIMEOUT_MS,
+      );
+      if (stored !== CACHE_TIMEOUT)
+        await within(this.prune(budget), CACHE_WRITE_TIMEOUT_MS);
+    } catch {
+      // Persistent caching must never block media delivery.
+    }
+  }
 }
 
 class BrowserMediaCacheStore implements MediaCacheStore {
@@ -340,19 +361,59 @@ class BrowserMediaCacheStore implements MediaCacheStore {
 
   private openDatabase() {
     if (this.databasePromise) return this.databasePromise;
-    this.databasePromise = new Promise<IDBDatabase>((resolve, reject) => {
+    const opening = new Promise<IDBDatabase>((resolve, reject) => {
       if (typeof indexedDB === "undefined")
         return reject(new Error("IndexedDB unavailable."));
       const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
+      let settled = false;
       request.onupgradeneeded = () => {
         for (const name of Array.from(request.result.objectStoreNames))
           request.result.deleteObjectStore(name);
         request.result.createObjectStore(METADATA_STORE, { keyPath: "key" });
       };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
+      request.onblocked = () => {
+        if (settled) return;
+        settled = true;
+        if (this.databasePromise === opening) this.databasePromise = undefined;
+        reject(new Error("IndexedDB upgrade blocked by another page."));
+      };
+      request.onsuccess = () => {
+        const database = request.result;
+        database.onversionchange = () => {
+          database.close();
+          if (this.databasePromise === opening)
+            this.databasePromise = undefined;
+        };
+        if (settled) {
+          database.close();
+          return;
+        }
+        settled = true;
+        resolve(database);
+      };
+      request.onerror = () => {
+        if (settled) return;
+        settled = true;
+        if (this.databasePromise === opening) this.databasePromise = undefined;
+        reject(request.error ?? new Error("IndexedDB open failed."));
+      };
     });
-    return this.databasePromise;
+    this.databasePromise = opening;
+    return opening;
+  }
+}
+
+async function within<T>(promise: Promise<T>, milliseconds: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<typeof CACHE_TIMEOUT>((resolve) => {
+        timer = setTimeout(() => resolve(CACHE_TIMEOUT), milliseconds);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 

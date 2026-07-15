@@ -436,6 +436,38 @@ test("prime messages are persisted when revealed and later actions wait for the 
   assert.ok(elapsed < 550);
 });
 
+test("prime stream marks special-capability runs for paced executor delivery", async () => {
+  const saved: unknown[] = [];
+  const session = createSession({
+    stickerEnabled: true,
+    messages: {
+      async save(message: unknown) {
+        saved.push(message);
+        return message;
+      },
+    },
+  });
+  const decision = {
+    rationale: "test",
+    figureMood: "calm",
+    variables: {},
+    actions: [
+      { type: "send_message", message: { type: "text", text: "第一条" } },
+      { type: "send_message", message: { type: "text", text: "第二条" } },
+    ],
+  } as PrimeFigureDecision;
+  const parser = new PrimeDecisionStreamParser((event) =>
+    session.handleField(event),
+  );
+  parser.push(JSON.stringify(decision));
+
+  const finalized = await session.finalize(decision);
+
+  assert.equal(finalized.deferredDelivery, true);
+  assert.equal(finalized.messageIds.size, 0);
+  assert.equal(saved.length, 0);
+});
+
 test("prime non-text messages do not add a typing interval", async () => {
   const saved: Array<{ contentType: string; createdAt: number }> = [];
   const session = createSession({
@@ -642,6 +674,8 @@ function createSession(overrides?: {
   voiceEnabled?: boolean;
   imageEnabled?: boolean;
   typingCharsPerMinute?: number;
+  stickerEnabled?: boolean;
+  transferEnabled?: boolean;
   appPush?: object;
   tts?: object;
   imageGeneration?: object;
@@ -651,6 +685,8 @@ function createSession(overrides?: {
   const runtimeConfig = runtimeConfigForTest(overrides?.typingCharsPerMinute);
   runtimeConfig.outputs.voice.enabled = overrides?.voiceEnabled ?? true;
   runtimeConfig.outputs.image.enabled = overrides?.imageEnabled ?? true;
+  runtimeConfig.outputs.sticker.enabled = overrides?.stickerEnabled ?? false;
+  runtimeConfig.outputs.transfer.enabled = overrides?.transferEnabled ?? false;
   return new PrimeDecisionStreamSession(
     {
       ownerUserId: "user_1",

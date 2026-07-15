@@ -956,6 +956,64 @@ test("prime executor sends messages and starts mute when actions coexist", async
   assert.ok((savedState?.silenceUntilMs ?? 0) > Date.now());
 });
 
+test("prime executor paces timed messages while preserving mixed special output order", async () => {
+  const runtimeConfig = buildRuntimeConfigDefaults().primeFigure;
+  runtimeConfig.outputs.sticker.enabled = true;
+  runtimeConfig.outputs.transfer.enabled = true;
+  runtimeConfig.typingCharsPerMinute = 6_000;
+  const agent = minimalPrimeAgent();
+  agent.detail.stickers = [
+    {
+      resourceId: "res_sticker_1",
+      resourcePath: "/api/resources/res_sticker_1/file",
+      description: "挥手",
+    },
+  ];
+
+  const result = await executePrimeDecisionCase({
+    agent,
+    paceUnstreamedMessages: true,
+    runtimeConfig,
+    actions: [
+      { type: "send_message", message: { type: "text", text: "第一条" } },
+      {
+        type: "send_message",
+        message: { type: "sticker", stickerId: "res_sticker_1" },
+      },
+      { type: "send_message", message: { type: "text", text: "第二条" } },
+      {
+        type: "transfer",
+        operation: "send",
+        amount: 8.88,
+        currency: "CNY",
+        note: "早餐",
+      },
+      {
+        type: "send_message",
+        message: { type: "voice", transcript: "语音条" },
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    result.messages.map(
+      (message) => message.content_type ?? message.contentType,
+    ),
+    ["text", "image", "text", "text", "voice"],
+  );
+  const createdAt = result.messages.map((message) => Number(message.createdAt));
+  assert.ok(createdAt[1]! - createdAt[0]! < 30);
+  assert.ok(createdAt[2]! - createdAt[1]! >= 20);
+  assert.ok(createdAt[3]! - createdAt[2]! < 30);
+  assert.ok(createdAt[4]! - createdAt[3]! >= 20);
+  assert.deepEqual(
+    result.events
+      .filter((event) => event.type === "message.created")
+      .map((event) => (event.message as { contentType?: string }).contentType),
+    ["text", "image", "text", "text", "voice"],
+  );
+});
+
 test("prime executor preserves mute for empty and silence-only decisions", async () => {
   for (const actions of [[], [{ type: "silence" } as const]]) {
     const result = await executePrimeDecisionCase({
@@ -1205,6 +1263,7 @@ test("prime executor advances and exhausts passive wakeup milestones", async () 
 
 async function executePrimeDecisionCase(input: {
   actions: PrimeFigureAction[];
+  agent?: PrimeFigureAgent;
   state?: Partial<PrimeFigureState>;
   memoryWrites?: PrimeFigureDecision["memoryWrites"];
   muteMessageCutoffAtMs?: number;
@@ -1213,6 +1272,7 @@ async function executePrimeDecisionCase(input: {
   wakeupToken?: string;
   passiveStage?: 1 | 2 | 3;
   inputThroughEndUserSeq?: number;
+  paceUnstreamedMessages?: boolean;
 }) {
   let savedState: PrimeFigureState | undefined;
   const messages: Array<Record<string, unknown>> = [];
@@ -1247,10 +1307,12 @@ async function executePrimeDecisionCase(input: {
   await executor.executeDecision({
     ownerUserId: "user_1",
     conversationId: "conversation_1",
-    agent: {
-      id: "agent_1",
-      detail: { variableDefinitions: [] },
-    } as never,
+    agent:
+      input.agent ??
+      ({
+        id: "agent_1",
+        detail: { variableDefinitions: [] },
+      } as never),
     state: {
       variables: {},
       memories: [],
@@ -1275,6 +1337,7 @@ async function executePrimeDecisionCase(input: {
     wakeupToken: input.wakeupToken,
     passiveStage: input.passiveStage,
     inputThroughEndUserSeq: input.inputThroughEndUserSeq,
+    paceUnstreamedMessages: input.paceUnstreamedMessages,
   });
 
   if (!savedState) throw new Error("Expected prime state to be saved.");

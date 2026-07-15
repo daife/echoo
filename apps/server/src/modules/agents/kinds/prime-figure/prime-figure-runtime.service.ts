@@ -425,6 +425,7 @@ export class PrimeFigureRuntimeService {
         muteMessageCutoffAtMs: context.inputThroughEndUserAtMs,
         streamedMessageIds: streamed.messageIds,
         messageCreatedAt: streamed.messageCreatedAt,
+        paceUnstreamedMessages: streamed.deferredDelivery,
         voiceMedia: streamed.voiceMedia,
         ttsErrors: streamed.ttsErrors,
         imageMedia: streamed.imageMedia,

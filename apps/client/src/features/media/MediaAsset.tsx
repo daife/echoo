@@ -23,7 +23,11 @@ export function MediaAsset({
   const [shouldLoad, setShouldLoad] = useState(
     eager || !getResourceId(mediaUrl),
   );
-  const source = useMediaObjectUrl(mediaUrl, variant, shouldLoad);
+  const { source, fallbackToDirect } = useMediaObjectUrl(
+    mediaUrl,
+    variant,
+    shouldLoad,
+  );
 
   useEffect(() => {
     if (eager || !getResourceId(mediaUrl)) {
@@ -56,6 +60,7 @@ export function MediaAsset({
           src={source}
           alt={alt}
           loading={eager ? "eager" : "lazy"}
+          onError={fallbackToDirect}
         />
       ) : null}
     </div>
@@ -93,6 +98,11 @@ function useMediaObjectUrl(
   variant: MediaVariant,
   enabled: boolean,
 ) {
+  const fallbackKey = mediaUrl ? `${mediaUrl}:${variant}` : undefined;
+  const [directFallbackKey, setDirectFallbackKey] = useState<string>();
+  const preferDirect = Boolean(
+    fallbackKey && directFallbackKey === fallbackKey,
+  );
   const [source, setSource] = useState<string | undefined>(() =>
     mediaUrl && !getResourceId(mediaUrl)
       ? resolveMediaUrl(mediaUrl)
@@ -111,6 +121,15 @@ function useMediaObjectUrl(
       setSource(undefined);
       return;
     }
+    if (preferDirect) {
+      let cancelled = false;
+      void mediaCache.getDirectUrl(mediaUrl, variant).then((url) => {
+        if (!cancelled) setSource(resolveMediaUrl(url));
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
     const controller = new AbortController();
     let objectUrl: string | undefined;
     void mediaCache.get(mediaUrl, variant, controller.signal).then((blob) => {
@@ -128,6 +147,12 @@ function useMediaObjectUrl(
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [enabled, mediaUrl, variant]);
-  return source;
+  }, [enabled, mediaUrl, preferDirect, variant]);
+  return {
+    source,
+    fallbackToDirect: () => {
+      if (fallbackKey && getResourceId(mediaUrl))
+        setDirectFallbackKey(fallbackKey);
+    },
+  };
 }

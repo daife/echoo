@@ -43,8 +43,14 @@ export async function buildApp() {
 
   await app.register(cors, {
     origin: true,
-    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Range"],
+    exposedHeaders: [
+      "Accept-Ranges",
+      "Content-Length",
+      "Content-Range",
+      "ETag",
+    ],
   });
   await app.register(jwt, { secret: process.env.JWT_SECRET ?? "dev-secret" });
   await app.register(websocket);

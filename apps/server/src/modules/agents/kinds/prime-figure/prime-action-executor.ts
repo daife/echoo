@@ -23,9 +23,10 @@ import { PrimeFigureRepository } from "./prime-figure.repository.js";
 import { parseReadableMinute } from "./prime-time.js";
 import type { StoredPrimeFigureRuntimeConfig } from "../../../runtime-config/runtime-config.types.js";
 import type { PrimeDecisionTrigger } from "./prime-figure-runtime.service.js";
-import type {
-  ResolvedPrimeImageMedia,
-  ResolvedPrimeVoiceMedia,
+import {
+  textMessageGapMs,
+  type ResolvedPrimeImageMedia,
+  type ResolvedPrimeVoiceMedia,
 } from "./prime-decision-stream-session.js";
 import { isPrimeOutputEnabled } from "./prime-output-capabilities.js";
 
@@ -50,6 +51,7 @@ export class PrimeActionExecutor {
     muteMessageCutoffAtMs?: number;
     streamedMessageIds?: Map<number, string>;
     messageCreatedAt?: Map<number, number>;
+    paceUnstreamedMessages?: boolean;
     voiceMedia?: Map<number, ResolvedPrimeVoiceMedia>;
     ttsErrors?: Map<number, string>;
     imageMedia?: Map<number, ResolvedPrimeImageMedia>;
@@ -86,6 +88,33 @@ export class PrimeActionExecutor {
       streamed: boolean;
     }> = [];
     const updatedTransferMessages: Message[] = [];
+    let pacedOutputCount = 0;
+    let previousPacedOutputCompletedAt = Date.now();
+    const waitForPacedReveal = async (visibleText?: string) => {
+      if (!input.paceUnstreamedMessages) return;
+      const hasPredecessor = pacedOutputCount > 0;
+      pacedOutputCount += 1;
+      if (hasPredecessor && visibleText !== undefined) {
+        const elapsed = Date.now() - previousPacedOutputCompletedAt;
+        const remaining =
+          textMessageGapMs(
+            visibleText,
+            input.runtimeConfig?.typingCharsPerMinute ?? 300,
+          ) - elapsed;
+        if (remaining > 0) await delay(remaining);
+      }
+    };
+    const publishPacedMessage = (created: {
+      message: Message;
+      streamed: boolean;
+    }) => {
+      if (!input.paceUnstreamedMessages) return;
+      this.appPush.pushToUser(input.ownerUserId, {
+        type: created.streamed ? "message.completed" : "message.created",
+        message: created.message,
+      });
+      previousPacedOutputCompletedAt = Date.now();
+    };
 
     try {
       const previousSilenceStartedAtMs = state.silenceStartedAtMs;
@@ -138,12 +167,14 @@ export class PrimeActionExecutor {
             continue;
           }
           if (action.operation !== "send") continue;
-          const occurredAtMs =
-            input.messageCreatedAt?.get(index) ?? now + index;
+          await waitForPacedReveal();
+          const occurredAtMs = input.paceUnstreamedMessages
+            ? Date.now()
+            : (input.messageCreatedAt?.get(index) ?? now + index);
           const messageId =
             input.streamedMessageIds?.get(index) ?? createId("msg");
           const note = action.note.trim();
-          createdMessages.push({
+          const created = {
             actionIndex: index,
             streamed: Boolean(input.streamedMessageIds?.get(index)),
             message: await this.messages.save({
@@ -174,7 +205,9 @@ export class PrimeActionExecutor {
               createdAt: occurredAtMs,
               updatedAt: occurredAtMs,
             }),
-          });
+          };
+          createdMessages.push(created);
+          publishPacedMessage(created);
           continue;
         }
         if (action.type !== "send_message") continue;
@@ -184,7 +217,10 @@ export class PrimeActionExecutor {
           !isPrimeOutputEnabled(input.runtimeConfig, "sticker")
         )
           continue;
-        const occurredAtMs = input.messageCreatedAt?.get(index) ?? now + index;
+        await waitForPacedReveal(timedMessageText(action.message));
+        const occurredAtMs = input.paceUnstreamedMessages
+          ? Date.now()
+          : (input.messageCreatedAt?.get(index) ?? now + index);
         const voiceMedia = input.voiceMedia?.get(index);
         const imageMedia = input.imageMedia?.get(index);
         const status =
@@ -200,7 +236,7 @@ export class PrimeActionExecutor {
           imageMedia,
         );
         const streamedMessageId = input.streamedMessageIds?.get(index);
-        createdMessages.push({
+        const created = {
           actionIndex: index,
           streamed: Boolean(streamedMessageId),
           message: await this.messages.save({
@@ -232,7 +268,9 @@ export class PrimeActionExecutor {
             createdAt: occurredAtMs,
             updatedAt: occurredAtMs,
           }),
-        });
+        };
+        createdMessages.push(created);
+        publishPacedMessage(created);
       }
       const deliveredMessages = createdMessages.filter(
         (created) => created.message.status !== "failed",
@@ -253,7 +291,9 @@ export class PrimeActionExecutor {
               lastMessageAction.type === "send_message"
                 ? toConversationPreview(lastMessageAction.message)
                 : `[转账] ¥${lastMessageAction.amount.toFixed(2)}`,
-            updatedAt: now + lastDeliveredMessage.actionIndex,
+            updatedAt: input.paceUnstreamedMessages
+              ? lastDeliveredMessage.message.createdAt
+              : now + lastDeliveredMessage.actionIndex,
             unreadIncrement: deliveredMessages.length,
           });
         }
@@ -368,11 +408,12 @@ export class PrimeActionExecutor {
       throw error;
     }
 
-    for (const created of createdMessages)
-      this.appPush.pushToUser(input.ownerUserId, {
-        type: created.streamed ? "message.completed" : "message.created",
-        message: created.message,
-      });
+    if (!input.paceUnstreamedMessages)
+      for (const created of createdMessages)
+        this.appPush.pushToUser(input.ownerUserId, {
+          type: created.streamed ? "message.completed" : "message.created",
+          message: created.message,
+        });
     for (const message of updatedTransferMessages)
       this.appPush.pushToUser(input.ownerUserId, {
         type: "message.updated",
@@ -380,6 +421,16 @@ export class PrimeActionExecutor {
       });
     return state;
   }
+}
+
+function timedMessageText(message: PrimeFigureOutgoingMessage) {
+  if (message.type === "text") return message.text;
+  if (message.type === "voice") return message.transcript;
+  return undefined;
+}
+
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function syncWakeupState(target: PrimeFigureState, source: PrimeFigureState) {

@@ -65,6 +65,7 @@ export function MessageComposer({
   );
   const inputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const stickerFileInputRef = useRef<HTMLInputElement | null>(null);
   const pushToTalk = usePushToTalk({
     disabled: isSending,
     onRecorded: onSendVoice,
@@ -331,9 +332,11 @@ export function MessageComposer({
             accept="image/jpeg,image/png,image/webp,image/gif"
             disabled={isCompressingImage}
             onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = "";
-              void selectImage(file);
+              const input = event.currentTarget;
+              const file = input.files?.[0];
+              void selectImage(file).finally(() => {
+                input.value = "";
+              });
             }}
           />
         </div>
@@ -365,13 +368,13 @@ export function MessageComposer({
             >
               <UploadSimple size={20} />
               <input
+                ref={stickerFileInputRef}
                 className="sr-only"
                 type="file"
                 accept="image/jpeg,image/png,image/webp,image/gif"
                 disabled={stickers.length >= 20}
                 onChange={(event) => {
                   setPendingStickerFile(event.target.files?.[0] ?? null);
-                  event.target.value = "";
                 }}
               />
             </label>
@@ -448,6 +451,8 @@ export function MessageComposer({
               onClick={() => {
                 setPendingStickerFile(null);
                 setStickerDescription("");
+                if (stickerFileInputRef.current)
+                  stickerFileInputRef.current.value = "";
               }}
             >
               取消
@@ -462,6 +467,8 @@ export function MessageComposer({
                   await onAddSticker(file, stickerDescription.trim());
                   setPendingStickerFile(null);
                   setStickerDescription("");
+                  if (stickerFileInputRef.current)
+                    stickerFileInputRef.current.value = "";
                 } catch (caught) {
                   setNotice(
                     caught instanceof Error ? caught.message : "表情添加失败。",

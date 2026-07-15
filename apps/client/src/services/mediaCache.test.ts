@@ -137,6 +137,25 @@ describe("persistent media cache", () => {
     await expect(cache.get(mediaUrl)).resolves.toEqual(blob);
   });
 
+  it("falls back to the network when a cache lookup never settles", async () => {
+    const blob = new Blob(["network"], { type: "image/jpeg" });
+    const blockedStore: MediaCacheStore = {
+      get: () => new Promise(() => undefined),
+      put: async () => undefined,
+      touch: async () => undefined,
+      delete: async () => undefined,
+      listMetadata: async () => [],
+      clear: async () => undefined,
+    };
+    const cache = configure(
+      new MediaCache(blockedStore, accessAwareFetcher(blob), Date.now, 100),
+    );
+    const startedAt = Date.now();
+
+    await expect(cache.get(mediaUrl)).resolves.toEqual(blob);
+    expect(Date.now() - startedAt).toBeLessThan(750);
+  });
+
   it("does not treat blob, data, or external URLs as cacheable resources", () => {
     expect(getCacheableMediaKey("blob:preview")).toBeNull();
     expect(getCacheableMediaKey("data:image/png;base64,AA==")).toBeNull();
