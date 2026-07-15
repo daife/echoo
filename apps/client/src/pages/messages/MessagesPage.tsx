@@ -38,7 +38,6 @@ import {
 import { MessageComposer } from "../../features/messages/components/MessageComposer";
 import {
   formatConversationTime,
-  getPrimeRuntimeErrorText,
   getOutgoingDeliveryState,
   isVisibleConversationMessage,
   getConversationPresenceLabel,
@@ -60,6 +59,10 @@ import {
   PrimeRuntimeConfigForm,
   SliceRuntimeConfigForm,
 } from "../../features/runtime-config/RuntimeConfigForms";
+import {
+  RUNTIME_ERROR_TOAST_DURATION_MS,
+  RuntimeErrorToast,
+} from "../../features/messages/components/RuntimeErrorToast";
 
 export type UpdateAgentHandlers = {
   "slice-figure": (
@@ -129,6 +132,8 @@ export function MessagesPage({
     hasOlder,
     hasNewer,
     error,
+    runtimeErrorNotice,
+    clearRuntimeErrorNotice,
     canRollback,
     sendMessage,
     sendImage,
@@ -211,6 +216,15 @@ export function MessagesPage({
     scrollMargin: virtualScrollMargin,
     anchorTo: "end",
   });
+
+  useEffect(() => {
+    if (!runtimeErrorNotice) return;
+    const timer = window.setTimeout(
+      clearRuntimeErrorNotice,
+      RUNTIME_ERROR_TOAST_DURATION_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [clearRuntimeErrorNotice, runtimeErrorNotice]);
 
   useLayoutEffect(() => {
     setVirtualScrollMargin(virtualListRef.current?.offsetTop ?? 0);
@@ -571,10 +585,16 @@ export function MessagesPage({
             </div>
           </div>
         ) : null}
+        {runtimeErrorNotice ? (
+          <RuntimeErrorToast
+            notice={runtimeErrorNotice}
+            onDismiss={clearRuntimeErrorNotice}
+          />
+        ) : null}
         {isAwayFromLatest || hasNewer ? (
           <button
             aria-label="回到最新消息"
-            className="absolute bottom-4 right-4 z-10 grid h-11 w-11 place-items-center rounded-full border border-white/10 bg-[#1a1a20]/95 text-white/75 shadow-lg backdrop-blur transition hover:bg-[#24242b] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white disabled:cursor-wait disabled:opacity-65 md:right-6"
+            className={`absolute right-4 z-10 grid h-11 w-11 place-items-center rounded-full border border-white/10 bg-[#1a1a20]/95 text-white/75 shadow-lg backdrop-blur transition-all hover:bg-[#24242b] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white disabled:cursor-wait disabled:opacity-65 md:right-6 ${runtimeErrorNotice ? "bottom-28" : "bottom-4"}`}
             type="button"
             disabled={isJumpingToLatest}
             onClick={() => void handleJumpToLatest()}
@@ -1204,20 +1224,6 @@ function toBubbleMessages(
   canEditFigureMessages: boolean,
   agentType: Agent["type"],
 ): MessageBubbleModel[] {
-  const runtimeErrorText = getPrimeRuntimeErrorText(message);
-  if (runtimeErrorText)
-    return [
-      {
-        id: message.id,
-        sourceMessageId: message.id,
-        from: "system",
-        text: runtimeErrorText,
-        createdAt: message.createdAt,
-        kind: "runtime-error",
-        canRollback: false,
-        canEdit: false,
-      },
-    ];
   if (message.metadata?.kind === "memory_summary")
     return [
       {

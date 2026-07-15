@@ -27,14 +27,7 @@ export interface MessageBubbleModel {
   text: string;
   createdAt: number;
   deliveryState?: "sending" | "failed";
-  kind?:
-    | "text"
-    | "image"
-    | "voice"
-    | "sticker"
-    | "transfer"
-    | "memory-summary"
-    | "runtime-error";
+  kind?: "text" | "image" | "voice" | "sticker" | "transfer" | "memory-summary";
   mediaUrl?: string;
   transcript?: string;
   durationSeconds?: number;
@@ -189,13 +182,6 @@ export function MessageBubble({
     return (
       <div className="self-center text-[11px] text-white/32">
         已自动总结对话
-      </div>
-    );
-
-  if (message.kind === "runtime-error")
-    return (
-      <div className="self-center text-center text-[11px] leading-5 text-red-300/75">
-        运行失败：{message.text}
       </div>
     );
 

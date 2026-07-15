@@ -1,4 +1,4 @@
-import type { Agent, LocalMessage } from "@echoo/shared";
+import type { Agent, LocalMessage, Message } from "@echoo/shared";
 
 const FIVE_MINUTES_MS = 5 * 60_000;
 const SENTENCE_ENDINGS = new Set(["。", "．", ".", "!", "！", "?", "？", "…"]);
@@ -8,6 +8,11 @@ const PRIME_PRESENCE_PHASE_DURATION_MS = {
 } as const;
 
 export type PrimePresencePhase = keyof typeof PRIME_PRESENCE_PHASE_DURATION_MS;
+
+export interface RuntimeErrorNotice {
+  id: string;
+  text: string;
+}
 
 export function parsePrimeFigureHintCommand(value: string) {
   const match = /^\/hint(?:\s+([\s\S]*))?$/i.exec(value.trim());
@@ -34,6 +39,7 @@ export function getPrimePresencePhaseDuration(
 }
 
 export function isVisibleConversationMessage(message: LocalMessage) {
+  if (getPrimeRuntimeErrorText(message)) return false;
   if (message.contentType === "image" || message.contentType === "voice") {
     if (
       message.contentType === "voice" &&
@@ -48,7 +54,9 @@ export function isVisibleConversationMessage(message: LocalMessage) {
   return Boolean(message.content.text?.trim());
 }
 
-export function getPrimeRuntimeErrorText(message: LocalMessage) {
+export function getPrimeRuntimeErrorText(
+  message: Pick<Message, "content" | "contentType" | "metadata" | "role">,
+) {
   if (
     message.role !== "system" ||
     message.contentType !== "system" ||
@@ -187,7 +195,7 @@ export function shouldShowTimelineItemTime(
 }
 
 function isTimelineNotice(item: { kind?: string }) {
-  return item.kind === "memory-summary" || item.kind === "runtime-error";
+  return item.kind === "memory-summary";
 }
 
 export function formatConversationTime(timestamp: number, now = Date.now()) {

@@ -69,23 +69,7 @@ export async function createOpenAiCompatibleChatCompletion(input: {
     throw new Error(`${input.providerId} API key is not configured.`);
   }
 
-  const response = await fetch(
-    `${input.baseUrl.replace(/\/+$/, "")}/chat/completions`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${input.apiKey}`,
-        ...input.headers,
-      },
-      body: JSON.stringify(buildOpenAiCompatibleRequestBody(input)),
-    },
-  );
-
-  if (!response.ok) {
-    const detail = await readErrorDetail(response);
-    throw new Error(`${input.providerId} chat completion failed: ${detail}`);
-  }
+  const response = await requestChatCompletion(input);
 
   const payload = (await response.json()) as OpenAiCompatibleResponse;
   const text = normalizeContent(payload.choices?.[0]?.message?.content);
@@ -173,40 +157,72 @@ async function requestChatCompletion(
     throw new Error(`${input.providerId} API key is not configured.`);
   }
 
-  const response = await fetch(
-    `${input.baseUrl.replace(/\/+$/, "")}/chat/completions`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${input.apiKey}`,
-        ...input.headers,
-      },
-      body: JSON.stringify({
-        ...buildOpenAiCompatibleRequestBody(input),
-        ...extraBody,
-      }),
-    },
-  );
+  let response = await sendChatCompletionRequest(input, extraBody);
 
   if (!response.ok) {
     const detail = await readErrorDetail(response);
+    if (shouldRetryWithJsonObject(input, detail)) {
+      response = await sendChatCompletionRequest(input, extraBody, {
+        forceJsonObject: true,
+      });
+      if (response.ok) return response;
+
+      const fallbackDetail = await readErrorDetail(response);
+      throw new Error(
+        `${input.providerId} chat completion failed: ${fallbackDetail}`,
+      );
+    }
     throw new Error(`${input.providerId} chat completion failed: ${detail}`);
   }
 
   return response;
 }
 
+function sendChatCompletionRequest(
+  input: OpenAiCompatibleRequestInput,
+  extraBody?: Record<string, unknown>,
+  options?: { forceJsonObject?: boolean },
+) {
+  return fetch(`${input.baseUrl.replace(/\/+$/, "")}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${input.apiKey}`,
+      ...input.headers,
+    },
+    body: JSON.stringify({
+      ...buildOpenAiCompatibleRequestBody(input, options),
+      ...extraBody,
+    }),
+  });
+}
+
 export function buildOpenAiCompatibleRequestBody(
   input: OpenAiCompatibleRequestInput,
+  options?: { forceJsonObject?: boolean },
 ): Record<string, unknown> {
+  const originalResponseFormat = input.completion.responseFormat;
+  const downgradeToJsonObject =
+    isJsonSchemaResponseFormat(originalResponseFormat) &&
+    (isDeepSeekApiUrl(input.baseUrl) || options?.forceJsonObject === true);
+  const useJsonObject =
+    downgradeToJsonObject || isJsonObjectResponseFormat(originalResponseFormat);
+
   return {
     model: input.completion.model,
     ...input.extraBody,
-    messages: input.completion.messages.map(toOpenAiMessage),
+    messages: (useJsonObject
+      ? withJsonObjectInstruction(
+          input.completion.messages,
+          originalResponseFormat!,
+        )
+      : input.completion.messages
+    ).map(toOpenAiMessage),
     temperature: input.completion.temperature,
     max_tokens: input.completion.maxTokens,
-    response_format: input.completion.responseFormat,
+    response_format: downgradeToJsonObject
+      ? { type: "json_object" }
+      : originalResponseFormat,
     tools: input.completion.tools,
     tool_choice: input.completion.toolChoice,
     parallel_tool_calls: input.completion.tools?.length ? false : undefined,
@@ -214,6 +230,78 @@ export function buildOpenAiCompatibleRequestBody(
       ? disabledReasoningConfig(input.baseUrl)
       : {}),
   };
+}
+
+function isJsonSchemaResponseFormat(responseFormat?: Record<string, unknown>) {
+  return responseFormat?.type === "json_schema";
+}
+
+function isJsonObjectResponseFormat(responseFormat?: Record<string, unknown>) {
+  return responseFormat?.type === "json_object";
+}
+
+function withJsonObjectInstruction(
+  messages: ChatCompletionMessage[],
+  responseFormat: Record<string, unknown>,
+) {
+  const schemaContainer = responseFormat.json_schema;
+  const schema =
+    schemaContainer && typeof schemaContainer === "object"
+      ? (schemaContainer as Record<string, unknown>).schema
+      : undefined;
+  const instruction = [
+    "你必须只输出一个合法的 JSON 对象，不要输出 Markdown 代码块或任何额外文本。",
+    ...(schema
+      ? [
+          "输出必须遵循以下 JSON Schema；生成完成后，应用还会再次校验该结构：",
+          JSON.stringify(schema),
+        ]
+      : []),
+  ].join("\n");
+  const systemIndex = messages.findIndex(
+    (message) => message.role === "system",
+  );
+
+  if (systemIndex < 0) {
+    return [{ role: "system" as const, content: instruction }, ...messages];
+  }
+
+  return messages.map((message, index) => {
+    if (index !== systemIndex) return message;
+    return {
+      ...message,
+      content:
+        typeof message.content === "string"
+          ? `${message.content}\n\n${instruction}`
+          : [...message.content, { type: "text" as const, text: instruction }],
+    };
+  });
+}
+
+function shouldRetryWithJsonObject(
+  input: OpenAiCompatibleRequestInput,
+  detail: string,
+) {
+  if (
+    input.providerId !== "openrouter" ||
+    isDeepSeekApiUrl(input.baseUrl) ||
+    !isJsonSchemaResponseFormat(input.completion.responseFormat)
+  )
+    return false;
+
+  const normalized = detail.toLowerCase();
+  return (
+    /response[_ -]?format type is (?:currently )?(?:unavailable|unsupported|not supported)/.test(
+      normalized,
+    ) ||
+    /(?:response[_ -]?format|json[_ -]?schema|structured outputs?).*(?:unavailable|unsupported|not supported|not available)/.test(
+      normalized,
+    ) ||
+    /(?:model|provider|route|endpoint).*(?:does not support|doesn't support|unsupported).*(?:response[_ -]?format|json[_ -]?schema|structured outputs?)/.test(
+      normalized,
+    ) ||
+    /no endpoints? found.*support.*requested parameters?/.test(normalized)
+  );
 }
 
 function disabledReasoningConfig(baseUrl: string) {

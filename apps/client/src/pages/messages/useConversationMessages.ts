@@ -1,7 +1,8 @@
 import type { Agent } from "@echoo/shared";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { initApp } from "../../app/bootstrap/initApp";
 import { useRuntime } from "../../app/providers/RuntimeProvider";
+import type { RuntimeErrorNotice } from "../../features/messages/messagePresentation";
 import { useConversationActions } from "./useConversationActions";
 import { useConversationRealtime } from "./useConversationRealtime";
 import { useConversationTimeline } from "./useConversationTimeline";
@@ -18,6 +19,8 @@ export function useConversationMessages({
   const services = useMemo(() => initApp(runtime), [runtime]);
   const [isAgentActive, setIsAgentActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [runtimeErrorNotice, setRuntimeErrorNotice] =
+    useState<RuntimeErrorNotice | null>(null);
   const conversationId = agent?.conversationId;
   const isPrimeFigure = agent?.type === "prime-figure";
   const canRollback = agent?.type === "slice-figure";
@@ -25,6 +28,12 @@ export function useConversationMessages({
   const [muteUntilMs, setMuteUntilMs] = useState<number | undefined>(
     agentMuteUntilMs,
   );
+  const clearRuntimeErrorNotice = useCallback(
+    () => setRuntimeErrorNotice(null),
+    [],
+  );
+
+  useEffect(() => setRuntimeErrorNotice(null), [conversationId]);
 
   useEffect(() => {
     setMuteUntilMs(
@@ -63,6 +72,7 @@ export function useConversationMessages({
     setMessages: timeline.setMessages,
     setIsAgentActive,
     setMuteUntilMs,
+    onRuntimeError: setRuntimeErrorNotice,
   });
   const outgoing = useOutgoingMessages({
     conversationId,
@@ -103,6 +113,8 @@ export function useConversationMessages({
     rollingBackMessageId: actions.rollingBackMessageId,
     isDeletingConversation: actions.isDeletingConversation,
     error,
+    runtimeErrorNotice,
+    clearRuntimeErrorNotice,
     canRollback,
     sendMessage: outgoing.sendMessage,
     sendImage: outgoing.sendImage,

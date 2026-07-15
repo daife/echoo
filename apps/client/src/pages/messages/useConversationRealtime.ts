@@ -11,6 +11,10 @@ import {
   activityAfterMessageCompleted,
   activityAfterMessageCreated,
 } from "../../features/messages/conversationActivity";
+import {
+  getPrimeRuntimeErrorText,
+  type RuntimeErrorNotice,
+} from "../../features/messages/messagePresentation";
 import { mediaCache } from "../../services/mediaCache";
 
 interface StreamDisplayBuffer {
@@ -30,6 +34,7 @@ export function useConversationRealtime(input: {
   setMessages: Dispatch<SetStateAction<LocalMessage[]>>;
   setIsAgentActive: Dispatch<SetStateAction<boolean>>;
   setMuteUntilMs: Dispatch<SetStateAction<number | undefined>>;
+  onRuntimeError: (notice: RuntimeErrorNotice) => void;
 }) {
   const streamBuffersRef = useRef(new Map<string, StreamDisplayBuffer>());
   const audioChunksRef = useRef(new Map<string, Uint8Array[]>());
@@ -163,6 +168,11 @@ export function useConversationRealtime(input: {
     const unsubscribers = [
       input.runtime.onMessageCreated((message) => {
         if (message.conversationId !== conversationId) return;
+        const runtimeErrorText = getPrimeRuntimeErrorText(message);
+        if (runtimeErrorText) {
+          input.onRuntimeError({ id: message.id, text: runtimeErrorText });
+          return;
+        }
         input.setIsAgentActive((current) =>
           activityAfterMessageCreated(current, message, !input.isPrimeFigure),
         );
@@ -262,6 +272,7 @@ export function useConversationRealtime(input: {
     enqueueDisplayDelta,
     input.conversationId,
     input.isPrimeFigure,
+    input.onRuntimeError,
     input.runtime,
     input.setIsAgentActive,
     input.setMessages,
