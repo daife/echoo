@@ -238,7 +238,8 @@ export type FigureRuntimeConfigPatch =
 export interface ConversationRuntimeConfigResponse {
   mode: RuntimeConfigMode;
   conversationType: AgentType;
-  config: FigureRuntimeConfigView;
+  config?: FigureRuntimeConfigView;
+  validationError?: string;
   warnings?: RuntimeConfigWarning[];
 }
 

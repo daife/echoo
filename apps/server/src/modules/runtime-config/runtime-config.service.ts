@@ -111,15 +111,34 @@ export class RuntimeConfigService {
     ownerUserId: string,
     conversationId: string,
   ): Promise<ConversationRuntimeConfigResponse> {
-    const resolved = await this.resolveStoredConversationConfig(
-      ownerUserId,
-      conversationId,
-    );
-    return {
-      mode: resolved.mode,
-      conversationType: resolved.conversationType,
-      config: redactFigureConfig(resolved.config),
-    };
+    try {
+      const resolved = await this.resolveStoredConversationConfig(
+        ownerUserId,
+        conversationId,
+      );
+      return {
+        mode: resolved.mode,
+        conversationType: resolved.conversationType,
+        config: redactFigureConfig(resolved.config),
+      };
+    } catch (error) {
+      if (!isRecoverableStoredConfigError(error)) throw error;
+      const selection = await this.repository.findConversationConfigSelection(
+        ownerUserId,
+        conversationId,
+      );
+      if (!selection || !isAgentType(selection.conversationType))
+        throw new RuntimeConfigNotFoundError("未找到可配置的角色会话。");
+      return {
+        mode:
+          selection.mode === "custom" && selection.hasCustomConfig
+            ? "custom"
+            : "global",
+        conversationType: selection.conversationType,
+        validationError:
+          error instanceof Error ? error.message : "当前运行配置无效。",
+      };
+    }
   }
 
   async updateConversationConfig(
@@ -151,6 +170,7 @@ export class RuntimeConfigService {
       validateFigureConfig(conversation.type, custom);
     }
     const nextConfig = input.mode === "custom" ? custom! : global;
+    validateFigureConfig(conversation.type, nextConfig);
     const warnings = await this.validateCatalogFigure(
       conversation.type,
       nextConfig,
@@ -916,6 +936,14 @@ function finiteNumber(value: number, label: string) {
 
 function invalid(message: string): never {
   throw new RuntimeConfigValidationError(message);
+}
+
+function isRecoverableStoredConfigError(error: unknown) {
+  return (
+    error instanceof RuntimeConfigValidationError ||
+    error instanceof SyntaxError ||
+    error instanceof TypeError
+  );
 }
 
 function isAgentType(value: string): value is AgentType {

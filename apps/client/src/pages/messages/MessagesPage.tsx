@@ -53,6 +53,10 @@ import {
   SliceFigureFormFields,
 } from "../create-agent/CreateAgentPage";
 import { useConversationMessages } from "./useConversationMessages";
+import {
+  captureVisibleMessageAnchor,
+  restoreVisibleMessageAnchor,
+} from "./messageScrollAnchor";
 import { imageFileToUpload } from "../../shared/utils/imageCompression";
 import {
   PrimeRuntimeConfigForm,
@@ -148,6 +152,7 @@ export function MessagesPage({
   const lastConversationRef = useRef<string | undefined>(undefined);
   const lastVisibleMessageIdRef = useRef<string | undefined>(undefined);
   const lastScrollTopRef = useRef(0);
+  const isRestoringHistoryRef = useRef(false);
   const showAgentTyping = useRhythmicPrimePresence({
     agentId: agent?.id,
     agentType: agent?.type,
@@ -167,6 +172,8 @@ export function MessagesPage({
       ? agent.detail.prologueHtml
       : "";
   const conversationId = agent?.conversationId;
+  const conversationIdRef = useRef(conversationId);
+  conversationIdRef.current = conversationId;
 
   const visibleMessages = useMemo(() => {
     if (!agent) return [];
@@ -262,15 +269,33 @@ export function MessagesPage({
       void loadNewerMessages();
       return;
     }
-    if (!scrollingUp || main.scrollTop > 80 || !hasOlder || isLoadingOlder)
+    if (
+      !scrollingUp ||
+      main.scrollTop > 80 ||
+      !hasOlder ||
+      isLoadingOlder ||
+      isRestoringHistoryRef.current
+    )
       return;
+    const anchor = captureVisibleMessageAnchor(main);
     const previousHeight = main.scrollHeight;
     const previousTop = main.scrollTop;
+    const loadingConversationId = conversationId;
+    isRestoringHistoryRef.current = true;
     void loadOlderMessages().finally(() => {
       window.requestAnimationFrame(() => {
         const current = mainRef.current;
-        if (!current) return;
+        if (!current || loadingConversationId !== conversationIdRef.current) {
+          isRestoringHistoryRef.current = false;
+          return;
+        }
         current.scrollTop = previousTop + current.scrollHeight - previousHeight;
+        window.requestAnimationFrame(() => {
+          const settled = mainRef.current;
+          if (settled && anchor) restoreVisibleMessageAnchor(settled, anchor);
+          if (settled) lastScrollTopRef.current = settled.scrollTop;
+          isRestoringHistoryRef.current = false;
+        });
       });
     });
   };
@@ -484,6 +509,7 @@ export function MessagesPage({
                 key={virtualRow.key}
                 ref={messageVirtualizer.measureElement}
                 data-index={virtualRow.index}
+                data-message-id={message.id}
                 className="absolute left-0 top-0 flex w-full flex-col gap-5 pb-5"
                 style={{
                   transform: `translateY(${virtualRow.start - messageVirtualizer.options.scrollMargin}px)`,
@@ -727,12 +753,20 @@ function RuntimeConfigDialog({
             </button>
           </div>
         ) : null}
+        {response?.validationError ? (
+          <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] px-4 py-3 text-sm leading-6 text-amber-100/80">
+            当前所选配置无法通过校验：{response.validationError}
+            <span className="mt-1 block text-xs text-amber-100/50">
+              你仍可切换到另一种配置模式以恢复会话运行。
+            </span>
+          </div>
+        ) : null}
         {!response && !error ? (
           <p className="py-12 text-center text-sm text-white/42">
             正在读取配置…
           </p>
         ) : null}
-        {response?.mode === "global" ? (
+        {response?.mode === "global" && response.config ? (
           <div className="rounded-xl border border-dashed border-white/10 px-5 py-10 text-center">
             <p className="text-sm text-white/65">
               当前会话会在每次运行时读取用户最新全局配置。
@@ -743,6 +777,7 @@ function RuntimeConfigDialog({
           </div>
         ) : null}
         {response?.mode === "custom" &&
+        response.config &&
         response.conversationType === "slice-figure" ? (
           <SliceRuntimeConfigForm
             value={response.config as SliceFigureRuntimeConfigView}
@@ -752,6 +787,7 @@ function RuntimeConfigDialog({
           />
         ) : null}
         {response?.mode === "custom" &&
+        response.config &&
         response.conversationType === "prime-figure" ? (
           <PrimeRuntimeConfigForm
             value={response.config as PrimeFigureRuntimeConfigView}

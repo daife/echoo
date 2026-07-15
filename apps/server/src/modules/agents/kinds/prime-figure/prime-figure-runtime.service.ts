@@ -56,6 +56,7 @@ import {
   filterPrimeActionsByCapabilities,
   isPrimeOutputEnabled,
 } from "./prime-output-capabilities.js";
+import { advanceHandledSequenceAfterSuccessfulRun } from "./prime-run-commit.js";
 
 const PRIME_VISIBLE_MEMORY_LIMIT = 20;
 const RECALL_HINT_PATTERN = /记得|不记得|忘了|还记得|remember|forgot|recal+l/i;
@@ -323,131 +324,136 @@ export class PrimeFigureRuntimeService {
       model,
     };
     try {
-      input.onModelActivityChange?.(true);
-      let finalResponse: ChatCompletionResult;
-      try {
-        finalResponse = await this.completeWithOptionalRecall({
-          request: input,
-          provider,
-          completionBase,
-          packet,
-          streamSession,
-          diagnostics,
-        });
-      } finally {
-        input.onModelActivityChange?.(false);
-      }
-      const envelope = parsePrimeDecisionEnvelope(
-        finalResponse.text,
-        input.agent,
-        packet.pendingMedia,
-        packet.availableReferenceImages.map((media) => media.id),
-        input.runtimeConfig,
-        packet.availableStickers.map((sticker) => sticker.id),
-        packet.pendingEndUserTransfers.map((transfer) => transfer.id),
+      return await advanceHandledSequenceAfterSuccessfulRun(
+        (async () => {
+          input.onModelActivityChange?.(true);
+          let finalResponse: ChatCompletionResult;
+          try {
+            finalResponse = await this.completeWithOptionalRecall({
+              request: input,
+              provider,
+              completionBase,
+              packet,
+              streamSession,
+              diagnostics,
+            });
+          } finally {
+            input.onModelActivityChange?.(false);
+          }
+          const envelope = parsePrimeDecisionEnvelope(
+            finalResponse.text,
+            input.agent,
+            packet.pendingMedia,
+            packet.availableReferenceImages.map((media) => media.id),
+            input.runtimeConfig,
+            packet.availableStickers.map((sticker) => sticker.id),
+            packet.pendingEndUserTransfers.map((transfer) => transfer.id),
+          );
+          const { decision, mediaAnnotations, sourceActionIndices } = envelope;
+          const optimizationFailures: Array<{
+            kind: "image" | "voice";
+            actionIndex: number;
+            error: string;
+          }> = [];
+          input.onModelActivityChange?.(true);
+          let finalDecision: PrimeFigureDecision;
+          try {
+            finalDecision = await this.contentOptimizer.optimizeDecision(
+              decision,
+              input.runtimeConfig,
+              input.conversationId,
+              {
+                onVoiceStart: (index) =>
+                  streamSession.beginVoiceOptimization(
+                    sourceActionIndices[index] ?? index,
+                  ),
+                onVoiceDelta: (index, delta) =>
+                  streamSession.pushOptimizedVoiceDelta(
+                    sourceActionIndices[index] ?? index,
+                    delta,
+                  ),
+                onVoiceComplete: (index, transcript) =>
+                  streamSession.completeVoiceOptimization(
+                    sourceActionIndices[index] ?? index,
+                    transcript,
+                  ),
+                onVoiceFallback: (index, transcript) =>
+                  streamSession.fallbackVoiceOptimization(
+                    sourceActionIndices[index] ?? index,
+                    transcript,
+                  ),
+                onFailure: (failure) => optimizationFailures.push(failure),
+              },
+            );
+          } finally {
+            input.onModelActivityChange?.(false);
+          }
+          for (const failure of optimizationFailures)
+            await this.logs.save({
+              ownerUserId: input.ownerUserId,
+              agentId: input.agent.id,
+              conversationId: input.conversationId,
+              action: {
+                type: `${failure.kind}_optimization`,
+                actionIndex: failure.actionIndex,
+              },
+              status: "failed",
+              errorMessage: failure.error,
+            });
+          const streamed = await streamSession.finalize(
+            finalDecision,
+            sourceActionIndices,
+          );
+          for (const [
+            actionIndex,
+            errorMessage,
+          ] of streamed.imageGenerationErrors) {
+            await this.logs.save({
+              ownerUserId: input.ownerUserId,
+              agentId: input.agent.id,
+              conversationId: input.conversationId,
+              action: { type: "image_generation", actionIndex },
+              status: "failed",
+              errorMessage,
+            });
+          }
+          await this.executor.executeDecision({
+            ownerUserId: input.ownerUserId,
+            conversationId: input.conversationId,
+            agent: input.agent,
+            state: input.state,
+            decision: finalDecision,
+            providerId: finalResponse.providerId,
+            model: finalResponse.model,
+            muteMessageCutoffAtMs: context.inputThroughEndUserAtMs,
+            streamedMessageIds: streamed.messageIds,
+            messageCreatedAt: streamed.messageCreatedAt,
+            paceUnstreamedMessages: streamed.deferredDelivery,
+            voiceMedia: streamed.voiceMedia,
+            ttsErrors: streamed.ttsErrors,
+            imageMedia: streamed.imageMedia,
+            imageGenerationErrors: streamed.imageGenerationErrors,
+            trigger: input.trigger,
+            runtimeConfig: input.runtimeConfig,
+            wakeupToken: input.wakeupToken,
+            passiveStage: input.passiveStage,
+            inputThroughEndUserSeq: context.inputThroughEndUserSeq,
+            interactionBaselineSequence: context.inputThroughSequence,
+          });
+          await this.persistMediaAnnotations(
+            input,
+            packet.pendingMedia,
+            mediaAnnotations,
+          );
+          return finalDecision;
+        })(),
+        () =>
+          this.conversations.advancePrimeHandledEndUserSequence(
+            input.ownerUserId,
+            input.conversationId,
+            context.inputThroughEndUserSeq,
+          ),
       );
-      const { decision, mediaAnnotations, sourceActionIndices } = envelope;
-      const optimizationFailures: Array<{
-        kind: "image" | "voice";
-        actionIndex: number;
-        error: string;
-      }> = [];
-      input.onModelActivityChange?.(true);
-      let finalDecision: PrimeFigureDecision;
-      try {
-        finalDecision = await this.contentOptimizer.optimizeDecision(
-          decision,
-          input.runtimeConfig,
-          input.conversationId,
-          {
-            onVoiceStart: (index) =>
-              streamSession.beginVoiceOptimization(
-                sourceActionIndices[index] ?? index,
-              ),
-            onVoiceDelta: (index, delta) =>
-              streamSession.pushOptimizedVoiceDelta(
-                sourceActionIndices[index] ?? index,
-                delta,
-              ),
-            onVoiceComplete: (index, transcript) =>
-              streamSession.completeVoiceOptimization(
-                sourceActionIndices[index] ?? index,
-                transcript,
-              ),
-            onVoiceFallback: (index, transcript) =>
-              streamSession.fallbackVoiceOptimization(
-                sourceActionIndices[index] ?? index,
-                transcript,
-              ),
-            onFailure: (failure) => optimizationFailures.push(failure),
-          },
-        );
-      } finally {
-        input.onModelActivityChange?.(false);
-      }
-      for (const failure of optimizationFailures)
-        await this.logs.save({
-          ownerUserId: input.ownerUserId,
-          agentId: input.agent.id,
-          conversationId: input.conversationId,
-          action: {
-            type: `${failure.kind}_optimization`,
-            actionIndex: failure.actionIndex,
-          },
-          status: "failed",
-          errorMessage: failure.error,
-        });
-      const streamed = await streamSession.finalize(
-        finalDecision,
-        sourceActionIndices,
-      );
-      for (const [
-        actionIndex,
-        errorMessage,
-      ] of streamed.imageGenerationErrors) {
-        await this.logs.save({
-          ownerUserId: input.ownerUserId,
-          agentId: input.agent.id,
-          conversationId: input.conversationId,
-          action: { type: "image_generation", actionIndex },
-          status: "failed",
-          errorMessage,
-        });
-      }
-      await this.executor.executeDecision({
-        ownerUserId: input.ownerUserId,
-        conversationId: input.conversationId,
-        agent: input.agent,
-        state: input.state,
-        decision: finalDecision,
-        providerId: finalResponse.providerId,
-        model: finalResponse.model,
-        muteMessageCutoffAtMs: context.inputThroughEndUserAtMs,
-        streamedMessageIds: streamed.messageIds,
-        messageCreatedAt: streamed.messageCreatedAt,
-        paceUnstreamedMessages: streamed.deferredDelivery,
-        voiceMedia: streamed.voiceMedia,
-        ttsErrors: streamed.ttsErrors,
-        imageMedia: streamed.imageMedia,
-        imageGenerationErrors: streamed.imageGenerationErrors,
-        trigger: input.trigger,
-        runtimeConfig: input.runtimeConfig,
-        wakeupToken: input.wakeupToken,
-        passiveStage: input.passiveStage,
-        inputThroughEndUserSeq: context.inputThroughEndUserSeq,
-        interactionBaselineSequence: context.inputThroughSequence,
-      });
-      await this.persistMediaAnnotations(
-        input,
-        packet.pendingMedia,
-        mediaAnnotations,
-      );
-      await this.conversations.advancePrimeHandledEndUserSequence(
-        input.ownerUserId,
-        input.conversationId,
-        context.inputThroughEndUserSeq,
-      );
-      return finalDecision;
     } catch (error) {
       await streamSession.fail(error, diagnostics);
       throw error;

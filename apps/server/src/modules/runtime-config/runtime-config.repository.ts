@@ -21,7 +21,35 @@ interface ResolvedConversationConfigRow extends RowDataPacket {
   custom_config: unknown | null;
 }
 
+interface ConversationConfigSelectionRow extends RowDataPacket {
+  conversation_type: string;
+  mode: "global" | "custom" | null;
+  has_custom_config: number;
+}
+
 export class RuntimeConfigRepository {
+  async findConversationConfigSelection(
+    ownerUserId: string,
+    conversationId: string,
+  ) {
+    const row = await queryOne<ConversationConfigSelectionRow>(
+      `SELECT c.type AS conversation_type, cc.mode,
+              cc.custom_config IS NOT NULL AS has_custom_config
+         FROM conversations c
+         LEFT JOIN conversation_runtime_configs cc
+           ON cc.owner_user_id = c.owner_user_id AND cc.conversation_id = c.id
+        WHERE c.owner_user_id = ? AND c.id = ?`,
+      [ownerUserId, conversationId],
+    );
+    return row
+      ? {
+          conversationType: row.conversation_type,
+          mode: row.mode,
+          hasCustomConfig: Boolean(row.has_custom_config),
+        }
+      : null;
+  }
+
   async findResolvedConversationConfig(
     ownerUserId: string,
     conversationId: string,
