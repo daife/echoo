@@ -11,6 +11,7 @@ import {
 import { initApp } from "../bootstrap/initApp";
 import type { AuthLinkParams } from "../../runtimes/contracts";
 import { useRuntime } from "./RuntimeProvider";
+import { mediaCache } from "../../services/mediaCache";
 
 type AuthMode = "login" | "register" | "forgot" | "reset" | "verify";
 
@@ -48,6 +49,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [isLoading, setIsLoading] = useState(true);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [authError, setAuthError] = useState<string | null>(null);
+  mediaCache.configure(
+    user
+      ? { userId: user.id, getAccessToken: () => runtime.auth.getAccessToken() }
+      : undefined,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -139,6 +145,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setAuthMode("login");
       },
       signOut: async () => {
+        await mediaCache.clearCurrentUser().catch(() => undefined);
         await services.authService.signOut();
         setUser(null);
         setAuthMode("login");

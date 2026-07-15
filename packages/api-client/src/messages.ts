@@ -1,6 +1,7 @@
 import type {
   CreateMediaMessageInput,
   Message,
+  MessagePage,
   ResolveTransferInput,
 } from "@echoo/shared";
 import type { ApiClient } from "./client";
@@ -27,8 +28,8 @@ export class MessageApi {
       before?: string | null;
       limit?: number | null;
     },
-  ): Promise<Message[]> {
-    return this.client.get<Message[]>(
+  ): Promise<MessagePage> {
+    return this.client.get<MessagePage>(
       `/conversations/${conversationId}/messages`,
       {
         after: options?.after ?? undefined,
@@ -57,11 +58,18 @@ export class MessageApi {
   ): Promise<{ message: Message }> {
     const body =
       input.contentType === "image"
-        ? { contentType: input.contentType, upload: input.upload }
+        ? {
+            contentType: input.contentType,
+            ...(input.resourceId
+              ? { resourceId: input.resourceId }
+              : { upload: input.upload }),
+          }
         : input.contentType === "voice"
           ? {
               contentType: input.contentType,
-              upload: input.upload,
+              ...(input.resourceId
+                ? { resourceId: input.resourceId }
+                : { upload: input.upload }),
               durationSeconds: input.durationSeconds,
             }
           : input.contentType === "sticker"

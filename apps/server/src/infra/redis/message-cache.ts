@@ -21,7 +21,7 @@ return 1
 export class MessageCache {
   private readonly maximum = Math.max(
     1,
-    Math.trunc(Number(process.env.MESSAGE_CACHE_MAX_PER_CONVERSATION ?? 500)),
+    Math.trunc(Number(process.env.MESSAGE_CACHE_MAX_PER_CONVERSATION ?? 200)),
   );
   private readonly ttlMs = Math.max(
     60_000,

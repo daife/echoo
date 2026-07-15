@@ -3,6 +3,7 @@ import { createClient, type RedisClientType } from "redis";
 let client: RedisClientType | null = null;
 let subscriber: RedisClientType | null = null;
 let worker: RedisClientType | null = null;
+const dedicatedWorkers = new Set<RedisClientType>();
 
 export async function getRedis() {
   if (!client) {
@@ -29,7 +30,22 @@ export async function getRedisWorker() {
   return worker;
 }
 
+export async function createRedisWorker() {
+  const commandClient = await getRedis();
+  const dedicated = commandClient.duplicate() as RedisClientType;
+  dedicated.on("error", (error) => console.error("Redis worker error", error));
+  await dedicated.connect();
+  dedicatedWorkers.add(dedicated);
+  return dedicated;
+}
+
 export async function closeRedis() {
+  await Promise.allSettled(
+    Array.from(dedicatedWorkers, (dedicated) =>
+      dedicated.isOpen ? dedicated.quit() : Promise.resolve(),
+    ),
+  );
+  dedicatedWorkers.clear();
   if (worker?.isOpen) await worker.quit();
   worker = null;
   if (subscriber?.isOpen) await subscriber.quit();

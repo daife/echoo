@@ -4,6 +4,7 @@ import {
   AuthApi,
   MessageApi,
   RuntimeConfigApi,
+  ResourcesApi,
 } from "@echoo/api-client";
 import { AgentService } from "../../services/AgentService";
 import { AuthService } from "../../services/AuthService";
@@ -24,7 +25,10 @@ export function initApp(runtime: RuntimeBundle) {
       runtime.auth,
       runtime.storage,
     ),
-    messageService: new MessageService(new MessageApi(api)),
+    messageService: new MessageService(
+      new MessageApi(api),
+      new ResourcesApi(api),
+    ),
     runtimeConfigService: new RuntimeConfigService(new RuntimeConfigApi(api)),
   };
 }

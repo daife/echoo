@@ -15,6 +15,7 @@ import type { PrimeFigureSticker } from "@echoo/shared";
 import { useEffect, useRef, useState } from "react";
 import { compressImageToJpeg } from "../../../shared/utils/imageCompression";
 import { usePushToTalk } from "../usePushToTalk";
+import { MediaAsset } from "../../media/MediaAsset";
 
 const IMAGE_MIME_TYPES = new Set([
   "image/jpeg",
@@ -351,9 +352,10 @@ export function MessageComposer({
                   void onSendSticker(sticker.resourceId);
                 }}
               >
-                <img
+                <MediaAsset
                   className="h-full w-full object-contain"
-                  src={sticker.resourcePath}
+                  mediaUrl={sticker.resourcePath}
+                  variant="thumb"
                   alt={sticker.description}
                 />
               </button>

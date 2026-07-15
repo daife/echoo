@@ -27,14 +27,8 @@ import {
   type UpdatePrimeFigureRequest,
   type UpdateSliceFigureRequest,
 } from "@echoo/shared";
-import {
-  Fragment,
-  useLayoutEffect,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useLayoutEffect, useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAuth } from "../../app/providers/AuthProvider";
 import {
   MessageBubble,
@@ -129,6 +123,7 @@ export function MessagesPage({
     isInitialLoading,
     isLoadingOlder,
     hasOlder,
+    hasNewer,
     error,
     canRollback,
     sendMessage,
@@ -138,6 +133,8 @@ export function MessagesPage({
     sendTransfer,
     resolveTransfer,
     loadOlderMessages,
+    loadNewerMessages,
+    jumpToLatest,
     retryFailedMessage,
     deleteConversation,
     rollbackConversation,
@@ -145,6 +142,8 @@ export function MessagesPage({
     updatingMessageId,
   } = useConversationMessages({ agent, onConversationDeleted });
   const mainRef = useRef<HTMLElement | null>(null);
+  const virtualListRef = useRef<HTMLDivElement | null>(null);
+  const [virtualScrollMargin, setVirtualScrollMargin] = useState(0);
   const shouldFollowBottomRef = useRef(true);
   const lastConversationRef = useRef<string | undefined>(undefined);
   const lastVisibleMessageIdRef = useRef<string | undefined>(undefined);
@@ -195,6 +194,18 @@ export function MessagesPage({
     }
     return [];
   }, [agent, canRollback, messages]);
+  const messageVirtualizer = useVirtualizer({
+    count: visibleMessages.length,
+    getScrollElement: () => mainRef.current,
+    estimateSize: () => 96,
+    overscan: 8,
+    getItemKey: (index) => visibleMessages[index]?.id ?? index,
+    scrollMargin: virtualScrollMargin,
+  });
+
+  useLayoutEffect(() => {
+    setVirtualScrollMargin(virtualListRef.current?.offsetTop ?? 0);
+  }, [isLoadingOlder, prologueHtml, visibleMessages.length]);
 
   useEffect(() => {
     if (!isSettingsOpen) return;
@@ -242,6 +253,15 @@ export function MessagesPage({
     lastScrollTopRef.current = main.scrollTop;
     shouldFollowBottomRef.current =
       main.scrollHeight - main.scrollTop - main.clientHeight <= 120;
+    if (
+      !scrollingUp &&
+      shouldFollowBottomRef.current &&
+      hasNewer &&
+      !isLoadingOlder
+    ) {
+      void loadNewerMessages();
+      return;
+    }
     if (!scrollingUp || main.scrollTop > 80 || !hasOlder || isLoadingOlder)
       return;
     const previousHeight = main.scrollHeight;
@@ -449,11 +469,26 @@ export function MessagesPage({
             title={`${title} 的序引`}
           />
         ) : null}
-        <div className="flex flex-col gap-5">
-          {visibleMessages.map((message, index) => {
+        <div
+          ref={virtualListRef}
+          className="relative w-full"
+          style={{ height: messageVirtualizer.getTotalSize() }}
+        >
+          {messageVirtualizer.getVirtualItems().map((virtualRow) => {
+            const index = virtualRow.index;
+            const message = visibleMessages[index];
+            if (!message) return null;
             const showTime = shouldShowTimelineItemTime(visibleMessages, index);
             return (
-              <Fragment key={message.id}>
+              <div
+                key={virtualRow.key}
+                ref={messageVirtualizer.measureElement}
+                data-index={virtualRow.index}
+                className="absolute left-0 top-0 flex w-full flex-col gap-5 pb-5"
+                style={{
+                  transform: `translateY(${virtualRow.start - messageVirtualizer.options.scrollMargin}px)`,
+                }}
+              >
                 {showTime ? (
                   <div className="self-center text-[11px] tabular-nums text-white/32">
                     {formatConversationTime(message.createdAt)}
@@ -468,10 +503,19 @@ export function MessagesPage({
                   }
                   onResolveTransfer={resolveTransfer}
                 />
-              </Fragment>
+              </div>
             );
           })}
         </div>
+        {hasNewer ? (
+          <button
+            className="sticky bottom-4 self-center rounded-full border border-white/10 bg-[#1a1a20] px-4 py-2 text-xs text-white/75 shadow-lg"
+            type="button"
+            onClick={() => void jumpToLatest()}
+          >
+            回到最新消息
+          </button>
+        ) : null}
         {error ? (
           <div className="self-center rounded-full border border-red-400/20 px-4 py-2 text-xs text-red-200/80">
             {error}
@@ -1127,7 +1171,11 @@ function toBubbleMessages(
             : message.contentType === "image"
               ? "image"
               : "text",
-    mediaUrl: message.content.mediaUrl,
+    mediaUrl:
+      message.content.mediaUrl ??
+      (message.content.media?.resourceId
+        ? `/api/resources/${message.content.media.resourceId}/file`
+        : undefined),
     transcript:
       message.contentType === "voice" ? message.content.text : undefined,
     durationSeconds:

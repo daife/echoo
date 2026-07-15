@@ -10,6 +10,58 @@ export interface MessageContent {
   fileName?: string;
   /** Server-side resource backing a media message. */
   resourceId?: string;
+  media?: MediaReference;
+}
+
+export interface MessagePageInfo {
+  hasOlder: boolean;
+  hasNewer: boolean;
+  oldestCursor?: string;
+  newestCursor?: string;
+}
+
+export interface MessagePage {
+  items: Message[];
+  pageInfo: MessagePageInfo;
+}
+
+export type MediaVariant = "original" | "thumb" | "display";
+
+export interface MediaReference {
+  resourceId: string;
+  kind: "image" | "voice" | "sticker" | "video" | "file";
+  variants: MediaVariant[];
+}
+
+export interface MediaAccessItem {
+  resourceId: string;
+  variant: MediaVariant;
+  url: string;
+  expiresAt: number;
+  mimeType: string;
+  byteSize?: number;
+  etag?: string;
+  width?: number;
+  height?: number;
+}
+
+export interface MediaUploadTicket {
+  resourceId: string;
+  status: "pending" | "processing" | "ready" | "failed";
+  uploadMethod: "PUT";
+  uploadUrl: string;
+  uploadHeaders: Record<string, string>;
+  expiresAt: number;
+}
+
+export interface MediaResourceStatus {
+  resourceId: string;
+  status: "pending" | "processing" | "ready" | "failed" | "deleting";
+  mimeType: string;
+  byteSize?: number;
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
 }
 
 export interface MessageMediaUpload {
@@ -22,13 +74,15 @@ export type CreateMediaMessageInput =
   | {
       conversationId: string;
       contentType: "image";
-      upload: MessageMediaUpload;
+      upload?: MessageMediaUpload;
+      resourceId?: string;
       clientMessageId?: string;
     }
   | {
       conversationId: string;
       contentType: "voice";
-      upload: MessageMediaUpload;
+      upload?: MessageMediaUpload;
+      resourceId?: string;
       durationSeconds: number;
       clientMessageId?: string;
     }

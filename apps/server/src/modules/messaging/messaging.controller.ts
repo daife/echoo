@@ -14,18 +14,24 @@ const mediaUploadBaseSchema = z.object({
 const createMediaMessageSchema = z.discriminatedUnion("contentType", [
   z.object({
     contentType: z.literal("image"),
-    upload: mediaUploadBaseSchema.extend({
-      mimeType: z.literal("image/jpeg"),
-      dataBase64: z.string().min(1).max(7_000_000),
-    }),
+    upload: mediaUploadBaseSchema
+      .extend({
+        mimeType: z.literal("image/jpeg"),
+        dataBase64: z.string().min(1).max(7_000_000),
+      })
+      .optional(),
+    resourceId: z.string().trim().min(1).max(120).optional(),
     clientMessageId: z.string().trim().min(1).max(96).optional(),
   }),
   z.object({
     contentType: z.literal("voice"),
-    upload: mediaUploadBaseSchema.extend({
-      mimeType: z.literal("audio/mpeg"),
-      dataBase64: z.string().min(1),
-    }),
+    upload: mediaUploadBaseSchema
+      .extend({
+        mimeType: z.literal("audio/mpeg"),
+        dataBase64: z.string().min(1),
+      })
+      .optional(),
+    resourceId: z.string().trim().min(1).max(120).optional(),
     durationSeconds: z.number().finite().min(1).max(60),
     clientMessageId: z.string().trim().min(1).max(96).optional(),
   }),

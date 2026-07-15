@@ -15,14 +15,28 @@ import { registerMessagingRoutes } from "./modules/messaging/messaging.controlle
 import { registerRealtimeGateway } from "./modules/realtime/ws.gateway.js";
 import { startRealtimeEventBus } from "./modules/realtime/realtime-event-bus.js";
 import { registerResourceRoutes } from "./modules/resources/resources.controller.js";
+import { ResourceProcessingQueue } from "./modules/resources/resource-processing.queue.js";
+import { ResourceCleanupQueue } from "./modules/resources/resource-cleanup.queue.js";
 import { registerRuntimeConfigRoutes } from "./modules/runtime-config/runtime-config.controller.js";
 
 export async function buildApp() {
   await initializeDatabase();
-  await getRedis();
+  await getRedis().catch((error) => {
+    console.warn(
+      "Redis is unavailable; cache and distributed jobs are degraded.",
+      error,
+    );
+  });
   const app = Fastify({ logger: true });
+  app.addContentTypeParser(
+    "application/octet-stream",
+    { parseAs: "buffer" },
+    (_request, body, done) => done(null, body),
+  );
   const primeWakeupScheduler = new PrimeFigureWakeupScheduler();
   const runQueue = new AgentRunQueue();
+  const resourceQueue = new ResourceProcessingQueue();
+  const resourceCleanupQueue = new ResourceCleanupQueue();
   const runService = new (
     await import("./modules/messaging/messaging.service.js")
   ).MessagingService();
@@ -40,6 +54,8 @@ export async function buildApp() {
     ok: true,
     name: "echoo-server",
     storage: "mysql",
+    mediaStorage:
+      process.env.RESOURCE_STORAGE_PROVIDER === "s3" ? "s3" : "local",
     queue: "redis",
   }));
 
@@ -56,7 +72,9 @@ export async function buildApp() {
   await app.register(registerRuntimeConfigRoutes, { prefix: "/api" });
   await app.register(registerRealtimeGateway);
   app.addHook("onReady", async () => {
-    await startRealtimeEventBus();
+    await startRealtimeEventBus().catch((error) => {
+      app.log.warn(error, "Redis realtime fan-out unavailable");
+    });
     primeWakeupScheduler.start();
     void runQueue
       .start(
@@ -64,10 +82,23 @@ export async function buildApp() {
         (activity) => runService.publishAgentActivity(activity),
       )
       .catch((error) => app.log.error(error, "Agent run worker stopped"));
+    void resourceQueue
+      .recoverFromDatabase()
+      .then(() => resourceQueue.start())
+      .catch((error) =>
+        app.log.error(error, "Resource processing worker stopped"),
+      );
+    void resourceCleanupQueue
+      .start()
+      .catch((error) =>
+        app.log.error(error, "Resource cleanup worker stopped"),
+      );
   });
   app.addHook("onClose", async () => {
     primeWakeupScheduler.stop();
     runQueue.stop();
+    resourceQueue.stop();
+    resourceCleanupQueue.stop();
     await closeRedis();
     await closeDatabase();
   });

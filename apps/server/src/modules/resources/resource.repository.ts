@@ -1,19 +1,17 @@
-import {
-  createReadStream,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { extname } from "node:path";
 import {
   estimateMp3DurationSeconds,
   type AgentResourceUpload,
   type MessageMediaUpload,
 } from "@echoo/shared";
 import type { RowDataPacket } from "mysql2";
-import { execute, queryOne } from "../../infra/database/mysql.js";
+import { execute, queryOne, queryRows } from "../../infra/database/mysql.js";
 import { createId } from "../../shared/utils/id.js";
+import {
+  createResourceStorage,
+  type ResourceStorage,
+} from "./resource-storage.js";
 
 const allowedMimeTypes = new Map([["image/jpeg", ".jpg"]]);
 
@@ -38,7 +36,14 @@ export interface ResourceRecord {
   mimeType: string;
   originalFileName: string;
   storagePath: string;
+  storageProvider: "local" | "s3";
+  storageKey: string;
   publicPath: string;
+  byteSize?: number;
+  sha256?: string;
+  width?: number;
+  height?: number;
+  status: "pending" | "processing" | "ready" | "failed" | "deleting";
   durationSeconds?: number;
   createdAt: number;
 }
@@ -57,15 +62,48 @@ interface ResourceRow extends RowDataPacket {
   mime_type: string;
   original_file_name: string;
   storage_path: string;
+  storage_provider: "local" | "s3";
+  storage_key: string | null;
   public_path: string;
+  byte_size: number | null;
+  sha256: string | null;
+  width: number | null;
+  height: number | null;
+  duration_ms: number | null;
+  status: ResourceRecord["status"];
   created_at: number;
 }
 
+export interface ResourceVariantRecord {
+  resourceId: string;
+  variant: "original" | "thumb" | "display";
+  storageProvider: "local" | "s3";
+  storageKey: string;
+  mimeType: string;
+  byteSize: number;
+  etag?: string;
+  width?: number;
+  height?: number;
+}
+
+interface ResourceVariantRow extends RowDataPacket {
+  resource_id: string;
+  variant: ResourceVariantRecord["variant"];
+  storage_provider: ResourceVariantRecord["storageProvider"];
+  storage_key: string;
+  mime_type: string;
+  byte_size: number;
+  etag: string | null;
+  width: number | null;
+  height: number | null;
+}
+
 export class ResourceRepository {
-  private readonly rootDir = resolve(
-    process.cwd(),
-    process.env.RESOURCE_STORAGE_DIR ?? ".data/resources",
-  );
+  private readonly localStorage = createResourceStorage("local");
+
+  constructor(
+    private readonly storage: ResourceStorage = createResourceStorage(),
+  ) {}
 
   async saveImage(
     ownerUserId: string,
@@ -83,49 +121,14 @@ export class ResourceRepository {
     const buffer = Buffer.from(stripDataUrlPrefix(upload.dataBase64), "base64");
     validateJpegUpload(buffer);
 
-    const id = createId("res");
-    const storagePath = join(this.rootDir, ownerUserId, `${id}${extension}`);
-    const publicPath = `/api/resources/${id}/file`;
-    const now = Date.now();
-
-    mkdirSync(dirname(storagePath), { recursive: true });
-    writeFileSync(storagePath, buffer);
-
-    await execute(
-      `
-          INSERT INTO resources (
-            id,
-            owner_user_id,
-            kind,
-            mime_type,
-            original_file_name,
-            storage_path,
-            public_path,
-            created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-      [
-        id,
-        ownerUserId,
-        kind,
-        upload.mimeType,
-        upload.fileName,
-        storagePath,
-        publicPath,
-        now,
-      ],
-    );
-
-    return {
-      id,
+    return this.persistReadyResource({
       ownerUserId,
       kind,
       mimeType: upload.mimeType,
-      originalFileName: upload.fileName,
-      storagePath,
-      publicPath,
-      createdAt: now,
-    };
+      fileName: upload.fileName,
+      extension,
+      data: buffer,
+    });
   }
 
   async saveGeneratedMedia(
@@ -139,30 +142,14 @@ export class ResourceRepository {
       throw new Error(`Unsupported generated media type: ${mimeType}.`);
     if (!data.length) throw new Error("Generated media is empty.");
 
-    const id = createId("res");
-    const fileName = `${id}${extension}`;
-    const storagePath = join(this.rootDir, ownerUserId, fileName);
-    const publicPath = `/api/resources/${id}/file`;
-    const now = Date.now();
-    mkdirSync(dirname(storagePath), { recursive: true });
-    writeFileSync(storagePath, data);
-    await execute(
-      `INSERT INTO resources (
-          id, owner_user_id, kind, mime_type, original_file_name,
-          storage_path, public_path, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, ownerUserId, kind, mimeType, fileName, storagePath, publicPath, now],
-    );
-    return {
-      id,
+    return this.persistReadyResource({
       ownerUserId,
       kind,
       mimeType,
-      originalFileName: fileName,
-      storagePath,
-      publicPath,
-      createdAt: now,
-    };
+      fileName: `generated${extension}`,
+      extension,
+      data,
+    });
   }
 
   async saveUserMedia(
@@ -182,44 +169,371 @@ export class ResourceRepository {
     const data = Buffer.from(stripDataUrlPrefix(upload.dataBase64), "base64");
     const durationSeconds = validateUserMediaData(kind, data);
 
-    const id = createId("res");
-    const storagePath = join(this.rootDir, ownerUserId, `${id}${extension}`);
-    const publicPath = `/api/resources/${id}/file`;
-    const now = Date.now();
-    mkdirSync(dirname(storagePath), { recursive: true });
-    writeFileSync(storagePath, data);
-    try {
-      await execute(
-        `INSERT INTO resources (
-          id, owner_user_id, kind, mime_type, original_file_name,
-          storage_path, public_path, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          ownerUserId,
-          kind,
-          upload.mimeType,
-          upload.fileName,
-          storagePath,
-          publicPath,
-          now,
-        ],
-      );
-    } catch (error) {
-      rmSync(storagePath, { force: true });
-      throw error;
-    }
-    return {
-      id,
+    return this.persistReadyResource({
       ownerUserId,
       kind,
       mimeType: upload.mimeType,
-      originalFileName: upload.fileName,
-      storagePath,
-      publicPath,
-      ...(durationSeconds !== undefined ? { durationSeconds } : {}),
-      createdAt: now,
+      fileName: upload.fileName,
+      extension,
+      data,
+      durationSeconds,
+    });
+  }
+
+  async createPendingUpload(input: {
+    ownerUserId: string;
+    kind: "end_user_image" | "end_user_voice";
+    fileName: string;
+    mimeType: string;
+    byteSize: number;
+  }) {
+    const extension = userMediaMimeTypes.get(input.mimeType);
+    const expectedKind = input.mimeType.startsWith("image/")
+      ? "end_user_image"
+      : input.mimeType === "audio/mpeg"
+        ? "end_user_voice"
+        : null;
+    if (!extension || expectedKind !== input.kind)
+      throw new InvalidMediaUploadError("不支持的媒体格式。");
+    const maximum =
+      input.kind === "end_user_image" ? 5 * 1024 * 1024 : 12 * 1024 * 1024;
+    if (
+      !Number.isSafeInteger(input.byteSize) ||
+      input.byteSize <= 0 ||
+      input.byteSize > maximum
+    )
+      throw new InvalidMediaUploadError("媒体文件大小无效。");
+
+    const id = createId("res");
+    const storageKey = `${input.ownerUserId}/${id}/original${extension}`;
+    const storagePath =
+      this.storage.localUploadPath?.(storageKey) ?? storageKey;
+    const now = Date.now();
+    await execute(
+      `INSERT INTO resources (
+        id, owner_user_id, kind, mime_type, original_file_name,
+        storage_provider, storage_key, storage_path, public_path,
+        byte_size, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+      [
+        id,
+        input.ownerUserId,
+        input.kind,
+        input.mimeType,
+        input.fileName,
+        this.storage.provider,
+        storageKey,
+        storagePath,
+        `/api/resources/${id}/file`,
+        input.byteSize,
+        now,
+        now,
+      ],
+    );
+    return {
+      resource: await this.findById(id),
+      uploadUrl: await this.storage.signPut(
+        storageKey,
+        input.mimeType,
+        10 * 60,
+      ),
+      uploadMethod: "PUT" as const,
     };
+  }
+
+  async putPendingUploadForOwner(
+    ownerUserId: string,
+    id: string,
+    data: Buffer,
+  ) {
+    const record = await this.findById(id);
+    if (
+      !record ||
+      record.ownerUserId !== ownerUserId ||
+      record.status !== "pending"
+    )
+      return null;
+    if (record.storageProvider !== "local")
+      throw new InvalidMediaUploadError("该资源必须直接上传到对象存储。");
+    if (record.byteSize !== undefined && data.length !== record.byteSize)
+      throw new InvalidMediaUploadError("上传内容大小与声明不一致。");
+    await this.localStorage.put(record.storageKey, data, record.mimeType);
+    return record;
+  }
+
+  async markPendingUploadProcessing(ownerUserId: string, id: string) {
+    const record = await this.findById(id);
+    if (!record || record.ownerUserId !== ownerUserId) return null;
+    if (record.status === "ready" || record.status === "processing")
+      return record;
+    if (record.status !== "pending") return null;
+    const storage = this.storageFor(record.storageProvider);
+    const object = await storage.head(record.storageKey);
+    if (!object || !object.size)
+      throw new InvalidMediaUploadError("上传对象不存在或为空。");
+    if (record.byteSize !== undefined && object.size !== record.byteSize)
+      throw new InvalidMediaUploadError("上传内容大小与声明不一致。");
+    await execute(
+      "UPDATE resources SET status = 'processing', updated_at = ? WHERE id = ? AND status = 'pending'",
+      [Date.now(), id],
+    );
+    return this.findById(id);
+  }
+
+  async listRecoverableUploads() {
+    const rows = await queryRows<ResourceRow>(
+      "SELECT * FROM resources WHERE status = 'processing' ORDER BY created_at ASC LIMIT 1000",
+    );
+    return rows.map(rowToResource);
+  }
+
+  async listLegacyLocalResources(limit = 100) {
+    if (this.storage.provider !== "s3") return [];
+    const rows = await queryRows<ResourceRow>(
+      `SELECT * FROM resources
+       WHERE storage_provider = 'local' AND status = 'ready'
+       ORDER BY created_at ASC LIMIT ?`,
+      [limit],
+    );
+    return rows.map(rowToResource);
+  }
+
+  async migrateLegacyResource(record: ResourceRecord) {
+    if (this.storage.provider !== "s3" || record.storageProvider !== "local")
+      return false;
+    const data = await this.localStorage.get(record.storageKey);
+    const extension =
+      extname(record.storageKey) ||
+      generatedMimeTypes.get(record.mimeType) ||
+      ".bin";
+    const originalKey = `${record.ownerUserId}/${record.id}/original${extension}`;
+    const stored = await this.storage.put(originalKey, data, record.mimeType);
+    const now = Date.now();
+    await execute(
+      `UPDATE resources SET storage_provider = 's3', storage_key = ?,
+        storage_path = ?, byte_size = ?, sha256 = ?, updated_at = ?
+       WHERE id = ? AND storage_provider = 'local'`,
+      [originalKey, originalKey, data.length, digest(data), now, record.id],
+    );
+    await execute(
+      `INSERT INTO resource_variants (
+        resource_id, variant, storage_provider, storage_key, mime_type,
+        byte_size, etag, created_at, updated_at
+      ) VALUES (?, 'original', 's3', ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE storage_provider = 's3',
+        storage_key = VALUES(storage_key), mime_type = VALUES(mime_type),
+        byte_size = VALUES(byte_size), etag = VALUES(etag), updated_at = VALUES(updated_at)`,
+      [
+        record.id,
+        originalKey,
+        record.mimeType,
+        data.length,
+        stored.etag ?? null,
+        now,
+        now,
+      ],
+    );
+    const migrated = (await this.findById(record.id))!;
+    if (record.mimeType.startsWith("image/")) {
+      const sharp = (await import("sharp")).default;
+      const image = sharp(data, { failOn: "error" }).rotate();
+      const metadata = await image.metadata();
+      const thumb = await image
+        .clone()
+        .resize({
+          width: 256,
+          height: 256,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 78 })
+        .toBuffer();
+      const display = await image
+        .clone()
+        .resize({
+          width: 1280,
+          height: 1280,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 84 })
+        .toBuffer();
+      await this.upsertVariant(migrated, "thumb", {
+        mimeType: "image/webp",
+        data: thumb,
+      });
+      await this.upsertVariant(migrated, "display", {
+        mimeType: "image/webp",
+        data: display,
+      });
+      await execute(
+        "UPDATE resources SET width = ?, height = ?, updated_at = ? WHERE id = ?",
+        [
+          metadata.width ?? null,
+          metadata.height ?? null,
+          Date.now(),
+          record.id,
+        ],
+      );
+    }
+    return true;
+  }
+
+  async processUpload(id: string) {
+    const record = await this.findById(id);
+    if (!record || record.status === "ready") return record;
+    if (record.status !== "processing") return null;
+    const storage = this.storageFor(record.storageProvider);
+    try {
+      const data = await storage.get(record.storageKey);
+      const durationSeconds = validateUserMediaData(
+        record.kind === "end_user_voice" ? "end_user_voice" : "end_user_image",
+        data,
+      );
+      const sha256 = digest(data);
+      let width: number | undefined;
+      let height: number | undefined;
+      await this.upsertVariant(record, "original", {
+        mimeType: record.mimeType,
+        data,
+      });
+      if (record.kind === "end_user_image") {
+        const sharp = (await import("sharp")).default;
+        const image = sharp(data, { failOn: "error" }).rotate();
+        const metadata = await image.metadata();
+        width = metadata.width;
+        height = metadata.height;
+        const thumb = await image
+          .clone()
+          .resize({
+            width: 256,
+            height: 256,
+            fit: "inside",
+            withoutEnlargement: true,
+          })
+          .webp({ quality: 78 })
+          .toBuffer();
+        const display = await image
+          .clone()
+          .resize({
+            width: 1280,
+            height: 1280,
+            fit: "inside",
+            withoutEnlargement: true,
+          })
+          .webp({ quality: 84 })
+          .toBuffer();
+        await this.upsertVariant(record, "thumb", {
+          mimeType: "image/webp",
+          data: thumb,
+        });
+        await this.upsertVariant(record, "display", {
+          mimeType: "image/webp",
+          data: display,
+        });
+      }
+      await execute(
+        `UPDATE resources SET byte_size = ?, sha256 = ?, width = ?, height = ?,
+          duration_ms = ?, status = 'ready', updated_at = ? WHERE id = ?`,
+        [
+          data.length,
+          sha256,
+          width ?? null,
+          height ?? null,
+          durationSeconds === undefined
+            ? null
+            : Math.round(durationSeconds * 1000),
+          Date.now(),
+          id,
+        ],
+      );
+      return this.findById(id);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async markProcessingFailed(id: string) {
+    await execute(
+      "UPDATE resources SET status = 'failed', updated_at = ? WHERE id = ? AND status = 'processing'",
+      [Date.now(), id],
+    );
+  }
+
+  async listOrphanedResources(cutoff: number, limit = 100) {
+    const rows = await queryRows<ResourceRow>(
+      `SELECT resources.* FROM resources
+       LEFT JOIN message_resources ON message_resources.resource_id = resources.id
+       LEFT JOIN agent_resources ON agent_resources.resource_id = resources.id
+       WHERE resources.status IN ('ready', 'failed', 'pending')
+         AND resources.created_at < ?
+         AND (resources.status != 'ready' OR resources.storage_key LIKE '%/original.%')
+         AND message_resources.resource_id IS NULL
+         AND agent_resources.resource_id IS NULL
+       ORDER BY resources.created_at ASC LIMIT ?`,
+      [cutoff, limit],
+    );
+    return rows.map(rowToResource);
+  }
+
+  async deleteOrphanedResource(id: string) {
+    const result = await execute(
+      `UPDATE resources SET status = 'deleting', updated_at = ?
+       WHERE id = ? AND NOT EXISTS (
+         SELECT 1 FROM message_resources WHERE resource_id = resources.id
+       ) AND NOT EXISTS (
+         SELECT 1 FROM agent_resources WHERE resource_id = resources.id
+       )`,
+      [Date.now(), id],
+    );
+    if (!result.affectedRows) return false;
+    const record = await this.findById(id);
+    if (!record) return false;
+    const variants = await this.listVariants(id);
+    await Promise.allSettled(
+      variants.map((variant) =>
+        this.storageFor(variant.storageProvider).delete(variant.storageKey),
+      ),
+    );
+    if (!variants.some((variant) => variant.storageKey === record.storageKey))
+      await this.storageFor(record.storageProvider).delete(record.storageKey);
+    await execute(
+      "DELETE FROM resources WHERE id = ? AND status = 'deleting'",
+      [id],
+    );
+    return true;
+  }
+
+  async listVariants(resourceId: string) {
+    const rows = await queryRows<ResourceVariantRow>(
+      "SELECT * FROM resource_variants WHERE resource_id = ?",
+      [resourceId],
+    );
+    return rows.map(rowToVariant);
+  }
+
+  async findVariant(
+    resourceId: string,
+    variant: ResourceVariantRecord["variant"],
+  ) {
+    const row = await queryOne<ResourceVariantRow>(
+      "SELECT * FROM resource_variants WHERE resource_id = ? AND variant = ?",
+      [resourceId, variant],
+    );
+    return row ? rowToVariant(row) : null;
+  }
+
+  async replaceAgentReferences(
+    agentId: string,
+    references: Array<{ resourceId: string; usageKind: string }>,
+  ) {
+    await execute("DELETE FROM agent_resources WHERE agent_id = ?", [agentId]);
+    for (const reference of references)
+      await execute(
+        `INSERT IGNORE INTO agent_resources
+          (agent_id, resource_id, usage_kind, created_at) VALUES (?, ?, ?, ?)`,
+        [agentId, reference.resourceId, reference.usageKind, Date.now()],
+      );
   }
 
   async findById(id: string): Promise<ResourceRecord | null> {
@@ -245,7 +559,7 @@ export class ResourceRepository {
       record.id,
       ownerUserId,
     ]);
-    rmSync(record.storagePath, { force: true });
+    await this.storageFor(record.storageProvider).delete(record.storageKey);
     return true;
   }
 
@@ -254,12 +568,216 @@ export class ResourceRepository {
     if (!record || record.ownerUserId !== ownerUserId) return null;
     return {
       record,
-      data: readFileSync(record.storagePath),
+      data: await this.storageFor(record.storageProvider).get(
+        record.storageKey,
+      ),
     };
   }
 
-  createReadStream(record: ResourceRecord) {
-    return createReadStream(record.storagePath);
+  async openReadStream(record: ResourceRecord, range?: string) {
+    return this.storageFor(record.storageProvider).createReadStream(
+      record.storageKey,
+      range,
+    );
+  }
+
+  async openVariantReadStream(
+    record: ResourceRecord,
+    variant: ResourceVariantRecord["variant"],
+    range?: string,
+  ) {
+    const selected =
+      (await this.findVariant(record.id, variant)) ??
+      (variant === "original"
+        ? null
+        : await this.findVariant(record.id, "original"));
+    return this.storageFor(
+      selected?.storageProvider ?? record.storageProvider,
+    ).createReadStream(selected?.storageKey ?? record.storageKey, range);
+  }
+
+  async createAccessUrl(
+    record: ResourceRecord,
+    variant: ResourceVariantRecord["variant"],
+  ) {
+    const selected =
+      (await this.findVariant(record.id, variant)) ??
+      (variant === "original"
+        ? null
+        : await this.findVariant(record.id, "original"));
+    const provider = selected?.storageProvider ?? record.storageProvider;
+    const key = selected?.storageKey ?? record.storageKey;
+    return {
+      url: await this.storageFor(provider).signGet(key, 10 * 60),
+      variant: selected?.variant ?? "original",
+      mimeType: selected?.mimeType ?? record.mimeType,
+      byteSize: selected?.byteSize ?? record.byteSize,
+      etag: selected?.etag,
+      width: selected?.width ?? record.width,
+      height: selected?.height ?? record.height,
+      storageKey: key,
+    };
+  }
+
+  private async persistReadyResource(input: {
+    ownerUserId: string;
+    kind: string;
+    mimeType: string;
+    fileName: string;
+    extension: string;
+    data: Buffer;
+    durationSeconds?: number;
+  }) {
+    const id = createId("res");
+    const storageKey = `${input.ownerUserId}/${id}/original${input.extension}`;
+    const storagePath =
+      this.storage.localUploadPath?.(storageKey) ?? storageKey;
+    const publicPath = `/api/resources/${id}/file`;
+    const now = Date.now();
+    const stored = await this.storage.put(
+      storageKey,
+      input.data,
+      input.mimeType,
+    );
+    try {
+      await execute(
+        `INSERT INTO resources (
+          id, owner_user_id, kind, mime_type, original_file_name,
+          storage_provider, storage_key, storage_path, public_path, byte_size,
+          sha256, duration_ms, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?)`,
+        [
+          id,
+          input.ownerUserId,
+          input.kind,
+          input.mimeType,
+          input.fileName,
+          this.storage.provider,
+          storageKey,
+          storagePath,
+          publicPath,
+          input.data.length,
+          digest(input.data),
+          input.durationSeconds === undefined
+            ? null
+            : Math.round(input.durationSeconds * 1000),
+          now,
+          now,
+        ],
+      );
+      await execute(
+        `INSERT INTO resource_variants (
+          resource_id, variant, storage_provider, storage_key, mime_type,
+          byte_size, etag, created_at, updated_at
+        ) VALUES (?, 'original', ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          this.storage.provider,
+          storageKey,
+          input.mimeType,
+          input.data.length,
+          stored.etag ?? null,
+          now,
+          now,
+        ],
+      );
+      if (input.mimeType.startsWith("image/")) {
+        const record = (await this.findById(id))!;
+        const sharp = (await import("sharp")).default;
+        const image = sharp(input.data, { failOn: "error" }).rotate();
+        const metadata = await image.metadata();
+        const thumb = await image
+          .clone()
+          .resize({
+            width: 256,
+            height: 256,
+            fit: "inside",
+            withoutEnlargement: true,
+          })
+          .webp({ quality: 78 })
+          .toBuffer();
+        const display = await image
+          .clone()
+          .resize({
+            width: 1280,
+            height: 1280,
+            fit: "inside",
+            withoutEnlargement: true,
+          })
+          .webp({ quality: 84 })
+          .toBuffer();
+        await this.upsertVariant(record, "thumb", {
+          mimeType: "image/webp",
+          data: thumb,
+        });
+        await this.upsertVariant(record, "display", {
+          mimeType: "image/webp",
+          data: display,
+        });
+        await execute(
+          "UPDATE resources SET width = ?, height = ?, updated_at = ? WHERE id = ?",
+          [metadata.width ?? null, metadata.height ?? null, Date.now(), id],
+        );
+      }
+    } catch (error) {
+      await execute("DELETE FROM resources WHERE id = ?", [id]).catch(
+        () => undefined,
+      );
+      await this.storage.delete(storageKey).catch(() => undefined);
+      await this.storage
+        .delete(`${input.ownerUserId}/${id}/thumb.webp`)
+        .catch(() => undefined);
+      await this.storage
+        .delete(`${input.ownerUserId}/${id}/display.webp`)
+        .catch(() => undefined);
+      throw error;
+    }
+    return (await this.findById(id))!;
+  }
+
+  private async upsertVariant(
+    record: ResourceRecord,
+    variant: ResourceVariantRecord["variant"],
+    input: { mimeType: string; data: Buffer },
+  ) {
+    const extension =
+      input.mimeType === "image/webp" ? ".webp" : extname(record.storageKey);
+    const key =
+      variant === "original"
+        ? record.storageKey
+        : `${record.ownerUserId}/${record.id}/${variant}${extension}`;
+    const storage = this.storageFor(record.storageProvider);
+    const stored =
+      variant === "original"
+        ? await storage.head(key)
+        : await storage.put(key, input.data, input.mimeType);
+    const now = Date.now();
+    await execute(
+      `INSERT INTO resource_variants (
+        resource_id, variant, storage_provider, storage_key, mime_type,
+        byte_size, etag, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE storage_provider = VALUES(storage_provider),
+        storage_key = VALUES(storage_key), mime_type = VALUES(mime_type),
+        byte_size = VALUES(byte_size), etag = VALUES(etag), updated_at = VALUES(updated_at)`,
+      [
+        record.id,
+        variant,
+        record.storageProvider,
+        key,
+        input.mimeType,
+        input.data.length,
+        stored?.etag ?? null,
+        now,
+        now,
+      ],
+    );
+  }
+
+  private storageFor(provider: "local" | "s3") {
+    if (provider === this.storage.provider) return this.storage;
+    if (provider === "local") return this.localStorage;
+    return createResourceStorage("s3");
   }
 }
 
@@ -313,7 +831,35 @@ function rowToResource(row: ResourceRow): ResourceRecord {
     mimeType: row.mime_type,
     originalFileName: row.original_file_name,
     storagePath: row.storage_path,
+    storageProvider: row.storage_provider ?? "local",
+    storageKey: row.storage_key ?? row.storage_path,
     publicPath: row.public_path,
+    ...(row.byte_size !== null ? { byteSize: row.byte_size } : {}),
+    ...(row.sha256 ? { sha256: row.sha256 } : {}),
+    ...(row.width !== null ? { width: row.width } : {}),
+    ...(row.height !== null ? { height: row.height } : {}),
+    ...(row.duration_ms !== null
+      ? { durationSeconds: row.duration_ms / 1000 }
+      : {}),
+    status: row.status ?? "ready",
     createdAt: row.created_at,
   };
+}
+
+function rowToVariant(row: ResourceVariantRow): ResourceVariantRecord {
+  return {
+    resourceId: row.resource_id,
+    variant: row.variant,
+    storageProvider: row.storage_provider,
+    storageKey: row.storage_key,
+    mimeType: row.mime_type,
+    byteSize: row.byte_size,
+    ...(row.etag ? { etag: row.etag } : {}),
+    ...(row.width !== null ? { width: row.width } : {}),
+    ...(row.height !== null ? { height: row.height } : {}),
+  };
+}
+
+function digest(data: Uint8Array) {
+  return createHash("sha256").update(data).digest("hex");
 }

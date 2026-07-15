@@ -1,5 +1,6 @@
 import { ArrowUpRight } from "@phosphor-icons/react";
 import type { AgentAttribute } from "@echoo/shared";
+import { MediaAsset } from "../../media/MediaAsset";
 
 export interface CharacterCardAgent {
   id?: string;
@@ -26,9 +27,10 @@ export function CharacterCard({
         className={`relative h-56 overflow-hidden bg-gradient-to-br ${agent.gradient}`}
       >
         {agent.coverResourcePath ? (
-          <img
+          <MediaAsset
             className="absolute inset-0 h-full w-full object-cover opacity-70"
-            src={agent.coverResourcePath}
+            mediaUrl={agent.coverResourcePath}
+            variant="display"
             alt=""
           />
         ) : null}
@@ -36,9 +38,10 @@ export function CharacterCard({
         <div className="absolute bottom-6 left-6 right-6 flex items-end justify-between">
           <div className="h-20 w-20 overflow-hidden rounded-full border border-white/20 bg-white/[0.06] shadow-[0_0_38px_rgba(255,255,255,0.12)]">
             {agent.avatarResourcePath ? (
-              <img
+              <MediaAsset
                 className="h-full w-full object-cover"
-                src={agent.avatarResourcePath}
+                mediaUrl={agent.avatarResourcePath}
+                variant="thumb"
                 alt={agent.name}
               />
             ) : null}

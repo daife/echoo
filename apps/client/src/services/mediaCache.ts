@@ -1,23 +1,38 @@
+import type { MediaAccessItem, MediaVariant } from "@echoo/shared";
+
 const DATABASE_NAME = "echoo-media-cache";
-const DATABASE_VERSION = 1;
-const MEDIA_STORE = "media";
+const DATABASE_VERSION = 2;
+const METADATA_STORE = "metadata";
+const CACHE_NAME = "echoo-media-bodies-v2";
+const FALLBACK_BUDGET_BYTES = 128 * 1024 * 1024;
+const MAXIMUM_BUDGET_BYTES = 512 * 1024 * 1024;
+const TARGET_RATIO = 0.8;
+const MAX_CONCURRENT_DOWNLOADS = 4;
 
-export const MEDIA_CACHE_MAX_BYTES = 1024 * 1024 * 1024;
-export const MEDIA_CACHE_TARGET_BYTES = 900 * 1024 * 1024;
-
-export interface CachedMediaRecord {
+export interface CachedMediaMetadata {
   key: string;
-  blob: Blob;
   size: number;
   mimeType: string;
   lastAccessedAt: number;
+  etag?: string;
+}
+
+export interface CachedMediaEntry {
+  metadata: CachedMediaMetadata;
+  response: Response;
 }
 
 export interface MediaCacheStore {
-  get(key: string): Promise<CachedMediaRecord | undefined>;
-  put(record: CachedMediaRecord): Promise<void>;
+  get(key: string): Promise<CachedMediaEntry | undefined>;
+  put(
+    key: string,
+    response: Response,
+    metadata: CachedMediaMetadata,
+  ): Promise<void>;
+  touch(metadata: CachedMediaMetadata): Promise<void>;
   delete(keys: string[]): Promise<void>;
-  list(): Promise<CachedMediaRecord[]>;
+  listMetadata(): Promise<CachedMediaMetadata[]>;
+  clear(): Promise<void>;
 }
 
 type MediaFetcher = (
@@ -25,154 +40,326 @@ type MediaFetcher = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+interface MediaCacheSession {
+  userId: string;
+  getAccessToken: () => Promise<string | null>;
+}
+
 export class MediaCache {
   private readonly inFlight = new Map<string, Promise<Blob | null>>();
+  private readonly accessUrls = new Map<string, MediaAccessItem>();
+  private activeDownloads = 0;
+  private readonly downloadWaiters: Array<() => void> = [];
+  private session?: MediaCacheSession;
 
   constructor(
-    private readonly store: MediaCacheStore = new IndexedDbMediaCacheStore(),
+    private readonly store: MediaCacheStore = new BrowserMediaCacheStore(),
     private readonly fetcher: MediaFetcher = fetch,
     private readonly now: () => number = Date.now,
-    private readonly limits = {
-      maximumBytes: MEDIA_CACHE_MAX_BYTES,
-      targetBytes: MEDIA_CACHE_TARGET_BYTES,
-    },
+    private readonly fixedBudgetBytes?: number,
   ) {}
 
-  async get(mediaUrl: string): Promise<Blob | null> {
-    const key = getCacheableMediaKey(mediaUrl);
-    if (!key) return null;
+  configure(session?: MediaCacheSession) {
+    if (this.session?.userId !== session?.userId) this.accessUrls.clear();
+    this.session = session;
+  }
+
+  async get(
+    mediaUrl: string,
+    variant: MediaVariant = "display",
+    signal?: AbortSignal,
+  ): Promise<Blob | null> {
+    const resourceId = getResourceId(mediaUrl);
+    if (!resourceId || !this.session) return null;
+    const key = this.cacheKey(resourceId, variant);
     const activeRequest = this.inFlight.get(key);
     if (activeRequest) return activeRequest;
 
-    const request = this.load(key).finally(() => this.inFlight.delete(key));
+    const request = this.load(key, resourceId, variant, signal).finally(() =>
+      this.inFlight.delete(key),
+    );
     this.inFlight.set(key, request);
     return request;
   }
 
-  async put(mediaUrl: string, blob: Blob): Promise<void> {
-    const key = getCacheableMediaKey(mediaUrl);
-    if (!key || blob.size <= 0 || blob.size > this.limits.maximumBytes) return;
+  async getDirectUrl(mediaUrl: string, variant: MediaVariant = "original") {
+    const resourceId = getResourceId(mediaUrl);
+    if (!resourceId || !this.session) return resolveMediaUrl(mediaUrl);
+    return (await this.resolveAccess(resourceId, variant))?.url;
+  }
+
+  async put(
+    mediaUrl: string,
+    blob: Blob,
+    variant: MediaVariant = "original",
+  ): Promise<void> {
+    const resourceId = getResourceId(mediaUrl);
+    if (!resourceId || !this.session || !blob.size) return;
+    const budget = await this.getBudgetBytes();
+    if (blob.size > budget * 0.25) return;
+    const key = this.cacheKey(resourceId, variant);
     try {
-      await this.store.put(this.toRecord(key, blob));
-      await this.prune();
+      await this.store.put(key, new Response(blob), {
+        key,
+        size: blob.size,
+        mimeType: blob.type,
+        lastAccessedAt: this.now(),
+      });
+      await this.prune(budget);
     } catch {
-      // HTTP caching remains the fallback when persistent storage is unavailable.
+      // HTTP caching remains a best-effort fallback.
     }
   }
 
   async delete(mediaUrls: Iterable<string | undefined>): Promise<void> {
-    const keys = Array.from(mediaUrls)
-      .map((url) => (url ? getCacheableMediaKey(url) : null))
-      .filter((key): key is string => Boolean(key));
-    if (!keys.length) return;
-    try {
-      await this.store.delete(keys);
-    } catch {
-      // Cache cleanup must never block deleting a conversation.
+    if (!this.session) return;
+    const keys: string[] = [];
+    for (const mediaUrl of mediaUrls) {
+      const resourceId = mediaUrl ? getResourceId(mediaUrl) : null;
+      if (!resourceId) continue;
+      for (const variant of ["original", "thumb", "display"] as const)
+        keys.push(this.cacheKey(resourceId, variant));
     }
+    if (keys.length) await this.store.delete(keys).catch(() => undefined);
   }
 
-  private async load(key: string): Promise<Blob | null> {
+  async clearCurrentUser() {
+    const prefix = this.session ? `${this.session.userId}:` : "";
+    if (!prefix) return;
+    const keys = (await this.store.listMetadata())
+      .filter((record) => record.key.startsWith(prefix))
+      .map((record) => record.key);
+    if (keys.length) await this.store.delete(keys);
+    this.accessUrls.clear();
+  }
+
+  private async load(
+    key: string,
+    resourceId: string,
+    variant: MediaVariant,
+    signal?: AbortSignal,
+  ) {
     try {
       const cached = await this.store.get(key);
       if (cached) {
         void this.store
-          .put({ ...cached, lastAccessedAt: this.now() })
+          .touch({
+            ...cached.metadata,
+            lastAccessedAt: this.now(),
+          })
           .catch(() => undefined);
-        return cached.blob;
+        return cached.response.blob();
       }
     } catch {
-      // Continue with a normal force-cache request.
+      // Continue with an authorized network request.
     }
 
+    await this.acquireDownloadSlot(signal);
     try {
-      const response = await this.fetcher(key, { cache: "force-cache" });
+      const access = await this.resolveAccess(resourceId, variant);
+      if (!access) return null;
+      const response = await this.fetcher(resolveMediaUrl(access.url)!, {
+        cache: "no-store",
+        signal,
+      });
       if (!response.ok) return null;
+      const cacheResponse = response.clone();
       const blob = await response.blob();
       if (!blob.size) return null;
-      await this.put(key, blob);
+      const budget = await this.getBudgetBytes();
+      if (blob.size <= budget * 0.25) {
+        try {
+          await this.store.put(key, cacheResponse, {
+            key,
+            size: blob.size,
+            mimeType: blob.type || access.mimeType,
+            lastAccessedAt: this.now(),
+            ...(access.etag ? { etag: access.etag } : {}),
+          });
+          await this.prune(budget);
+        } catch {
+          // Returning the network body is more important than persistence.
+        }
+      }
       return blob;
     } catch {
       return null;
+    } finally {
+      this.releaseDownloadSlot();
     }
   }
 
-  private toRecord(key: string, blob: Blob): CachedMediaRecord {
-    return {
-      key,
-      blob,
-      size: blob.size,
-      mimeType: blob.type,
-      lastAccessedAt: this.now(),
-    };
+  private async resolveAccess(resourceId: string, variant: MediaVariant) {
+    if (!this.session) return null;
+    const key = `${resourceId}:${variant}`;
+    const cached = this.accessUrls.get(key);
+    if (cached && cached.expiresAt > this.now() + 30_000) return cached;
+    const token = await this.session.getAccessToken();
+    if (!token) return null;
+    const response = await this.fetcher(
+      `${getApiOrigin()}/api/resources/access`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ items: [{ resourceId, variant }] }),
+      },
+    );
+    if (!response.ok) return null;
+    const payload = (await response.json()) as { items?: MediaAccessItem[] };
+    const item = payload.items?.find((candidate) => "url" in candidate);
+    if (item) this.accessUrls.set(key, item);
+    return item ?? null;
   }
 
-  private async prune() {
-    const records = await this.store.list();
-    let totalBytes = records.reduce((sum, record) => sum + record.size, 0);
-    if (totalBytes <= this.limits.maximumBytes) return;
+  private async acquireDownloadSlot(signal?: AbortSignal) {
+    if (this.activeDownloads < MAX_CONCURRENT_DOWNLOADS) {
+      this.activeDownloads += 1;
+      return;
+    }
+    await new Promise<void>((resolve, reject) => {
+      const resume = () => {
+        signal?.removeEventListener("abort", abort);
+        this.activeDownloads += 1;
+        resolve();
+      };
+      const abort = () => {
+        const index = this.downloadWaiters.indexOf(resume);
+        if (index >= 0) this.downloadWaiters.splice(index, 1);
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      this.downloadWaiters.push(resume);
+      signal?.addEventListener("abort", abort, { once: true });
+    });
+  }
 
-    const keysToDelete: string[] = [];
+  private releaseDownloadSlot() {
+    this.activeDownloads = Math.max(0, this.activeDownloads - 1);
+    this.downloadWaiters.shift()?.();
+  }
+
+  private async getBudgetBytes() {
+    if (this.fixedBudgetBytes) return this.fixedBudgetBytes;
+    try {
+      const quota = (await navigator.storage?.estimate())?.quota;
+      return quota
+        ? Math.min(Math.floor(quota * 0.1), MAXIMUM_BUDGET_BYTES)
+        : FALLBACK_BUDGET_BYTES;
+    } catch {
+      return FALLBACK_BUDGET_BYTES;
+    }
+  }
+
+  private async prune(budget: number) {
+    const records = await this.store.listMetadata();
+    let totalBytes = records.reduce((sum, record) => sum + record.size, 0);
+    if (totalBytes <= budget) return;
+    const keys: string[] = [];
     for (const record of records.sort(
       (left, right) => left.lastAccessedAt - right.lastAccessedAt,
     )) {
-      keysToDelete.push(record.key);
+      keys.push(record.key);
       totalBytes -= record.size;
-      if (totalBytes <= this.limits.targetBytes) break;
+      if (totalBytes <= budget * TARGET_RATIO) break;
     }
-    await this.store.delete(keysToDelete);
+    await this.store.delete(keys);
+  }
+
+  private cacheKey(resourceId: string, variant: MediaVariant) {
+    return `${this.session!.userId}:${resourceId}:${variant}`;
   }
 }
 
-class IndexedDbMediaCacheStore implements MediaCacheStore {
+class BrowserMediaCacheStore implements MediaCacheStore {
   private databasePromise?: Promise<IDBDatabase>;
 
   async get(key: string) {
-    const store = await this.getStore("readonly");
-    return requestToPromise<CachedMediaRecord | undefined>(store.get(key));
+    const metadata = await this.getMetadata(key);
+    if (!metadata || typeof caches === "undefined") return undefined;
+    const response = await (
+      await caches.open(CACHE_NAME)
+    ).match(cacheRequest(key));
+    if (!response) {
+      await this.delete([key]);
+      return undefined;
+    }
+    return { metadata, response };
   }
 
-  async put(record: CachedMediaRecord) {
+  async put(key: string, response: Response, metadata: CachedMediaMetadata) {
+    if (typeof caches === "undefined")
+      throw new Error("Cache Storage unavailable.");
+    await (await caches.open(CACHE_NAME)).put(cacheRequest(key), response);
     const store = await this.getStore("readwrite");
-    await requestToPromise(store.put(record));
+    await requestToPromise(store.put(metadata));
+  }
+
+  async touch(metadata: CachedMediaMetadata) {
+    const store = await this.getStore("readwrite");
+    await requestToPromise(store.put(metadata));
   }
 
   async delete(keys: string[]) {
     const database = await this.openDatabase();
-    const transaction = database.transaction(MEDIA_STORE, "readwrite");
-    const store = transaction.objectStore(MEDIA_STORE);
-    keys.forEach((key) => store.delete(key));
+    const transaction = database.transaction(METADATA_STORE, "readwrite");
+    const store = transaction.objectStore(METADATA_STORE);
+    const cache =
+      typeof caches === "undefined" ? null : await caches.open(CACHE_NAME);
+    await Promise.all(
+      keys.map(async (key) => {
+        store.delete(key);
+        await cache?.delete(cacheRequest(key));
+      }),
+    );
     await transactionToPromise(transaction);
   }
 
-  async list() {
+  async listMetadata() {
     const store = await this.getStore("readonly");
-    return requestToPromise<CachedMediaRecord[]>(store.getAll());
+    return requestToPromise<CachedMediaMetadata[]>(store.getAll());
+  }
+
+  async clear() {
+    const records = await this.listMetadata();
+    await this.delete(records.map((record) => record.key));
+  }
+
+  private async getMetadata(key: string) {
+    const store = await this.getStore("readonly");
+    return requestToPromise<CachedMediaMetadata | undefined>(store.get(key));
   }
 
   private async getStore(mode: IDBTransactionMode) {
     const database = await this.openDatabase();
-    return database.transaction(MEDIA_STORE, mode).objectStore(MEDIA_STORE);
+    return database
+      .transaction(METADATA_STORE, mode)
+      .objectStore(METADATA_STORE);
   }
 
   private openDatabase() {
     if (this.databasePromise) return this.databasePromise;
     this.databasePromise = new Promise<IDBDatabase>((resolve, reject) => {
-      if (typeof indexedDB === "undefined") {
-        reject(new Error("IndexedDB is unavailable."));
-        return;
-      }
+      if (typeof indexedDB === "undefined")
+        return reject(new Error("IndexedDB unavailable."));
       const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
       request.onupgradeneeded = () => {
-        if (!request.result.objectStoreNames.contains(MEDIA_STORE)) {
-          request.result.createObjectStore(MEDIA_STORE, { keyPath: "key" });
-        }
+        for (const name of Array.from(request.result.objectStoreNames))
+          request.result.deleteObjectStore(name);
+        request.result.createObjectStore(METADATA_STORE, { keyPath: "key" });
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
     return this.databasePromise;
   }
+}
+
+function cacheRequest(key: string) {
+  return new Request(
+    `${getApiOrigin()}/__echoo_media_cache__/${encodeURIComponent(key)}`,
+  );
 }
 
 function requestToPromise<T>(request: IDBRequest<T>) {
@@ -196,17 +383,20 @@ export function resolveMediaUrl(mediaUrl?: string) {
   return new URL(mediaUrl, getApiOrigin()).toString();
 }
 
-export function getCacheableMediaKey(mediaUrl: string) {
+export function getResourceId(mediaUrl?: string) {
   const resolved = resolveMediaUrl(mediaUrl);
   if (!resolved || /^(?:blob:|data:)/.test(resolved)) return null;
   try {
     const url = new URL(resolved);
     if (url.origin !== getApiOrigin()) return null;
-    if (!/^\/api\/resources\/[^/]+\/file$/.test(url.pathname)) return null;
-    return url.toString();
+    return url.pathname.match(/^\/api\/resources\/([^/]+)\/file$/)?.[1] ?? null;
   } catch {
     return null;
   }
+}
+
+export function getCacheableMediaKey(mediaUrl: string) {
+  return getResourceId(mediaUrl) ? resolveMediaUrl(mediaUrl)! : null;
 }
 
 function getApiOrigin() {

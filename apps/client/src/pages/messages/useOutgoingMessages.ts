@@ -53,24 +53,23 @@ export function useOutgoingMessages(input: {
     payload: PendingMediaPayload,
     clientMessageId: string,
   ) => {
-    const upload = {
+    const uploaded = await input.messageService.uploadMedia({
+      contentType: payload.contentType,
+      blob: payload.blob,
       fileName: payload.fileName,
-      mimeType:
-        payload.contentType === "voice" ? "audio/mpeg" : payload.blob.type,
-      dataBase64: await blobToBase64(payload.blob),
-    };
+    });
     return payload.contentType === "voice"
       ? input.messageService.sendMediaMessage({
           conversationId: input.conversationId!,
           contentType: "voice",
-          upload,
+          resourceId: uploaded.resourceId,
           durationSeconds: payload.durationSeconds ?? 1,
           clientMessageId,
         })
       : input.messageService.sendMediaMessage({
           conversationId: input.conversationId!,
           contentType: "image",
-          upload,
+          resourceId: uploaded.resourceId,
           clientMessageId,
         });
   };
@@ -354,18 +353,4 @@ export function useOutgoingMessages(input: {
     resolveTransfer,
     retryFailedMessage,
   };
-}
-
-function blobToBase64(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result ?? "");
-      const data = result.slice(result.indexOf(",") + 1);
-      if (!data) reject(new Error("媒体文件读取失败。"));
-      else resolve(data);
-    };
-    reader.onerror = () => reject(new Error("媒体文件读取失败。"));
-    reader.readAsDataURL(blob);
-  });
 }

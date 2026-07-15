@@ -179,6 +179,18 @@ export class AgentRepository {
           );
         }
       });
+      await this.resources.replaceAgentReferences(id, [
+        ...(avatar ? [{ resourceId: avatar.id, usageKind: "avatar" }] : []),
+        ...(cover ? [{ resourceId: cover.id, usageKind: "cover" }] : []),
+        ...referenceImages.map((item) => ({
+          resourceId: item.resourceId,
+          usageKind: "reference",
+        })),
+        ...stickers.map((item) => ({
+          resourceId: item.resourceId,
+          usageKind: "sticker",
+        })),
+      ]);
       return (await this.findById(ownerUserId, id))!;
     } catch (error) {
       await this.deletePreparedResources(ownerUserId, [
@@ -405,6 +417,8 @@ export class AgentRepository {
       ]).catch(() => undefined);
       throw error;
     }
+    const updated = await this.findById(ownerUserId, agentId);
+    if (updated) await this.syncAgentResourceReferences(ownerUserId, updated);
     await Promise.all([
       nextAvatar !== undefined &&
       existing.avatarResourcePath &&
@@ -440,7 +454,7 @@ export class AgentRepository {
       // Sticker files can be referenced by historical messages. Removing an
       // item from the active library must not invalidate those messages.
     ]).catch((error) => console.warn("旧角色资源清理失败。", error));
-    return this.findById(ownerUserId, agentId);
+    return updated;
   }
 
   async updatePrimeFigurePreferences(
@@ -760,6 +774,31 @@ export class AgentRepository {
           this.resources.deleteOwnedByPublicPath(ownerUserId, path),
         ),
     ).catch(() => undefined);
+  }
+
+  private async syncAgentResourceReferences(ownerUserId: string, agent: Agent) {
+    const references: Array<{ resourceId: string; usageKind: string }> = [];
+    for (const [path, usageKind] of [
+      [agent.avatarResourcePath, "avatar"],
+      [agent.coverResourcePath, "cover"],
+    ] as const) {
+      if (!path) continue;
+      const resource = await this.resources.findByPublicPath(ownerUserId, path);
+      if (resource) references.push({ resourceId: resource.id, usageKind });
+    }
+    if (agent.type === "prime-figure") {
+      references.push(
+        ...agent.detail.referenceImages.map((item) => ({
+          resourceId: item.resourceId,
+          usageKind: "reference",
+        })),
+        ...(agent.detail.stickers ?? []).map((item) => ({
+          resourceId: item.resourceId,
+          usageKind: "sticker",
+        })),
+      );
+    }
+    await this.resources.replaceAgentReferences(agent.id, references);
   }
 
   private async readUploadByPublicPath(

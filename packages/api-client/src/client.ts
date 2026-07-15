@@ -25,6 +25,36 @@ export class ApiClient {
     return this.request<T>("DELETE", path, body);
   }
 
+  async putBinary(
+    pathOrUrl: string,
+    body: Blob,
+    headers: Record<string, string>,
+  ): Promise<void> {
+    const baseUrl = this.options.baseUrl.endsWith("/")
+      ? this.options.baseUrl
+      : `${this.options.baseUrl}/`;
+    const base = new URL(baseUrl);
+    const url = /^https?:\/\//i.test(pathOrUrl)
+      ? new URL(pathOrUrl)
+      : pathOrUrl.startsWith("/")
+        ? new URL(pathOrUrl, base.origin)
+        : new URL(pathOrUrl, base);
+    const token =
+      url.origin === base.origin ? await this.options.getAccessToken?.() : null;
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: {
+        ...headers,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body,
+    });
+    if (!response.ok)
+      throw new Error(
+        `媒体上传失败：${response.status} ${response.statusText}`,
+      );
+  }
+
   resolveServerPath(path?: string): string | undefined {
     if (!path) return undefined;
     if (/^https?:\/\//i.test(path)) return path;

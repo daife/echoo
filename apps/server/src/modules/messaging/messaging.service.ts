@@ -39,14 +39,16 @@ export type CreateUserMediaMessageInput =
       ownerUserId: string;
       conversationId: string;
       contentType: "image";
-      upload: MessageMediaUpload;
+      upload?: MessageMediaUpload;
+      resourceId?: string;
       clientMessageId?: string | null;
     }
   | {
       ownerUserId: string;
       conversationId: string;
       contentType: "voice";
-      upload: MessageMediaUpload;
+      upload?: MessageMediaUpload;
+      resourceId?: string;
       durationSeconds: number;
       clientMessageId?: string | null;
     }
@@ -254,6 +256,11 @@ export class MessagingService {
         content: {
           mediaUrl: sticker.resourcePath,
           resourceId: sticker.resourceId,
+          media: {
+            resourceId: sticker.resourceId,
+            kind: "sticker",
+            variants: ["thumb", "display", "original"],
+          },
         },
         status: "sent",
         metadata: {
@@ -321,12 +328,32 @@ export class MessagingService {
     }
 
     let resource;
+    let createdResource = false;
     try {
-      resource = await this.resources.saveUserMedia(
-        input.ownerUserId,
-        input.contentType === "image" ? "end_user_image" : "end_user_voice",
-        input.upload,
-      );
+      if (input.resourceId) {
+        resource = await this.resources.findById(input.resourceId);
+        const expectedKind =
+          input.contentType === "image" ? "end_user_image" : "end_user_voice";
+        if (
+          !resource ||
+          resource.ownerUserId !== input.ownerUserId ||
+          resource.kind !== expectedKind ||
+          resource.status !== "ready"
+        )
+          return {
+            kind: "invalid_media",
+            message: "媒体资源尚未就绪或无权访问。",
+          };
+      } else if (input.upload) {
+        resource = await this.resources.saveUserMedia(
+          input.ownerUserId,
+          input.contentType === "image" ? "end_user_image" : "end_user_voice",
+          input.upload,
+        );
+        createdResource = true;
+      } else {
+        return { kind: "invalid_media", message: "缺少媒体资源。" };
+      }
     } catch (error) {
       if (!(error instanceof InvalidMediaUploadError)) throw error;
       return {
@@ -348,8 +375,16 @@ export class MessagingService {
         contentType: input.contentType,
         content: {
           mediaUrl: resource.publicPath,
-          fileName: input.upload.fileName,
+          fileName: input.upload?.fileName ?? resource.originalFileName,
           resourceId: resource.id,
+          media: {
+            resourceId: resource.id,
+            kind: input.contentType,
+            variants:
+              input.contentType === "image"
+                ? ["thumb", "display", "original"]
+                : ["original"],
+          },
         },
         status: "sent",
         ...(input.contentType === "voice"
@@ -367,10 +402,11 @@ export class MessagingService {
         updatedAt: now,
       });
     } catch (error) {
-      await this.resources.deleteOwnedByPublicPath(
-        input.ownerUserId,
-        resource.publicPath,
-      );
+      if (createdResource)
+        await this.resources.deleteOwnedByPublicPath(
+          input.ownerUserId,
+          resource.publicPath,
+        );
       throw error;
     }
 

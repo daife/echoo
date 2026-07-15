@@ -68,12 +68,25 @@ export class MessageRepository {
     const limit = clampLimit(options?.limit, 100);
     if (!options?.after && !options?.before) {
       const cached = await this.readCached(ownerUserId, conversationId, limit);
-      if (cached)
-        return cached
+      if (cached) {
+        const messages = cached
           .map((item) => item.message)
           .filter((message) => message.status !== "failed");
+        return toMessagePage(messages, {
+          hasOlder: messages.length === limit,
+          hasNewer: false,
+        });
+      }
     }
     const cursor = options?.after ?? options?.before;
+    if (cursor) {
+      const cursorMessage = await this.findByIdInConversation(
+        ownerUserId,
+        conversationId,
+        cursor,
+      );
+      if (!cursorMessage) return null;
+    }
     const direction = options?.before ? "<" : ">";
     const order = options?.before || !options?.after ? "DESC" : "ASC";
     const rows = await queryRows<MessageRow>(
@@ -89,14 +102,19 @@ export class MessageRepository {
         ownerUserId,
         conversationId,
         cursor ?? null,
-        limit,
+        limit + 1,
       ],
     );
+    const hasExtra = rows.length > limit;
+    if (hasExtra) rows.splice(limit);
     if (order === "DESC") rows.reverse();
     const messages = rows.map(rowToMessage);
     if (!options?.after && !options?.before)
       await this.replaceCache(ownerUserId, conversationId, rows, limit);
-    return messages;
+    return toMessagePage(messages, {
+      hasOlder: options?.before ? hasExtra : Boolean(options?.after),
+      hasNewer: options?.after ? hasExtra : Boolean(options?.before),
+    });
   }
 
   /** LLM-only context window; client history pagination must use listByConversation. */
@@ -383,6 +401,14 @@ export class MessageRepository {
     );
     const { ownerUserId: _ownerUserId, ...message } = input;
     const saved = { ...message, sequence: result.insertId };
+    await execute("DELETE FROM message_resources WHERE message_id = ?", [
+      input.id,
+    ]);
+    if (input.content.resourceId)
+      await execute(
+        "INSERT IGNORE INTO message_resources (message_id, resource_id, created_at) VALUES (?, ?, ?)",
+        [input.id, input.content.resourceId, Date.now()],
+      );
     await this.upsertCache(input.ownerUserId, input.conversationId, {
       sequence: result.insertId,
       message: saved,
@@ -555,6 +581,20 @@ function getCoveredThroughSequence(message: Message | null) {
 
 function clampLimit(limit: number | undefined, fallback: number) {
   return Math.min(Math.max(Math.trunc(limit ?? fallback), 1), 500);
+}
+
+function toMessagePage(
+  items: Message[],
+  availability: { hasOlder: boolean; hasNewer: boolean },
+) {
+  return {
+    items,
+    pageInfo: {
+      ...availability,
+      ...(items[0]?.id ? { oldestCursor: items[0].id } : {}),
+      ...(items.at(-1)?.id ? { newestCursor: items.at(-1)!.id } : {}),
+    },
+  };
 }
 
 function parseJson<T>(value: unknown, fallback: T): T {

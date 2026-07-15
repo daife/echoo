@@ -14,11 +14,8 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  getCacheableMediaKey,
-  mediaCache,
-  resolveMediaUrl,
-} from "../../../services/mediaCache";
+import { MediaAsset, useMediaDirectUrl } from "../../media/MediaAsset";
+import { mediaCache } from "../../../services/mediaCache";
 import {
   sanitizeVoiceTranscript,
   tokenizeParentheticalText,
@@ -229,6 +226,7 @@ export function MessageBubble({
           }`}
           mediaUrl={message.mediaUrl}
           alt={mine ? "我发送的图片" : "角色发送的图片"}
+          variant="display"
         />
         {mine ? (
           <div className="mt-1 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
@@ -250,6 +248,7 @@ export function MessageBubble({
           className="max-h-44 max-w-44 object-contain"
           mediaUrl={message.mediaUrl}
           alt={mine ? "我发送的表情" : "角色发送的表情"}
+          variant="thumb"
         />
         {mine ? (
           <div className="mb-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
@@ -408,48 +407,21 @@ function CachedMediaImage({
   mediaUrl,
   className,
   alt,
+  variant,
 }: {
   mediaUrl: string;
   className: string;
   alt: string;
+  variant: "thumb" | "display";
 }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [shouldLoad, setShouldLoad] = useState(
-    () => !getCacheableMediaKey(mediaUrl),
-  );
-  const source = useCachedMediaObjectUrl(mediaUrl, shouldLoad);
-
-  useEffect(() => {
-    if (!getCacheableMediaKey(mediaUrl)) {
-      setShouldLoad(true);
-      return;
-    }
-    setShouldLoad(false);
-    const container = containerRef.current;
-    if (!container || typeof IntersectionObserver === "undefined") {
-      setShouldLoad(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return;
-        setShouldLoad(true);
-        observer.disconnect();
-      },
-      { rootMargin: "400px 0px" },
-    );
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [mediaUrl]);
-
   return (
-    <div
-      ref={containerRef}
-      className="min-h-24 min-w-32 rounded-xl bg-white/[0.025]"
-    >
-      {source ? (
-        <img className={className} src={source} alt={alt} loading="lazy" />
-      ) : null}
+    <div className="min-h-24 min-w-32 overflow-hidden rounded-xl bg-white/[0.025]">
+      <MediaAsset
+        mediaUrl={mediaUrl}
+        variant={variant}
+        className={className}
+        alt={alt}
+      />
     </div>
   );
 }
@@ -470,7 +442,7 @@ function VoiceBubble({
   const [isPlaying, setIsPlaying] = useState(false);
   const [shouldLoad, setShouldLoad] = useState(false);
   const playWhenReadyRef = useRef(false);
-  const source = useCachedMediaObjectUrl(mediaUrl, shouldLoad);
+  const source = useMediaDirectUrl(mediaUrl, shouldLoad, "original");
 
   useEffect(() => {
     setDuration(0);
@@ -550,7 +522,10 @@ function VoiceBubble({
           }}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
-          onEnded={() => setIsPlaying(false)}
+          onEnded={() => {
+            setIsPlaying(false);
+            if (mediaUrl) void mediaCache.get(mediaUrl, "original");
+          }}
         />
       ) : null}
       {transcript ? (
@@ -560,51 +535,6 @@ function VoiceBubble({
       ) : null}
     </div>
   );
-}
-
-function useCachedMediaObjectUrl(
-  mediaUrl: string | undefined,
-  enabled: boolean,
-) {
-  const [source, setSource] = useState<string | undefined>(() =>
-    mediaUrl && !getCacheableMediaKey(mediaUrl)
-      ? resolveMediaUrl(mediaUrl)
-      : undefined,
-  );
-
-  useEffect(() => {
-    const resolved = resolveMediaUrl(mediaUrl);
-    if (!resolved) {
-      setSource(undefined);
-      return;
-    }
-    if (!getCacheableMediaKey(resolved)) {
-      setSource(resolved);
-      return;
-    }
-    if (!enabled) {
-      setSource(undefined);
-      return;
-    }
-
-    let cancelled = false;
-    let objectUrl: string | undefined;
-    void mediaCache.get(resolved).then((blob) => {
-      if (cancelled) return;
-      if (!blob) {
-        setSource(resolved);
-        return;
-      }
-      objectUrl = URL.createObjectURL(blob);
-      setSource(objectUrl);
-    });
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [enabled, mediaUrl]);
-
-  return source;
 }
 
 function DeliveryIndicator({

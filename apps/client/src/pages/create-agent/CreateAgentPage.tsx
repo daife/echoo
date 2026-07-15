@@ -27,6 +27,7 @@ import {
 import { useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { imageFileToUpload } from "../../shared/utils/imageCompression";
+import { MediaAsset } from "../../features/media/MediaAsset";
 
 export type CreateAgentHandlers = {
   "slice-figure": (input: CreateSliceFigureRequest) => Promise<Agent>;
@@ -1118,9 +1119,10 @@ function ReferenceImageEditor({
           >
             <div className="h-24 overflow-hidden rounded-lg bg-white/[0.035]">
               {preview ? (
-                <img
+                <MediaAsset
                   className="h-full w-full object-cover"
-                  src={preview}
+                  mediaUrl={preview}
+                  variant="thumb"
                   alt="参考图片预览"
                 />
               ) : null}
@@ -1214,9 +1216,10 @@ function StickerEditor({
             >
               <div className="h-20 overflow-hidden rounded-lg bg-white/[0.035]">
                 {preview ? (
-                  <img
+                  <MediaAsset
                     className="h-full w-full object-contain"
-                    src={preview}
+                    mediaUrl={preview}
+                    variant="thumb"
                     alt="表情预览"
                   />
                 ) : null}
@@ -1620,9 +1623,10 @@ function ImageInput({
           }}
         />
         {preview ? (
-          <img
+          <MediaAsset
             className="h-24 w-full rounded-lg object-cover"
-            src={preview}
+            mediaUrl={preview}
+            variant="display"
             alt={`${label}预览`}
           />
         ) : (
