@@ -51,17 +51,20 @@ API 的 `user` 表示整个运行数据包；数组中每条时间线 JSON 的 `
 `user` 数据包包含：
 
 - 按时间排序的文本、图片、视频、语音、贴纸和转账记录。
-- 当前时间、星期、角色当前处境、行程、完整日程、情绪、关系、变量和可见记忆。
+- 当前时间、星期、角色当前处境、行程、完整日程、情绪、关系和可见记忆；创作者定义了变量时才包含变量。
 - `availableReferenceImages`。
 - 最终的 `hints` 数组。
 
 所有 hints 都只存在于这个 `user` 数据包中。前端输入 `/hint ...` 时仍调用独立调试端点，不写入普通 end-user 消息；服务端把调试指令加入本轮 `hints`，不会再追加第二条 system 消息。
 
-如果调用 `search_recall`，第二次请求只在原始 system/user 后追加 assistant 和 tool 消息，system 仍保持最前且只有一条。
+仅当可见记忆或最终对话窗口省略了更早内容时，首次请求才提供 `search_recall`。如果调用该工具，第二次请求只在原始 system/user 后追加 assistant 和 tool 消息，system 仍保持最前且只有一条。
 
 ## Prompt 与响应 Schema
 
 System prompt 由独立 composer 按配置组合核心决策、能力、图片、语音、状态、记忆、输出和稳定角色资料模块。可由运行时更新的 `currentSituation`、`itinerary`、`schedule` 只放在末尾 user 数据包的 `figureNow` 中，避免动态状态破坏 system 前缀缓存。
+
+- 创作者未定义变量时，system、user 数据包和响应 schema 均不包含变量提示或字段。模型误输出的变量字段会被忽略，内部 decision 仍归一化为 `variables: {}`。
+- `search_recall` 的 system/user 提示、工具定义和响应 schema 说明使用同一可用性标记；没有省略历史时全部不注入。
 
 - 关闭图片发送时，不拼入图片规则，显式声明暂不支持 image action，响应 schema 也不包含 image action。
 - 关闭语音发送时，不拼入语音规则，显式声明暂不支持 voice action，响应 schema 也不包含 voice action。

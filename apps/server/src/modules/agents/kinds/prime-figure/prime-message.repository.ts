@@ -20,6 +20,7 @@ interface PrimeRow extends RowDataPacket {
 }
 interface PrimeContextRow extends PrimeRow {
   context_start_message: number | string;
+  context_message_count: number | string;
 }
 export class PrimeMessageRepository {
   constructor(private readonly cache = new MessageCache()) {}
@@ -66,7 +67,10 @@ export class PrimeMessageRepository {
         evictionStep,
       ],
     );
-    return rows.map(rowToMessage);
+    return {
+      messages: rows.map(rowToMessage),
+      totalEligibleMessages: Number(rows[0]?.context_message_count ?? 0),
+    };
   }
 
   async findLatestEndUserCreatedAt(
@@ -101,7 +105,7 @@ export class PrimeMessageRepository {
   ) {
     const rows = await queryRows<PrimeRow>(
       `${SELECT_PRIME} WHERE messages.owner_user_id = ? AND messages.conversation_id = ?
-       AND messages.role = 'user' AND messages.seq > ?
+       AND messages.role = 'user' AND messages.status != 'failed' AND messages.seq > ?
        ORDER BY messages.seq ASC`,
       [ownerUserId, conversationId, sequence],
     );

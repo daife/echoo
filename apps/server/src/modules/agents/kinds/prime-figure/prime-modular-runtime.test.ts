@@ -6,6 +6,7 @@ import { PrimeContentOptimizer } from "./prime-content-optimizer.js";
 import {
   buildPrimeDecisionResponseFormat,
   parsePrimeDecisionEnvelope,
+  PrimeFigureRuntimeService,
 } from "./prime-figure-runtime.service.js";
 import { PrimeMediaAnnotationService } from "./prime-media-annotation.service.js";
 import { primeModelSessionId } from "./prime-model-session.js";
@@ -33,6 +34,185 @@ test("prime prompt and response schema track every output capability combination
   }
 });
 
+test("prime variable capability disappears from prompts, schema, and validation", () => {
+  const config = buildRuntimeConfigDefaults().primeFigure;
+  const withoutVariables = promptAgent();
+  const withoutVariablePrompt = buildPrimeSystemPrompt(
+    withoutVariables,
+    config,
+  );
+  const withoutVariableSchema = JSON.stringify(
+    buildPrimeDecisionResponseFormat(withoutVariables, config, false, [], []),
+  );
+  assert.doesNotMatch(withoutVariablePrompt, /变量/);
+  assert.doesNotMatch(withoutVariableSchema, /variables|变量/);
+
+  const ignored = parsePrimeDecisionEnvelope(
+    JSON.stringify({
+      rationale: "回应",
+      figureMood: "平静",
+      variables: "模型误输出的无效字段",
+      actions: [],
+    }),
+    withoutVariables,
+    [],
+    [],
+    config,
+  );
+  assert.deepEqual(ignored.decision.variables, {});
+
+  const withVariables = promptAgent();
+  withVariables.detail.variableDefinitions = [
+    {
+      key: "trust",
+      label: "信任",
+      type: "number",
+      description: "figure 对 end_user 的信任程度",
+    },
+  ];
+  assert.match(buildPrimeSystemPrompt(withVariables, config), /变量：/);
+  assert.match(
+    JSON.stringify(
+      buildPrimeDecisionResponseFormat(withVariables, config, false, [], []),
+    ),
+    /variables|变量/,
+  );
+  assert.throws(() =>
+    parsePrimeDecisionEnvelope(
+      JSON.stringify({
+        rationale: "回应",
+        figureMood: "平静",
+        variables: "无效字段",
+        actions: [],
+      }),
+      withVariables,
+      [],
+      [],
+      config,
+    ),
+  );
+});
+
+test("prime recall guidance is composed only with the recall tool", () => {
+  const config = buildRuntimeConfigDefaults().primeFigure;
+  const agent = promptAgent();
+  const unavailablePrompt = buildPrimeSystemPrompt(agent, config);
+  const unavailableSchema = JSON.stringify(
+    buildPrimeDecisionResponseFormat(agent, config, false, [], []),
+  );
+  assert.doesNotMatch(unavailablePrompt, /search_recall/);
+  assert.doesNotMatch(unavailableSchema, /search_recall/);
+
+  const availablePrompt = buildPrimeSystemPrompt(agent, config, {
+    recallAvailable: true,
+  });
+  const availableSchema = JSON.stringify(
+    buildPrimeDecisionResponseFormat(agent, config, false, [], [], true),
+  );
+  assert.match(availablePrompt, /search_recall/);
+  assert.match(availableSchema, /search_recall/);
+  assert.doesNotMatch(
+    availablePrompt,
+    /省略.*(?:工具|tool)|(?:工具|tool).*省略/,
+  );
+});
+
+test("prime runtime only sends and executes recall tools when recall is available", async () => {
+  for (const recallAvailable of [false, true]) {
+    const calls: any[] = [];
+    let searches = 0;
+    const provider = {
+      id: "fake",
+      async createChatCompletion(input: any) {
+        calls.push(input);
+        if (calls.length === 1)
+          return {
+            providerId: "fake",
+            model: "fake",
+            text: "",
+            toolCalls: [
+              {
+                id: "call_1",
+                type: "function",
+                function: {
+                  name: "search_recall",
+                  arguments: '{"keywords":["旧事"],"limit":3}',
+                },
+              },
+            ],
+          };
+        return {
+          providerId: "fake",
+          model: "fake",
+          text: JSON.stringify({
+            rationale: "回应",
+            figureMood: "平静",
+            memoryWrites: [{ content: "整合后的记忆", eventAt: null }],
+            actions: [],
+          }),
+        };
+      },
+    };
+    const runtime = new PrimeFigureRuntimeService(
+      {} as never,
+      {} as never,
+      {
+        async searchByKeywords() {
+          searches += 1;
+          return [];
+        },
+      } as never,
+    );
+    const complete = (
+      runtime as unknown as {
+        completeWithOptionalRecall(input: any): Promise<unknown>;
+      }
+    ).completeWithOptionalRecall.bind(runtime);
+    const config = buildRuntimeConfigDefaults().primeFigure;
+    await complete({
+      request: {
+        ownerUserId: "user_1",
+        agent: promptAgent(),
+        state: { variables: {}, memories: [] },
+        runtimeConfig: config,
+      },
+      provider,
+      completionBase: {
+        model: "fake",
+        temperature: 0,
+        maxTokens: 1_000,
+        reasoningMode: "disabled",
+      },
+      packet: {
+        messages: [
+          { role: "system", content: "system" },
+          { role: "user", content: "user" },
+        ],
+        pendingMedia: [],
+        availableReferenceImages: [],
+        recallAvailable,
+      },
+      streamSession: { handleField() {} },
+      diagnostics: { rawResponse: "", providerId: "fake", model: "fake" },
+    });
+
+    assert.equal("tools" in calls[0], recallAvailable);
+    assert.equal(calls.length, recallAvailable ? 2 : 1);
+    assert.equal(searches, recallAvailable ? 1 : 0);
+    if (recallAvailable) {
+      assert.deepEqual(
+        calls[1].messages.map((message: { role: string }) => message.role),
+        ["system", "user", "assistant", "tool"],
+      );
+      assert.equal(
+        calls[1].responseFormat.json_schema.schema.properties.memoryWrites
+          .minItems,
+        1,
+      );
+    }
+  }
+});
+
 test("disabled output actions are ignored before validation and retain source indices", () => {
   const config = buildRuntimeConfigDefaults().primeFigure;
   config.outputs.image.enabled = false;
@@ -50,6 +230,7 @@ test("disabled output actions are ignored before validation and retain source in
         { type: "mute", revisitAfterMinutes: 5 },
       ],
     }),
+    promptAgent(),
     [],
     [],
     config,
@@ -72,6 +253,7 @@ test("disabled output actions are ignored before validation and retain source in
         { type: "image", message: { type: "image" } },
       ],
     }),
+    promptAgent(),
     [],
     [],
     config,
@@ -96,6 +278,7 @@ test("proactive wakeup action follows its capability boundary", () => {
         variables: {},
         actions: [{ type: "schedule_wakeup", afterMinutes: 5 }],
       }),
+      promptAgent(),
       [],
       [],
       disabled,
@@ -127,6 +310,7 @@ test("enabled malformed and unknown actions remain invalid", () => {
         ...base,
         actions: [{ type: "voice", message: { type: "voice" } }],
       }),
+      promptAgent(),
       [],
       [],
       config,
@@ -135,6 +319,7 @@ test("enabled malformed and unknown actions remain invalid", () => {
   assert.throws(() =>
     parsePrimeDecisionEnvelope(
       JSON.stringify({ ...base, actions: [{ type: "teleport" }] }),
+      promptAgent(),
       [],
       [],
       config,

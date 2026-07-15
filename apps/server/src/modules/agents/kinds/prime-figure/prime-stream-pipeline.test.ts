@@ -599,7 +599,7 @@ test("a stale dirty wakeup cannot call the LLM after all end-user messages were 
         return Date.now() - 5_000;
       },
       async listContextWindow() {
-        return [];
+        return { messages: [], totalEligibleMessages: 0 };
       },
       async listEndUserAfterSequence() {
         return [];

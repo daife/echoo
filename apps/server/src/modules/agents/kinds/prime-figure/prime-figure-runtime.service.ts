@@ -59,6 +59,8 @@ import {
 
 const PRIME_VISIBLE_MEMORY_LIMIT = 20;
 const RECALL_HINT_PATTERN = /记得|不记得|忘了|还记得|remember|forgot|recal+l/i;
+const primeFigureDecisionWithoutVariablesSchema =
+  primeFigureDecisionSchema.omit({ variables: true });
 
 export type PrimeDecisionTrigger =
   | "end_user_message"
@@ -270,6 +272,7 @@ export class PrimeFigureRuntimeService {
       context.lastHandledEndUserSeq,
       input.debugInstruction,
       input.runtimeConfig,
+      context.hasOmittedConversation,
     );
     if (packet.auxiliaryMedia.length) {
       const annotations = await this.mediaAnnotations.annotate(
@@ -295,6 +298,7 @@ export class PrimeFigureRuntimeService {
         context.lastHandledEndUserSeq,
         input.debugInstruction,
         input.runtimeConfig,
+        context.hasOmittedConversation,
       );
     }
     const streamSession = new PrimeDecisionStreamSession({
@@ -333,6 +337,7 @@ export class PrimeFigureRuntimeService {
       }
       const envelope = parsePrimeDecisionEnvelope(
         finalResponse.text,
+        input.agent,
         packet.pendingMedia,
         packet.availableReferenceImages.map((media) => media.id),
         input.runtimeConfig,
@@ -457,7 +462,7 @@ export class PrimeFigureRuntimeService {
         input.conversationId,
       ));
     const window = input.runtimeConfig.context;
-    const [recentTimeline, unhandledEndUserMessages] = await Promise.all([
+    const [contextWindow, unhandledEndUserMessages] = await Promise.all([
       this.messages.listContextWindow(
         input.ownerUserId,
         input.conversationId,
@@ -480,11 +485,15 @@ export class PrimeFigureRuntimeService {
     )
       return null;
     const timeline = mergePrimeTimeline(
-      recentTimeline,
+      contextWindow.messages,
       unhandledEndUserMessages,
     );
     return {
       timeline,
+      hasOmittedConversation: hasOmittedPrimeConversation(
+        contextWindow.totalEligibleMessages,
+        timeline,
+      ),
       lastHandledEndUserSeq,
       inputThroughEndUserSeq: timeline.reduce(
         (latest, message) =>
@@ -530,22 +539,26 @@ export class PrimeFigureRuntimeService {
         {
           ...input.completionBase,
           messages,
-          tools: [SEARCH_RECALL_TOOL],
-          toolChoice: "auto",
+          ...(input.packet.recallAvailable
+            ? { tools: [SEARCH_RECALL_TOOL], toolChoice: "auto" as const }
+            : {}),
           responseFormat: buildPrimeDecisionResponseFormat(
             input.request.agent,
             input.request.runtimeConfig,
             false,
             input.packet.pendingMedia,
             availableReferenceImageIds,
+            input.packet.recallAvailable,
           ),
         },
         input.streamSession,
       ),
     );
-    const recallCall = firstResponse.toolCalls?.find(
-      (call) => call.function.name === "search_recall",
-    );
+    const recallCall = input.packet.recallAvailable
+      ? firstResponse.toolCalls?.find(
+          (call) => call.function.name === "search_recall",
+        )
+      : undefined;
     if (!recallCall) return firstResponse;
     messages.push({
       role: "assistant",
@@ -570,6 +583,7 @@ export class PrimeFigureRuntimeService {
             true,
             input.packet.pendingMedia,
             availableReferenceImageIds,
+            true,
           ),
           toolChoice: "none",
         },
@@ -730,14 +744,20 @@ export async function buildPrimeChatMessages(
   lastHandledEndUserSeq: number,
   debugInstruction: string | undefined,
   runtimeConfig: StoredPrimeFigureRuntimeConfig,
+  hasOmittedConversation = false,
 ): Promise<{
   messages: ChatCompletionMessage[];
   pendingMedia: PendingMediaAnnotation[];
   auxiliaryMedia: PendingMediaAnnotation[];
   availableReferenceImages: Array<{ id: string; description: string }>;
+  recallAvailable: boolean;
 }> {
   const timezone = APP_TIME_ZONE;
   const now = Date.now();
+  const hasVariables = agent.detail.variableDefinitions.length > 0;
+  const recallAvailable =
+    hasOmittedConversation ||
+    state.memories.length > PRIME_VISIBLE_MEMORY_LIMIT;
   const lastEndUserMessage = [...timeline]
     .reverse()
     .find((message) => message.sender === "end_user");
@@ -767,6 +787,7 @@ export async function buildPrimeChatMessages(
   }
 
   if (
+    recallAvailable &&
     lastEndUserMessage?.content.type === "text" &&
     RECALL_HINT_PATTERN.test(lastEndUserMessage.content.text)
   ) {
@@ -1072,7 +1093,20 @@ export async function buildPrimeChatMessages(
           ? `figure当前情绪：“${state.mood}”。该判断形成于${describeAge(state.moodObservedAtMs, now)}。`
           : "figure当前没有已记录的情绪。",
         relationship: state.relationshipStatus || undefined,
-        variables: makeLlmReadable(state.variables, timezone),
+        ...(hasVariables
+          ? {
+              variables: makeLlmReadable(
+                Object.fromEntries(
+                  agent.detail.variableDefinitions.flatMap((definition) =>
+                    state.variables[definition.key] === undefined
+                      ? []
+                      : [[definition.key, state.variables[definition.key]]],
+                  ),
+                ),
+                timezone,
+              ),
+            }
+          : {}),
       },
       memories: visibleMemories,
       availableReferenceImages,
@@ -1084,7 +1118,9 @@ export async function buildPrimeChatMessages(
     messages: [
       {
         role: "system",
-        content: buildPrimeSystemPrompt(agent, runtimeConfig),
+        content: buildPrimeSystemPrompt(agent, runtimeConfig, {
+          recallAvailable,
+        }),
       },
       {
         role: "user",
@@ -1094,6 +1130,7 @@ export async function buildPrimeChatMessages(
     pendingMedia,
     auxiliaryMedia,
     availableReferenceImages,
+    recallAvailable,
   };
 }
 
@@ -1182,6 +1219,13 @@ export function mergePrimeTimeline(
   ];
 }
 
+export function hasOmittedPrimeConversation(
+  totalEligibleMessages: number,
+  timeline: PrimeMessage[],
+) {
+  return timeline.length < totalEligibleMessages;
+}
+
 function filterUnavailableReferenceMediaIds(
   decision: PrimeFigureDecision,
   availableReferenceImageIds: string[],
@@ -1241,7 +1285,9 @@ export function buildPrimeDecisionResponseFormat(
   requireMemoryWrite: boolean,
   pendingMedia: PendingMediaAnnotation[],
   availableReferenceImageIds: string[],
+  recallAvailable = false,
 ) {
+  const hasVariables = agent.detail.variableDefinitions.length > 0;
   const variableProperties = Object.fromEntries(
     agent.detail.variableDefinitions.map((definition) => [
       definition.key,
@@ -1262,23 +1308,25 @@ export function buildPrimeDecisionResponseFormat(
         properties: {
           rationale: {
             type: "string",
-            description:
-              "分析figure的情绪、动机、记忆、日程和变量以及用什么actions来应对。",
+            description: `分析figure的情绪、动机、记忆、日程${hasVariables ? "、变量" : ""}，以及用什么actions来应对。`,
           },
           figureMood: {
             type: "string",
           },
-          variables: {
-            type: "object",
-            description: "输出每个变量的替换值；保留原值时为 null。",
-            properties: variableProperties,
-            required: variableKeys,
-            additionalProperties: false,
-          },
+          ...(hasVariables
+            ? {
+                variables: {
+                  type: "object",
+                  description: "输出每个变量的替换值；保留原值时为 null。",
+                  properties: variableProperties,
+                  required: variableKeys,
+                  additionalProperties: false,
+                },
+              }
+            : {}),
           memoryWrites: {
             type: "array",
-            description:
-              "新增的持久figure记忆。除非该事件值得日后回忆，否则保持为空。调用 search_recall 后必须至少写入一条。",
+            description: `新增的持久figure记忆。除非该事件值得日后回忆，否则保持为空。${recallAvailable ? "调用 search_recall 后必须至少写入一条。" : ""}`,
             minItems: requireMemoryWrite ? 1 : 0,
             items: {
               type: "object",
@@ -1359,7 +1407,7 @@ export function buildPrimeDecisionResponseFormat(
         required: [
           "rationale",
           "figureMood",
-          "variables",
+          ...(hasVariables ? ["variables"] : []),
           ...(pendingMedia.length ? ["mediaAnnotations"] : []),
         ],
         additionalProperties: false,
@@ -1619,6 +1667,7 @@ function parseRecallArguments(value: string) {
 
 export function parsePrimeDecisionEnvelope(
   responseText: string,
+  agent: PrimeFigureAgent,
   pendingMedia: PendingMediaAnnotation[],
   availableReferenceImageIds: string[],
   runtimeConfig: StoredPrimeFigureRuntimeConfig,
@@ -1627,8 +1676,16 @@ export function parsePrimeDecisionEnvelope(
   const rawActionFilter = Array.isArray(raw.actions)
     ? filterPrimeActionsByCapabilities(raw.actions, runtimeConfig)
     : null;
-  const parsed = primeFigureDecisionSchema.parse(
-    rawActionFilter ? { ...raw, actions: rawActionFilter.actions } : raw,
+  const normalizedRaw = rawActionFilter
+    ? { ...raw, actions: rawActionFilter.actions }
+    : raw;
+  const parsed = (
+    agent.detail.variableDefinitions.length
+      ? primeFigureDecisionSchema.parse(normalizedRaw)
+      : {
+          ...primeFigureDecisionWithoutVariablesSchema.parse(normalizedRaw),
+          variables: {},
+        }
   ) as PrimeFigureDecision;
   const parsedActionFilter = filterPrimeActionsByCapabilities(
     parsed.actions,

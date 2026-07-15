@@ -502,6 +502,74 @@ test("prime dynamic figure context lives only in the final user packet", async (
   });
 });
 
+test("prime user packet omits variables when the creator defined none", async () => {
+  const buildPacket = (agent: PrimeFigureAgent) =>
+    buildPrimeChatMessages(
+      agent,
+      {
+        variables: { stale_variable: "ignore me" },
+        memories: Array.from({ length: 20 }, (_, index) => ({
+          id: `memory_${index}`,
+          content: `memory ${index}`,
+          eventAtMs: index + 1,
+          recordedAtMs: index + 1,
+        })),
+        mood: "",
+        moodObservedAtMs: 1,
+        relationshipStatus: "",
+        updatedAt: 1,
+      },
+      [],
+      "end_user_message",
+      "user_1",
+      {} as never,
+      {
+        async listAvailableImages() {
+          return [];
+        },
+      } as never,
+      0,
+      undefined,
+      buildRuntimeConfigDefaults().primeFigure,
+    );
+
+  const withoutVariables = await buildPacket(minimalPrimeAgent());
+  const withoutVariableContent = withoutVariables.messages[1]?.content;
+  assert.ok(Array.isArray(withoutVariableContent));
+  const withoutVariablePart = withoutVariableContent.at(-1);
+  assert.equal(withoutVariablePart?.type, "text");
+  const withoutVariableContext = JSON.parse(
+    String(
+      withoutVariablePart?.type === "text" ? withoutVariablePart.text : "{}",
+    ),
+  ) as { figureNow: Record<string, unknown> };
+  assert.equal("variables" in withoutVariableContext.figureNow, false);
+  assert.equal(withoutVariables.recallAvailable, false);
+  assert.doesNotMatch(
+    JSON.stringify(withoutVariables.messages),
+    /search_recall/,
+  );
+
+  const withVariables = minimalPrimeAgent();
+  withVariables.detail.variableDefinitions = [
+    {
+      key: "trust",
+      label: "信任",
+      type: "number",
+      description: "信任程度",
+    },
+  ];
+  const withVariablePacket = await buildPacket(withVariables);
+  const withVariableContent = withVariablePacket.messages[1]?.content;
+  assert.ok(Array.isArray(withVariableContent));
+  const withVariablePart = withVariableContent.at(-1);
+  assert.equal(withVariablePart?.type, "text");
+  const withVariableContext = JSON.parse(
+    String(withVariablePart?.type === "text" ? withVariablePart.text : "{}"),
+  ) as { figureNow: Record<string, unknown> };
+  assert.deepEqual(withVariableContext.figureNow.variables, {});
+});
+
 test("prime context exposes only the latest twenty persistent memories", async () => {
   const packet = await buildPrimeChatMessages(
     {
@@ -559,6 +627,8 @@ test("prime context exposes only the latest twenty persistent memories", async (
   assert.equal(context.memories.length, 20);
   assert.equal(context.memories[0]?.[1], "memory 5");
   assert.equal(context.memories.at(-1)?.[1], "memory 24");
+  assert.equal(packet.recallAvailable, true);
+  assert.match(JSON.stringify(packet.messages), /search_recall/);
 });
 
 test("prime decision distinguishes one-turn silence from message muting", () => {

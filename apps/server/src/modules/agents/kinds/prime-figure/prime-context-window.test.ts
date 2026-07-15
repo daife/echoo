@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { PrimeMessage, PrimeMessageContent } from "@echoo/shared";
 import { calculateStableContextStart } from "../../../../infra/config/context-window-config.js";
-import { mergePrimeTimeline } from "./prime-figure-runtime.service.js";
+import {
+  hasOmittedPrimeConversation,
+  mergePrimeTimeline,
+} from "./prime-figure-runtime.service.js";
 
 test("prime context retains 150-249 individual messages", () => {
   const window = { minimum: 150, maximum: 249 };
@@ -50,6 +53,21 @@ test("prime timeline keeps every unhandled message beyond the normal window", ()
   assert.equal(merged[0]?.sequence, 151);
   assert.equal(merged.at(-1)?.sequence, 500);
   assert.equal(new Set(merged.map((item) => item.id)).size, merged.length);
+  assert.equal(hasOmittedPrimeConversation(500, merged), true);
+});
+
+test("prime recall availability uses the final merged timeline", () => {
+  const recent = Array.from({ length: 2 }, (_, index) =>
+    message(index + 4, { type: "text", text: `recent ${index}` }),
+  );
+  const restored = Array.from({ length: 3 }, (_, index) =>
+    message(index + 1, { type: "text", text: `restored ${index}` }),
+  );
+  const complete = mergePrimeTimeline(recent, restored);
+
+  assert.equal(complete.length, 5);
+  assert.equal(hasOmittedPrimeConversation(5, complete), false);
+  assert.equal(hasOmittedPrimeConversation(6, complete), true);
 });
 
 function contentFor(index: number): PrimeMessageContent {

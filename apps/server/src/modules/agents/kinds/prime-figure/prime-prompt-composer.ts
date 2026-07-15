@@ -7,8 +7,10 @@ import { isPrimeOutputEnabled } from "./prime-output-capabilities.js";
 export function buildPrimeSystemPrompt(
   agent: PrimeFigureAgent,
   config: StoredPrimeFigureRuntimeConfig,
+  options: { recallAvailable?: boolean } = {},
 ) {
   const timezone = APP_TIME_ZONE;
+  const hasVariables = agent.detail.variableDefinitions.length > 0;
   const parameters = agent.detail.variableDefinitions.map(
     (definition) =>
       `${definition.key} (${definition.type}, nullable): ${sanitizePromptText(definition.description, timezone)}`,
@@ -18,7 +20,7 @@ export function buildPrimeSystemPrompt(
     USER_PACKET_RULES,
     `你要从figure:“${agent.name}”自身的视角模拟该角色。`,
     "你的目标是维持一个可信的figure，使其人格、记忆、情绪、日程、偏好、边界和关系等保持连续。",
-    DECISION_RULES,
+    buildDecisionRules(hasVariables),
     buildActionRules(config),
     SEND_MESSAGE_RULES,
     ...(isPrimeOutputEnabled(config, "image")
@@ -29,14 +31,15 @@ export function buildPrimeSystemPrompt(
       : []),
     STATE_UPDATE_RULES,
     MEMORY_AND_TIME_RULES,
-    OUTPUT_RULES,
+    ...(options.recallAvailable ? [RECALL_RULES] : []),
+    buildOutputRules(hasVariables),
     "",
     `人设：${sanitizePromptText(agent.detail.persona, timezone)}`,
     `背景：${sanitizePromptText(agent.detail.background, timezone)}`,
     `性格：${sanitizePromptText(agent.detail.personality, timezone)}`,
     `回复风格：${sanitizePromptText(agent.detail.responseStyle, timezone)}`,
     `决策风格：${sanitizePromptText(agent.detail.decisionStyle, timezone) || "无额外决策风格。"}`,
-    `变量：\n${parameters.length ? parameters.join("\n") : "无额外变量。"}`,
+    ...(hasVariables ? [`变量：\n${parameters.join("\n")}`] : []),
   ];
   return blocks.join("\n");
 }
@@ -78,8 +81,10 @@ export const AUDIO_ANNOTATION_SYSTEM_PROMPT =
 const USER_PACKET_RULES = `请求中的 API user 消息是运行数据包，不等同于聊天中的真实用户。时间线对象里 sender=end_user 才表示真实聊天用户，sender=figure 表示角色自己。
 user 数据包末尾的 hints 是本轮运行指令；在当前响应 schema 开放的能力范围内必须逐条遵从。`;
 
-const DECISION_RULES = `先在rationale中写出简洁的决策分析。分析figure自身的情绪、动机、日程、记忆、变量，以及应对end_user的行为如何采取action。
+function buildDecisionRules(hasVariables: boolean) {
+  return `先在rationale中写出简洁的决策分析。分析figure自身的情绪、动机、日程、记忆${hasVariables ? "、变量" : ""}，以及应对end_user的行为如何采取action。
 已存储的情绪是历史证据，不是要求永远维持它的指令。请考虑它是在多久之前被观察到的。`;
+}
 
 function buildActionRules(config: StoredPrimeFigureRuntimeConfig) {
   const media = [
@@ -137,9 +142,13 @@ transcript 在合适位置插入一个或多个方括号自由文本 tag，指�
 
 const STATE_UPDATE_RULES =
   "只有当 currentSituation、schedule、itinerary 或 relationshipStatus 确实变化时才使用 stateUpdates；保留字段时省略或设为 null。";
-const MEMORY_AND_TIME_RULES = `记忆的 eventAt 仅在有充分依据时复制可见的 YYYY-MM-DDTHH:mm，否则为 null。所有精确时间均采用角色时区，不得虚构。仅在 search_recall 工具说明允许时调用。`;
-const OUTPUT_RULES =
-  "只返回符合严格 schema 的 JSON。创作者定义的参数可以使用 null 保留先前值。";
+const MEMORY_AND_TIME_RULES =
+  "记忆的 eventAt 仅在有充分依据时复制可见的 YYYY-MM-DDTHH:mm，否则为 null。所有精确时间均采用角色时区，不得虚构。";
+const RECALL_RULES = "仅在 search_recall 工具说明允许时调用。";
+
+function buildOutputRules(hasVariables: boolean) {
+  return `只返回符合严格 schema 的 JSON。${hasVariables ? "创作者定义的参数可以使用 null 保留先前值。" : ""}`;
+}
 
 function sanitizePromptText(value: string, timezone: string) {
   return value
