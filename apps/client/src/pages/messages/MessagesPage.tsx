@@ -53,7 +53,11 @@ import {
   SliceFigureFormFields,
 } from "../create-agent/CreateAgentPage";
 import { useConversationMessages } from "./useConversationMessages";
-import { isAwayFromLatestMessage } from "./conversationScrollPosition";
+import {
+  isAwayFromLatestMessage,
+  shouldAdjustForConversationItemResize,
+  type ConversationScrollDirection,
+} from "./conversationScrollPosition";
 import { imageFileToUpload } from "../../shared/utils/imageCompression";
 import {
   PrimeRuntimeConfigForm,
@@ -159,6 +163,7 @@ export function MessagesPage({
   const lastConversationRef = useRef<string | undefined>(undefined);
   const lastVisibleMessageIdRef = useRef<string | undefined>(undefined);
   const lastScrollTopRef = useRef(0);
+  const scrollDirectionRef = useRef<ConversationScrollDirection>(null);
   const lastVirtualScrollMarginRef = useRef(0);
   const pendingJumpToLatestRef = useRef(false);
   const showAgentTyping = useRhythmicPrimePresence({
@@ -216,6 +221,12 @@ export function MessagesPage({
     scrollMargin: virtualScrollMargin,
     anchorTo: "end",
   });
+  messageVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item) =>
+    shouldAdjustForConversationItemResize({
+      itemEnd: item.end,
+      scrollTop: mainRef.current?.scrollTop ?? 0,
+      direction: scrollDirectionRef.current,
+    });
 
   useEffect(() => {
     if (!runtimeErrorNotice) return;
@@ -253,9 +264,13 @@ export function MessagesPage({
     const main = mainRef.current;
     if (!main || isInitialLoading) return;
     const conversationChanged = lastConversationRef.current !== conversationId;
-    if (conversationChanged) pendingJumpToLatestRef.current = false;
+    if (conversationChanged) {
+      pendingJumpToLatestRef.current = false;
+      scrollDirectionRef.current = null;
+    }
     if (pendingJumpToLatestRef.current && !isJumpingToLatest && !hasNewer) {
       pendingJumpToLatestRef.current = false;
+      scrollDirectionRef.current = null;
       messageVirtualizer.scrollToEnd();
       lastScrollTopRef.current = main.scrollTop;
       shouldFollowBottomRef.current = true;
@@ -273,6 +288,7 @@ export function MessagesPage({
       (scrollMarginChanged && shouldFollowBottomRef.current) ||
       (latestChanged && (shouldFollowBottomRef.current || optimisticMine))
     ) {
+      scrollDirectionRef.current = null;
       messageVirtualizer.scrollToEnd();
       lastScrollTopRef.current = main.scrollTop;
       shouldFollowBottomRef.current = true;
@@ -293,6 +309,7 @@ export function MessagesPage({
 
   const handleJumpToLatest = async () => {
     if (isJumpingToLatest) return;
+    scrollDirectionRef.current = null;
     if (!hasNewer) {
       messageVirtualizer.scrollToEnd();
       shouldFollowBottomRef.current = true;
@@ -309,7 +326,11 @@ export function MessagesPage({
   const handleMessageScroll = () => {
     const main = mainRef.current;
     if (!main) return;
-    const scrollingUp = main.scrollTop < lastScrollTopRef.current;
+    const previousScrollTop = lastScrollTopRef.current;
+    const scrollingUp = main.scrollTop < previousScrollTop;
+    if (main.scrollTop < previousScrollTop) scrollDirectionRef.current = "up";
+    else if (main.scrollTop > previousScrollTop)
+      scrollDirectionRef.current = "down";
     lastScrollTopRef.current = main.scrollTop;
     const nextIsAwayFromLatest = isAwayFromLatestMessage(main);
     shouldFollowBottomRef.current = !nextIsAwayFromLatest;
@@ -520,6 +541,7 @@ export function MessagesPage({
         <main
           ref={mainRef}
           className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto px-5 py-7 no-scrollbar md:px-9"
+          style={{ overflowAnchor: "none" }}
           onScroll={handleMessageScroll}
         >
           {prologueHtml ? (
@@ -1240,6 +1262,14 @@ function toBubbleMessages(
   const primeContent = readPrimeContent(message.metadata);
   const isSticker = primeContent?.type === "sticker";
   const isTransfer = primeContent?.type === "transfer";
+  const persistedMedia = message.content.media;
+  const mediaDimensions =
+    persistedMedia &&
+    (persistedMedia.kind === "image" ||
+      persistedMedia.kind === "sticker" ||
+      persistedMedia.kind === "video")
+      ? { width: persistedMedia.width, height: persistedMedia.height }
+      : message.localMediaDimensions;
   const text =
     message.contentType === "text" && !isTransfer
       ? (message.content.text ?? "")
@@ -1279,6 +1309,8 @@ function toBubbleMessages(
       (message.content.media?.resourceId
         ? `/api/resources/${message.content.media.resourceId}/file`
         : undefined),
+    mediaWidth: mediaDimensions?.width,
+    mediaHeight: mediaDimensions?.height,
     transcript:
       message.contentType === "voice" ? message.content.text : undefined,
     durationSeconds:

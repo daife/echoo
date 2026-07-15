@@ -12,12 +12,16 @@ export function MediaAsset({
   className,
   alt,
   eager = false,
+  width,
+  height,
 }: {
   mediaUrl?: string;
   variant?: MediaVariant;
   className: string;
   alt: string;
   eager?: boolean;
+  width?: number;
+  height?: number;
 }) {
   const { source, fallbackToDirect } = useMediaObjectUrl(
     mediaUrl,
@@ -33,6 +37,8 @@ export function MediaAsset({
           src={source}
           alt={alt}
           loading={eager ? "eager" : "lazy"}
+          width={width}
+          height={height}
           onError={fallbackToDirect}
         />
       ) : null}

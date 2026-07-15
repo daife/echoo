@@ -7,6 +7,7 @@ import type {
 import { estimateMp3DurationSeconds } from "@echoo/shared";
 import { AppPushService } from "../../../realtime/delivery.service.js";
 import { ResourceRepository } from "../../../resources/resource.repository.js";
+import { requireVisualDimensions } from "../../../resources/media-reference.js";
 import { OpenRouterImageGenerationService } from "../../../image-generation/openrouter-image-generation.service.js";
 import {
   FishAudioTtsService,
@@ -32,6 +33,8 @@ export interface ResolvedPrimeVoiceMedia extends ResolvedPrimeMedia {
 export interface ResolvedPrimeImageMedia extends ResolvedPrimeMedia {
   mediaId: string;
   model: string;
+  width: number;
+  height: number;
 }
 
 interface PrimeStreamFailureDiagnostics {
@@ -674,6 +677,7 @@ export class PrimeDecisionStreamSession {
         mediaUrl: resource.publicPath,
         mediaId: registered.mediaId,
         model: generated.model,
+        ...requireVisualDimensions(resource),
       };
     })();
     void image.imagePromise.catch(() => undefined);

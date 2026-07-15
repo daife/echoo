@@ -18,6 +18,7 @@ import {
   InvalidMediaUploadError,
   ResourceRepository,
 } from "../resources/resource.repository.js";
+import { createVisualMediaReference } from "../resources/media-reference.js";
 import { MessageRepository } from "./message.repository.js";
 import { PrimeRunProcessor } from "./prime-run.processor.js";
 import { SliceReplyProcessor } from "./slice-reply.processor.js";
@@ -257,11 +258,13 @@ export class MessagingService {
         content: {
           mediaUrl: sticker.resourcePath,
           resourceId: sticker.resourceId,
-          media: {
+          media: createVisualMediaReference({
             resourceId: sticker.resourceId,
             kind: "sticker",
             variants: ["thumb", "display", "original"],
-          },
+            width: sticker.width,
+            height: sticker.height,
+          }),
         },
         status: "sent",
         metadata: {
@@ -378,14 +381,20 @@ export class MessagingService {
           mediaUrl: resource.publicPath,
           fileName: input.upload?.fileName ?? resource.originalFileName,
           resourceId: resource.id,
-          media: {
-            resourceId: resource.id,
-            kind: input.contentType,
-            variants:
-              input.contentType === "image"
-                ? ["thumb", "display", "original"]
-                : ["original"],
-          },
+          media:
+            input.contentType === "image"
+              ? createVisualMediaReference({
+                  resourceId: resource.id,
+                  kind: "image",
+                  variants: ["thumb", "display", "original"],
+                  width: resource.width,
+                  height: resource.height,
+                })
+              : {
+                  resourceId: resource.id,
+                  kind: "voice",
+                  variants: ["original"],
+                },
         },
         status: "sent",
         ...(input.contentType === "voice"

@@ -20,6 +20,7 @@ import {
   sanitizeVoiceTranscript,
   tokenizeParentheticalText,
 } from "../messagePresentation";
+import { fitMessageMedia } from "../mediaLayout";
 
 export interface MessageBubbleModel {
   id: string;
@@ -29,6 +30,8 @@ export interface MessageBubbleModel {
   deliveryState?: "sending" | "failed";
   kind?: "text" | "image" | "voice" | "sticker" | "transfer" | "memory-summary";
   mediaUrl?: string;
+  mediaWidth?: number;
+  mediaHeight?: number;
   transcript?: string;
   durationSeconds?: number;
   canRollback?: boolean;
@@ -205,14 +208,17 @@ export function MessageBubble({
           <div className="mt-1 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
         )}
         <CachedMediaImage
-          className={`max-h-[480px] max-w-[360px] rounded-xl object-cover ${
+          className={`h-full w-full rounded-xl object-contain ${
             mine && message.deliveryState === "failed"
               ? "outline outline-1 outline-red-300/25"
               : ""
           }`}
           mediaUrl={message.mediaUrl}
+          width={message.mediaWidth}
+          height={message.mediaHeight}
           alt={mine ? "我发送的图片" : "角色发送的图片"}
           variant="display"
+          kind="image"
         />
         {mine ? (
           <div className="mt-1 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
@@ -231,10 +237,13 @@ export function MessageBubble({
           <div className="mb-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
         ) : null}
         <CachedMediaImage
-          className="max-h-44 max-w-44 object-contain"
+          className="h-full w-full object-contain"
           mediaUrl={message.mediaUrl}
+          width={message.mediaWidth}
+          height={message.mediaHeight}
           alt={mine ? "我发送的表情" : "角色发送的表情"}
           variant="thumb"
+          kind="sticker"
         />
         {mine ? (
           <div className="mb-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
@@ -394,19 +403,35 @@ function CachedMediaImage({
   className,
   alt,
   variant,
+  width,
+  height,
+  kind,
 }: {
   mediaUrl: string;
   className: string;
   alt: string;
   variant: "thumb" | "display";
+  width?: number;
+  height?: number;
+  kind: "image" | "sticker";
 }) {
+  const layout = fitMessageMedia({ width, height }, kind);
   return (
-    <div className="min-h-24 min-w-32 overflow-hidden rounded-xl bg-white/[0.025]">
+    <div
+      className="max-w-full shrink-0 overflow-hidden rounded-xl bg-white/[0.025]"
+      data-media-frame={kind}
+      style={{
+        width: layout.width,
+        aspectRatio: `${layout.width} / ${layout.height}`,
+      }}
+    >
       <MediaAsset
         mediaUrl={mediaUrl}
         variant={variant}
         className={className}
         alt={alt}
+        width={width}
+        height={height}
       />
     </div>
   );

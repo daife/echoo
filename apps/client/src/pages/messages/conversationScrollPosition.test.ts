@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isAwayFromLatestMessage,
   LATEST_MESSAGE_DISTANCE_THRESHOLD,
+  shouldAdjustForConversationItemResize,
 } from "./conversationScrollPosition";
 
 describe("conversation scroll position", () => {
@@ -23,5 +24,32 @@ describe("conversation scroll position", () => {
         clientHeight: 600,
       }),
     ).toBe(true);
+  });
+
+  it("does not compensate item resizes while the user scrolls upward", () => {
+    expect(
+      shouldAdjustForConversationItemResize({
+        itemEnd: 400,
+        scrollTop: 800,
+        direction: "up",
+      }),
+    ).toBe(false);
+  });
+
+  it("only compensates non-upward resizes fully above the viewport", () => {
+    expect(
+      shouldAdjustForConversationItemResize({
+        itemEnd: 400,
+        scrollTop: 800,
+        direction: "down",
+      }),
+    ).toBe(true);
+    expect(
+      shouldAdjustForConversationItemResize({
+        itemEnd: 900,
+        scrollTop: 800,
+        direction: null,
+      }),
+    ).toBe(false);
   });
 });

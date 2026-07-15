@@ -23,6 +23,7 @@ import { PrimeFigureRepository } from "./prime-figure.repository.js";
 import { parseReadableMinute } from "./prime-time.js";
 import type { StoredPrimeFigureRuntimeConfig } from "../../../runtime-config/runtime-config.types.js";
 import type { PrimeDecisionTrigger } from "./prime-figure-runtime.service.js";
+import { createVisualMediaReference } from "../../../resources/media-reference.js";
 import {
   textMessageGapMs,
   type ResolvedPrimeImageMedia,
@@ -606,7 +607,19 @@ function toMessageContent(
   if (message.type === "image")
     return {
       text: message.description,
-      ...(imageMedia ? { mediaUrl: imageMedia.mediaUrl } : {}),
+      ...(imageMedia
+        ? {
+            mediaUrl: imageMedia.mediaUrl,
+            resourceId: imageMedia.resourceId,
+            media: createVisualMediaReference({
+              resourceId: imageMedia.resourceId,
+              kind: "image",
+              variants: ["thumb", "display", "original"],
+              width: imageMedia.width,
+              height: imageMedia.height,
+            }),
+          }
+        : {}),
     };
   if (message.type === "sticker") {
     const sticker = (agent.detail.stickers ?? []).find(
@@ -616,6 +629,13 @@ function toMessageContent(
     return {
       mediaUrl: sticker.resourcePath,
       resourceId: sticker.resourceId,
+      media: createVisualMediaReference({
+        resourceId: sticker.resourceId,
+        kind: "sticker",
+        variants: ["thumb", "display", "original"],
+        width: sticker.width,
+        height: sticker.height,
+      }),
     };
   }
   return {

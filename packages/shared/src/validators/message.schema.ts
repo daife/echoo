@@ -1,5 +1,24 @@
 import { z } from "zod";
 
+const mediaVariantSchema = z.enum(["original", "thumb", "display"]);
+const mediaReferenceBaseSchema = z.object({
+  resourceId: z.string().trim().min(1),
+  variants: z.array(mediaVariantSchema),
+});
+const visualMediaReferenceSchema = mediaReferenceBaseSchema.extend({
+  kind: z.enum(["image", "sticker", "video"]),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+});
+const nonVisualMediaReferenceSchema = mediaReferenceBaseSchema.extend({
+  kind: z.enum(["voice", "file"]),
+});
+
+export const mediaReferenceSchema = z.union([
+  visualMediaReferenceSchema,
+  nonVisualMediaReferenceSchema,
+]);
+
 export const messageContentSchema = z.object({
   text: z.string().optional(),
   mediaUrl: z
@@ -11,6 +30,7 @@ export const messageContentSchema = z.object({
     .optional(),
   fileName: z.string().optional(),
   resourceId: z.string().optional(),
+  media: mediaReferenceSchema.optional(),
 });
 
 export const messageSchema = z.object({

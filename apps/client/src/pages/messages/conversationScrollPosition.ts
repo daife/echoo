@@ -4,6 +4,16 @@ export interface ConversationScrollMetrics {
   clientHeight: number;
 }
 
+export type ConversationScrollDirection = "up" | "down" | null;
+
+export function shouldAdjustForConversationItemResize(input: {
+  itemEnd: number;
+  scrollTop: number;
+  direction: ConversationScrollDirection;
+}) {
+  return input.direction !== "up" && input.itemEnd <= input.scrollTop;
+}
+
 export const LATEST_MESSAGE_DISTANCE_THRESHOLD = 120;
 
 export function isAwayFromLatestMessage(

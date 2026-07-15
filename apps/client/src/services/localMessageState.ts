@@ -30,6 +30,8 @@ export function createPendingMediaMessage(input: {
   mediaUrl: string;
   fileName: string;
   durationSeconds?: number;
+  width?: number;
+  height?: number;
   clientMessageId?: string;
   now?: number;
 }): LocalMessage {
@@ -47,6 +49,16 @@ export function createPendingMediaMessage(input: {
       fileName: input.fileName,
     },
     status: "pending",
+    ...(input.contentType === "image" &&
+    input.width !== undefined &&
+    input.height !== undefined
+      ? {
+          localMediaDimensions: {
+            width: input.width,
+            height: input.height,
+          },
+        }
+      : {}),
     ...(input.contentType === "voice" && input.durationSeconds !== undefined
       ? {
           metadata: {
