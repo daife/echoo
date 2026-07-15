@@ -69,6 +69,14 @@ const migrations: Migration[] = [
         WHERE JSON_UNQUOTE(JSON_EXTRACT(content, '$.resourceId')) IS NOT NULL`,
     ],
   },
+  {
+    id: "002_remove_legacy_resource_storage_path",
+    statements: [
+      `ALTER TABLE resources
+        MODIFY COLUMN storage_key VARCHAR(1024) NOT NULL,
+        DROP COLUMN storage_path`,
+    ],
+  },
 ];
 
 export async function runDatabaseMigrations(connection: PoolConnection) {

@@ -35,7 +35,6 @@ export interface ResourceRecord {
   kind: string;
   mimeType: string;
   originalFileName: string;
-  storagePath: string;
   storageProvider: "local" | "s3";
   storageKey: string;
   publicPath: string;
@@ -61,9 +60,8 @@ interface ResourceRow extends RowDataPacket {
   kind: string;
   mime_type: string;
   original_file_name: string;
-  storage_path: string;
   storage_provider: "local" | "s3";
-  storage_key: string | null;
+  storage_key: string;
   public_path: string;
   byte_size: number | null;
   sha256: string | null;
@@ -99,8 +97,6 @@ interface ResourceVariantRow extends RowDataPacket {
 }
 
 export class ResourceRepository {
-  private readonly localStorage = createResourceStorage("local");
-
   constructor(
     private readonly storage: ResourceStorage = createResourceStorage(),
   ) {}
@@ -206,15 +202,13 @@ export class ResourceRepository {
 
     const id = createId("res");
     const storageKey = `${input.ownerUserId}/${id}/original${extension}`;
-    const storagePath =
-      this.storage.localUploadPath?.(storageKey) ?? storageKey;
     const now = Date.now();
     await execute(
       `INSERT INTO resources (
         id, owner_user_id, kind, mime_type, original_file_name,
-        storage_provider, storage_key, storage_path, public_path,
+        storage_provider, storage_key, public_path,
         byte_size, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
       [
         id,
         input.ownerUserId,
@@ -223,7 +217,6 @@ export class ResourceRepository {
         input.fileName,
         this.storage.provider,
         storageKey,
-        storagePath,
         `/api/resources/${id}/file`,
         input.byteSize,
         now,
@@ -253,11 +246,12 @@ export class ResourceRepository {
       record.status !== "pending"
     )
       return null;
-    if (record.storageProvider !== "local")
+    this.assertStorageProvider(record.storageProvider);
+    if (this.storage.provider !== "local")
       throw new InvalidMediaUploadError("该资源必须直接上传到对象存储。");
     if (record.byteSize !== undefined && data.length !== record.byteSize)
       throw new InvalidMediaUploadError("上传内容大小与声明不一致。");
-    await this.localStorage.put(record.storageKey, data, record.mimeType);
+    await this.storage.put(record.storageKey, data, record.mimeType);
     return record;
   }
 
@@ -267,8 +261,8 @@ export class ResourceRepository {
     if (record.status === "ready" || record.status === "processing")
       return record;
     if (record.status !== "pending") return null;
-    const storage = this.storageFor(record.storageProvider);
-    const object = await storage.head(record.storageKey);
+    this.assertStorageProvider(record.storageProvider);
+    const object = await this.storage.head(record.storageKey);
     if (!object || !object.size)
       throw new InvalidMediaUploadError("上传对象不存在或为空。");
     if (record.byteSize !== undefined && object.size !== record.byteSize)
@@ -287,105 +281,13 @@ export class ResourceRepository {
     return rows.map(rowToResource);
   }
 
-  async listLegacyLocalResources(limit = 100) {
-    if (this.storage.provider !== "s3") return [];
-    const rows = await queryRows<ResourceRow>(
-      `SELECT * FROM resources
-       WHERE storage_provider = 'local' AND status = 'ready'
-       ORDER BY created_at ASC LIMIT ?`,
-      [limit],
-    );
-    return rows.map(rowToResource);
-  }
-
-  async migrateLegacyResource(record: ResourceRecord) {
-    if (this.storage.provider !== "s3" || record.storageProvider !== "local")
-      return false;
-    const data = await this.localStorage.get(record.storageKey);
-    const extension =
-      extname(record.storageKey) ||
-      generatedMimeTypes.get(record.mimeType) ||
-      ".bin";
-    const originalKey = `${record.ownerUserId}/${record.id}/original${extension}`;
-    const stored = await this.storage.put(originalKey, data, record.mimeType);
-    const now = Date.now();
-    await execute(
-      `UPDATE resources SET storage_provider = 's3', storage_key = ?,
-        storage_path = ?, byte_size = ?, sha256 = ?, updated_at = ?
-       WHERE id = ? AND storage_provider = 'local'`,
-      [originalKey, originalKey, data.length, digest(data), now, record.id],
-    );
-    await execute(
-      `INSERT INTO resource_variants (
-        resource_id, variant, storage_provider, storage_key, mime_type,
-        byte_size, etag, created_at, updated_at
-      ) VALUES (?, 'original', 's3', ?, ?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE storage_provider = 's3',
-        storage_key = VALUES(storage_key), mime_type = VALUES(mime_type),
-        byte_size = VALUES(byte_size), etag = VALUES(etag), updated_at = VALUES(updated_at)`,
-      [
-        record.id,
-        originalKey,
-        record.mimeType,
-        data.length,
-        stored.etag ?? null,
-        now,
-        now,
-      ],
-    );
-    const migrated = (await this.findById(record.id))!;
-    if (record.mimeType.startsWith("image/")) {
-      const sharp = (await import("sharp")).default;
-      const image = sharp(data, { failOn: "error" }).rotate();
-      const metadata = await image.metadata();
-      const thumb = await image
-        .clone()
-        .resize({
-          width: 256,
-          height: 256,
-          fit: "inside",
-          withoutEnlargement: true,
-        })
-        .webp({ quality: 78 })
-        .toBuffer();
-      const display = await image
-        .clone()
-        .resize({
-          width: 1280,
-          height: 1280,
-          fit: "inside",
-          withoutEnlargement: true,
-        })
-        .webp({ quality: 84 })
-        .toBuffer();
-      await this.upsertVariant(migrated, "thumb", {
-        mimeType: "image/webp",
-        data: thumb,
-      });
-      await this.upsertVariant(migrated, "display", {
-        mimeType: "image/webp",
-        data: display,
-      });
-      await execute(
-        "UPDATE resources SET width = ?, height = ?, updated_at = ? WHERE id = ?",
-        [
-          metadata.width ?? null,
-          metadata.height ?? null,
-          Date.now(),
-          record.id,
-        ],
-      );
-    }
-    return true;
-  }
-
   async processUpload(id: string) {
     const record = await this.findById(id);
     if (!record || record.status === "ready") return record;
     if (record.status !== "processing") return null;
-    const storage = this.storageFor(record.storageProvider);
+    this.assertStorageProvider(record.storageProvider);
     try {
-      const data = await storage.get(record.storageKey);
+      const data = await this.storage.get(record.storageKey);
       const durationSeconds = validateUserMediaData(
         record.kind === "end_user_voice" ? "end_user_voice" : "end_user_image",
         data,
@@ -477,6 +379,12 @@ export class ResourceRepository {
   }
 
   async deleteOrphanedResource(id: string) {
+    const record = await this.findById(id);
+    if (!record) return false;
+    const variants = await this.listVariants(id);
+    this.assertStorageProvider(record.storageProvider);
+    for (const variant of variants)
+      this.assertStorageProvider(variant.storageProvider);
     const result = await execute(
       `UPDATE resources SET status = 'deleting', updated_at = ?
        WHERE id = ? AND NOT EXISTS (
@@ -487,16 +395,11 @@ export class ResourceRepository {
       [Date.now(), id],
     );
     if (!result.affectedRows) return false;
-    const record = await this.findById(id);
-    if (!record) return false;
-    const variants = await this.listVariants(id);
     await Promise.allSettled(
-      variants.map((variant) =>
-        this.storageFor(variant.storageProvider).delete(variant.storageKey),
-      ),
+      variants.map((variant) => this.storage.delete(variant.storageKey)),
     );
     if (!variants.some((variant) => variant.storageKey === record.storageKey))
-      await this.storageFor(record.storageProvider).delete(record.storageKey);
+      await this.storage.delete(record.storageKey);
     await execute(
       "DELETE FROM resources WHERE id = ? AND status = 'deleting'",
       [id],
@@ -555,30 +458,35 @@ export class ResourceRepository {
   async deleteOwnedByPublicPath(ownerUserId: string, publicPath: string) {
     const record = await this.findByPublicPath(ownerUserId, publicPath);
     if (!record) return false;
+    const variants = await this.listVariants(record.id);
+    this.assertStorageProvider(record.storageProvider);
+    for (const variant of variants)
+      this.assertStorageProvider(variant.storageProvider);
     await execute("DELETE FROM resources WHERE id = ? AND owner_user_id = ?", [
       record.id,
       ownerUserId,
     ]);
-    await this.storageFor(record.storageProvider).delete(record.storageKey);
+    await Promise.allSettled(
+      variants.map((variant) => this.storage.delete(variant.storageKey)),
+    );
+    if (!variants.some((variant) => variant.storageKey === record.storageKey))
+      await this.storage.delete(record.storageKey);
     return true;
   }
 
   async readForOwner(ownerUserId: string, id: string) {
     const record = await this.findById(id);
     if (!record || record.ownerUserId !== ownerUserId) return null;
+    this.assertStorageProvider(record.storageProvider);
     return {
       record,
-      data: await this.storageFor(record.storageProvider).get(
-        record.storageKey,
-      ),
+      data: await this.storage.get(record.storageKey),
     };
   }
 
   async openReadStream(record: ResourceRecord, range?: string) {
-    return this.storageFor(record.storageProvider).createReadStream(
-      record.storageKey,
-      range,
-    );
+    this.assertStorageProvider(record.storageProvider);
+    return this.storage.createReadStream(record.storageKey, range);
   }
 
   async openVariantReadStream(
@@ -591,9 +499,13 @@ export class ResourceRepository {
       (variant === "original"
         ? null
         : await this.findVariant(record.id, "original"));
-    return this.storageFor(
+    this.assertStorageProvider(
       selected?.storageProvider ?? record.storageProvider,
-    ).createReadStream(selected?.storageKey ?? record.storageKey, range);
+    );
+    return this.storage.createReadStream(
+      selected?.storageKey ?? record.storageKey,
+      range,
+    );
   }
 
   async createAccessUrl(
@@ -605,10 +517,12 @@ export class ResourceRepository {
       (variant === "original"
         ? null
         : await this.findVariant(record.id, "original"));
-    const provider = selected?.storageProvider ?? record.storageProvider;
+    this.assertStorageProvider(
+      selected?.storageProvider ?? record.storageProvider,
+    );
     const key = selected?.storageKey ?? record.storageKey;
     return {
-      url: await this.storageFor(provider).signGet(key, 10 * 60),
+      url: await this.storage.signGet(key, 10 * 60),
       variant: selected?.variant ?? "original",
       mimeType: selected?.mimeType ?? record.mimeType,
       byteSize: selected?.byteSize ?? record.byteSize,
@@ -630,8 +544,6 @@ export class ResourceRepository {
   }) {
     const id = createId("res");
     const storageKey = `${input.ownerUserId}/${id}/original${input.extension}`;
-    const storagePath =
-      this.storage.localUploadPath?.(storageKey) ?? storageKey;
     const publicPath = `/api/resources/${id}/file`;
     const now = Date.now();
     const stored = await this.storage.put(
@@ -643,9 +555,9 @@ export class ResourceRepository {
       await execute(
         `INSERT INTO resources (
           id, owner_user_id, kind, mime_type, original_file_name,
-          storage_provider, storage_key, storage_path, public_path, byte_size,
+          storage_provider, storage_key, public_path, byte_size,
           sha256, duration_ms, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?)`,
         [
           id,
           input.ownerUserId,
@@ -654,7 +566,6 @@ export class ResourceRepository {
           input.fileName,
           this.storage.provider,
           storageKey,
-          storagePath,
           publicPath,
           input.data.length,
           digest(input.data),
@@ -746,11 +657,11 @@ export class ResourceRepository {
       variant === "original"
         ? record.storageKey
         : `${record.ownerUserId}/${record.id}/${variant}${extension}`;
-    const storage = this.storageFor(record.storageProvider);
+    this.assertStorageProvider(record.storageProvider);
     const stored =
       variant === "original"
-        ? await storage.head(key)
-        : await storage.put(key, input.data, input.mimeType);
+        ? await this.storage.head(key)
+        : await this.storage.put(key, input.data, input.mimeType);
     const now = Date.now();
     await execute(
       `INSERT INTO resource_variants (
@@ -774,11 +685,19 @@ export class ResourceRepository {
     );
   }
 
-  private storageFor(provider: "local" | "s3") {
-    if (provider === this.storage.provider) return this.storage;
-    if (provider === "local") return this.localStorage;
-    return createResourceStorage("s3");
+  private assertStorageProvider(provider: "local" | "s3") {
+    assertStorageProviderMatches(this.storage.provider, provider);
   }
+}
+
+export function assertStorageProviderMatches(
+  configured: "local" | "s3",
+  recorded: "local" | "s3",
+) {
+  if (recorded !== configured)
+    throw new Error(
+      `Resource provider ${recorded} does not match configured provider ${configured}. Use a database created for the configured storage backend.`,
+    );
 }
 
 export function isJpeg(data: Uint8Array) {
@@ -830,9 +749,8 @@ function rowToResource(row: ResourceRow): ResourceRecord {
     kind: row.kind,
     mimeType: row.mime_type,
     originalFileName: row.original_file_name,
-    storagePath: row.storage_path,
-    storageProvider: row.storage_provider ?? "local",
-    storageKey: row.storage_key ?? row.storage_path,
+    storageProvider: row.storage_provider,
+    storageKey: row.storage_key,
     publicPath: row.public_path,
     ...(row.byte_size !== null ? { byteSize: row.byte_size } : {}),
     ...(row.sha256 ? { sha256: row.sha256 } : {}),
@@ -841,7 +759,7 @@ function rowToResource(row: ResourceRow): ResourceRecord {
     ...(row.duration_ms !== null
       ? { durationSeconds: row.duration_ms / 1000 }
       : {}),
-    status: row.status ?? "ready",
+    status: row.status,
     createdAt: row.created_at,
   };
 }

@@ -42,7 +42,6 @@ export interface ResourceStorage {
     expiresInSeconds: number,
   ): Promise<string | null>;
   signGet(key: string, expiresInSeconds: number): Promise<string | null>;
-  localUploadPath?(key: string): string;
 }
 
 export function createResourceStorage(
@@ -61,10 +60,6 @@ class LocalResourceStorage implements ResourceStorage {
     process.cwd(),
     process.env.RESOURCE_STORAGE_DIR ?? ".data/resources",
   );
-
-  localUploadPath(key: string) {
-    return this.path(key);
-  }
 
   async put(key: string, data: Uint8Array, _mimeType: string) {
     const path = this.path(key);

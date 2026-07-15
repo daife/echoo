@@ -1,10 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  assertStorageProviderMatches,
   InvalidMediaUploadError,
   validateJpegUpload,
   validateUserMediaData,
 } from "./resource.repository.js";
+
+test("resource access rejects records from a different configured provider", () => {
+  assert.doesNotThrow(() => assertStorageProviderMatches("s3", "s3"));
+  assert.throws(
+    () => assertStorageProviderMatches("s3", "local"),
+    /database created for the configured storage backend/,
+  );
+  assert.throws(
+    () => assertStorageProviderMatches("local", "s3"),
+    /does not match configured provider/,
+  );
+});
 
 test("JPEG uploads accept the 5 MiB boundary and reject larger or forged files", () => {
   const atLimit = new Uint8Array(5 * 1024 * 1024);

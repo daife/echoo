@@ -7,8 +7,8 @@ client cache. Redis never stores media bytes.
 ## Development
 
 `docker compose up -d` starts MySQL, Redis, and a private MinIO bucket. Local
-filesystem storage remains the default. To exercise the object-storage path,
-set:
+filesystem storage remains available for isolated development databases. To
+use MinIO for the current database, set:
 
 ```env
 RESOURCE_STORAGE_PROVIDER=s3
@@ -20,15 +20,27 @@ RESOURCE_S3_SECRET_ACCESS_KEY=echoo-local-secret
 RESOURCE_S3_FORCE_PATH_STYLE=true
 ```
 
-Production object storage must allow CORS for the deployed Web/Tauri origins
-because uploads and cached image responses are transferred directly with
-short-lived signed URLs. The bucket itself stays private.
+Runtime requests use exactly one configured backend. A resource row from a
+different provider is rejected with an explicit configuration error; the
+server never falls back to another backend. Use a separate database when
+switching between local and S3 development modes.
 
-After enabling S3, migrate existing local resources in resumable batches with
-`pnpm --filter @echoo/server migrate:resources`. The command copies and hashes
-the original, creates image variants, then switches the MySQL row to S3. It
-keeps the old local file for rollback; remove legacy files only after checking
-the migrated object counts and hashes.
+## Production
+
+Use a private S3-compatible bucket and application-specific credentials with
+access limited to that bucket. Keep all credentials in the deployment secret
+store, not in Compose files or source control.
+
+- `RESOURCE_S3_ENDPOINT` must be an HTTPS address reachable by browsers because
+  signed uploads and downloads go directly to object storage. It must not be
+  `127.0.0.1` in production. Omit it for AWS S3.
+- Set `RESOURCE_S3_FORCE_PATH_STYLE=false` for AWS S3. MinIO and some compatible
+  providers require `true`.
+- Allow CORS only for the deployed Web and Tauri origins and the required
+  `GET`, `HEAD`, and `PUT` methods and `Content-Type`/`Range` headers.
+- Keep the bucket private, enable durable volumes or provider replication, and
+  back up both MySQL metadata and objects with matching retention policies.
+- Never reuse the example MinIO root credentials in production.
 
 ## Upload lifecycle
 
@@ -42,15 +54,14 @@ the migrated object counts and hashes.
 
 Processing jobs are recoverable from non-terminal MySQL rows. A separate
 Redis Stream periodically removes new-format resources that have had no
-message or agent reference for at least 24 hours. Legacy local files are
-excluded from automatic deletion until they have been explicitly migrated.
+message or agent reference for at least 24 hours.
 
 ## Delivery
 
 `POST /api/resources/access` verifies ownership and returns ten-minute access
 URLs keyed by resource and variant. Object storage serves these URLs directly.
-The local compatibility endpoint supports `Range`, `206`, `Content-Range`, and
-`Accept-Ranges` and is protected by the same short-lived media token.
+The authenticated server media endpoint supports `Range`, `206`,
+`Content-Range`, and `Accept-Ranges` for local mode and controlled proxy access.
 
 Images normally request `thumb` or `display`; `original` is reserved for an
 explicit full-image action. Audio uses a direct signed URL so the browser can
