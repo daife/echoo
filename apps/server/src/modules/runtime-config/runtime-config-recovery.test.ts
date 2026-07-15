@@ -39,17 +39,21 @@ test("returns mode metadata when the selected conversation config is invalid", a
 
 test("can switch from an invalid custom config back to a valid global config", async () => {
   const defaults = buildRuntimeConfigDefaults();
-  const invalidCustom = structuredClone(defaults.primeFigure);
-  invalidCustom.context.maximumMessages = 0;
+  const invalidCustom = { version: 5 };
   let savedMode: "global" | "custom" | undefined;
+  let savedCustom: unknown;
   const repository = {
     findUserConfig: async () => defaults,
     findConversationConfig: async () => ({
       mode: "custom" as const,
       customConfig: invalidCustom,
     }),
-    saveConversationConfig: async (input: { mode: "global" | "custom" }) => {
+    saveConversationConfig: async (input: {
+      mode: "global" | "custom";
+      customConfig: unknown;
+    }) => {
       savedMode = input.mode;
+      savedCustom = input.customConfig;
     },
     saveUserConfig: async () => undefined,
   };
@@ -77,6 +81,83 @@ test("can switch from an invalid custom config back to a valid global config", a
   );
 
   assert.equal(savedMode, "global");
+  assert.equal(savedCustom, invalidCustom);
   assert.equal(response.mode, "global");
   assert.ok(response.config);
+});
+
+test("mode-only switches do not run catalog capability validation", async () => {
+  const defaults = buildRuntimeConfigDefaults();
+  let catalogCalls = 0;
+  let savedMode: "global" | "custom" | undefined;
+  const repository = {
+    findUserConfig: async () => defaults,
+    findConversationConfig: async () => ({
+      mode: "global" as const,
+      customConfig: null,
+    }),
+    saveConversationConfig: async (input: { mode: "global" | "custom" }) => {
+      savedMode = input.mode;
+    },
+    saveUserConfig: async () => undefined,
+  };
+  const service = new RuntimeConfigService(
+    repository as never,
+    { findByIdForOwner: async () => ({ type: "prime-figure" }) } as never,
+    { clearDisabledWakeupsForConversation: async () => undefined } as never,
+    {
+      validateFigureConfig: async () => {
+        catalogCalls += 1;
+        throw new Error("catalog rejected unchanged config");
+      },
+    } as never,
+    {} as never,
+  );
+
+  const response = await service.updateConversationConfig(
+    "user",
+    "conversation",
+    { mode: "custom" },
+  );
+
+  assert.equal(catalogCalls, 0);
+  assert.equal(savedMode, "custom");
+  assert.equal(response.mode, "custom");
+  assert.ok(response.config);
+});
+
+test("configuration edits still run catalog capability validation", async () => {
+  const defaults = buildRuntimeConfigDefaults();
+  let saved = false;
+  const repository = {
+    findUserConfig: async () => defaults,
+    findConversationConfig: async () => ({
+      mode: "custom" as const,
+      customConfig: defaults.primeFigure,
+    }),
+    saveConversationConfig: async () => {
+      saved = true;
+    },
+    saveUserConfig: async () => undefined,
+  };
+  const service = new RuntimeConfigService(
+    repository as never,
+    { findByIdForOwner: async () => ({ type: "prime-figure" }) } as never,
+    { clearDisabledWakeupsForConversation: async () => undefined } as never,
+    {
+      validateFigureConfig: async () => {
+        throw new Error("catalog rejected edited config");
+      },
+    } as never,
+    {} as never,
+  );
+
+  await assert.rejects(
+    service.updateConversationConfig("user", "conversation", {
+      mode: "custom",
+      config: { typingCharsPerMinute: 321 },
+    }),
+    /catalog rejected edited config/,
+  );
+  assert.equal(saved, false);
 });

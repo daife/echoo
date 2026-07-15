@@ -96,6 +96,8 @@ export function useConversationMessages({
     isAgentMuted: Boolean(muteUntilMs && muteUntilMs > Date.now()),
     isInitialLoading: timeline.isInitialLoading,
     isLoadingOlder: timeline.isLoadingOlder,
+    isLoadingNewer: timeline.isLoadingNewer,
+    isJumpingToLatest: timeline.isJumpingToLatest,
     hasOlder: timeline.hasOlder,
     hasNewer: timeline.hasNewer,
     rollingBackMessageId: actions.rollingBackMessageId,

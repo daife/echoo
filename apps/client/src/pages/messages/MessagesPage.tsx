@@ -53,10 +53,6 @@ import {
   SliceFigureFormFields,
 } from "../create-agent/CreateAgentPage";
 import { useConversationMessages } from "./useConversationMessages";
-import {
-  captureVisibleMessageAnchor,
-  restoreVisibleMessageAnchor,
-} from "./messageScrollAnchor";
 import { imageFileToUpload } from "../../shared/utils/imageCompression";
 import {
   PrimeRuntimeConfigForm,
@@ -126,6 +122,8 @@ export function MessagesPage({
     isAgentMuted,
     isInitialLoading,
     isLoadingOlder,
+    isLoadingNewer,
+    isJumpingToLatest,
     hasOlder,
     hasNewer,
     error,
@@ -152,7 +150,8 @@ export function MessagesPage({
   const lastConversationRef = useRef<string | undefined>(undefined);
   const lastVisibleMessageIdRef = useRef<string | undefined>(undefined);
   const lastScrollTopRef = useRef(0);
-  const isRestoringHistoryRef = useRef(false);
+  const lastVirtualScrollMarginRef = useRef(0);
+  const pendingJumpToLatestRef = useRef(false);
   const showAgentTyping = useRhythmicPrimePresence({
     agentId: agent?.id,
     agentType: agent?.type,
@@ -172,8 +171,6 @@ export function MessagesPage({
       ? agent.detail.prologueHtml
       : "";
   const conversationId = agent?.conversationId;
-  const conversationIdRef = useRef(conversationId);
-  conversationIdRef.current = conversationId;
 
   const visibleMessages = useMemo(() => {
     if (!agent) return [];
@@ -208,11 +205,12 @@ export function MessagesPage({
     overscan: 8,
     getItemKey: (index) => visibleMessages[index]?.id ?? index,
     scrollMargin: virtualScrollMargin,
+    anchorTo: "end",
   });
 
   useLayoutEffect(() => {
     setVirtualScrollMargin(virtualListRef.current?.offsetTop ?? 0);
-  }, [isLoadingOlder, prologueHtml, visibleMessages.length]);
+  }, [prologueHtml, visibleMessages.length]);
 
   useEffect(() => {
     if (!isSettingsOpen) return;
@@ -236,22 +234,46 @@ export function MessagesPage({
   useLayoutEffect(() => {
     const main = mainRef.current;
     if (!main || isInitialLoading) return;
+    if (pendingJumpToLatestRef.current && !isJumpingToLatest && !hasNewer) {
+      pendingJumpToLatestRef.current = false;
+      messageVirtualizer.scrollToEnd();
+      lastScrollTopRef.current = main.scrollTop;
+      shouldFollowBottomRef.current = true;
+    }
     const conversationChanged = lastConversationRef.current !== conversationId;
+    const scrollMarginChanged =
+      lastVirtualScrollMarginRef.current !== virtualScrollMargin;
     const latest = visibleMessages.at(-1);
     const latestChanged = lastVisibleMessageIdRef.current !== latest?.id;
     const optimisticMine =
       latest?.from === "me" && latest.deliveryState === "sending";
     if (
       conversationChanged ||
+      (scrollMarginChanged && shouldFollowBottomRef.current) ||
       (latestChanged && (shouldFollowBottomRef.current || optimisticMine))
     ) {
-      main.scrollTop = main.scrollHeight;
+      messageVirtualizer.scrollToEnd();
       lastScrollTopRef.current = main.scrollTop;
       shouldFollowBottomRef.current = true;
     }
     lastConversationRef.current = conversationId;
     lastVisibleMessageIdRef.current = latest?.id;
-  }, [conversationId, isInitialLoading, visibleMessages]);
+    lastVirtualScrollMarginRef.current = virtualScrollMargin;
+  }, [
+    conversationId,
+    hasNewer,
+    isInitialLoading,
+    isJumpingToLatest,
+    virtualScrollMargin,
+    visibleMessages,
+  ]);
+
+  const handleJumpToLatest = async () => {
+    if (isJumpingToLatest) return;
+    pendingJumpToLatestRef.current = true;
+    const succeeded = await jumpToLatest();
+    if (!succeeded) pendingJumpToLatestRef.current = false;
+  };
 
   const handleMessageScroll = () => {
     const main = mainRef.current;
@@ -264,7 +286,9 @@ export function MessagesPage({
       !scrollingUp &&
       shouldFollowBottomRef.current &&
       hasNewer &&
-      !isLoadingOlder
+      !isLoadingOlder &&
+      !isLoadingNewer &&
+      !isJumpingToLatest
     ) {
       void loadNewerMessages();
       return;
@@ -274,30 +298,11 @@ export function MessagesPage({
       main.scrollTop > 80 ||
       !hasOlder ||
       isLoadingOlder ||
-      isRestoringHistoryRef.current
+      isLoadingNewer ||
+      isJumpingToLatest
     )
       return;
-    const anchor = captureVisibleMessageAnchor(main);
-    const previousHeight = main.scrollHeight;
-    const previousTop = main.scrollTop;
-    const loadingConversationId = conversationId;
-    isRestoringHistoryRef.current = true;
-    void loadOlderMessages().finally(() => {
-      window.requestAnimationFrame(() => {
-        const current = mainRef.current;
-        if (!current || loadingConversationId !== conversationIdRef.current) {
-          isRestoringHistoryRef.current = false;
-          return;
-        }
-        current.scrollTop = previousTop + current.scrollHeight - previousHeight;
-        window.requestAnimationFrame(() => {
-          const settled = mainRef.current;
-          if (settled && anchor) restoreVisibleMessageAnchor(settled, anchor);
-          if (settled) lastScrollTopRef.current = settled.scrollTop;
-          isRestoringHistoryRef.current = false;
-        });
-      });
-    });
+    void loadOlderMessages();
   };
 
   if (!agent) {
@@ -476,78 +481,86 @@ export function MessagesPage({
         </div>
       </header>
 
-      <main
-        ref={mainRef}
-        className="flex min-h-0 flex-col gap-5 overflow-y-auto px-5 py-7 no-scrollbar md:px-9"
-        onScroll={handleMessageScroll}
-      >
+      <div className="relative min-h-0">
+        <main
+          ref={mainRef}
+          className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto px-5 py-7 no-scrollbar md:px-9"
+          onScroll={handleMessageScroll}
+        >
+          {prologueHtml ? (
+            <iframe
+              className="max-h-[38dvh] min-h-64 w-full shrink-0 rounded-xl border border-white/8 bg-transparent"
+              sandbox="allow-scripts"
+              srcDoc={buildPrologueDocument(prologueHtml)}
+              title={`${title} 的序引`}
+            />
+          ) : null}
+          <div
+            ref={virtualListRef}
+            className="relative w-full shrink-0"
+            style={{ height: messageVirtualizer.getTotalSize() }}
+          >
+            {messageVirtualizer.getVirtualItems().map((virtualRow) => {
+              const index = virtualRow.index;
+              const message = visibleMessages[index];
+              if (!message) return null;
+              const showTime = shouldShowTimelineItemTime(
+                visibleMessages,
+                index,
+              );
+              return (
+                <div
+                  key={virtualRow.key}
+                  ref={messageVirtualizer.measureElement}
+                  data-index={virtualRow.index}
+                  data-message-id={message.id}
+                  className="absolute left-0 top-0 flex w-full flex-col gap-5 pb-5"
+                  style={{
+                    transform: `translateY(${virtualRow.start - messageVirtualizer.options.scrollMargin}px)`,
+                  }}
+                >
+                  {showTime ? (
+                    <div className="self-center text-[11px] tabular-nums text-white/32">
+                      {formatConversationTime(message.createdAt)}
+                    </div>
+                  ) : null}
+                  <MessageBubble
+                    message={message}
+                    onRetry={retryFailedMessage}
+                    onRollback={canRollback ? rollbackConversation : undefined}
+                    onEdit={(messageId, text) =>
+                      setMessageBeingEdited({ id: messageId, text })
+                    }
+                    onResolveTransfer={resolveTransfer}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          {error ? (
+            <div className="self-center rounded-full border border-red-400/20 px-4 py-2 text-xs text-red-200/80">
+              {error}
+            </div>
+          ) : null}
+        </main>
         {isLoadingOlder ? (
-          <div className="mb-4 flex justify-center text-xs text-white/32">
-            加载更早消息…
+          <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center">
+            <div className="rounded-full border border-white/8 bg-[#1a1a20]/95 px-3 py-1.5 text-xs text-white/45 shadow-lg backdrop-blur">
+              加载更早消息…
+            </div>
           </div>
         ) : null}
-        {prologueHtml ? (
-          <iframe
-            className="max-h-[38dvh] min-h-64 w-full rounded-xl border border-white/8 bg-transparent"
-            sandbox="allow-scripts"
-            srcDoc={buildPrologueDocument(prologueHtml)}
-            title={`${title} 的序引`}
-          />
-        ) : null}
-        <div
-          ref={virtualListRef}
-          className="relative w-full"
-          style={{ height: messageVirtualizer.getTotalSize() }}
-        >
-          {messageVirtualizer.getVirtualItems().map((virtualRow) => {
-            const index = virtualRow.index;
-            const message = visibleMessages[index];
-            if (!message) return null;
-            const showTime = shouldShowTimelineItemTime(visibleMessages, index);
-            return (
-              <div
-                key={virtualRow.key}
-                ref={messageVirtualizer.measureElement}
-                data-index={virtualRow.index}
-                data-message-id={message.id}
-                className="absolute left-0 top-0 flex w-full flex-col gap-5 pb-5"
-                style={{
-                  transform: `translateY(${virtualRow.start - messageVirtualizer.options.scrollMargin}px)`,
-                }}
-              >
-                {showTime ? (
-                  <div className="self-center text-[11px] tabular-nums text-white/32">
-                    {formatConversationTime(message.createdAt)}
-                  </div>
-                ) : null}
-                <MessageBubble
-                  message={message}
-                  onRetry={retryFailedMessage}
-                  onRollback={canRollback ? rollbackConversation : undefined}
-                  onEdit={(messageId, text) =>
-                    setMessageBeingEdited({ id: messageId, text })
-                  }
-                  onResolveTransfer={resolveTransfer}
-                />
-              </div>
-            );
-          })}
-        </div>
         {hasNewer ? (
           <button
-            className="sticky bottom-4 self-center rounded-full border border-white/10 bg-[#1a1a20] px-4 py-2 text-xs text-white/75 shadow-lg"
+            className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full border border-white/10 bg-[#1a1a20]/95 px-4 py-2 text-xs text-white/75 shadow-lg backdrop-blur transition disabled:cursor-wait disabled:opacity-65"
             type="button"
-            onClick={() => void jumpToLatest()}
+            disabled={isJumpingToLatest}
+            onClick={() => void handleJumpToLatest()}
           >
-            回到最新消息
+            {isJumpingToLatest ? "正在回到最新消息…" : "回到最新消息"}
           </button>
         ) : null}
-        {error ? (
-          <div className="self-center rounded-full border border-red-400/20 px-4 py-2 text-xs text-red-200/80">
-            {error}
-          </div>
-        ) : null}
-      </main>
+      </div>
 
       <MessageComposer
         key={agent.conversationId}
@@ -682,6 +695,7 @@ function RuntimeConfigDialog({
   }, [conversationId]);
 
   async function setMode(mode: "global" | "custom") {
+    if (switching || response?.mode === mode) return;
     setSwitching(true);
     setError(null);
     setNotice(null);
@@ -738,6 +752,7 @@ function RuntimeConfigDialog({
             <button
               disabled={switching}
               type="button"
+              aria-pressed={response.mode === "global"}
               onClick={() => void setMode("global")}
               className={`rounded-lg px-4 py-2.5 text-sm transition ${response.mode === "global" ? "bg-white text-black" : "text-white/50 hover:text-white"}`}
             >
@@ -746,11 +761,22 @@ function RuntimeConfigDialog({
             <button
               disabled={switching}
               type="button"
+              aria-pressed={response.mode === "custom"}
               onClick={() => void setMode("custom")}
               className={`rounded-lg px-4 py-2.5 text-sm transition ${response.mode === "custom" ? "bg-white text-black" : "text-white/50 hover:text-white"}`}
             >
               使用会话独立配置
             </button>
+          </div>
+        ) : null}
+        {switching ? (
+          <p className="mb-5 text-center text-xs text-white/42">
+            正在切换配置模式…
+          </p>
+        ) : null}
+        {error ? (
+          <div className="mb-5 rounded-xl border border-red-400/20 bg-red-400/[0.06] px-4 py-3 text-sm leading-6 text-red-100/80">
+            {error}
           </div>
         ) : null}
         {response?.validationError ? (
@@ -782,7 +808,7 @@ function RuntimeConfigDialog({
           <SliceRuntimeConfigForm
             value={response.config as SliceFigureRuntimeConfigView}
             onSave={(patch) => saveConfig(patch)}
-            error={error}
+            error={null}
             notice={notice}
           />
         ) : null}
@@ -792,7 +818,7 @@ function RuntimeConfigDialog({
           <PrimeRuntimeConfigForm
             value={response.config as PrimeFigureRuntimeConfigView}
             onSave={(patch) => saveConfig(patch)}
-            error={error}
+            error={null}
             notice={notice}
           />
         ) : null}
@@ -800,9 +826,6 @@ function RuntimeConfigDialog({
           <p className="rounded-xl border border-dashed border-white/10 py-12 text-center text-sm text-white/42">
             本初世界配置已预留，当前没有可编辑参数。
           </p>
-        ) : null}
-        {error && !response ? (
-          <p className="text-sm text-red-200/75">{error}</p>
         ) : null}
         {notice && response?.mode === "global" ? (
           <p className="mt-4 text-center text-xs text-emerald-200/70">

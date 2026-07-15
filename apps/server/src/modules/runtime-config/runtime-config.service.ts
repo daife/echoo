@@ -158,38 +158,47 @@ export class RuntimeConfigService {
       ownerUserId,
       conversationId,
     );
-    let custom = stored?.customConfig
-      ? normalizeFigureConfig(conversation.type, stored.customConfig)
-      : null;
-    const previousConfig =
-      stored?.mode === "custom" && custom ? custom : global;
+    const storedCustom = stored?.customConfig ?? null;
+    let custom: StoredFigureRuntimeConfig | null = null;
+    let previousConfig: StoredFigureRuntimeConfig = global;
     if (input.mode === "custom") {
-      custom ??= structuredClone(global);
+      custom = storedCustom
+        ? normalizeFigureConfig(conversation.type, storedCustom)
+        : structuredClone(global);
+      if (stored?.mode === "custom") previousConfig = custom;
       if (input.config)
         custom = patchFigureConfig(conversation.type, custom, input.config);
       validateFigureConfig(conversation.type, custom);
     }
     const nextConfig = input.mode === "custom" ? custom! : global;
     validateFigureConfig(conversation.type, nextConfig);
-    const warnings = await this.validateCatalogFigure(
-      conversation.type,
-      nextConfig,
-    );
+    const isConfigUpdate = input.mode === "custom" && Boolean(input.config);
+    const warnings = isConfigUpdate
+      ? await this.validateCatalogFigure(conversation.type, nextConfig)
+      : [];
     await this.repository.saveConversationConfig({
       ownerUserId,
       conversationId,
       mode: input.mode,
-      customConfig: custom,
+      customConfig: input.mode === "custom" ? custom : storedCustom,
     });
-    if (conversation.type === "prime-figure")
+    if (conversation.type === "prime-figure") {
+      const nextPrimeConfig = nextConfig as StoredPrimeFigureRuntimeConfig;
+      const disabled = isConfigUpdate
+        ? disabledWakeups(
+            previousConfig as StoredPrimeFigureRuntimeConfig,
+            nextPrimeConfig,
+          )
+        : {
+            proactive: !nextPrimeConfig.wakeups.proactive.enabled,
+            passive: !nextPrimeConfig.wakeups.passive.enabled,
+          };
       await this.primeStates.clearDisabledWakeupsForConversation({
         ownerUserId,
         conversationId,
-        ...disabledWakeups(
-          previousConfig as StoredPrimeFigureRuntimeConfig,
-          nextConfig as StoredPrimeFigureRuntimeConfig,
-        ),
+        ...disabled,
       });
+    }
     return {
       mode: input.mode,
       conversationType: conversation.type,

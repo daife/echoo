@@ -3,7 +3,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MessageService } from "../../services/MessageService";
-import { mergeIncomingMessage } from "../../services/localMessageState";
+import {
+  mergeMessagePages,
+  mergeNewerTimelineWindow,
+  mergeOlderTimelineWindow,
+} from "./conversationTimelineWindow";
 
 const MESSAGE_PAGE_SIZE = 50;
 const MAX_WINDOW_MESSAGES = 300;
@@ -25,6 +29,8 @@ export function useConversationTimeline(input: {
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [isLoadingNewer, setIsLoadingNewer] = useState(false);
+  const [isJumpingToLatest, setIsJumpingToLatest] = useState(false);
   const [hasOlder, setHasOlder] = useState(false);
   const [hasNewer, setHasNewer] = useState(false);
   const messagesRef = useRef<LocalMessage[]>([]);
@@ -114,7 +120,14 @@ export function useConversationTimeline(input: {
 
   const loadOlderMessages = useCallback(async () => {
     const conversationId = input.conversationId;
-    if (!conversationId || isLoadingOlder || !hasOlderRef.current) return;
+    if (
+      !conversationId ||
+      isLoadingOlder ||
+      isLoadingNewer ||
+      isJumpingToLatest ||
+      !hasOlderRef.current
+    )
+      return;
     const oldest = messagesRef.current.find((message) =>
       Boolean(message.id && !message.id.startsWith("client_")),
     );
@@ -127,11 +140,14 @@ export function useConversationTimeline(input: {
         MESSAGE_PAGE_SIZE,
       );
       if (activeConversationIdRef.current !== conversationId) return;
-      const merged = mergeMessagePages(page.items, messagesRef.current);
-      const overflowed = merged.length > MAX_WINDOW_MESSAGES;
-      const next = overflowed ? merged.slice(0, MAX_WINDOW_MESSAGES) : merged;
-      const nextHasNewer =
-        overflowed || hasNewerRef.current || page.pageInfo.hasNewer;
+      const window = mergeOlderTimelineWindow({
+        current: messagesRef.current,
+        incoming: page.items,
+        maximumMessages: MAX_WINDOW_MESSAGES,
+        hasNewer: hasNewerRef.current,
+      });
+      const next = window.messages;
+      const nextHasNewer = window.oppositeEdgeMissing;
       setMessages(next);
       setHasOlder(page.pageInfo.hasOlder);
       setHasNewer(nextHasNewer);
@@ -148,19 +164,28 @@ export function useConversationTimeline(input: {
     input.messageService,
     input.setError,
     isLoadingOlder,
+    isLoadingNewer,
+    isJumpingToLatest,
     saveCache,
   ]);
 
   const loadNewerMessages = useCallback(async () => {
     const conversationId = input.conversationId;
-    if (!conversationId || isLoadingOlder || !hasNewerRef.current) return;
+    if (
+      !conversationId ||
+      isLoadingOlder ||
+      isLoadingNewer ||
+      isJumpingToLatest ||
+      !hasNewerRef.current
+    )
+      return;
     const newest = [...messagesRef.current]
       .reverse()
       .find((message) =>
         Boolean(message.id && !message.id.startsWith("client_")),
       );
     if (!newest) return;
-    setIsLoadingOlder(true);
+    setIsLoadingNewer(true);
     try {
       const page = await input.messageService.loadNewerConversationMessages(
         conversationId,
@@ -168,11 +193,14 @@ export function useConversationTimeline(input: {
         MESSAGE_PAGE_SIZE,
       );
       if (activeConversationIdRef.current !== conversationId) return;
-      const merged = mergeMessagePages(messagesRef.current, page.items);
-      const overflowed = merged.length > MAX_WINDOW_MESSAGES;
-      const next = overflowed ? merged.slice(-MAX_WINDOW_MESSAGES) : merged;
-      const nextHasOlder =
-        overflowed || hasOlderRef.current || page.pageInfo.hasOlder;
+      const window = mergeNewerTimelineWindow({
+        current: messagesRef.current,
+        incoming: page.items,
+        maximumMessages: MAX_WINDOW_MESSAGES,
+        hasOlder: hasOlderRef.current,
+      });
+      const next = window.messages;
+      const nextHasOlder = window.oppositeEdgeMissing;
       setMessages(next);
       setHasOlder(nextHasOlder);
       setHasNewer(page.pageInfo.hasNewer);
@@ -182,14 +210,38 @@ export function useConversationTimeline(input: {
         error instanceof Error ? error.message : "加载较新消息失败。",
       );
     } finally {
-      setIsLoadingOlder(false);
+      setIsLoadingNewer(false);
     }
   }, [
     input.conversationId,
     input.messageService,
     input.setError,
     isLoadingOlder,
+    isLoadingNewer,
+    isJumpingToLatest,
     saveCache,
+  ]);
+
+  const jumpToLatest = useCallback(async () => {
+    if (!input.conversationId || isJumpingToLatest) return false;
+    setIsJumpingToLatest(true);
+    input.setError(null);
+    try {
+      await refreshMessages(true);
+      return true;
+    } catch (error) {
+      input.setError(
+        error instanceof Error ? error.message : "加载最新消息失败。",
+      );
+      return false;
+    } finally {
+      setIsJumpingToLatest(false);
+    }
+  }, [
+    input.conversationId,
+    input.setError,
+    isJumpingToLatest,
+    refreshMessages,
   ]);
 
   useEffect(() => {
@@ -250,20 +302,13 @@ export function useConversationTimeline(input: {
     activeConversationIdRef,
     isInitialLoading,
     isLoadingOlder,
+    isLoadingNewer,
+    isJumpingToLatest,
     hasOlder,
     hasNewer,
     refreshMessages,
     loadOlderMessages,
     loadNewerMessages,
-    jumpToLatest: () => refreshMessages(true),
+    jumpToLatest,
   };
-}
-
-function mergeMessagePages(...pages: LocalMessage[][]) {
-  return pages.reduce<LocalMessage[]>((current, page) => {
-    return page.reduce(
-      (merged, message) => mergeIncomingMessage(merged, message),
-      current,
-    );
-  }, []);
 }
