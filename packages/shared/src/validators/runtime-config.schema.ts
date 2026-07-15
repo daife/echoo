@@ -57,6 +57,16 @@ export const primeFigureRuntimeConfigPatchSchema = z.object({
           tts: fishAudioPatchSchema.optional(),
         })
         .optional(),
+      sticker: z
+        .object({
+          enabled: z.boolean().optional(),
+        })
+        .optional(),
+      transfer: z
+        .object({
+          enabled: z.boolean().optional(),
+        })
+        .optional(),
     })
     .optional(),
   optimization: z

@@ -26,6 +26,21 @@ const primeFigureReferenceImageInputSchema = z.union([
     .strict(),
 ]);
 
+const primeFigureStickerInputSchema = z.union([
+  z
+    .object({
+      resourceId: z.string().trim().min(1).max(120),
+      description: requiredText("表情描述").max(500),
+    })
+    .strict(),
+  z
+    .object({
+      upload: imageUploadSchema,
+      description: requiredText("表情描述").max(500),
+    })
+    .strict(),
+]);
+
 export const agentAttributeSchema = z.object({
   key: requiredText("属性键"),
   value: requiredText("属性值"),
@@ -242,6 +257,11 @@ export const createPrimeFigureSchema = createAgentBaseSchema.extend({
     .array(primeFigureReferenceImageInputSchema)
     .optional()
     .default([]),
+  stickers: z
+    .array(primeFigureStickerInputSchema)
+    .max(20, "每个本初角色最多可添加 20 个表情。")
+    .optional()
+    .default([]),
   voiceRequestStreaming: z.boolean().optional().default(false),
   initialMood: optionalText(),
   initialRelationshipStatus: optionalText(),
@@ -253,9 +273,11 @@ export const updatePrimeFigureSchema = createPrimeFigureSchema
     initialMood: true,
     initialRelationshipStatus: true,
     referenceImages: true,
+    stickers: true,
   })
   .extend({
     referenceImages: z.array(primeFigureReferenceImageInputSchema).optional(),
+    stickers: z.array(primeFigureStickerInputSchema).max(20).optional(),
     currentVariables: z.record(z.string(), primeVariableValueSchema),
     currentMood: z.string().trim(),
     currentRelationshipStatus: z.string().trim(),
@@ -265,6 +287,11 @@ export const updatePrimeFigureSchema = createPrimeFigureSchema
 
 export const updatePrimeFigurePreferencesSchema = z.object({
   voiceRequestStreaming: z.boolean(),
+});
+
+export const addPrimeFigureStickerSchema = z.object({
+  upload: imageUploadSchema,
+  description: requiredText("表情描述").max(500),
 });
 
 const urlLikeSchema = z.string().trim().min(1);
@@ -322,14 +349,27 @@ export const primeMessageContentSchema = z.discriminatedUnion("type", [
     type: z.literal("sticker"),
     stickerId: requiredText("贴纸 ID").max(120),
     description: requiredText("贴纸描述"),
+    resourceId: z.string().trim().min(1).max(120).optional(),
     resourceUrl: urlLikeSchema.optional(),
   }),
   z.object({
     type: z.literal("transfer"),
+    transferId: requiredText("转账 ID").max(120),
+    event: z.enum(["offer", "resolution"]),
     note: optionalText(),
-    amount: z.number().finite().nonnegative(),
+    amount: z
+      .number()
+      .finite()
+      .positive()
+      .refine((value) => Number.isInteger(value * 100), {
+        message: "转账金额最多保留两位小数。",
+      }),
     currency: z.string().trim().min(1).default("CNY"),
     direction: z.enum(["received", "paid"]),
+    status: z.enum(["pending", "accepted", "rejected"]),
+    relatedTransferId: z.string().trim().min(1).max(120).optional(),
+    resolvedAtMs: z.number().nonnegative().optional(),
+    resolvedAtIso: z.string().trim().min(1).max(80).optional(),
   }),
 ]);
 
@@ -367,7 +407,9 @@ export const primeMessageSchema = z.object({
   updatedAt: z.number().nonnegative(),
 });
 
-const primeFigureActionOutputSchema = z.discriminatedUnion("type", [
+// Transfer intentionally has two shapes under the same top-level action type,
+// so this union cannot use `type` as a unique discriminator.
+const primeFigureActionOutputSchema = z.union([
   z.object({
     type: z.literal("send_message"),
     message: z.discriminatedUnion("type", [
@@ -393,6 +435,10 @@ const primeFigureActionOutputSchema = z.discriminatedUnion("type", [
         type: z.literal("voice"),
         transcript: requiredText("语音文本"),
       }),
+      z.object({
+        type: z.literal("sticker"),
+        stickerId: requiredText("表情 ID").max(120),
+      }),
     ]),
   }),
   z.object({
@@ -405,6 +451,24 @@ const primeFigureActionOutputSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("schedule_wakeup"),
     afterMinutes: z.number().int().min(1).nullable(),
+  }),
+  z.object({
+    type: z.literal("transfer"),
+    operation: z.literal("send"),
+    amount: z
+      .number()
+      .finite()
+      .positive()
+      .refine((value) => Number.isInteger(value * 100), {
+        message: "转账金额最多保留两位小数。",
+      }),
+    currency: z.literal("CNY"),
+    note: z.string().trim().max(200).default(""),
+  }),
+  z.object({
+    type: z.literal("transfer"),
+    operation: z.enum(["accept", "reject"]),
+    transferId: requiredText("转账 ID").max(120),
   }),
 ]);
 
@@ -444,7 +508,12 @@ function normalizePrimeFigureAction(value: unknown) {
 }
 
 function isPrimeOutgoingMessageType(value: unknown) {
-  return value === "text" || value === "image" || value === "voice";
+  return (
+    value === "text" ||
+    value === "image" ||
+    value === "voice" ||
+    value === "sticker"
+  );
 }
 
 function normalizeReferenceMediaIds(value: unknown) {

@@ -23,7 +23,7 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
       },
     },
     primeFigure: {
-      version: 3,
+      version: 4,
       decisionModel: {
         ...sharedEndpoint,
         model: "openai/gpt-4o-mini",
@@ -52,6 +52,12 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
             latency: "balanced",
             chunkLength: 100,
           },
+        },
+        sticker: {
+          enabled: false,
+        },
+        transfer: {
+          enabled: false,
         },
       },
       optimization: {

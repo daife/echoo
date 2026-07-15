@@ -1,4 +1,5 @@
 import type {
+  AddPrimeFigureStickerRequest,
   Agent,
   AgentExportResponse,
   CreateAgentResponse,
@@ -78,6 +79,20 @@ export class AgentsApi {
       }));
   }
 
+  addPrimeFigureSticker(
+    agentId: string,
+    body: AddPrimeFigureStickerRequest,
+  ): Promise<CreateAgentResponse> {
+    return this.client
+      .post<CreateAgentResponse>(
+        `/agents/${agentId}/prime-figure/stickers`,
+        body,
+      )
+      .then((response) => ({
+        agent: normalizeAgentResources(this.client, response.agent),
+      }));
+  }
+
   getPrimeFigureEditSnapshot(
     agentId: string,
   ): Promise<PrimeFigureEditSnapshot> {
@@ -120,6 +135,11 @@ function normalizeAgentResources(client: ApiClient, agent: Agent): Agent {
       // Characters saved before reference-image support do not have this field.
       // Keep one legacy character from aborting normalization of the whole list.
       referenceImages: (agent.detail.referenceImages ?? []).map((item) => ({
+        ...item,
+        resourcePath:
+          client.resolveServerPath(item.resourcePath) ?? item.resourcePath,
+      })),
+      stickers: (agent.detail.stickers ?? []).map((item) => ({
         ...item,
         resourcePath:
           client.resolveServerPath(item.resourcePath) ?? item.resourcePath,

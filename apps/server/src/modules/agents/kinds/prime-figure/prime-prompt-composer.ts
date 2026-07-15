@@ -29,6 +29,10 @@ export function buildPrimeSystemPrompt(
     ...(isPrimeOutputEnabled(config, "voice")
       ? [voiceGuidance(config.outputs.voice.guidanceLevel)]
       : []),
+    ...(isPrimeOutputEnabled(config, "sticker") ? [STICKER_MESSAGE_RULES] : []),
+    ...(isPrimeOutputEnabled(config, "transfer")
+      ? [TRANSFER_ACTION_RULES]
+      : []),
     STATE_UPDATE_RULES,
     MEMORY_AND_TIME_RULES,
     ...(options.recallAvailable ? [RECALL_RULES] : []),
@@ -91,6 +95,7 @@ function buildActionRules(config: StoredPrimeFigureRuntimeConfig) {
     "文本",
     ...(isPrimeOutputEnabled(config, "image") ? ["图片"] : []),
     ...(isPrimeOutputEnabled(config, "voice") ? ["语音"] : []),
+    ...(isPrimeOutputEnabled(config, "sticker") ? ["表情"] : []),
   ].join("、");
   const unavailable = [
     ...(!isPrimeOutputEnabled(config, "image")
@@ -98,6 +103,12 @@ function buildActionRules(config: StoredPrimeFigureRuntimeConfig) {
       : []),
     ...(!isPrimeOutputEnabled(config, "voice")
       ? ["暂不支持voice action。"]
+      : []),
+    ...(!isPrimeOutputEnabled(config, "sticker")
+      ? ["暂不支持sticker消息。figure不能发送表情。"]
+      : []),
+    ...(!isPrimeOutputEnabled(config, "transfer")
+      ? ["暂不支持transfer action。figure不能发送、接收或拒收转账。"]
       : []),
   ];
   const wakeup = config.wakeups.proactive.enabled
@@ -110,9 +121,17 @@ ${wakeup}`;
 }
 
 const SEND_MESSAGE_RULES = `send_message 注意事项：
-不支持发送 video 或 sticker。
+不支持发送 video。
 send_message.message 中必须先输出 type，再输出对应内容字段；各消息必须严格按实际发送顺序输出。
 只有voice消息提供的transcript可以加tag，其他类型消息禁止插入tag。`;
+
+const STICKER_MESSAGE_RULES = `sticker 注意事项：
+figure只能从user数据包末尾的availableStickers选择 stickerId，不得编造或复用已不在列表中的 ID。
+表情本身就是一条完整消息，不需要附加重复解释；只有确有必要时才另发文本。availableStickers为空时不得发送sticker。`;
+
+const TRANSFER_ACTION_RULES = `transfer 注意事项：
+发送、接收和拒收都使用同一个transfer action。operation=send时提供正数amount、固定currency=CNY和可为空的note。
+operation=accept或reject时，transferId只能选择hints中列出的、由end_user发送且仍为pending的转账。已接收或已拒收的转账不得再次处理。`;
 
 const IMAGE_MESSAGE_RULES = `image 注意事项：
 发送图片时必须同时提供面向对话的客观 description 和用于后续生图的 generationPrompt。

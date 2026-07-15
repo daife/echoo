@@ -19,6 +19,8 @@ import {
   type PrimeFigureScheduleSegment,
   type PrimeFigureReferenceImage,
   type PrimeFigureReferenceImageInput,
+  type PrimeFigureSticker,
+  type PrimeFigureStickerInput,
   type PrimeFigureVariableDefinition,
   type PrimeFigureVariableType,
 } from "@echoo/shared";
@@ -448,6 +450,7 @@ export const initialPrimeForm = (): CreatePrimeFigureRequest => ({
   itinerary: "",
   variableDefinitions: [],
   referenceImages: [],
+  stickers: [],
   voiceRequestStreaming: false,
   initialMood: "",
   initialRelationshipStatus: "",
@@ -477,6 +480,7 @@ export function PrimeFigureForm({
   existingAvatarUrl,
   existingCoverUrl,
   existingReferenceImages = [],
+  existingStickers = [],
   externalError,
   onClose,
   onSubmit,
@@ -486,6 +490,7 @@ export function PrimeFigureForm({
   existingAvatarUrl?: string;
   existingCoverUrl?: string;
   existingReferenceImages?: PrimeFigureReferenceImage[];
+  existingStickers?: PrimeFigureSticker[];
   externalError?: string | null;
   onClose?: () => void;
   onSubmit: (input: CreatePrimeFigureRequest) => Promise<Agent | void>;
@@ -530,6 +535,7 @@ export function PrimeFigureForm({
         variableDefinitions:
           parsed.variableDefinitions ?? base.variableDefinitions ?? [],
         referenceImages: parsed.referenceImages ?? base.referenceImages ?? [],
+        stickers: parsed.stickers ?? base.stickers ?? [],
         isPublic:
           parsed.isPublic === undefined
             ? base.isPublic
@@ -628,6 +634,11 @@ export function PrimeFigureForm({
           items={form.referenceImages ?? []}
           existingImages={existingReferenceImages}
           onChange={(items) => setField("referenceImages", items)}
+        />
+        <StickerEditor
+          items={form.stickers ?? []}
+          existingStickers={existingStickers}
+          onChange={(items) => setField("stickers", items)}
         />
       </FormSection>
 
@@ -1166,6 +1177,106 @@ function ReferenceImageEditor({
   );
 }
 
+function StickerEditor({
+  items,
+  existingStickers,
+  onChange,
+}: {
+  items: PrimeFigureStickerInput[];
+  existingStickers: PrimeFigureSticker[];
+  onChange: (items: PrimeFigureStickerInput[]) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const existingUrls = new Map(
+    existingStickers.map((item) => [item.resourceId, item.resourcePath]),
+  );
+  return (
+    <ListPanel
+      title={`可使用表情 · ${items.length}/20`}
+      description="最终用户和 Figure 共用同一列表；每个表情都必须填写含义或适用场景。"
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        {items.map((item, index) => {
+          const preview =
+            "upload" in item && item.upload
+              ? `data:${item.upload.mimeType};base64,${item.upload.dataBase64}`
+              : "resourceId" in item
+                ? existingUrls.get(item.resourceId)
+                : undefined;
+          return (
+            <div
+              key={
+                "resourceId" in item
+                  ? item.resourceId
+                  : `${item.upload.fileName}-${index}`
+              }
+              className="grid grid-cols-[76px_1fr_auto] gap-3 rounded-xl border border-white/10 bg-black/15 p-3"
+            >
+              <div className="h-20 overflow-hidden rounded-lg bg-white/[0.035]">
+                {preview ? (
+                  <img
+                    className="h-full w-full object-contain"
+                    src={preview}
+                    alt="表情预览"
+                  />
+                ) : null}
+              </div>
+              <textarea
+                className={`${inputClass} min-h-20 py-2 text-xs`}
+                value={item.description}
+                placeholder="例如：无语地盯着对方"
+                onChange={(event) =>
+                  onChange(
+                    items.map((current, itemIndex) =>
+                      itemIndex === index
+                        ? { ...current, description: event.target.value }
+                        : current,
+                    ),
+                  )
+                }
+              />
+              <IconButton
+                label="删除表情"
+                onClick={() =>
+                  onChange(items.filter((_, itemIndex) => itemIndex !== index))
+                }
+              />
+            </div>
+          );
+        })}
+      </div>
+      <label
+        className={`${secondaryButtonClass} ${items.length >= 20 ? "pointer-events-none opacity-40" : "cursor-pointer"}`}
+      >
+        <UploadSimple size={16} />
+        添加表情
+        <input
+          className="sr-only"
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          disabled={items.length >= 20}
+          onChange={async (event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            try {
+              const upload = await imageFileToUpload(file);
+              onChange([...items, { upload, description: "" }]);
+              setError(null);
+            } catch (caught) {
+              setError(
+                caught instanceof Error ? caught.message : "表情图片压缩失败。",
+              );
+            } finally {
+              event.target.value = "";
+            }
+          }}
+        />
+      </label>
+      {error ? <p className="text-xs text-red-200/70">{error}</p> : null}
+    </ListPanel>
+  );
+}
+
 function VariableEditor({
   variable,
   valueLabel,
@@ -1592,6 +1703,13 @@ export function buildPrimePayload(
   }));
   if (referenceImages.some((item) => !item.description))
     return "每张参考图片都必须提供描述。";
+  const stickers = (form.stickers ?? []).map((item) => ({
+    ...item,
+    description: item.description.trim(),
+  }));
+  if (stickers.length > 20) return "表情最多只能添加 20 个。";
+  if (stickers.some((item) => !item.description))
+    return "每个表情都必须提供描述。";
   return {
     ...form,
     ...common,
@@ -1605,6 +1723,7 @@ export function buildPrimePayload(
     schedule: { segments: form.schedule?.segments ?? [] },
     variableDefinitions: definitions,
     referenceImages,
+    stickers,
   };
 }
 

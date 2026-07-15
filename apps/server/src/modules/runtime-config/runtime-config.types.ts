@@ -33,7 +33,7 @@ export interface StoredSliceFigureRuntimeConfig {
 }
 
 export interface StoredPrimeFigureRuntimeConfig {
-  version: 3;
+  version: 4;
   decisionModel: StoredTextModelConfig;
   outputs: {
     image: {
@@ -45,6 +45,12 @@ export interface StoredPrimeFigureRuntimeConfig {
       enabled: boolean;
       guidanceLevel: "basic" | "medium" | "advanced";
       tts: StoredFishAudioConfig;
+    };
+    sticker: {
+      enabled: boolean;
+    };
+    transfer: {
+      enabled: boolean;
     };
   };
   optimization: {

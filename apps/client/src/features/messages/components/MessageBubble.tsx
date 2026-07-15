@@ -1,10 +1,13 @@
 import {
   ArrowCounterClockwise,
+  Check,
+  Money,
   PencilSimple,
   SpinnerGap,
   TextAa,
   WarningCircle,
   Waveform,
+  X,
 } from "@phosphor-icons/react";
 import type {
   MouseEvent as ReactMouseEvent,
@@ -27,7 +30,14 @@ export interface MessageBubbleModel {
   text: string;
   createdAt: number;
   deliveryState?: "sending" | "failed";
-  kind?: "text" | "image" | "voice" | "memory-summary" | "runtime-error";
+  kind?:
+    | "text"
+    | "image"
+    | "voice"
+    | "sticker"
+    | "transfer"
+    | "memory-summary"
+    | "runtime-error";
   mediaUrl?: string;
   transcript?: string;
   durationSeconds?: number;
@@ -37,6 +47,11 @@ export interface MessageBubbleModel {
   sourceText?: string;
   isPending?: boolean;
   isSourceStart?: boolean;
+  transferAmount?: number;
+  transferCurrency?: "CNY";
+  transferStatus?: "pending" | "accepted" | "rejected";
+  transferDirection?: "received" | "paid";
+  transferNote?: string;
 }
 
 export function MessageBubble({
@@ -44,11 +59,16 @@ export function MessageBubble({
   onRetry,
   onRollback,
   onEdit,
+  onResolveTransfer,
 }: {
   message: MessageBubbleModel;
   onRetry?: (messageId: string) => void;
   onRollback?: (messageId: string) => void;
   onEdit?: (messageId: string, text: string) => void;
+  onResolveTransfer?: (
+    messageId: string,
+    resolution: "accepted" | "rejected",
+  ) => void;
 }) {
   const mine = message.from === "me";
   const canRetry = mine && message.deliveryState === "failed" && onRetry;
@@ -217,6 +237,86 @@ export function MessageBubble({
     );
   }
 
+  if (message.kind === "sticker") {
+    if (!message.mediaUrl) return null;
+    return (
+      <div
+        className={`relative flex max-w-[55%] items-end gap-2 ${mine ? "self-end" : "self-start"}`}
+      >
+        {!mine ? (
+          <div className="mb-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
+        ) : null}
+        <CachedMediaImage
+          className="max-h-44 max-w-44 object-contain"
+          mediaUrl={message.mediaUrl}
+          alt={mine ? "我发送的表情" : "角色发送的表情"}
+        />
+        {mine ? (
+          <div className="mb-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
+        ) : null}
+      </div>
+    );
+  }
+
+  if (message.kind === "transfer") {
+    const pending = message.transferStatus === "pending";
+    const canResolve = !mine && pending && message.transferDirection === "paid";
+    return (
+      <div
+        className={`relative flex w-[min(82%,320px)] items-end gap-2 ${mine ? "self-end" : "self-start"}`}
+      >
+        {!mine ? (
+          <div className="mb-3 h-7 w-1 flex-shrink-0 rounded-full bg-amber-200/35" />
+        ) : null}
+        <div className="min-w-0 flex-1 overflow-hidden rounded-2xl border border-amber-200/10 bg-gradient-to-br from-[#7a4b16] to-[#4b2b10] shadow-[0_14px_32px_rgba(0,0,0,0.22)]">
+          <div className="flex items-center gap-3 px-4 py-4">
+            <span className="grid h-11 w-11 flex-none place-items-center rounded-full bg-white/14 text-white">
+              <Money size={23} weight="duotone" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xl font-semibold tabular-nums text-white">
+                ¥{formatTransferAmount(message.transferAmount)}
+              </p>
+              <p className="mt-0.5 truncate text-xs text-white/58">
+                {message.transferNote || (mine ? "你发起的转账" : "向你转账")}
+              </p>
+            </div>
+          </div>
+          <div className="border-t border-white/10 bg-black/10 px-4 py-2.5 text-xs text-white/55">
+            {pending
+              ? "待接收"
+              : message.transferStatus === "accepted"
+                ? "已接收"
+                : "已拒收"}
+          </div>
+          {canResolve ? (
+            <div className="grid grid-cols-2 gap-px border-t border-white/10 bg-white/10">
+              <button
+                className="flex items-center justify-center gap-1.5 bg-[#4b2b10] py-2.5 text-xs text-white/65 hover:text-white"
+                type="button"
+                onClick={() => onResolveTransfer?.(message.id, "rejected")}
+              >
+                <X size={14} />
+                拒收
+              </button>
+              <button
+                className="flex items-center justify-center gap-1.5 bg-[#4b2b10] py-2.5 text-xs font-medium text-white hover:bg-[#573414]"
+                type="button"
+                onClick={() => onResolveTransfer?.(message.id, "accepted")}
+              >
+                <Check size={14} />
+                收款
+              </button>
+            </div>
+          ) : null}
+        </div>
+        {mine ? (
+          <div className="mb-3 h-7 w-1 flex-shrink-0 rounded-full bg-amber-200/20" />
+        ) : null}
+      </div>
+    );
+  }
+
   if (message.kind === "voice") {
     return (
       <div
@@ -288,6 +388,12 @@ export function MessageBubble({
       ) : null}
     </div>
   );
+}
+
+function formatTransferAmount(amount?: number) {
+  return typeof amount === "number" && Number.isFinite(amount)
+    ? amount.toFixed(2)
+    : "0.00";
 }
 
 function ParentheticalText({ value }: { value: string }) {

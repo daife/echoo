@@ -1,12 +1,17 @@
 import {
   ImageSquare,
   Keyboard,
+  Money,
   Microphone,
   PaperPlaneRight,
+  Phone,
   Plus,
+  Smiley,
+  UploadSimple,
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
+import type { PrimeFigureSticker } from "@echoo/shared";
 import { useEffect, useRef, useState } from "react";
 import { compressImageToJpeg } from "../../../shared/utils/imageCompression";
 import { usePushToTalk } from "../usePushToTalk";
@@ -26,6 +31,10 @@ export function MessageComposer({
   onSendText,
   onSendImage,
   onSendVoice,
+  stickers,
+  onSendSticker,
+  onSendTransfer,
+  onAddSticker,
 }: {
   title: string;
   isPrimeFigure: boolean;
@@ -35,13 +44,24 @@ export function MessageComposer({
   onSendText: () => Promise<void> | void;
   onSendImage: (file: File) => Promise<void>;
   onSendVoice: (blob: Blob, durationSeconds: number) => Promise<void>;
+  stickers: PrimeFigureSticker[];
+  onSendSticker: (stickerId: string) => Promise<void> | void;
+  onSendTransfer: (amount: number, note?: string) => Promise<void> | void;
+  onAddSticker: (file: File, description: string) => Promise<void>;
 }) {
   const [mode, setMode] = useState<"text" | "voice">("text");
-  const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const [panel, setPanel] = useState<"more" | "stickers" | null>(null);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isCompressingImage, setIsCompressingImage] = useState(false);
+  const [transferAmount, setTransferAmount] = useState("");
+  const [transferNote, setTransferNote] = useState("");
+  const [isTransferOpen, setIsTransferOpen] = useState(false);
+  const [stickerDescription, setStickerDescription] = useState("");
+  const [pendingStickerFile, setPendingStickerFile] = useState<File | null>(
+    null,
+  );
   const inputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pushToTalk = usePushToTalk({
@@ -60,13 +80,16 @@ export function MessageComposer({
     if (isPrimeFigure) return;
     pushToTalk.cancel();
     setMode("text");
-    setIsMoreOpen(false);
+    setPanel(null);
     setNotice(null);
   }, [isPrimeFigure]);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsMoreOpen(false);
+      if (event.key === "Escape") {
+        setPanel(null);
+        setIsTransferOpen(false);
+      }
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
@@ -90,7 +113,7 @@ export function MessageComposer({
       const compressed = await compressImageToJpeg(file);
       setSelectedImage(compressed);
       setPreviewUrl(URL.createObjectURL(compressed));
-      setIsMoreOpen(false);
+      setPanel(null);
     } catch (caught) {
       setNotice(caught instanceof Error ? caught.message : "图片压缩失败。");
     } finally {
@@ -157,7 +180,7 @@ export function MessageComposer({
             onClick={() => {
               pushToTalk.cancel();
               setMode((current) => (current === "text" ? "voice" : "text"));
-              setIsMoreOpen(false);
+              setPanel(null);
               setNotice(null);
             }}
           >
@@ -210,28 +233,47 @@ export function MessageComposer({
             onChange={(event) => onDraftChange(event.target.value)}
           />
         )}
-        {isPrimeFigure ? (
+        {isPrimeFigure && mode === "text" ? (
           <button
             className={`grid h-10 w-10 flex-none place-items-center rounded-lg transition ${
-              isMoreOpen
+              panel === "stickers"
+                ? "bg-white/[0.1] text-white"
+                : "text-white/48 hover:bg-white/[0.06] hover:text-white"
+            }`}
+            type="button"
+            aria-label="表情"
+            aria-expanded={panel === "stickers"}
+            onClick={() =>
+              setPanel((current) =>
+                current === "stickers" ? null : "stickers",
+              )
+            }
+          >
+            <Smiley size={21} />
+          </button>
+        ) : null}
+        {isPrimeFigure && mode === "text" && !draft.trim() ? (
+          <button
+            className={`grid h-10 w-10 flex-none place-items-center rounded-lg transition ${
+              panel === "more"
                 ? "bg-white/[0.1] text-white"
                 : "text-white/48 hover:bg-white/[0.06] hover:text-white"
             }`}
             type="button"
             aria-label="更多消息类型"
-            aria-expanded={isMoreOpen}
+            aria-expanded={panel === "more"}
             onClick={() => {
-              setIsMoreOpen((current) => !current);
+              setPanel((current) => (current === "more" ? null : "more"));
               setNotice(null);
             }}
           >
             <Plus
-              className={`transition-transform ${isMoreOpen ? "rotate-45" : ""}`}
+              className={`transition-transform ${panel === "more" ? "rotate-45" : ""}`}
               size={21}
             />
           </button>
         ) : null}
-        {mode === "text" ? (
+        {mode === "text" && draft.trim() ? (
           <button
             aria-label="发送消息"
             className="grid h-10 w-10 flex-none place-items-center rounded-lg bg-white text-[#09090b] transition hover:bg-white/88 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white active:translate-y-px disabled:cursor-not-allowed disabled:opacity-35"
@@ -242,19 +284,45 @@ export function MessageComposer({
           </button>
         ) : null}
       </form>
-      {isMoreOpen && isPrimeFigure ? (
+      {panel === "more" && isPrimeFigure ? (
         <div className="mt-2 rounded-xl border border-white/10 bg-[#151519] p-3 shadow-[0_18px_44px_rgba(0,0,0,0.3)]">
-          <button
-            className="flex w-24 flex-col items-center gap-2 rounded-xl p-2 text-xs text-white/55 transition hover:bg-white/[0.055] hover:text-white"
-            type="button"
-            disabled={isCompressingImage}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <span className="grid h-12 w-12 place-items-center rounded-xl bg-white/[0.065] text-white/74">
-              <ImageSquare size={23} weight="duotone" />
-            </span>
-            {isCompressingImage ? "压缩中…" : "图片"}
-          </button>
+          <div className="grid grid-cols-3 gap-2 sm:w-80">
+            <button
+              className="flex w-24 flex-col items-center gap-2 rounded-xl p-2 text-xs text-white/55 transition hover:bg-white/[0.055] hover:text-white"
+              type="button"
+              disabled={isCompressingImage}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <span className="grid h-12 w-12 place-items-center rounded-xl bg-white/[0.065] text-white/74">
+                <ImageSquare size={23} weight="duotone" />
+              </span>
+              {isCompressingImage ? "压缩中…" : "图片"}
+            </button>
+            <button
+              className="flex flex-col items-center gap-2 rounded-xl p-2 text-xs text-white/55 transition hover:bg-white/[0.055] hover:text-white"
+              type="button"
+              onClick={() => {
+                setIsTransferOpen(true);
+                setPanel(null);
+              }}
+            >
+              <span className="grid h-12 w-12 place-items-center rounded-xl bg-white/[0.065] text-white/74">
+                <Money size={23} weight="duotone" />
+              </span>
+              转账
+            </button>
+            <button
+              className="flex flex-col items-center gap-2 rounded-xl p-2 text-xs text-white/28"
+              type="button"
+              disabled
+              title="语音通话即将推出"
+            >
+              <span className="grid h-12 w-12 place-items-center rounded-xl bg-white/[0.035]">
+                <Phone size={23} weight="duotone" />
+              </span>
+              语音通话
+            </button>
+          </div>
           <input
             ref={fileInputRef}
             className="sr-only"
@@ -267,6 +335,141 @@ export function MessageComposer({
               void selectImage(file);
             }}
           />
+        </div>
+      ) : null}
+      {panel === "stickers" && isPrimeFigure ? (
+        <div className="mt-2 rounded-xl border border-white/10 bg-[#151519] p-3 shadow-[0_18px_44px_rgba(0,0,0,0.3)]">
+          <div className="grid max-h-64 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-6">
+            {stickers.map((sticker) => (
+              <button
+                key={sticker.resourceId}
+                className="aspect-square overflow-hidden rounded-xl bg-white/[0.04] p-1 transition hover:bg-white/[0.1]"
+                type="button"
+                title={sticker.description}
+                onClick={() => {
+                  setPanel(null);
+                  void onSendSticker(sticker.resourceId);
+                }}
+              >
+                <img
+                  className="h-full w-full object-contain"
+                  src={sticker.resourcePath}
+                  alt={sticker.description}
+                />
+              </button>
+            ))}
+            <label
+              className={`grid aspect-square place-items-center rounded-xl border border-dashed border-white/15 text-white/45 transition ${stickers.length >= 20 ? "opacity-35" : "cursor-pointer hover:border-white/30 hover:text-white"}`}
+            >
+              <UploadSimple size={20} />
+              <input
+                className="sr-only"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                disabled={stickers.length >= 20}
+                onChange={(event) => {
+                  setPendingStickerFile(event.target.files?.[0] ?? null);
+                  event.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+          {stickers.length === 0 ? (
+            <p className="mt-3 text-xs text-white/35">
+              还没有表情，点击加号上传第一个。
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {isTransferOpen ? (
+        <div className="mt-2 rounded-xl border border-white/10 bg-[#151519] p-4 shadow-[0_18px_44px_rgba(0,0,0,0.3)]">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-white">发起转账</span>
+            <button
+              type="button"
+              className="text-white/40 hover:text-white"
+              onClick={() => setIsTransferOpen(false)}
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-[140px_1fr_auto]">
+            <input
+              className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none"
+              type="number"
+              min="0.01"
+              step="0.01"
+              inputMode="decimal"
+              placeholder="金额（CNY）"
+              value={transferAmount}
+              onChange={(event) => setTransferAmount(event.target.value)}
+            />
+            <input
+              className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none"
+              maxLength={120}
+              placeholder="备注（可选）"
+              value={transferNote}
+              onChange={(event) => setTransferNote(event.target.value)}
+            />
+            <button
+              className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-35"
+              type="button"
+              disabled={isSending || !isValidTransferAmount(transferAmount)}
+              onClick={() => {
+                const amount = Number(transferAmount);
+                setIsTransferOpen(false);
+                setTransferAmount("");
+                setTransferNote("");
+                void onSendTransfer(amount, transferNote.trim() || undefined);
+              }}
+            >
+              转账
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {pendingStickerFile ? (
+        <div className="mt-2 rounded-xl border border-white/10 bg-[#151519] p-4">
+          <p className="text-sm font-medium text-white">添加表情描述</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+            <input
+              className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none"
+              maxLength={200}
+              autoFocus
+              placeholder="这个表情表达什么？"
+              value={stickerDescription}
+              onChange={(event) => setStickerDescription(event.target.value)}
+            />
+            <button
+              className="rounded-lg px-3 py-2 text-sm text-white/55 hover:text-white"
+              type="button"
+              onClick={() => {
+                setPendingStickerFile(null);
+                setStickerDescription("");
+              }}
+            >
+              取消
+            </button>
+            <button
+              className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-35"
+              type="button"
+              disabled={isSending || !stickerDescription.trim()}
+              onClick={async () => {
+                const file = pendingStickerFile;
+                try {
+                  await onAddSticker(file, stickerDescription.trim());
+                  setPendingStickerFile(null);
+                  setStickerDescription("");
+                } catch (caught) {
+                  setNotice(
+                    caught instanceof Error ? caught.message : "表情添加失败。",
+                  );
+                }
+              }}
+            >
+              添加
+            </button>
+          </div>
         </div>
       ) : null}
       {isRecording ? (
@@ -323,4 +526,8 @@ function formatFileSize(bytes: number) {
   return bytes >= 1024 * 1024
     ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+function isValidTransferAmount(value: string) {
+  return /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(value) && Number(value) > 0;
 }

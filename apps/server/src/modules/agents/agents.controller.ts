@@ -1,6 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { ZodError } from "zod";
-import { updatePrimeFigurePreferencesSchema } from "@echoo/shared";
+import {
+  addPrimeFigureStickerSchema,
+  updatePrimeFigurePreferencesSchema,
+} from "@echoo/shared";
 import type {
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
@@ -63,12 +66,10 @@ export async function registerAgentRoutes(app: FastifyInstance) {
         return reply.code(201).send({ agent });
       } catch (error) {
         if (error instanceof ZodError) {
-          return reply
-            .code(400)
-            .send({
-              error: "VALIDATION_ERROR",
-              message: error.issues[0]?.message ?? "角色数据无效。",
-            });
+          return reply.code(400).send({
+            error: "VALIDATION_ERROR",
+            message: error.issues[0]?.message ?? "角色数据无效。",
+          });
         }
         if (error instanceof InvalidMediaUploadError) {
           return reply
@@ -100,12 +101,10 @@ export async function registerAgentRoutes(app: FastifyInstance) {
         return { agent };
       } catch (error) {
         if (error instanceof ZodError) {
-          return reply
-            .code(400)
-            .send({
-              error: "VALIDATION_ERROR",
-              message: error.issues[0]?.message ?? "角色数据无效。",
-            });
+          return reply.code(400).send({
+            error: "VALIDATION_ERROR",
+            message: error.issues[0]?.message ?? "角色数据无效。",
+          });
         }
         if (error instanceof InvalidMediaUploadError) {
           return reply
@@ -147,6 +146,45 @@ export async function registerAgentRoutes(app: FastifyInstance) {
     }
   });
 
+  app.post<{ Params: { agentId: string }; Body: unknown }>(
+    "/:agentId/prime-figure/stickers",
+    { bodyLimit: 8 * 1024 * 1024 },
+    async (request, reply) => {
+      const userId = await request.requireUserId(reply);
+      if (!userId) return;
+      try {
+        const input = addPrimeFigureStickerSchema.parse(request.body);
+        const agent = await agents.addPrimeFigureSticker(
+          userId,
+          request.params.agentId,
+          input,
+        );
+        if (!agent)
+          return reply
+            .code(404)
+            .send({ error: "NOT_FOUND", message: "未找到本初角色。" });
+        return reply.code(201).send({ agent });
+      } catch (error) {
+        if (error instanceof ZodError)
+          return reply.code(400).send({
+            error: "VALIDATION_ERROR",
+            message: error.issues[0]?.message ?? "表情数据无效。",
+          });
+        if (error instanceof InvalidMediaUploadError)
+          return reply.code(400).send({
+            error: "INVALID_MEDIA_UPLOAD",
+            message: error.message,
+          });
+        if (error instanceof Error && error.message.includes("20 个上限"))
+          return reply.code(409).send({
+            error: "STICKER_LIMIT_REACHED",
+            message: error.message,
+          });
+        throw error;
+      }
+    },
+  );
+
   app.patch<{ Params: { agentId: string }; Body: UpdateSliceFigureRequest }>(
     "/:agentId",
     { bodyLimit: 16 * 1024 * 1024 },
@@ -167,12 +205,10 @@ export async function registerAgentRoutes(app: FastifyInstance) {
         return { agent };
       } catch (error) {
         if (error instanceof ZodError) {
-          return reply
-            .code(400)
-            .send({
-              error: "VALIDATION_ERROR",
-              message: error.issues[0]?.message ?? "角色数据无效。",
-            });
+          return reply.code(400).send({
+            error: "VALIDATION_ERROR",
+            message: error.issues[0]?.message ?? "角色数据无效。",
+          });
         }
         if (error instanceof InvalidMediaUploadError) {
           return reply

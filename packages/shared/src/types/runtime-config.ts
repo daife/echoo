@@ -56,6 +56,12 @@ export interface PrimeFigureOutputConfigView {
     guidanceLevel: PrimeFigureGuidanceLevel;
     tts: FishAudioConfigView;
   };
+  sticker: {
+    enabled: boolean;
+  };
+  transfer: {
+    enabled: boolean;
+  };
 }
 
 export interface PrimeFigureOptimizationConfigView {
@@ -83,7 +89,7 @@ export interface PrimeFigureUnderstandingConfigView {
 }
 
 export interface PrimeFigureRuntimeConfigView {
-  version: 3;
+  version: 4;
   decisionModel: TextModelConfigView;
   outputs: PrimeFigureOutputConfigView;
   optimization: PrimeFigureOptimizationConfigView;
@@ -161,6 +167,12 @@ export interface PrimeFigureRuntimeConfigPatch {
       enabled?: boolean;
       guidanceLevel?: PrimeFigureGuidanceLevel;
       tts?: FishAudioConfigPatch;
+    };
+    sticker?: {
+      enabled?: boolean;
+    };
+    transfer?: {
+      enabled?: boolean;
     };
   };
   optimization?: {

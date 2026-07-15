@@ -112,6 +112,28 @@ export class PrimeMessageRepository {
     return rows.map(rowToMessage);
   }
 
+  async listPendingEndUserTransfers(
+    ownerUserId: string,
+    conversationId: string,
+  ) {
+    const rows = await queryRows<PrimeRow>(
+      `${SELECT_PRIME} WHERE messages.owner_user_id = ? AND messages.conversation_id = ?
+       AND messages.role = 'user' AND messages.status != 'failed'
+       AND JSON_UNQUOTE(JSON_EXTRACT(messages.run_metadata, '$.primeContent.type')) = 'transfer'
+       AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(messages.run_metadata, '$.primeContent.event')), 'offer') = 'offer'
+       AND JSON_UNQUOTE(JSON_EXTRACT(messages.run_metadata, '$.primeContent.status')) = 'pending'
+       ORDER BY messages.seq ASC`,
+      [ownerUserId, conversationId],
+    );
+    return rows.map(rowToMessage).filter(
+      (
+        message,
+      ): message is PrimeMessage & {
+        content: Extract<PrimeMessageContent, { type: "transfer" }>;
+      } => message.content.type === "transfer",
+    );
+  }
+
   async searchByKeywords(
     ownerUserId: string,
     agentId: string,

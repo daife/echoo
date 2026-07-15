@@ -226,6 +226,9 @@ export class PrimeDecisionStreamSession {
 
     for (const [index, action] of decision.actions.entries()) {
       if (action.type !== "send_message") continue;
+      // Stickers are existing resources rather than generated/streamed media.
+      // The action executor persists them after the decision is complete.
+      if (action.message.type === "sticker") continue;
       const state = this.getAction(sourceActionIndices[index] ?? index);
       setActionKind(state, action.message.type);
       if (
@@ -271,6 +274,7 @@ export class PrimeDecisionStreamSession {
     await Promise.all(
       decision.actions.map(async (action, index) => {
         if (action.type !== "send_message") return;
+        if (action.message.type === "sticker") return;
         const state = this.getAction(sourceActionIndices[index] ?? index);
         if (action.message.type === "image") {
           const image = ensureImageState(state);
@@ -292,12 +296,13 @@ export class PrimeDecisionStreamSession {
         } catch (error) {
           voice.ttsError = toErrorMessage(error);
           await state.revealPromise;
-          this.appPush.pushToUser(this.input.ownerUserId, {
-            type: "message.audio.failed",
-            messageId: state.id,
-            conversationId: this.input.conversationId,
-            error: voice.ttsError,
-          });
+          if (state.revealed)
+            this.appPush.pushToUser(this.input.ownerUserId, {
+              type: "message.audio.failed",
+              messageId: state.id,
+              conversationId: this.input.conversationId,
+              error: voice.ttsError,
+            });
         } finally {
           this.resolveDelivery(state);
         }
@@ -312,6 +317,7 @@ export class PrimeDecisionStreamSession {
       messageIds: new Map(
         decision.actions.flatMap((action, index) => {
           if (action.type !== "send_message") return [];
+          if (action.message.type === "sticker") return [];
           const state = this.getAction(sourceActionIndices[index] ?? index);
           return state.created ? [[index, state.id] as const] : [];
         }),
@@ -322,6 +328,7 @@ export class PrimeDecisionStreamSession {
       messageCreatedAt: new Map(
         decision.actions.flatMap((action, index) => {
           if (action.type !== "send_message") return [];
+          if (action.message.type === "sticker") return [];
           const state = this.getAction(sourceActionIndices[index] ?? index);
           return state.createdAt === undefined
             ? []
@@ -331,6 +338,7 @@ export class PrimeDecisionStreamSession {
       ttsErrors: new Map(
         decision.actions.flatMap((action, index) => {
           if (action.type !== "send_message") return [];
+          if (action.message.type === "sticker") return [];
           const state = this.getAction(sourceActionIndices[index] ?? index);
           return state.kind.type === "voice" && state.kind.ttsError
             ? [[index, state.kind.ttsError] as const]
@@ -441,6 +449,13 @@ export class PrimeDecisionStreamSession {
   private ensureCreated(state: StreamedActionState) {
     const type = messageType(state);
     if (state.created || !type) return;
+    // These actions are persisted by the executor. Deferring the surrounding
+    // messages too preserves mixed action ordering in the final timeline.
+    if (
+      this.input.runtimeConfig.outputs.sticker.enabled ||
+      this.input.runtimeConfig.outputs.transfer.enabled
+    )
+      return;
     const hasPredecessor = this.scheduledMessageCount > 0;
     this.scheduledMessageCount += 1;
     state.created = true;
@@ -547,9 +562,9 @@ export class PrimeDecisionStreamSession {
     if (state.kind.type !== "voice") return;
     const voice = state.kind;
     if (voice.voicePromise) return;
-    const audioStarted = state.revealPromise!.then(() =>
-      this.startAudioDelivery(state),
-    );
+    const audioStarted = state.revealPromise
+      ? state.revealPromise.then(() => this.startAudioDelivery(state))
+      : Promise.resolve();
     void audioStarted.catch(() => undefined);
     voice.voicePromise = this.persistVoiceResult(
       state,
@@ -567,10 +582,13 @@ export class PrimeDecisionStreamSession {
     state: StreamedActionState,
     resultPromise: Promise<FishAudioTtsResult>,
     transcript: string,
-    audioStarted: Promise<unknown> = state.revealPromise!.then(() =>
-      this.startAudioDelivery(state),
-    ),
+    audioStarted?: Promise<unknown>,
   ) {
+    const deliveryStarted =
+      audioStarted ??
+      (state.revealPromise
+        ? state.revealPromise.then(() => this.startAudioDelivery(state))
+        : Promise.resolve());
     const result = await resultPromise;
     const resource = await this.resources.saveGeneratedMedia(
       this.input.ownerUserId,
@@ -586,13 +604,14 @@ export class PrimeDecisionStreamSession {
       description: transcript,
       source: "generated",
     });
-    await audioStarted;
-    this.appPush.pushToUser(this.input.ownerUserId, {
-      type: "message.audio.completed",
-      messageId: state.id,
-      conversationId: this.input.conversationId,
-      mediaUrl: resource.publicPath,
-    });
+    await deliveryStarted;
+    if (state.revealed)
+      this.appPush.pushToUser(this.input.ownerUserId, {
+        type: "message.audio.completed",
+        messageId: state.id,
+        conversationId: this.input.conversationId,
+        mediaUrl: resource.publicPath,
+      });
     return {
       resourceId: resource.id,
       mediaUrl: resource.publicPath,
@@ -852,7 +871,8 @@ function visibleField(type: "text" | "image" | "voice" | undefined) {
 function getVisibleText(message: PrimeFigureOutgoingMessage) {
   if (message.type === "text") return message.text;
   if (message.type === "image") return message.description;
-  return message.transcript;
+  if (message.type === "voice") return message.transcript;
+  return "";
 }
 
 function append(current: string | undefined, delta: string) {

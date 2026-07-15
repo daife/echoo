@@ -32,6 +32,9 @@ export class MessageService {
   sendMediaMessage(input: CreateMediaMessageInput) {
     return this.api.createMediaMessage(input);
   }
+  resolveTransfer(input: import("@echoo/shared").ResolveTransferInput) {
+    return this.api.resolveTransfer(input);
+  }
   triggerPrimeFigureHint(conversationId: string, instruction: string) {
     return this.api.triggerPrimeFigureHint(conversationId, instruction);
   }

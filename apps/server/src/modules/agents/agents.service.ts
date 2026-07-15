@@ -1,4 +1,5 @@
 import type {
+  AddPrimeFigureStickerRequest,
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
   UpdatePrimeFigurePreferencesRequest,
@@ -73,5 +74,13 @@ export class AgentsService {
     input: UpdatePrimeFigurePreferencesRequest,
   ) {
     return this.repository.updatePrimeFigurePreferences(userId, agentId, input);
+  }
+
+  addPrimeFigureSticker(
+    userId: string,
+    agentId: string,
+    input: AddPrimeFigureStickerRequest,
+  ) {
+    return this.repository.addPrimeFigureSticker(userId, agentId, input);
   }
 }

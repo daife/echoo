@@ -230,10 +230,25 @@ function normalizePrimeConfig(
   const defaults = buildRuntimeConfigDefaults().primeFigure;
   const legacy = config as StoredPrimeFigureRuntimeConfig & {
     wakeups?: StoredPrimeFigureRuntimeConfig["wakeups"];
+    outputs: StoredPrimeFigureRuntimeConfig["outputs"] & {
+      sticker?: StoredPrimeFigureRuntimeConfig["outputs"]["sticker"];
+      transfer?: StoredPrimeFigureRuntimeConfig["outputs"]["transfer"];
+    };
   };
   return {
     ...config,
-    version: 3,
+    version: 4,
+    outputs: {
+      ...config.outputs,
+      sticker: {
+        ...defaults.outputs.sticker,
+        ...legacy.outputs?.sticker,
+      },
+      transfer: {
+        ...defaults.outputs.transfer,
+        ...legacy.outputs?.transfer,
+      },
+    },
     wakeups: {
       proactive: {
         ...defaults.wakeups.proactive,
@@ -264,7 +279,7 @@ function patchPrimeConfig(
 ): StoredPrimeFigureRuntimeConfig {
   return {
     ...current,
-    version: 3,
+    version: 4,
     decisionModel: patch.decisionModel
       ? patchTextModel(current.decisionModel, patch.decisionModel)
       : current.decisionModel,
@@ -285,6 +300,14 @@ function patchPrimeConfig(
         tts: patch.outputs?.voice?.tts
           ? patchFishAudio(current.outputs.voice.tts, patch.outputs.voice.tts)
           : current.outputs.voice.tts,
+      },
+      sticker: {
+        ...current.outputs.sticker,
+        ...patch.outputs?.sticker,
+      },
+      transfer: {
+        ...current.outputs.transfer,
+        ...patch.outputs?.transfer,
       },
     },
     optimization: {
@@ -433,6 +456,8 @@ function redactFigureConfig(config: StoredFigureRuntimeConfig): any {
           apiKey: redactSecret(config.outputs.voice.tts.apiKey),
         },
       },
+      sticker: config.outputs.sticker,
+      transfer: config.outputs.transfer,
     },
     optimization: {
       image: {

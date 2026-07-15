@@ -9,6 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import {
   type Agent,
+  type AddPrimeFigureStickerRequest,
   type AgentExportResponse,
   type CreatePrimeFigureRequest,
   type CreateSliceFigureRequest,
@@ -58,6 +59,7 @@ import {
   SliceFigureFormFields,
 } from "../create-agent/CreateAgentPage";
 import { useConversationMessages } from "./useConversationMessages";
+import { imageFileToUpload } from "../../shared/utils/imageCompression";
 import {
   PrimeRuntimeConfigForm,
   SliceRuntimeConfigForm,
@@ -75,6 +77,10 @@ export type UpdateAgentHandlers = {
   updatePrimeFigurePreferences: (
     agentId: string,
     input: UpdatePrimeFigurePreferencesRequest,
+  ) => Promise<Agent>;
+  addPrimeFigureSticker: (
+    agentId: string,
+    input: AddPrimeFigureStickerRequest,
   ) => Promise<Agent>;
   getPrimeFigureEditSnapshot: (
     agentId: string,
@@ -128,6 +134,9 @@ export function MessagesPage({
     sendMessage,
     sendImage,
     sendVoice,
+    sendSticker,
+    sendTransfer,
+    resolveTransfer,
     loadOlderMessages,
     retryFailedMessage,
     deleteConversation,
@@ -457,6 +466,7 @@ export function MessagesPage({
                   onEdit={(messageId, text) =>
                     setMessageBeingEdited({ id: messageId, text })
                   }
+                  onResolveTransfer={resolveTransfer}
                 />
               </Fragment>
             );
@@ -479,6 +489,18 @@ export function MessagesPage({
         onSendText={sendMessage}
         onSendImage={sendImage}
         onSendVoice={sendVoice}
+        stickers={
+          agent.type === "prime-figure" ? (agent.detail.stickers ?? []) : []
+        }
+        onSendSticker={sendSticker}
+        onSendTransfer={sendTransfer}
+        onAddSticker={async (file, description) => {
+          const upload = await imageFileToUpload(file);
+          await updateHandlers.addPrimeFigureSticker(agent.id, {
+            upload,
+            description,
+          });
+        }}
       />
       {isEditOpen && agent.type === "slice-figure" ? (
         <EditSliceFigureDialog
@@ -876,6 +898,7 @@ function EditPrimeFigureDialog({
             existingAvatarUrl={snapshot.agent.avatarResourcePath}
             existingCoverUrl={snapshot.agent.coverResourcePath}
             existingReferenceImages={snapshot.agent.detail.referenceImages}
+            existingStickers={snapshot.agent.detail.stickers ?? []}
             onClose={onClose}
             onSubmit={async (form) => onSubmit(primeFormToUpdate(form))}
           />
@@ -932,6 +955,10 @@ export function primeSnapshotToForm(
         : { defaultValue: undefined }),
     })),
     referenceImages: agent.detail.referenceImages.map((item) => ({
+      resourceId: item.resourceId,
+      description: item.description,
+    })),
+    stickers: (agent.detail.stickers ?? []).map((item) => ({
       resourceId: item.resourceId,
       description: item.description,
     })),
@@ -1063,12 +1090,18 @@ function toBubbleMessages(
         canEdit: false,
       },
     ];
+  const primeContent = readPrimeContent(message.metadata);
+  const isSticker = primeContent?.type === "sticker";
+  const isTransfer = primeContent?.type === "transfer";
   const text =
-    message.contentType === "text" ? (message.content.text ?? "") : "";
+    message.contentType === "text" && !isTransfer
+      ? (message.content.text ?? "")
+      : "";
   const segments =
     autoSegment &&
     message.role === "assistant" &&
-    message.contentType === "text"
+    message.contentType === "text" &&
+    !isTransfer
       ? splitFigureReply(text)
       : [text];
   const isSegmented =
@@ -1087,9 +1120,13 @@ function toBubbleMessages(
     kind:
       message.contentType === "voice"
         ? "voice"
-        : message.contentType === "image"
-          ? "image"
-          : "text",
+        : isSticker
+          ? "sticker"
+          : isTransfer
+            ? "transfer"
+            : message.contentType === "image"
+              ? "image"
+              : "text",
     mediaUrl: message.content.mediaUrl,
     transcript:
       message.contentType === "voice" ? message.content.text : undefined,
@@ -1097,17 +1134,49 @@ function toBubbleMessages(
       message.contentType === "voice"
         ? getVoiceDurationSeconds(message.metadata)
         : undefined,
+    transferAmount:
+      isTransfer && typeof primeContent.amount === "number"
+        ? primeContent.amount
+        : undefined,
+    transferCurrency: isTransfer ? "CNY" : undefined,
+    transferStatus:
+      isTransfer &&
+      (primeContent.status === "pending" ||
+        primeContent.status === "accepted" ||
+        primeContent.status === "rejected")
+        ? primeContent.status
+        : undefined,
+    transferDirection:
+      isTransfer &&
+      (primeContent.direction === "received" ||
+        primeContent.direction === "paid")
+        ? primeContent.direction
+        : undefined,
+    transferNote:
+      isTransfer && typeof primeContent.note === "string"
+        ? primeContent.note
+        : undefined,
     canRollback,
     canEdit:
       canEditFigureMessages &&
       message.role === "assistant" &&
       message.contentType === "text" &&
+      !isTransfer &&
       message.status !== "pending" &&
       message.status !== "failed",
     isPending:
       shouldShowFigurePendingIndicator(message, agentType) &&
       index === segments.length - 1,
   }));
+}
+
+function readPrimeContent(metadata: LocalMessage["metadata"]) {
+  const value = metadata?.primeContent;
+  if (!value || Array.isArray(value) || typeof value !== "object") return null;
+  const type = (value as { type?: unknown }).type;
+  return type === "sticker" || type === "transfer"
+    ? (value as Record<string, unknown> & { type: "sticker" | "transfer" })
+    : null;
 }
 
 function EditMessageDialog({

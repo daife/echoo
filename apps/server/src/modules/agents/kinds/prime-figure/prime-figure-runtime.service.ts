@@ -273,6 +273,7 @@ export class PrimeFigureRuntimeService {
       input.debugInstruction,
       input.runtimeConfig,
       context.hasOmittedConversation,
+      context.pendingEndUserTransfers,
     );
     if (packet.auxiliaryMedia.length) {
       const annotations = await this.mediaAnnotations.annotate(
@@ -299,6 +300,7 @@ export class PrimeFigureRuntimeService {
         input.debugInstruction,
         input.runtimeConfig,
         context.hasOmittedConversation,
+        context.pendingEndUserTransfers,
       );
     }
     const streamSession = new PrimeDecisionStreamSession({
@@ -341,6 +343,8 @@ export class PrimeFigureRuntimeService {
         packet.pendingMedia,
         packet.availableReferenceImages.map((media) => media.id),
         input.runtimeConfig,
+        packet.availableStickers.map((sticker) => sticker.id),
+        packet.pendingEndUserTransfers.map((transfer) => transfer.id),
       );
       const { decision, mediaAnnotations, sourceActionIndices } = envelope;
       const optimizationFailures: Array<{
@@ -462,19 +466,24 @@ export class PrimeFigureRuntimeService {
         input.conversationId,
       ));
     const window = input.runtimeConfig.context;
-    const [contextWindow, unhandledEndUserMessages] = await Promise.all([
-      this.messages.listContextWindow(
-        input.ownerUserId,
-        input.conversationId,
-        window.minimumMessages,
-        window.maximumMessages,
-      ),
-      this.messages.listEndUserAfterSequence(
-        input.ownerUserId,
-        input.conversationId,
-        lastHandledEndUserSeq,
-      ),
-    ]);
+    const [contextWindow, unhandledEndUserMessages, pendingEndUserTransfers] =
+      await Promise.all([
+        this.messages.listContextWindow(
+          input.ownerUserId,
+          input.conversationId,
+          window.minimumMessages,
+          window.maximumMessages,
+        ),
+        this.messages.listEndUserAfterSequence(
+          input.ownerUserId,
+          input.conversationId,
+          lastHandledEndUserSeq,
+        ),
+        this.messages.listPendingEndUserTransfers(
+          input.ownerUserId,
+          input.conversationId,
+        ),
+      ]);
     if (
       !unhandledEndUserMessages.length &&
       !(
@@ -513,6 +522,7 @@ export class PrimeFigureRuntimeService {
         (latest, message) => Math.max(latest, message.sequence ?? 0),
         0,
       ),
+      pendingEndUserTransfers,
     };
   }
 
@@ -527,6 +537,12 @@ export class PrimeFigureRuntimeService {
     const messages = [...input.packet.messages];
     const availableReferenceImageIds =
       input.packet.availableReferenceImages.map((media) => media.id);
+    const availableStickerIds = (input.packet.availableStickers ?? []).map(
+      (sticker) => sticker.id,
+    );
+    const pendingTransferIds = (input.packet.pendingEndUserTransfers ?? []).map(
+      (transfer) => transfer.id,
+    );
     const recordResponse = (response: ChatCompletionResult) => {
       input.diagnostics.rawResponse = response.text;
       input.diagnostics.providerId = response.providerId;
@@ -549,6 +565,8 @@ export class PrimeFigureRuntimeService {
             input.packet.pendingMedia,
             availableReferenceImageIds,
             input.packet.recallAvailable,
+            availableStickerIds,
+            pendingTransferIds,
           ),
         },
         input.streamSession,
@@ -584,6 +602,8 @@ export class PrimeFigureRuntimeService {
             input.packet.pendingMedia,
             availableReferenceImageIds,
             true,
+            availableStickerIds,
+            pendingTransferIds,
           ),
           toolChoice: "none",
         },
@@ -745,11 +765,28 @@ export async function buildPrimeChatMessages(
   debugInstruction: string | undefined,
   runtimeConfig: StoredPrimeFigureRuntimeConfig,
   hasOmittedConversation = false,
+  pendingEndUserTransfers: Array<
+    PrimeMessage & {
+      content: Extract<PrimeMessageContent, { type: "transfer" }>;
+    }
+  > = [],
 ): Promise<{
   messages: ChatCompletionMessage[];
   pendingMedia: PendingMediaAnnotation[];
   auxiliaryMedia: PendingMediaAnnotation[];
   availableReferenceImages: Array<{ id: string; description: string }>;
+  availableStickers: Array<{
+    id: string;
+    description: string;
+    resourceUrl: string;
+  }>;
+  pendingEndUserTransfers: Array<{
+    id: string;
+    at: string;
+    amount: number;
+    currency: string;
+    note?: string;
+  }>;
   recallAvailable: boolean;
 }> {
   const timezone = APP_TIME_ZONE;
@@ -783,6 +820,26 @@ export async function buildPrimeChatMessages(
       `本次请求中新出现、figure 可能需要注意的 end_user 消息标记：${[
         ...attentionIdByMessage.values(),
       ].join(", ")}。结合完整时间线顺序统一回应，不要遗漏这些消息。`,
+    );
+  }
+  const pendingTransferSummaries = pendingEndUserTransfers.map((message) => ({
+    id: message.id,
+    at: formatReadableMinute(message.occurredAtMs, timezone),
+    amount: message.content.amount,
+    currency: message.content.currency,
+    ...(message.content.note ? { note: message.content.note } : {}),
+  }));
+  if (pendingTransferSummaries.length) {
+    const summary = pendingTransferSummaries
+      .map(
+        (transfer) =>
+          `${transfer.id}（${transfer.at}，${transfer.currency} ${transfer.amount}${transfer.note ? `，备注：${sanitizeVisibleText(transfer.note, timezone)}` : ""}）`,
+      )
+      .join("；");
+    hints.push(
+      isPrimeOutputEnabled(runtimeConfig, "transfer")
+        ? `存在尚未接收或拒收的end_user转账：${summary}。可使用transfer action的accept或reject处理。`
+        : `存在尚未接收或拒收的end_user转账：${summary}。当前transfer action未开放，figure不能接收或拒收。`,
     );
   }
 
@@ -1027,6 +1084,7 @@ export async function buildPrimeChatMessages(
           sender,
           ...(attentionId ? { attentionId } : {}),
           type: "sticker",
+          stickerId: messageContent.stickerId,
           description: sanitizeVisibleText(
             messageContent.description,
             timezone,
@@ -1043,9 +1101,23 @@ export async function buildPrimeChatMessages(
         sender,
         ...(attentionId ? { attentionId } : {}),
         type: "transfer",
+        transferId: messageContent.transferId,
+        event: messageContent.event,
         direction: messageContent.direction,
         currency: messageContent.currency,
         amount: messageContent.amount,
+        status: messageContent.status,
+        ...(messageContent.relatedTransferId
+          ? { relatedTransferId: messageContent.relatedTransferId }
+          : {}),
+        ...(messageContent.resolvedAtMs
+          ? {
+              resolvedAt: formatReadableMinute(
+                messageContent.resolvedAtMs,
+                timezone,
+              ),
+            }
+          : {}),
         ...(messageContent.note
           ? { note: sanitizeVisibleText(messageContent.note, timezone) }
           : {}),
@@ -1067,6 +1139,11 @@ export async function buildPrimeChatMessages(
   ).map((media) => ({
     id: media.mediaId,
     description: sanitizeVisibleText(media.description ?? "", timezone),
+  }));
+  const availableStickers = (agent.detail.stickers ?? []).map((sticker) => ({
+    id: sticker.resourceId,
+    description: sanitizeVisibleText(sticker.description, timezone),
+    resourceUrl: sticker.resourcePath,
   }));
 
   content.push({
@@ -1110,6 +1187,9 @@ export async function buildPrimeChatMessages(
       },
       memories: visibleMemories,
       availableReferenceImages,
+      ...(isPrimeOutputEnabled(runtimeConfig, "sticker")
+        ? { availableStickers }
+        : {}),
       hints,
     }),
   });
@@ -1130,6 +1210,8 @@ export async function buildPrimeChatMessages(
     pendingMedia,
     auxiliaryMedia,
     availableReferenceImages,
+    availableStickers,
+    pendingEndUserTransfers: pendingTransferSummaries,
     recallAvailable,
   };
 }
@@ -1286,6 +1368,8 @@ export function buildPrimeDecisionResponseFormat(
   pendingMedia: PendingMediaAnnotation[],
   availableReferenceImageIds: string[],
   recallAvailable = false,
+  availableStickerIds: string[] = [],
+  pendingTransferIds: string[] = [],
 ) {
   const hasVariables = agent.detail.variableDefinitions.length > 0;
   const variableProperties = Object.fromEntries(
@@ -1380,7 +1464,11 @@ export function buildPrimeDecisionResponseFormat(
                 buildSendMessageActionSchema(
                   availableReferenceImageIds,
                   runtimeConfig,
+                  availableStickerIds,
                 ),
+                ...(isPrimeOutputEnabled(runtimeConfig, "transfer")
+                  ? [buildTransferActionSchema(pendingTransferIds)]
+                  : []),
                 buildSilenceActionSchema(),
                 buildMuteActionSchema(),
                 ...(runtimeConfig.wakeups.proactive.enabled
@@ -1496,6 +1584,7 @@ function buildScheduleOutputSchema() {
 function buildSendMessageActionSchema(
   availableReferenceImageIds: string[],
   runtimeConfig: StoredPrimeFigureRuntimeConfig,
+  availableStickerIds: string[] = [],
 ) {
   return {
     type: "object",
@@ -1570,11 +1659,66 @@ function buildSendMessageActionSchema(
                 },
               ]
             : []),
+          ...(isPrimeOutputEnabled(runtimeConfig, "sticker") &&
+          availableStickerIds.length
+            ? [
+                {
+                  type: "object",
+                  properties: {
+                    type: { const: "sticker" },
+                    stickerId: {
+                      type: "string",
+                      enum: availableStickerIds,
+                      description: "从availableStickers选择的表情资源 ID。",
+                    },
+                  },
+                  required: ["type", "stickerId"],
+                  additionalProperties: false,
+                },
+              ]
+            : []),
         ],
       },
     },
     required: ["type", "message"],
     additionalProperties: false,
+  } as const;
+}
+
+function buildTransferActionSchema(pendingTransferIds: string[]) {
+  return {
+    anyOf: [
+      {
+        type: "object",
+        properties: {
+          type: { const: "transfer" },
+          operation: { const: "send" },
+          amount: {
+            type: "number",
+            exclusiveMinimum: 0,
+            multipleOf: 0.01,
+          },
+          currency: { const: "CNY" },
+          note: { type: "string", maxLength: 200 },
+        },
+        required: ["type", "operation", "amount", "currency", "note"],
+        additionalProperties: false,
+      },
+      ...(pendingTransferIds.length
+        ? [
+            {
+              type: "object",
+              properties: {
+                type: { const: "transfer" },
+                operation: { enum: ["accept", "reject"] },
+                transferId: { type: "string", enum: pendingTransferIds },
+              },
+              required: ["type", "operation", "transferId"],
+              additionalProperties: false,
+            },
+          ]
+        : []),
+    ],
   } as const;
 }
 
@@ -1671,13 +1815,23 @@ export function parsePrimeDecisionEnvelope(
   pendingMedia: PendingMediaAnnotation[],
   availableReferenceImageIds: string[],
   runtimeConfig: StoredPrimeFigureRuntimeConfig,
+  availableStickerIds: string[] = [],
+  pendingTransferIds: string[] = [],
 ) {
   const raw = JSON.parse(responseText) as Record<string, unknown>;
   const rawActionFilter = Array.isArray(raw.actions)
     ? filterPrimeActionsByCapabilities(raw.actions, runtimeConfig)
     : null;
-  const normalizedRaw = rawActionFilter
-    ? { ...raw, actions: rawActionFilter.actions }
+  const rawDynamicFilter = rawActionFilter
+    ? filterPrimeDynamicActions(
+        rawActionFilter.actions,
+        availableStickerIds,
+        pendingTransferIds,
+        rawActionFilter.sourceIndices,
+      )
+    : null;
+  const normalizedRaw = rawDynamicFilter
+    ? { ...raw, actions: rawDynamicFilter.actions }
     : raw;
   const parsed = (
     agent.detail.variableDefinitions.length
@@ -1690,23 +1844,71 @@ export function parsePrimeDecisionEnvelope(
   const parsedActionFilter = filterPrimeActionsByCapabilities(
     parsed.actions,
     runtimeConfig,
-    rawActionFilter?.sourceIndices,
+    rawDynamicFilter?.sourceIndices,
+  );
+  const parsedDynamicFilter = filterPrimeDynamicActions(
+    parsedActionFilter.actions,
+    availableStickerIds,
+    pendingTransferIds,
+    parsedActionFilter.sourceIndices,
   );
   const decision = filterUnavailableReferenceMediaIds(
     {
       ...parsed,
-      actions: parsedActionFilter.actions as PrimeFigureDecision["actions"],
+      actions: parsedDynamicFilter.actions as PrimeFigureDecision["actions"],
     },
     availableReferenceImageIds,
   );
   return {
     decision,
-    sourceActionIndices: parsedActionFilter.sourceIndices,
+    sourceActionIndices: parsedDynamicFilter.sourceIndices,
     mediaAnnotations: normalizeMediaAnnotations(
       raw.mediaAnnotations,
       pendingMedia,
     ),
   };
+}
+
+function filterPrimeDynamicActions<T>(
+  actions: T[],
+  availableStickerIds: string[],
+  pendingTransferIds: string[],
+  sourceIndices: number[] = actions.map((_, index) => index),
+) {
+  const stickerIds = new Set(availableStickerIds);
+  const transferIds = new Set(pendingTransferIds);
+  const retainedActions: T[] = [];
+  const retainedSourceIndices: number[] = [];
+  actions.forEach((value, index) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      retainedActions.push(value);
+      retainedSourceIndices.push(sourceIndices[index] ?? index);
+      return;
+    }
+    const action = value as Record<string, unknown>;
+    const message =
+      action.message &&
+      typeof action.message === "object" &&
+      !Array.isArray(action.message)
+        ? (action.message as Record<string, unknown>)
+        : null;
+    if (
+      message?.type === "sticker" &&
+      (typeof message.stickerId !== "string" ||
+        !stickerIds.has(message.stickerId))
+    )
+      return;
+    if (
+      action.type === "transfer" &&
+      (action.operation === "accept" || action.operation === "reject") &&
+      (typeof action.transferId !== "string" ||
+        !transferIds.has(action.transferId))
+    )
+      return;
+    retainedActions.push(value);
+    retainedSourceIndices.push(sourceIndices[index] ?? index);
+  });
+  return { actions: retainedActions, sourceIndices: retainedSourceIndices };
 }
 
 function normalizeMediaAnnotations(
@@ -1755,8 +1957,8 @@ function describePrimeContent(content: PrimeMessageContent) {
     return `[视频] ${content.description ?? "尚未描述"}`;
   if (content.type === "voice")
     return `[语音] ${content.transcript ?? "尚未转写"}`;
-  if (content.type === "sticker") return `[贴纸] ${content.description}`;
-  return `[转账] ${content.direction === "received" ? "收到" : "支付"} ${content.currency} ${content.amount}${content.note ? `，${content.note}` : ""}`;
+  if (content.type === "sticker") return `[表情] ${content.description}`;
+  return `[转账] ${content.direction === "received" ? "收到" : "支付"} ${content.currency} ${content.amount}（${content.status}）${content.note ? `，${content.note}` : ""}`;
 }
 
 function makeLlmReadable(

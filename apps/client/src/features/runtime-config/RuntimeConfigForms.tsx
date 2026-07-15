@@ -174,6 +174,8 @@ export function PrimeRuntimeConfigForm({
               ...secretChange(secrets.tts.value, secrets.tts.clear),
             },
           },
+          sticker: { enabled: draft.stickerEnabled },
+          transfer: { enabled: draft.transferEnabled },
         },
         optimization: {
           image: {
@@ -263,6 +265,18 @@ export function PrimeRuntimeConfigForm({
           value={draft.voiceGuidance}
           options={GUIDANCE_OPTIONS}
           onChange={(voiceGuidance) => setDraft({ ...draft, voiceGuidance })}
+        />
+        <ToggleInput
+          label="允许 figure 发送表情"
+          checked={draft.stickerEnabled}
+          onChange={(stickerEnabled) => setDraft({ ...draft, stickerEnabled })}
+        />
+        <ToggleInput
+          label="允许 figure 转账、收款或拒收"
+          checked={draft.transferEnabled}
+          onChange={(transferEnabled) =>
+            setDraft({ ...draft, transferEnabled })
+          }
         />
       </ConfigSection>
       {draft.imageEnabled ? (
@@ -875,6 +889,8 @@ function primeDraft(value: PrimeFigureRuntimeConfigView) {
     imageGuidance: value.outputs.image.guidanceLevel,
     imageGenerator: endpointDraft(value.outputs.image.generator),
     voiceEnabled: value.outputs.voice.enabled,
+    stickerEnabled: value.outputs.sticker.enabled,
+    transferEnabled: value.outputs.transfer.enabled,
     voiceGuidance: value.outputs.voice.guidanceLevel,
     tts: ttsDraft(value.outputs.voice.tts),
     imageOptimizationEnabled: value.optimization.image.enabled,

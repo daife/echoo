@@ -31,7 +31,27 @@ export type CreateMediaMessageInput =
       upload: MessageMediaUpload;
       durationSeconds: number;
       clientMessageId?: string;
+    }
+  | {
+      conversationId: string;
+      contentType: "sticker";
+      stickerId: string;
+      clientMessageId?: string;
+    }
+  | {
+      conversationId: string;
+      contentType: "transfer";
+      amount: number;
+      currency: "CNY";
+      note?: string;
+      clientMessageId?: string;
     };
+
+export interface ResolveTransferInput {
+  conversationId: string;
+  messageId: string;
+  resolution: "accepted" | "rejected";
+}
 
 export interface Message {
   id: string;

@@ -29,6 +29,24 @@ const createMediaMessageSchema = z.discriminatedUnion("contentType", [
     durationSeconds: z.number().finite().min(1).max(60),
     clientMessageId: z.string().trim().min(1).max(96).optional(),
   }),
+  z.object({
+    contentType: z.literal("sticker"),
+    stickerId: z.string().trim().min(1).max(120),
+    clientMessageId: z.string().trim().min(1).max(96).optional(),
+  }),
+  z.object({
+    contentType: z.literal("transfer"),
+    amount: z
+      .number()
+      .finite()
+      .positive()
+      .refine((value) => Number.isInteger(value * 100), {
+        message: "转账金额最多保留两位小数。",
+      }),
+    currency: z.literal("CNY").default("CNY"),
+    note: z.string().trim().max(200).optional().default(""),
+    clientMessageId: z.string().trim().min(1).max(96).optional(),
+  }),
 ]);
 
 const createMessageSchema = z.union([
@@ -46,6 +64,10 @@ const rollbackConversationSchema = z.object({
 
 const updateAssistantMessageSchema = z.object({
   text: z.string().trim().min(1),
+});
+
+const resolveTransferSchema = z.object({
+  resolution: z.enum(["accepted", "rejected"]),
 });
 
 const listMessagesQuerySchema = z.object({
@@ -133,7 +155,12 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
         if (result.kind === "unsupported_type")
           return reply.code(409).send({
             error: "MEDIA_MESSAGE_UNSUPPORTED",
-            message: "图片和语音消息仅支持本初角色会话。",
+            message: "图片、语音、表情和转账消息仅支持本初角色会话。",
+          });
+        if (result.kind === "invalid_sticker")
+          return reply.code(400).send({
+            error: "INVALID_STICKER",
+            message: "该表情不在当前角色的可用表情列表中。",
           });
         if (result.kind === "invalid_media")
           return reply.code(400).send({
@@ -153,6 +180,37 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
       if (!result)
         return reply.code(404).send({ error: "CONVERSATION_NOT_FOUND" });
       return reply.code(201).send(result);
+    },
+  );
+
+  app.patch<{
+    Params: { conversationId: string; messageId: string };
+    Body: unknown;
+  }>(
+    "/conversations/:conversationId/messages/:messageId/transfer",
+    async (request, reply) => {
+      const userId = await request.requireUserId(reply);
+      if (!userId) return;
+      const parsed = resolveTransferSchema.safeParse(request.body);
+      if (!parsed.success)
+        return reply.code(400).send({
+          error: "VALIDATION_ERROR",
+          message: parsed.error.issues[0]?.message ?? "转账处理请求无效。",
+        });
+      const result = await messaging.resolveFigureTransfer({
+        ownerUserId: userId,
+        conversationId: request.params.conversationId,
+        messageId: request.params.messageId,
+        resolution: parsed.data.resolution,
+      });
+      if (result.kind === "not_found")
+        return reply.code(404).send({ error: "CONVERSATION_NOT_FOUND" });
+      if (result.kind === "invalid_transfer")
+        return reply.code(409).send({
+          error: "TRANSFER_NOT_PENDING",
+          message: "该转账不存在、已处理，或不是 figure 发出的转账。",
+        });
+      return { message: result.message };
     },
   );
 

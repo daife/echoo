@@ -18,6 +18,24 @@ export interface PrimeFigureReferenceImage {
   description: string;
 }
 
+export interface PrimeFigureSticker {
+  resourceId: string;
+  resourcePath: string;
+  description: string;
+}
+
+export type PrimeFigureStickerInput =
+  | {
+      resourceId: string;
+      description: string;
+      upload?: never;
+    }
+  | {
+      upload: AgentResourceUpload;
+      description: string;
+      resourceId?: never;
+    };
+
 export type PrimeFigureReferenceImageInput =
   | {
       resourceId: string;
@@ -135,6 +153,8 @@ export interface PrimeFigureDetail {
   itinerary: string;
   variableDefinitions: PrimeFigureVariableDefinition[];
   referenceImages: PrimeFigureReferenceImage[];
+  /** Added in Prime Figure v4; legacy stored definitions may omit it. */
+  stickers?: PrimeFigureSticker[];
   voiceRequestStreaming: boolean;
 }
 
@@ -231,6 +251,7 @@ export interface CreatePrimeFigureRequest {
   itinerary?: string;
   variableDefinitions?: PrimeFigureVariableDefinition[];
   referenceImages?: PrimeFigureReferenceImageInput[];
+  stickers?: PrimeFigureStickerInput[];
   voiceRequestStreaming?: boolean;
   initialMood?: string;
   initialRelationshipStatus?: string;
@@ -247,6 +268,11 @@ export type UpdatePrimeFigureRequest = Omit<
 
 export interface UpdatePrimeFigurePreferencesRequest {
   voiceRequestStreaming: boolean;
+}
+
+export interface AddPrimeFigureStickerRequest {
+  upload: AgentResourceUpload;
+  description: string;
 }
 
 export interface PrimeFigureEditSnapshot {
@@ -293,14 +319,21 @@ export type PrimeMessageContent =
       type: "sticker";
       stickerId: string;
       description: string;
+      resourceId?: string;
       resourceUrl?: string;
     }
   | {
       type: "transfer";
+      transferId: string;
+      event: "offer" | "resolution";
       note?: string;
       amount: number;
       currency: string;
       direction: "received" | "paid";
+      status: "pending" | "accepted" | "rejected";
+      relatedTransferId?: string;
+      resolvedAtMs?: number;
+      resolvedAtIso?: string;
     };
 
 export interface PrimeMessage {
@@ -342,6 +375,10 @@ export type PrimeFigureOutgoingMessage =
   | {
       type: "voice";
       transcript: string;
+    }
+  | {
+      type: "sticker";
+      stickerId: string;
     };
 
 export type PrimeFigureAction =
@@ -359,6 +396,18 @@ export type PrimeFigureAction =
   | {
       type: "schedule_wakeup";
       afterMinutes: number | null;
+    }
+  | {
+      type: "transfer";
+      operation: "send";
+      amount: number;
+      currency: "CNY";
+      note: string;
+    }
+  | {
+      type: "transfer";
+      operation: "accept" | "reject";
+      transferId: string;
     };
 
 export interface PrimeFigureStateUpdates {

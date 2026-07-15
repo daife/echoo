@@ -705,7 +705,7 @@ function runtimeConfigForTest(typingCharsPerMinute = 300) {
     maxTokens: 1600,
   };
   return {
-    version: 3 as const,
+    version: 4 as const,
     decisionModel: textModel,
     outputs: {
       image: {
@@ -732,6 +732,8 @@ function runtimeConfigForTest(typingCharsPerMinute = 300) {
           chunkLength: 100,
         },
       },
+      sticker: { enabled: false },
+      transfer: { enabled: false },
     },
     optimization: {
       image: { enabled: false, level: "advanced" as const, model: textModel },

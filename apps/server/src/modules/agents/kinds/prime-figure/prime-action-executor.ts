@@ -27,6 +27,7 @@ import type {
   ResolvedPrimeImageMedia,
   ResolvedPrimeVoiceMedia,
 } from "./prime-decision-stream-session.js";
+import { isPrimeOutputEnabled } from "./prime-output-capabilities.js";
 
 export class PrimeActionExecutor {
   constructor(
@@ -84,6 +85,7 @@ export class PrimeActionExecutor {
       message: Message;
       streamed: boolean;
     }> = [];
+    const updatedTransferMessages: Message[] = [];
 
     try {
       const previousSilenceStartedAtMs = state.silenceStartedAtMs;
@@ -104,6 +106,7 @@ export class PrimeActionExecutor {
         decision.actions.some(
           (action) =>
             action.type === "send_message" ||
+            action.type === "transfer" ||
             (action.type === "mute" && action.revisitAfterMinutes === null),
         )
       ) {
@@ -115,7 +118,72 @@ export class PrimeActionExecutor {
         state.silenceUntilMs !== previousSilenceUntilMs;
 
       for (const [index, action] of decision.actions.entries()) {
+        if (action.type === "transfer") {
+          if (
+            input.runtimeConfig &&
+            !isPrimeOutputEnabled(input.runtimeConfig, "transfer")
+          )
+            continue;
+          if (action.operation === "accept" || action.operation === "reject") {
+            const updated = await this.messages.resolvePendingTransfer({
+              ownerUserId: input.ownerUserId,
+              conversationId: input.conversationId,
+              messageId: action.transferId,
+              expectedRole: "user",
+              resolution:
+                action.operation === "accept" ? "accepted" : "rejected",
+              resolvedAtMs: now + index,
+            });
+            if (updated) updatedTransferMessages.push(updated);
+            continue;
+          }
+          if (action.operation !== "send") continue;
+          const occurredAtMs =
+            input.messageCreatedAt?.get(index) ?? now + index;
+          const messageId =
+            input.streamedMessageIds?.get(index) ?? createId("msg");
+          const note = action.note.trim();
+          createdMessages.push({
+            actionIndex: index,
+            streamed: Boolean(input.streamedMessageIds?.get(index)),
+            message: await this.messages.save({
+              ownerUserId: input.ownerUserId,
+              id: messageId,
+              conversationId: input.conversationId,
+              role: "assistant",
+              contentType: "text",
+              content: {
+                text: `[转账] CNY ${action.amount.toFixed(2)}${note ? ` ${note}` : ""}`,
+              },
+              status: "delivered",
+              providerId: input.providerId,
+              model: input.model,
+              metadata: {
+                kind: "prime_figure",
+                primeContent: {
+                  type: "transfer",
+                  transferId: messageId,
+                  event: "offer",
+                  amount: action.amount,
+                  currency: "CNY",
+                  direction: "paid",
+                  status: "pending",
+                  ...(note ? { note } : {}),
+                } satisfies PrimeMessageContent,
+              },
+              createdAt: occurredAtMs,
+              updatedAt: occurredAtMs,
+            }),
+          });
+          continue;
+        }
         if (action.type !== "send_message") continue;
+        if (
+          action.message.type === "sticker" &&
+          input.runtimeConfig &&
+          !isPrimeOutputEnabled(input.runtimeConfig, "sticker")
+        )
+          continue;
         const occurredAtMs = input.messageCreatedAt?.get(index) ?? now + index;
         const voiceMedia = input.voiceMedia?.get(index);
         const imageMedia = input.imageMedia?.get(index);
@@ -127,6 +195,7 @@ export class PrimeActionExecutor {
             : "delivered";
         const primeContent = toPrimeMessageContent(
           action.message,
+          input.agent,
           voiceMedia,
           imageMedia,
         );
@@ -140,7 +209,12 @@ export class PrimeActionExecutor {
             conversationId: input.conversationId,
             role: "assistant",
             contentType: toMessageContentType(action.message),
-            content: toMessageContent(action.message, voiceMedia, imageMedia),
+            content: toMessageContent(
+              action.message,
+              input.agent,
+              voiceMedia,
+              imageMedia,
+            ),
             status,
             providerId: input.providerId,
             model: input.model,
@@ -167,11 +241,18 @@ export class PrimeActionExecutor {
       if (lastDeliveredMessage) {
         const lastMessageAction =
           decision.actions[lastDeliveredMessage.actionIndex];
-        if (lastMessageAction?.type === "send_message") {
+        if (
+          lastMessageAction?.type === "send_message" ||
+          (lastMessageAction?.type === "transfer" &&
+            lastMessageAction.operation === "send")
+        ) {
           await this.conversations.updatePreview({
             ownerUserId: input.ownerUserId,
             conversationId: input.conversationId,
-            preview: toConversationPreview(lastMessageAction.message),
+            preview:
+              lastMessageAction.type === "send_message"
+                ? toConversationPreview(lastMessageAction.message)
+                : `[转账] ¥${lastMessageAction.amount.toFixed(2)}`,
             updatedAt: now + lastDeliveredMessage.actionIndex,
             unreadIncrement: deliveredMessages.length,
           });
@@ -292,6 +373,11 @@ export class PrimeActionExecutor {
         type: created.streamed ? "message.completed" : "message.created",
         message: created.message,
       });
+    for (const message of updatedTransferMessages)
+      this.appPush.pushToUser(input.ownerUserId, {
+        type: "message.updated",
+        message,
+      });
     return state;
   }
 }
@@ -410,6 +496,7 @@ const DEFAULT_WAKEUP_CONFIG: StoredPrimeFigureRuntimeConfig["wakeups"] = {
 
 function toPrimeMessageContent(
   message: PrimeFigureOutgoingMessage,
+  agent: PrimeFigureAgent,
   voiceMedia?: ResolvedPrimeVoiceMedia,
   imageMedia?: ResolvedPrimeImageMedia,
 ): PrimeMessageContent {
@@ -436,17 +523,31 @@ function toPrimeMessageContent(
         : {}),
     };
   }
+  if (message.type === "sticker") {
+    const sticker = (agent.detail.stickers ?? []).find(
+      (item) => item.resourceId === message.stickerId,
+    );
+    if (!sticker) throw new Error("figure 选择的表情不在可用列表中。");
+    return {
+      type: "sticker",
+      stickerId: sticker.resourceId,
+      description: sticker.description,
+      resourceId: sticker.resourceId,
+      resourceUrl: sticker.resourcePath,
+    };
+  }
   return message;
 }
 
 function toMessageContentType(
   message: PrimeFigureOutgoingMessage,
 ): MessageContentType {
-  return message.type;
+  return message.type === "sticker" ? "image" : message.type;
 }
 
 function toMessageContent(
   message: PrimeFigureOutgoingMessage,
+  agent: PrimeFigureAgent,
   voiceMedia?: ResolvedPrimeVoiceMedia,
   imageMedia?: ResolvedPrimeImageMedia,
 ): MessageContent {
@@ -456,6 +557,16 @@ function toMessageContent(
       text: message.description,
       ...(imageMedia ? { mediaUrl: imageMedia.mediaUrl } : {}),
     };
+  if (message.type === "sticker") {
+    const sticker = (agent.detail.stickers ?? []).find(
+      (item) => item.resourceId === message.stickerId,
+    );
+    if (!sticker) throw new Error("figure 选择的表情不在可用列表中。");
+    return {
+      mediaUrl: sticker.resourcePath,
+      resourceId: sticker.resourceId,
+    };
+  }
   return {
     text: message.transcript,
     ...(voiceMedia ? { mediaUrl: voiceMedia.mediaUrl } : {}),
@@ -500,6 +611,7 @@ function toMediaIntentMetadata(
 function toConversationPreview(message: PrimeFigureOutgoingMessage) {
   if (message.type === "text") return message.text;
   if (message.type === "image") return `[图片] ${message.description}`;
+  if (message.type === "sticker") return "[表情]";
   return `[语音] ${message.transcript}`;
 }
 

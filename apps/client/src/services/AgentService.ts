@@ -1,5 +1,6 @@
 import type { AgentsApi } from "@echoo/api-client";
 import type {
+  AddPrimeFigureStickerRequest,
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
   UpdatePrimeFigurePreferencesRequest,
@@ -35,6 +36,9 @@ export class AgentService {
     input: UpdatePrimeFigurePreferencesRequest,
   ) {
     return this.api.updatePrimeFigurePreferences(agentId, input);
+  }
+  addPrimeFigureSticker(agentId: string, input: AddPrimeFigureStickerRequest) {
+    return this.api.addPrimeFigureSticker(agentId, input);
   }
 
   getPrimeFigureEditSnapshot(agentId: string) {

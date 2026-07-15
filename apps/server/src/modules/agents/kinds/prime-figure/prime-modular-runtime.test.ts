@@ -34,6 +34,66 @@ test("prime prompt and response schema track every output capability combination
   }
 });
 
+test("sticker and transfer capabilities compose prompts, schema, and dynamic IDs", () => {
+  const config = buildRuntimeConfigDefaults().primeFigure;
+  const agent = promptAgent();
+  const disabledPrompt = buildPrimeSystemPrompt(agent, config);
+  assert.match(disabledPrompt, /figure不能发送表情/);
+  assert.match(disabledPrompt, /figure不能发送、接收或拒收转账/);
+
+  config.outputs.sticker.enabled = true;
+  config.outputs.transfer.enabled = true;
+  const prompt = buildPrimeSystemPrompt(agent, config);
+  const schema = JSON.stringify(
+    buildPrimeDecisionResponseFormat(
+      agent,
+      config,
+      false,
+      [],
+      [],
+      false,
+      ["sticker_1"],
+      ["msg_transfer_1"],
+    ),
+  );
+  assert.match(prompt, /availableStickers/);
+  assert.match(prompt, /operation=accept或reject/);
+  assert.match(schema, /sticker_1/);
+  assert.match(schema, /msg_transfer_1/);
+  assert.match(schema, /multipleOf/);
+
+  const parsed = parsePrimeDecisionEnvelope(
+    JSON.stringify({
+      rationale: "回应转账",
+      figureMood: "开心",
+      actions: [
+        {
+          type: "send_message",
+          message: { type: "sticker", stickerId: "sticker_1" },
+        },
+        {
+          type: "transfer",
+          operation: "accept",
+          transferId: "msg_transfer_1",
+        },
+        {
+          type: "transfer",
+          operation: "reject",
+          transferId: "stale_transfer",
+        },
+      ],
+    }),
+    agent,
+    [],
+    [],
+    config,
+    ["sticker_1"],
+    ["msg_transfer_1"],
+  );
+  assert.equal(parsed.decision.actions.length, 2);
+  assert.deepEqual(parsed.sourceActionIndices, [0, 1]);
+});
+
 test("prime variable capability disappears from prompts, schema, and validation", () => {
   const config = buildRuntimeConfigDefaults().primeFigure;
   const withoutVariables = promptAgent();

@@ -1,4 +1,8 @@
-import type { CreateMediaMessageInput, Message } from "@echoo/shared";
+import type {
+  CreateMediaMessageInput,
+  Message,
+  ResolveTransferInput,
+} from "@echoo/shared";
 import type { ApiClient } from "./client";
 
 export class MessageApi {
@@ -51,16 +55,36 @@ export class MessageApi {
   createMediaMessage(
     input: CreateMediaMessageInput,
   ): Promise<{ message: Message }> {
+    const body =
+      input.contentType === "image"
+        ? { contentType: input.contentType, upload: input.upload }
+        : input.contentType === "voice"
+          ? {
+              contentType: input.contentType,
+              upload: input.upload,
+              durationSeconds: input.durationSeconds,
+            }
+          : input.contentType === "sticker"
+            ? { contentType: input.contentType, stickerId: input.stickerId }
+            : {
+                contentType: input.contentType,
+                amount: input.amount,
+                currency: input.currency,
+                note: input.note ?? "",
+              };
     return this.client.post<{ message: Message }>(
       `/conversations/${input.conversationId}/messages`,
       {
-        contentType: input.contentType,
-        upload: input.upload,
+        ...body,
         clientMessageId: input.clientMessageId,
-        ...(input.contentType === "voice"
-          ? { durationSeconds: input.durationSeconds }
-          : {}),
       },
+    );
+  }
+
+  resolveTransfer(input: ResolveTransferInput): Promise<{ message: Message }> {
+    return this.client.patch<{ message: Message }>(
+      `/conversations/${input.conversationId}/messages/${input.messageId}/transfer`,
+      { resolution: input.resolution },
     );
   }
 

@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
-import type { Message, MessageMediaUpload } from "@echoo/shared";
+import type {
+  Message,
+  MessageMediaUpload,
+  PrimeMessageContent,
+} from "@echoo/shared";
 import {
   AgentRunQueue,
   type AgentRunJob,
 } from "../../infra/redis/run-queue.js";
 import { PrimeFigureRuntimeService } from "../agents/kinds/prime-figure/prime-figure-runtime.service.js";
 import { PrimeFigureStateRepository } from "../agents/kinds/prime-figure/prime-figure-state.repository.js";
+import { AgentRepository } from "../agents/agent.repository.js";
 import { SliceFigureRuntimeService } from "../agents/kinds/slice-figure/slice-figure-runtime.service.js";
 import { ConversationRepository } from "../conversations/conversation.repository.js";
 import { AppPushService } from "../realtime/delivery.service.js";
@@ -44,12 +49,29 @@ export type CreateUserMediaMessageInput =
       upload: MessageMediaUpload;
       durationSeconds: number;
       clientMessageId?: string | null;
+    }
+  | {
+      ownerUserId: string;
+      conversationId: string;
+      contentType: "sticker";
+      stickerId: string;
+      clientMessageId?: string | null;
+    }
+  | {
+      ownerUserId: string;
+      conversationId: string;
+      contentType: "transfer";
+      amount: number;
+      currency: "CNY";
+      note?: string;
+      clientMessageId?: string | null;
     };
 
 export type CreateUserMediaMessageResult =
   | { kind: "ok"; message: Message }
   | { kind: "not_found" }
   | { kind: "unsupported_type" }
+  | { kind: "invalid_sticker" }
   | { kind: "invalid_media"; message: string };
 
 export type TriggerPrimeFigureHintResult =
@@ -68,6 +90,7 @@ export class MessagingService {
     private readonly runQueue = new AgentRunQueue(),
     private readonly resources = new ResourceRepository(),
     private readonly primeStates = new PrimeFigureStateRepository(),
+    private readonly agents = new AgentRepository(),
   ) {
     this.primeRuns = new PrimeRunProcessor(primeRuntime, this.appPush);
     this.sliceReplies = new SliceReplyProcessor(
@@ -206,6 +229,97 @@ export class MessagingService {
       return { kind: "ok", message: existing };
     }
 
+    if (input.contentType === "sticker") {
+      const agent = await this.agents.findByConversation(
+        input.ownerUserId,
+        input.conversationId,
+      );
+      const sticker =
+        agent?.type === "prime-figure"
+          ? (agent.detail.stickers ?? []).find(
+              (item) => item.resourceId === input.stickerId,
+            )
+          : undefined;
+      if (!sticker) return { kind: "invalid_sticker" };
+      const now = Date.now();
+      const message = await this.repository.save({
+        ownerUserId: input.ownerUserId,
+        id: `msg_${randomUUID()}`,
+        ...(input.clientMessageId
+          ? { clientMessageId: input.clientMessageId }
+          : {}),
+        conversationId: input.conversationId,
+        role: "user",
+        contentType: "image",
+        content: {
+          mediaUrl: sticker.resourcePath,
+          resourceId: sticker.resourceId,
+        },
+        status: "sent",
+        metadata: {
+          kind: "prime_figure",
+          primeContent: {
+            type: "sticker",
+            stickerId: sticker.resourceId,
+            description: sticker.description,
+            resourceId: sticker.resourceId,
+            resourceUrl: sticker.resourcePath,
+          } satisfies PrimeMessageContent,
+        },
+        createdAt: now,
+        updatedAt: now,
+      });
+      await this.finishPrimeUserMessage(
+        input.ownerUserId,
+        input.conversationId,
+        message,
+        "[表情]",
+      );
+      return { kind: "ok", message };
+    }
+
+    if (input.contentType === "transfer") {
+      const now = Date.now();
+      const messageId = `msg_${randomUUID()}`;
+      const note = input.note?.trim() ?? "";
+      const message = await this.repository.save({
+        ownerUserId: input.ownerUserId,
+        id: messageId,
+        ...(input.clientMessageId
+          ? { clientMessageId: input.clientMessageId }
+          : {}),
+        conversationId: input.conversationId,
+        role: "user",
+        contentType: "text",
+        content: {
+          text: `[转账] CNY ${input.amount.toFixed(2)}${note ? ` ${note}` : ""}`,
+        },
+        status: "sent",
+        metadata: {
+          kind: "prime_figure",
+          primeContent: {
+            type: "transfer",
+            transferId: messageId,
+            event: "offer",
+            amount: input.amount,
+            currency: "CNY",
+            direction: "received",
+            status: "pending",
+            ...(note ? { note } : {}),
+          } satisfies PrimeMessageContent,
+        },
+        createdAt: now,
+        updatedAt: now,
+      });
+      await this.finishPrimeUserMessage(
+        input.ownerUserId,
+        input.conversationId,
+        message,
+        `[转账] ¥${input.amount.toFixed(2)}`,
+      );
+      return { kind: "ok", message };
+    }
+
     let resource;
     try {
       resource = await this.resources.saveUserMedia(
@@ -288,6 +402,100 @@ export class MessagingService {
       conversationId,
       kind: "prime-figure",
     });
+  }
+
+  private async finishPrimeUserMessage(
+    ownerUserId: string,
+    conversationId: string,
+    message: Message,
+    preview: string,
+  ) {
+    await this.conversations.updatePreview({
+      ownerUserId,
+      conversationId,
+      preview,
+      updatedAt: message.createdAt,
+    });
+    this.appPush.pushToUser(ownerUserId, {
+      type: "message.created",
+      message,
+    });
+    if (message.sequence !== undefined)
+      await this.primeStates.recordMessageInteraction({
+        ownerUserId,
+        conversationId,
+        role: "user",
+        sequence: message.sequence,
+        occurredAtMs: message.createdAt,
+      });
+    await this.enqueuePrimeFigureRun(ownerUserId, conversationId);
+  }
+
+  async resolveFigureTransfer(input: {
+    ownerUserId: string;
+    conversationId: string;
+    messageId: string;
+    resolution: "accepted" | "rejected";
+  }) {
+    const conversation = await this.conversations.findByIdForOwner(
+      input.ownerUserId,
+      input.conversationId,
+    );
+    if (!conversation) return { kind: "not_found" as const };
+    if (conversation.type !== "prime-figure")
+      return { kind: "invalid_transfer" as const };
+    const now = Date.now();
+    const updated = await this.repository.resolvePendingTransfer({
+      ...input,
+      expectedRole: "assistant",
+      resolvedAtMs: now,
+    });
+    if (!updated) return { kind: "invalid_transfer" as const };
+    const transfer = readPrimeTransfer(updated);
+    if (!transfer) return { kind: "invalid_transfer" as const };
+
+    const eventId = `msg_${randomUUID()}`;
+    const event = await this.repository.save({
+      ownerUserId: input.ownerUserId,
+      id: eventId,
+      conversationId: input.conversationId,
+      role: "user",
+      contentType: "text",
+      content: { text: "" },
+      status: "sent",
+      metadata: {
+        kind: "transfer_resolution",
+        primeContent: {
+          ...transfer,
+          transferId: eventId,
+          event: "resolution",
+          status: input.resolution,
+          relatedTransferId: input.messageId,
+          resolvedAtMs: now,
+          resolvedAtIso: new Date(now).toISOString(),
+        } satisfies PrimeMessageContent,
+      },
+      createdAt: now,
+      updatedAt: now,
+    });
+    this.appPush.pushToUser(input.ownerUserId, {
+      type: "message.updated",
+      message: updated,
+    });
+    this.appPush.pushToUser(input.ownerUserId, {
+      type: "message.created",
+      message: event,
+    });
+    if (event.sequence !== undefined)
+      await this.primeStates.recordMessageInteraction({
+        ownerUserId: input.ownerUserId,
+        conversationId: input.conversationId,
+        role: "user",
+        sequence: event.sequence,
+        occurredAtMs: now,
+      });
+    await this.enqueuePrimeFigureRun(input.ownerUserId, input.conversationId);
+    return { kind: "ok" as const, message: updated };
   }
 
   async triggerPrimeFigureHint(input: {
@@ -467,4 +675,23 @@ export class MessagingService {
       deletedCount,
     };
   }
+}
+
+function readPrimeTransfer(
+  message: Message,
+): Extract<PrimeMessageContent, { type: "transfer" }> | null {
+  const value = message.metadata?.primeContent;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const transfer = value as Record<string, unknown>;
+  if (
+    transfer.type !== "transfer" ||
+    typeof transfer.transferId !== "string" ||
+    typeof transfer.amount !== "number" ||
+    typeof transfer.currency !== "string"
+  )
+    return null;
+  return transfer as unknown as Extract<
+    PrimeMessageContent,
+    { type: "transfer" }
+  >;
 }

@@ -213,6 +213,64 @@ export function useOutgoingMessages(input: {
     }
   };
 
+  const sendStructuredMessage = async (
+    payload:
+      | { contentType: "sticker"; stickerId: string }
+      | { contentType: "transfer"; amount: number; note?: string },
+  ) => {
+    const conversationId = input.conversationId;
+    if (!conversationId || !input.isPrimeFigure || isSending) return;
+    input.setError(null);
+    setIsSending(true);
+    try {
+      const result = await input.messageService.sendMediaMessage(
+        payload.contentType === "sticker"
+          ? { conversationId, ...payload }
+          : { conversationId, ...payload, currency: "CNY" },
+      );
+      if (input.activeConversationIdRef.current !== conversationId) return;
+      input.setMessages((current) =>
+        mergeLocalMessage(current, {
+          ...result.message,
+          syncStatus: "synced",
+        }),
+      );
+    } catch (error) {
+      input.setError(error instanceof Error ? error.message : "消息发送失败。");
+      input.setIsAgentActive(false);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const resolveTransfer = async (
+    messageId: string,
+    resolution: "accepted" | "rejected",
+  ) => {
+    const conversationId = input.conversationId;
+    if (!conversationId || isSending) return;
+    input.setError(null);
+    setIsSending(true);
+    try {
+      const result = await input.messageService.resolveTransfer({
+        conversationId,
+        messageId,
+        resolution,
+      });
+      if (input.activeConversationIdRef.current !== conversationId) return;
+      input.setMessages((current) =>
+        mergeLocalMessage(current, {
+          ...result.message,
+          syncStatus: "synced",
+        }),
+      );
+    } catch (error) {
+      input.setError(error instanceof Error ? error.message : "转账处理失败。");
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const retryFailedMessage = async (messageId: string) => {
     const conversationId = input.conversationId;
     if (!conversationId || isSending || retryingMessageId) return;
@@ -289,6 +347,11 @@ export function useOutgoingMessages(input: {
         objectUrl: URL.createObjectURL(blob),
         durationSeconds,
       }),
+    sendSticker: (stickerId: string) =>
+      sendStructuredMessage({ contentType: "sticker", stickerId }),
+    sendTransfer: (amount: number, note?: string) =>
+      sendStructuredMessage({ contentType: "transfer", amount, note }),
+    resolveTransfer,
     retryFailedMessage,
   };
 }

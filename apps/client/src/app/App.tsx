@@ -8,6 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import type {
   Agent,
+  AddPrimeFigureStickerRequest,
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
   UpdatePrimeFigurePreferencesRequest,
@@ -254,6 +255,21 @@ export function App() {
     }
   };
 
+  const addPrimeFigureSticker = async (
+    agentId: string,
+    input: AddPrimeFigureStickerRequest,
+  ) => {
+    const { agent } = await services.agentService.addPrimeFigureSticker(
+      agentId,
+      input,
+    );
+    setMyAgents((current) =>
+      current.map((item) => (item.id === agent.id ? agent : item)),
+    );
+    setSelectedAgent((current) => (current?.id === agent.id ? agent : current));
+    return agent;
+  };
+
   const ActivePage = useMemo(() => {
     if (auth.isLoading) {
       return (
@@ -297,6 +313,7 @@ export function App() {
             "slice-figure": updateSliceFigure,
             "prime-figure": updatePrimeFigure,
             updatePrimeFigurePreferences,
+            addPrimeFigureSticker,
             getPrimeFigureEditSnapshot: (agentId) =>
               services.agentService.getPrimeFigureEditSnapshot(agentId),
             exportAgent: (agentId) =>

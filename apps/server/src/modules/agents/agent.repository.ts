@@ -8,6 +8,8 @@ import type {
   PrimeFigureEditSnapshot,
   PrimeFigureReferenceImage,
   PrimeFigureReferenceImageInput,
+  PrimeFigureSticker,
+  PrimeFigureStickerInput,
   PrimeFigureVariableDefinition,
   PrimeFigureState,
   PrimeFigureVariableValue,
@@ -80,6 +82,7 @@ export class AgentRepository {
     let cover: Awaited<ReturnType<ResourceRepository["saveImage"]>> | null =
       null;
     let referenceImages: PrimeFigureReferenceImage[] = [];
+    let stickers: PrimeFigureSticker[] = [];
     try {
       avatar = input.avatar
         ? await this.resources.saveImage(
@@ -103,11 +106,20 @@ export class AgentRepository {
               new Set(),
             )
           : [];
+      stickers =
+        input.type === "prime-figure"
+          ? await this.resolveStickers(
+              ownerUserId,
+              input.stickers ?? [],
+              new Set(),
+            )
+          : [];
       const definition = buildDefinition(
         input,
         avatar?.publicPath,
         cover?.publicPath,
         referenceImages,
+        stickers,
       );
       const runtimeState = buildRuntimeState(input, now);
       const preview = getInitialPreview(input);
@@ -173,6 +185,7 @@ export class AgentRepository {
         avatar?.publicPath,
         cover?.publicPath,
         ...referenceImages.map((item) => item.resourcePath),
+        ...stickers.map((item) => item.resourcePath),
       ]);
       throw error;
     }
@@ -199,6 +212,7 @@ export class AgentRepository {
     let nextCover:
       Awaited<ReturnType<ResourceRepository["saveImage"]>> | null | undefined;
     let nextReferenceImages: PrimeFigureReferenceImage[] | undefined;
+    let nextStickers: PrimeFigureSticker[] | undefined;
     try {
       nextAvatar =
         Object.prototype.hasOwnProperty.call(input, "avatar") &&
@@ -234,10 +248,40 @@ export class AgentRepository {
               ),
             )
           : undefined;
+      nextStickers =
+        existing.type === "prime-figure" &&
+        "stickers" in input &&
+        input.stickers !== undefined
+          ? await this.resolveStickers(
+              ownerUserId,
+              input.stickers,
+              new Set(
+                (existing.detail.stickers ?? []).map((item) => item.resourceId),
+              ),
+            )
+          : undefined;
     } catch (error) {
+      const existingReferenceIds =
+        existing.type === "prime-figure"
+          ? new Set(
+              existing.detail.referenceImages.map((item) => item.resourceId),
+            )
+          : new Set<string>();
+      const existingStickerIds =
+        existing.type === "prime-figure"
+          ? new Set(
+              (existing.detail.stickers ?? []).map((item) => item.resourceId),
+            )
+          : new Set<string>();
       await this.deletePreparedResources(ownerUserId, [
         nextAvatar?.publicPath,
         nextCover?.publicPath,
+        ...(nextReferenceImages ?? [])
+          .filter((item) => !existingReferenceIds.has(item.resourceId))
+          .map((item) => item.resourcePath),
+        ...(nextStickers ?? [])
+          .filter((item) => !existingStickerIds.has(item.resourceId))
+          .map((item) => item.resourcePath),
       ]);
       throw error;
     }
@@ -251,6 +295,10 @@ export class AgentRepository {
           nextReferenceImages ??
             (existing.type === "prime-figure"
               ? existing.detail.referenceImages
+              : []),
+          nextStickers ??
+            (existing.type === "prime-figure"
+              ? (existing.detail.stickers ?? [])
               : []),
         ),
         ...(existing.type === "prime-figure"
@@ -338,6 +386,22 @@ export class AgentRepository {
               item.resourcePath,
             ),
           ),
+        ...(nextStickers ?? [])
+          .filter(
+            (item) =>
+              !(
+                existing.type === "prime-figure" &&
+                (existing.detail.stickers ?? []).some(
+                  (current) => current.resourceId === item.resourceId,
+                )
+              ),
+          )
+          .map((item) =>
+            this.resources.deleteOwnedByPublicPath(
+              ownerUserId,
+              item.resourcePath,
+            ),
+          ),
       ]).catch(() => undefined);
       throw error;
     }
@@ -373,6 +437,8 @@ export class AgentRepository {
               ),
             )
         : []),
+      // Sticker files can be referenced by historical messages. Removing an
+      // item from the active library must not invalidate those messages.
     ]).catch((error) => console.warn("旧角色资源清理失败。", error));
     return this.findById(ownerUserId, agentId);
   }
@@ -395,6 +461,42 @@ export class AgentRepository {
     );
     if (!result.affectedRows) return null;
     return this.findById(ownerUserId, agentId);
+  }
+
+  async addPrimeFigureSticker(
+    ownerUserId: string,
+    agentId: string,
+    input: { upload: AgentResourceUpload; description: string },
+  ) {
+    const saved = await this.resources.saveImage(
+      ownerUserId,
+      "prime_figure_sticker",
+      input.upload,
+    );
+    const sticker: PrimeFigureSticker = {
+      resourceId: saved.id,
+      resourcePath: saved.publicPath,
+      description: input.description.trim(),
+    };
+    try {
+      const result = await execute(
+        `UPDATE agents SET definition = JSON_SET(definition, '$.detail.stickers',
+           JSON_ARRAY_APPEND(COALESCE(JSON_EXTRACT(definition, '$.detail.stickers'), JSON_ARRAY()), '$', CAST(? AS JSON))),
+           updated_at = ?
+         WHERE id = ? AND owner_user_id = ? AND type = 'prime-figure'
+           AND JSON_LENGTH(COALESCE(JSON_EXTRACT(definition, '$.detail.stickers'), JSON_ARRAY())) < 20`,
+        [JSON.stringify(sticker), Date.now(), agentId, ownerUserId],
+      );
+      if (!result.affectedRows)
+        throw new Error("本初角色不存在，或表情数量已达到 20 个上限。");
+      return this.findById(ownerUserId, agentId);
+    } catch (error) {
+      await this.resources.deleteOwnedByPublicPath(
+        ownerUserId,
+        saved.publicPath,
+      );
+      throw error;
+    }
   }
 
   async getPrimeFigureEditSnapshot(
@@ -480,6 +582,20 @@ export class AgentRepository {
         };
       }),
     );
+    const stickers = await Promise.all(
+      (agent.detail.stickers ?? []).map(async (item) => {
+        const resource = await this.resources.readForOwner(
+          ownerUserId,
+          item.resourceId,
+        );
+        if (!resource)
+          throw new Error(`角色表情资源不存在：${item.resourceId}。`);
+        return {
+          description: item.description,
+          upload: toResourceUpload(resource.record, resource.data),
+        };
+      }),
+    );
     return {
       data: {
         type: "prime-figure",
@@ -497,6 +613,7 @@ export class AgentRepository {
           }),
         ),
         referenceImages,
+        stickers,
         voiceRequestStreaming: agent.detail.voiceRequestStreaming,
         initialMood: state.mood,
         initialRelationshipStatus: state.relationshipStatus,
@@ -580,6 +697,58 @@ export class AgentRepository {
     }
   }
 
+  private async resolveStickers(
+    ownerUserId: string,
+    inputs: PrimeFigureStickerInput[],
+    allowedExistingIds: Set<string>,
+  ): Promise<PrimeFigureSticker[]> {
+    if (inputs.length > 20)
+      throw new Error("每个本初角色最多可添加 20 个表情。");
+    const result: PrimeFigureSticker[] = [];
+    const newlySavedPaths: string[] = [];
+    try {
+      for (const input of inputs) {
+        if ("upload" in input && input.upload) {
+          const saved = await this.resources.saveImage(
+            ownerUserId,
+            "prime_figure_sticker",
+            input.upload,
+          );
+          newlySavedPaths.push(saved.publicPath);
+          result.push({
+            resourceId: saved.id,
+            resourcePath: saved.publicPath,
+            description: input.description.trim(),
+          });
+          continue;
+        }
+        if (!allowedExistingIds.has(input.resourceId))
+          throw new Error("不能引用其他角色的表情资源。");
+        const resource = await this.resources.findById(input.resourceId);
+        if (
+          !resource ||
+          resource.ownerUserId !== ownerUserId ||
+          resource.kind !== "prime_figure_sticker" ||
+          !resource.mimeType.startsWith("image/")
+        )
+          throw new Error("本初角色表情不存在或不属于当前用户。");
+        result.push({
+          resourceId: resource.id,
+          resourcePath: resource.publicPath,
+          description: input.description.trim(),
+        });
+      }
+      return result;
+    } catch (error) {
+      await Promise.all(
+        newlySavedPaths.map((path) =>
+          this.resources.deleteOwnedByPublicPath(ownerUserId, path),
+        ),
+      ).catch(() => undefined);
+      throw error;
+    }
+  }
+
   private async deletePreparedResources(
     ownerUserId: string,
     paths: Array<string | null | undefined>,
@@ -632,6 +801,9 @@ function rowToAgent(row: AgentRow): Agent {
             referenceImages:
               (stored as Extract<Agent, { type: "prime-figure" }>).detail
                 ?.referenceImages ?? [],
+            stickers:
+              (stored as Extract<Agent, { type: "prime-figure" }>).detail
+                ?.stickers ?? [],
             voiceRequestStreaming: Boolean(
               (stored as Extract<Agent, { type: "prime-figure" }>).detail
                 ?.voiceRequestStreaming,
@@ -669,13 +841,14 @@ function buildDefinition(
   avatar?: string,
   cover?: string,
   referenceImages: PrimeFigureReferenceImage[] = [],
+  stickers: PrimeFigureSticker[] = [],
 ) {
   return {
     type: input.type,
     ...baseDefinition(input),
     ...(avatar ? { avatarResourcePath: avatar } : {}),
     ...(cover ? { coverResourcePath: cover } : {}),
-    detail: buildDetail(input.type, input, referenceImages),
+    detail: buildDetail(input.type, input, referenceImages, stickers),
   };
 }
 
@@ -693,6 +866,7 @@ function buildDetail(
   type: Agent["type"],
   input: UpdateAgentInput | CreateAgentInput,
   referenceImages: PrimeFigureReferenceImage[],
+  stickers: PrimeFigureSticker[],
 ) {
   if (type === "slice-figure") {
     const value = input as CreateSliceFigureRequest;
@@ -730,6 +904,7 @@ function buildDetail(
     itinerary: value.itinerary ?? "",
     variableDefinitions: value.variableDefinitions ?? [],
     referenceImages,
+    stickers,
     voiceRequestStreaming: value.voiceRequestStreaming ?? false,
   };
 }

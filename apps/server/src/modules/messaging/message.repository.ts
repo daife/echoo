@@ -426,6 +426,45 @@ export class MessageRepository {
     return this.findByIdInConversation(ownerUserId, conversationId, messageId);
   }
 
+  async resolvePendingTransfer(input: {
+    ownerUserId: string;
+    conversationId: string;
+    messageId: string;
+    expectedRole: "user" | "assistant";
+    resolution: "accepted" | "rejected";
+    resolvedAtMs: number;
+  }) {
+    const result = await execute(
+      `UPDATE messages SET
+         run_metadata = JSON_SET(COALESCE(run_metadata, JSON_OBJECT()),
+           '$.primeContent.status', ?,
+           '$.primeContent.resolvedAtMs', ?,
+           '$.primeContent.resolvedAtIso', ?),
+         updated_at = ?
+       WHERE owner_user_id = ? AND conversation_id = ? AND id = ? AND role = ?
+         AND JSON_UNQUOTE(JSON_EXTRACT(run_metadata, '$.primeContent.type')) = 'transfer'
+         AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(run_metadata, '$.primeContent.event')), 'offer') = 'offer'
+         AND JSON_UNQUOTE(JSON_EXTRACT(run_metadata, '$.primeContent.status')) = 'pending'`,
+      [
+        input.resolution,
+        input.resolvedAtMs,
+        new Date(input.resolvedAtMs).toISOString(),
+        input.resolvedAtMs,
+        input.ownerUserId,
+        input.conversationId,
+        input.messageId,
+        input.expectedRole,
+      ],
+    );
+    if (!result.affectedRows) return null;
+    await this.invalidateCache(input.ownerUserId, input.conversationId);
+    return this.findByIdInConversation(
+      input.ownerUserId,
+      input.conversationId,
+      input.messageId,
+    );
+  }
+
   async updateCachedLive(ownerUserId: string, message: Message) {
     try {
       await this.cache.updateLive(ownerUserId, message.conversationId, message);
