@@ -287,6 +287,7 @@ export class PlatformCatalogService {
           ...(config.understanding.audio.mode === "native" ? ["audio"] : []),
         ],
         ["text"],
+        [["tools"], ["structured_outputs", "response_format"]],
       )),
     );
     if (config.outputs.image.enabled)
@@ -340,6 +341,7 @@ export class PlatformCatalogService {
     endpoint: StoredModelEndpointConfig,
     requiredInputs: string[],
     requiredOutputs: string[],
+    requiredParameterGroups: string[][] = [],
   ) {
     if (endpoint.source !== "platform") return [];
     const row = await queryOne<ModelRow>(
@@ -356,6 +358,7 @@ export class PlatformCatalogService {
       ];
     const inputs = stringArray(row.input_modalities);
     const outputs = stringArray(row.output_modalities);
+    const supportedParameters = stringArray(row.supported_parameters);
     const missing = [
       ...requiredInputs
         .filter((item) => !inputs.includes(item))
@@ -363,6 +366,14 @@ export class PlatformCatalogService {
       ...requiredOutputs
         .filter((item) => !outputs.includes(item))
         .map((item) => `输出 ${item}`),
+      ...requiredParameterGroups
+        .filter(
+          (alternatives) =>
+            !alternatives.some((item) => supportedParameters.includes(item)),
+        )
+        .map((alternatives) =>
+          alternatives.includes("tools") ? "工具调用" : "JSON 结构化输出",
+        ),
     ];
     if (missing.length)
       throw new Error(

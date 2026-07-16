@@ -181,6 +181,7 @@ export function SettingsPage({
         {config && section === "slice-figure" ? (
           <SliceRuntimeConfigForm
             value={config.sliceFigure}
+            presets={config.presets?.sliceFigure}
             onSave={updateSlice}
             error={error}
             notice={notice}
@@ -189,6 +190,7 @@ export function SettingsPage({
         {config && section === "prime-figure" ? (
           <PrimeRuntimeConfigForm
             value={config.primeFigure}
+            presets={config.presets?.primeFigure}
             onSave={updatePrime}
             error={error}
             notice={notice}

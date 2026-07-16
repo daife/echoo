@@ -2,6 +2,7 @@ import type { RowDataPacket } from "mysql2";
 import { execute, queryOne } from "../../infra/database/mysql.js";
 import { buildRuntimeConfigDefaults } from "../runtime-config/runtime-config.defaults.js";
 import type { StoredUserRuntimeConfig } from "../runtime-config/runtime-config.types.js";
+import type { StoredRuntimeConfigPresets } from "../runtime-config/runtime-config.types.js";
 
 interface SettingRow extends RowDataPacket {
   value_json: unknown;
@@ -10,6 +11,7 @@ interface SettingRow extends RowDataPacket {
 
 const BILLING_MULTIPLIER = "billing_multiplier";
 const NEW_USER_RUNTIME_DEFAULTS = "new_user_runtime_defaults";
+const RUNTIME_CONFIG_PRESETS = "runtime_config_presets";
 
 export class PlatformSettingsService {
   async getBillingMultiplier() {
@@ -67,6 +69,27 @@ export class PlatformSettingsService {
     const updatedAt = Date.now();
     await this.save(NEW_USER_RUNTIME_DEFAULTS, config, updatedAt);
     return { config: structuredClone(config), updatedAt };
+  }
+
+  async getRuntimeConfigPresets(): Promise<StoredRuntimeConfigPresets> {
+    const row = await this.find(RUNTIME_CONFIG_PRESETS);
+    if (!row) return { sliceFigure: [], primeFigure: [] };
+    const parsed = parseJson(
+      row.value_json,
+    ) as Partial<StoredRuntimeConfigPresets> | null;
+    return {
+      sliceFigure: Array.isArray(parsed?.sliceFigure)
+        ? structuredClone(parsed.sliceFigure)
+        : [],
+      primeFigure: Array.isArray(parsed?.primeFigure)
+        ? structuredClone(parsed.primeFigure)
+        : [],
+    };
+  }
+
+  async setRuntimeConfigPresets(presets: StoredRuntimeConfigPresets) {
+    await this.save(RUNTIME_CONFIG_PRESETS, presets);
+    return structuredClone(presets);
   }
 
   private find(key: string) {

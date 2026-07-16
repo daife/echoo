@@ -6,6 +6,7 @@ import type {
   ModelRecommendationCategory,
   SliceFigureRuntimeConfigPatch,
   SliceFigureRuntimeConfigView,
+  RuntimeConfigPresetView,
 } from "@echoo/shared";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
@@ -22,10 +23,12 @@ export function SliceRuntimeConfigForm({
   error,
   notice,
   platformOnly = false,
+  presets = [],
 }: FormStatusProps & {
   value: SliceFigureRuntimeConfigView;
   onSave: (patch: SliceFigureRuntimeConfigPatch) => Promise<void>;
   platformOnly?: boolean;
+  presets?: Array<RuntimeConfigPresetView<SliceFigureRuntimeConfigView>>;
 }) {
   const [draft, setDraft] = useState(() => sliceDraft(value));
   const [apiKey, setApiKey] = useState("");
@@ -41,23 +44,7 @@ export function SliceRuntimeConfigForm({
     event.preventDefault();
     setSaving(true);
     try {
-      await onSave({
-        llm: {
-          source: draft.source,
-          routingProvider:
-            draft.source === "platform" ? draft.routingProvider || null : null,
-          baseUrl: draft.baseUrl,
-          model: draft.model,
-          temperature: Number(draft.temperature),
-          maxTokens: Number(draft.maxTokens),
-          ...secretChange(apiKey, clearApiKey),
-        },
-        context: {
-          minimumRounds: Number(draft.minimumRounds),
-          maximumRounds: Number(draft.maximumRounds),
-          memorySummaryRounds: Number(draft.memorySummaryRounds),
-        },
-      });
+      await onSave(slicePatch(draft, apiKey, clearApiKey));
     } finally {
       setSaving(false);
     }
@@ -65,6 +52,23 @@ export function SliceRuntimeConfigForm({
 
   return (
     <form className="space-y-5" onSubmit={submit}>
+      {presets.length ? (
+        <PresetChooser
+          presets={presets}
+          onApply={async (preset) => {
+            const next = sliceDraft(preset.config);
+            setDraft(next);
+            setApiKey("");
+            setClearApiKey(false);
+            setSaving(true);
+            try {
+              await onSave(slicePatch(next, "", false));
+            } finally {
+              setSaving(false);
+            }
+          }}
+        />
+      ) : null}
       <ConfigSection title="文本模型">
         <ModelFields
           category="slice_text"
@@ -115,91 +119,32 @@ export function PrimeRuntimeConfigForm({
   error,
   notice,
   platformOnly = false,
+  presets = [],
 }: FormStatusProps & {
   value: PrimeFigureRuntimeConfigView;
   onSave: (patch: PrimeFigureRuntimeConfigPatch) => Promise<void>;
   platformOnly?: boolean;
+  presets?: Array<RuntimeConfigPresetView<PrimeFigureRuntimeConfigView>>;
 }) {
   const [draft, setDraft] = useState(() => primeDraft(value));
   const [secrets, setSecrets] = useState(() => emptyPrimeSecrets());
   const [saving, setSaving] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
   useEffect(() => {
     setDraft(primeDraft(value));
     setSecrets(emptyPrimeSecrets());
+    setLocalError(null);
   }, [value]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setSaving(true);
+    setLocalError(null);
     try {
-      await onSave({
-        decisionModel: textModelPatch(draft.decision, secrets.decision),
-        outputs: {
-          image: {
-            enabled: draft.imageEnabled,
-            guidanceLevel: draft.imageGuidance,
-            generator: endpointPatch(
-              draft.imageGenerator,
-              secrets.imageGenerator,
-            ),
-          },
-          voice: {
-            enabled: draft.voiceEnabled,
-            guidanceLevel: draft.voiceGuidance,
-            tts: {
-              ...draft.tts,
-              chunkLength: Number(draft.tts.chunkLength),
-              ...secretChange(secrets.tts.value, secrets.tts.clear),
-            },
-          },
-          sticker: { enabled: draft.stickerEnabled },
-          transfer: { enabled: draft.transferEnabled },
-        },
-        optimization: {
-          image: {
-            enabled: draft.imageEnabled && draft.imageOptimizationEnabled,
-            level: draft.imageOptimizationLevel,
-            model: textModelPatch(draft.imageOptimizer, secrets.imageOptimizer),
-          },
-          voice: {
-            enabled: draft.voiceEnabled && draft.voiceOptimizationEnabled,
-            level: draft.voiceOptimizationLevel,
-            model: textModelPatch(draft.voiceOptimizer, secrets.voiceOptimizer),
-          },
-        },
-        understanding: {
-          visual: {
-            mode: draft.visualMode,
-            model: textModelPatch(draft.visualModel, secrets.visualModel),
-          },
-          audio: {
-            mode: draft.audioMode,
-            model: textModelPatch(draft.audioModel, secrets.audioModel),
-          },
-        },
-        context: {
-          minimumMessages: Number(draft.minimumMessages),
-          maximumMessages: Number(draft.maximumMessages),
-        },
-        typingCharsPerMinute: Number(draft.typingCharsPerMinute),
-        messageCoalesceMs: Number(draft.messageCoalesceMs),
-        wakeups: {
-          proactive: {
-            enabled: draft.proactiveWakeupEnabled,
-            interactionInvalidationWindowMinutes: Number(
-              draft.interactionInvalidationWindowMinutes,
-            ),
-          },
-          passive: {
-            enabled: draft.passiveWakeupEnabled,
-            milestonesMinutes: [
-              Number(draft.passiveFirstMinutes),
-              Number(draft.passiveSecondMinutes),
-              Number(draft.passiveThirdMinutes),
-            ],
-          },
-        },
-      });
+      await onSave(primePatch(draft, secrets));
+    } catch (reason) {
+      if (reason instanceof SyntaxError) setLocalError(reason.message);
+      else throw reason;
     } finally {
       setSaving(false);
     }
@@ -212,6 +157,23 @@ export function PrimeRuntimeConfigForm({
     }));
   return (
     <form className="space-y-5" onSubmit={submit}>
+      {presets.length ? (
+        <PresetChooser
+          presets={presets}
+          onApply={async (preset) => {
+            const next = primeDraft(preset.config);
+            setDraft(next);
+            setSecrets(emptyPrimeSecrets());
+            setLocalError(null);
+            setSaving(true);
+            try {
+              await onSave(primePatch(next, emptyPrimeSecrets()));
+            } finally {
+              setSaving(false);
+            }
+          }}
+        />
+      ) : null}
       <ConfigSection title="决策模型">
         <ModelFields
           category="prime_decision"
@@ -264,13 +226,29 @@ export function PrimeRuntimeConfigForm({
           <ModelFields
             category="image_generation"
             draft={draft.imageGenerator}
-            onChange={(imageGenerator) =>
-              setDraft({ ...draft, imageGenerator })
-            }
+            onChange={(imageGenerator) => {
+              const changed =
+                imageGenerator.model !== draft.imageGenerator.model ||
+                imageGenerator.source !== draft.imageGenerator.source;
+              setDraft({
+                ...draft,
+                imageGenerator,
+                imageParameters: changed
+                  ? defaultImageParameters(imageGenerator)
+                  : draft.imageParameters,
+              });
+            }}
             status={value.outputs.image.generator.apiKey}
             secret={secrets.imageGenerator}
             onSecret={(patch) => updateSecret("imageGenerator", patch)}
             platformOnly={platformOnly}
+          />
+          <ImageParameterFields
+            endpoint={draft.imageGenerator}
+            value={draft.imageParameters}
+            onChange={(imageParameters) =>
+              setDraft({ ...draft, imageParameters })
+            }
           />
         </ConfigSection>
       ) : null}
@@ -493,7 +471,7 @@ export function PrimeRuntimeConfigForm({
       </ConfigSection>
       <FormFooter
         disabled={disabled || saving}
-        error={error}
+        error={localError ?? error}
         notice={notice}
         saving={saving}
       />
@@ -520,6 +498,37 @@ type PrimeSecretKey =
   | "voiceOptimizer"
   | "visualModel"
   | "audioModel";
+
+function PresetChooser<TConfig>({
+  presets,
+  onApply,
+}: {
+  presets: Array<RuntimeConfigPresetView<TConfig>>;
+  onApply: (preset: RuntimeConfigPresetView<TConfig>) => Promise<void>;
+}) {
+  return (
+    <section className="rounded-xl border border-emerald-300/12 bg-emerald-300/[0.035] p-4">
+      <div className="mb-3">
+        <h3 className="text-sm font-medium text-emerald-50/85">推荐配置</h3>
+        <p className="mt-1 text-xs text-emerald-100/45">
+          点击后会立即保存整套推荐参数，之后仍可继续微调。
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {presets.map((preset) => (
+          <button
+            key={preset.id}
+            type="button"
+            onClick={() => void onApply(preset)}
+            className="rounded-lg border border-emerald-200/15 bg-black/15 px-3 py-2 text-sm text-emerald-50/75 transition hover:border-emerald-100/30 hover:text-white"
+          >
+            一键应用 · {preset.name}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function ModelFields({
   category,
@@ -688,6 +697,67 @@ function TtsFields({
         />
       ) : null}
     </>
+  );
+}
+
+function ImageParameterFields({
+  endpoint,
+  value,
+  onChange,
+}: {
+  endpoint: EndpointDraft;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const parsed = parseImageParametersQuietly(value);
+  if (endpoint.source === "platform" && endpoint.model === "openai/gpt-image-2")
+    return (
+      <SelectInput
+        label="生成质量"
+        value={
+          String(parsed.quality ?? "low") as "auto" | "low" | "medium" | "high"
+        }
+        options={IMAGE_QUALITY_OPTIONS}
+        onChange={(quality) => onChange(JSON.stringify({ quality }, null, 2))}
+      />
+    );
+  if (
+    endpoint.source === "platform" &&
+    endpoint.model === "google/gemini-3.1-flash-lite-image"
+  )
+    return (
+      <div className="space-y-1.5">
+        <SelectInput
+          label="生成分辨率"
+          value="1K"
+          options={GEMINI_LITE_RESOLUTION_OPTIONS}
+          onChange={(resolution) =>
+            onChange(JSON.stringify({ resolution }, null, 2))
+          }
+        />
+        <p className="text-xs text-white/35">画面比例由模型自动决定。</p>
+      </div>
+    );
+  return (
+    <label className="space-y-1.5 text-sm text-white/58 md:col-span-2">
+      <span>
+        {endpoint.source === "custom"
+          ? "自定义生图参数（JSON）"
+          : "生图参数（JSON）"}
+      </span>
+      <textarea
+        required
+        rows={6}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        spellCheck={false}
+        className="w-full resize-y rounded-lg border border-white/10 bg-white/[0.035] px-3 py-2.5 font-mono text-xs leading-6 text-white outline-none transition focus:border-white/25"
+      />
+      <span className="block text-xs text-white/35">
+        参数会透传给兼容的 Images API；model、prompt、参考图和 provider
+        由系统管理。
+      </span>
+    </label>
   );
 }
 
@@ -865,6 +935,15 @@ const UNDERSTANDING_OPTIONS = [
   { value: "native", label: "决策模型原生理解" },
   { value: "auxiliary", label: "辅助模型预先理解" },
 ] as const;
+const IMAGE_QUALITY_OPTIONS = [
+  { value: "low", label: "低（默认，最节省）" },
+  { value: "medium", label: "中" },
+  { value: "high", label: "高" },
+  { value: "auto", label: "自动" },
+] as const;
+const GEMINI_LITE_RESOLUTION_OPTIONS = [
+  { value: "1K", label: "1K（当前模型最低且唯一档位）" },
+] as const;
 
 function ConfigSection({
   title,
@@ -1026,12 +1105,41 @@ function sliceDraft(value: SliceFigureRuntimeConfigView) {
   };
 }
 
+function slicePatch(
+  draft: ReturnType<typeof sliceDraft>,
+  apiKey: string,
+  clearApiKey: boolean,
+): SliceFigureRuntimeConfigPatch {
+  return {
+    llm: {
+      source: draft.source,
+      routingProvider:
+        draft.source === "platform" ? draft.routingProvider || null : null,
+      baseUrl: draft.baseUrl,
+      model: draft.model,
+      temperature: Number(draft.temperature),
+      maxTokens: Number(draft.maxTokens),
+      ...secretChange(apiKey, clearApiKey),
+    },
+    context: {
+      minimumRounds: Number(draft.minimumRounds),
+      maximumRounds: Number(draft.maximumRounds),
+      memorySummaryRounds: Number(draft.memorySummaryRounds),
+    },
+  };
+}
+
 function primeDraft(value: PrimeFigureRuntimeConfigView) {
   return {
     decision: textDraft(value.decisionModel),
     imageEnabled: value.outputs.image.enabled,
     imageGuidance: value.outputs.image.guidanceLevel,
     imageGenerator: endpointDraft(value.outputs.image.generator),
+    imageParameters: JSON.stringify(
+      value.outputs.image.parameters ?? {},
+      null,
+      2,
+    ),
     voiceEnabled: value.outputs.voice.enabled,
     stickerEnabled: value.outputs.sticker.enabled,
     transferEnabled: value.outputs.transfer.enabled,
@@ -1060,6 +1168,109 @@ function primeDraft(value: PrimeFigureRuntimeConfigView) {
     passiveSecondMinutes: String(value.wakeups.passive.milestonesMinutes[1]),
     passiveThirdMinutes: String(value.wakeups.passive.milestonesMinutes[2]),
   };
+}
+
+function primePatch(
+  draft: ReturnType<typeof primeDraft>,
+  secrets: Record<PrimeSecretKey, SecretDraft>,
+): PrimeFigureRuntimeConfigPatch {
+  return {
+    decisionModel: textModelPatch(draft.decision, secrets.decision),
+    outputs: {
+      image: {
+        enabled: draft.imageEnabled,
+        guidanceLevel: draft.imageGuidance,
+        generator: endpointPatch(draft.imageGenerator, secrets.imageGenerator),
+        parameters: parseImageParameters(draft.imageParameters),
+      },
+      voice: {
+        enabled: draft.voiceEnabled,
+        guidanceLevel: draft.voiceGuidance,
+        tts: {
+          ...draft.tts,
+          chunkLength: Number(draft.tts.chunkLength),
+          ...secretChange(secrets.tts.value, secrets.tts.clear),
+        },
+      },
+      sticker: { enabled: draft.stickerEnabled },
+      transfer: { enabled: draft.transferEnabled },
+    },
+    optimization: {
+      image: {
+        enabled: draft.imageEnabled && draft.imageOptimizationEnabled,
+        level: draft.imageOptimizationLevel,
+        model: textModelPatch(draft.imageOptimizer, secrets.imageOptimizer),
+      },
+      voice: {
+        enabled: draft.voiceEnabled && draft.voiceOptimizationEnabled,
+        level: draft.voiceOptimizationLevel,
+        model: textModelPatch(draft.voiceOptimizer, secrets.voiceOptimizer),
+      },
+    },
+    understanding: {
+      visual: {
+        mode: draft.visualMode,
+        model: textModelPatch(draft.visualModel, secrets.visualModel),
+      },
+      audio: {
+        mode: draft.audioMode,
+        model: textModelPatch(draft.audioModel, secrets.audioModel),
+      },
+    },
+    context: {
+      minimumMessages: Number(draft.minimumMessages),
+      maximumMessages: Number(draft.maximumMessages),
+    },
+    typingCharsPerMinute: Number(draft.typingCharsPerMinute),
+    messageCoalesceMs: Number(draft.messageCoalesceMs),
+    wakeups: {
+      proactive: {
+        enabled: draft.proactiveWakeupEnabled,
+        interactionInvalidationWindowMinutes: Number(
+          draft.interactionInvalidationWindowMinutes,
+        ),
+      },
+      passive: {
+        enabled: draft.passiveWakeupEnabled,
+        milestonesMinutes: [
+          Number(draft.passiveFirstMinutes),
+          Number(draft.passiveSecondMinutes),
+          Number(draft.passiveThirdMinutes),
+        ],
+      },
+    },
+  };
+}
+
+function defaultImageParameters(endpoint: EndpointDraft) {
+  if (endpoint.source === "platform" && endpoint.model === "openai/gpt-image-2")
+    return JSON.stringify({ quality: "low" }, null, 2);
+  if (
+    endpoint.source === "platform" &&
+    endpoint.model === "google/gemini-3.1-flash-lite-image"
+  )
+    return JSON.stringify({ resolution: "1K" }, null, 2);
+  return "{}";
+}
+
+function parseImageParameters(value: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new SyntaxError("自定义生图参数不是有效的 JSON。");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    throw new SyntaxError("自定义生图参数必须是 JSON 对象。");
+  return parsed as Record<string, unknown>;
+}
+
+function parseImageParametersQuietly(value: string) {
+  try {
+    return parseImageParameters(value);
+  } catch {
+    return {};
+  }
 }
 
 function endpointDraft(value: {

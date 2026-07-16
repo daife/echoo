@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   AgentType,
   ConversationRuntimeConfigPatchRequest,
@@ -25,6 +26,7 @@ import type {
   StoredFishAudioConfig,
   StoredModelEndpointConfig,
   StoredPrimeFigureRuntimeConfig,
+  StoredRuntimeConfigPresets,
   StoredSliceFigureRuntimeConfig,
   StoredTextModelConfig,
   StoredUserRuntimeConfig,
@@ -43,7 +45,11 @@ export class RuntimeConfigService {
   ) {}
 
   async getUserConfig(ownerUserId: string): Promise<UserRuntimeConfigView> {
-    return redactUserConfig(await this.ensureUserConfig(ownerUserId));
+    const [config, presets] = await Promise.all([
+      this.ensureUserConfig(ownerUserId),
+      this.readRuntimeConfigPresets(),
+    ]);
+    return { ...redactUserConfig(config), presets: redactPresets(presets) };
   }
 
   async initializeUserConfig(ownerUserId: string) {
@@ -52,10 +58,14 @@ export class RuntimeConfigService {
   }
 
   async getAdminRuntimeDefaults() {
-    const stored = await this.platformSettings.getNewUserRuntimeDefaults();
+    const [stored, presets] = await Promise.all([
+      this.platformSettings.getNewUserRuntimeDefaults(),
+      this.readRuntimeConfigPresets(),
+    ]);
     const config = this.normalizePlatformDefaults(stored.config);
     return {
       config: redactUserConfig(config),
+      presets: redactPresets(presets),
       updatedAt: stored.updatedAt,
     };
   }
@@ -79,8 +89,98 @@ export class RuntimeConfigService {
         ...redactUserConfig(saved.config),
         ...(warnings.length ? { warnings } : {}),
       },
+      presets: redactPresets(await this.readRuntimeConfigPresets()),
       updatedAt: saved.updatedAt,
     };
+  }
+
+  async createAdminRuntimePreset(
+    type: "slice-figure" | "prime-figure",
+    name: string,
+  ) {
+    const presets = await this.readRuntimeConfigPresets();
+    const defaults = await this.readNewUserDefaults();
+    const presetName = normalizePresetName(name);
+    if (type === "slice-figure")
+      presets.sliceFigure.push({
+        id: randomUUID(),
+        name: presetName,
+        config: structuredClone(defaults.sliceFigure),
+      });
+    else
+      presets.primeFigure.push({
+        id: randomUUID(),
+        name: presetName,
+        config: structuredClone(defaults.primeFigure),
+      });
+    await this.platformSettings.setRuntimeConfigPresets(presets);
+    return redactPresets(presets);
+  }
+
+  async updateAdminRuntimePreset(
+    type: "slice-figure" | "prime-figure",
+    presetId: string,
+    input: {
+      name?: string;
+      config?: SliceFigureRuntimeConfigPatch | PrimeFigureRuntimeConfigPatch;
+    },
+  ) {
+    const presets = await this.readRuntimeConfigPresets();
+    if (type === "slice-figure") {
+      const preset = presets.sliceFigure.find((item) => item.id === presetId);
+      if (!preset) throw new RuntimeConfigNotFoundError("未找到该推荐配置。");
+      if (input.name !== undefined)
+        preset.name = normalizePresetName(input.name);
+      if (input.config) {
+        preset.config = forcePlatformPreset(
+          type,
+          patchSliceConfig(
+            preset.config,
+            input.config as SliceFigureRuntimeConfigPatch,
+          ),
+        ) as StoredSliceFigureRuntimeConfig;
+        validateFigureConfig(type, preset.config);
+        await this.validateCatalogFigure(type, preset.config);
+      }
+    } else {
+      const preset = presets.primeFigure.find((item) => item.id === presetId);
+      if (!preset) throw new RuntimeConfigNotFoundError("未找到该推荐配置。");
+      if (input.name !== undefined)
+        preset.name = normalizePresetName(input.name);
+      if (input.config) {
+        preset.config = forcePlatformPreset(
+          type,
+          patchPrimeConfig(
+            preset.config,
+            input.config as PrimeFigureRuntimeConfigPatch,
+          ),
+        ) as StoredPrimeFigureRuntimeConfig;
+        validateFigureConfig(type, preset.config);
+        await this.validateCatalogFigure(type, preset.config);
+      }
+    }
+    await this.platformSettings.setRuntimeConfigPresets(presets);
+    return redactPresets(presets);
+  }
+
+  async deleteAdminRuntimePreset(
+    type: "slice-figure" | "prime-figure",
+    presetId: string,
+  ) {
+    const presets = await this.readRuntimeConfigPresets();
+    if (type === "slice-figure") {
+      const next = presets.sliceFigure.filter((item) => item.id !== presetId);
+      if (next.length === presets.sliceFigure.length)
+        throw new RuntimeConfigNotFoundError("未找到该推荐配置。");
+      presets.sliceFigure = next;
+    } else {
+      const next = presets.primeFigure.filter((item) => item.id !== presetId);
+      if (next.length === presets.primeFigure.length)
+        throw new RuntimeConfigNotFoundError("未找到该推荐配置。");
+      presets.primeFigure = next;
+    }
+    await this.platformSettings.setRuntimeConfigPresets(presets);
+    return redactPresets(presets);
   }
 
   async updateUserConfig(
@@ -107,6 +207,7 @@ export class RuntimeConfigService {
     });
     return {
       ...redactUserConfig(next),
+      presets: redactPresets(await this.readRuntimeConfigPresets()),
       ...(warnings.length ? { warnings } : {}),
     };
   }
@@ -124,6 +225,10 @@ export class RuntimeConfigService {
         mode: resolved.mode,
         conversationType: resolved.conversationType,
         config: redactFigureConfig(resolved.config),
+        presets: selectRedactedPresets(
+          await this.readRuntimeConfigPresets(),
+          resolved.conversationType,
+        ),
       };
     } catch (error) {
       if (!isRecoverableStoredConfigError(error)) throw error;
@@ -207,6 +312,10 @@ export class RuntimeConfigService {
       mode: input.mode,
       conversationType: conversation.type,
       config: redactFigureConfig(input.mode === "custom" ? custom! : global),
+      presets: selectRedactedPresets(
+        await this.readRuntimeConfigPresets(),
+        conversation.type,
+      ),
       ...(warnings.length ? { warnings } : {}),
     };
   }
@@ -287,6 +396,44 @@ export class RuntimeConfigService {
   private async readNewUserDefaults() {
     const stored = await this.platformSettings.getNewUserRuntimeDefaults();
     return this.normalizePlatformDefaults(stored.config);
+  }
+
+  private async readRuntimeConfigPresets(): Promise<StoredRuntimeConfigPresets> {
+    const stored =
+      typeof this.platformSettings.getRuntimeConfigPresets === "function"
+        ? await this.platformSettings.getRuntimeConfigPresets()
+        : { sliceFigure: [], primeFigure: [] };
+    const normalized: StoredRuntimeConfigPresets = {
+      sliceFigure: [],
+      primeFigure: [],
+    };
+    for (const preset of stored.sliceFigure ?? []) {
+      try {
+        const config = forcePlatformPreset("slice-figure", preset.config);
+        validateFigureConfig("slice-figure", config);
+        normalized.sliceFigure.push({
+          id: String(preset.id),
+          name: normalizePresetName(preset.name),
+          config: config as StoredSliceFigureRuntimeConfig,
+        });
+      } catch (error) {
+        console.warn("Ignoring invalid slice runtime preset.", error);
+      }
+    }
+    for (const preset of stored.primeFigure ?? []) {
+      try {
+        const config = forcePlatformPreset("prime-figure", preset.config);
+        validateFigureConfig("prime-figure", config);
+        normalized.primeFigure.push({
+          id: String(preset.id),
+          name: normalizePresetName(preset.name),
+          config: config as StoredPrimeFigureRuntimeConfig,
+        });
+      } catch (error) {
+        console.warn("Ignoring invalid prime runtime preset.", error);
+      }
+    }
+    return normalized;
   }
 
   private normalizePlatformDefaults(config: StoredUserRuntimeConfig) {
@@ -426,6 +573,32 @@ export function forcePlatformDefaults(
   };
 }
 
+function forcePlatformPreset(
+  type: "slice-figure" | "prime-figure",
+  config: StoredSliceFigureRuntimeConfig | StoredPrimeFigureRuntimeConfig,
+) {
+  const defaults = buildRuntimeConfigDefaults();
+  const wrapped: StoredUserRuntimeConfig = {
+    ...defaults,
+    ...(type === "slice-figure"
+      ? { sliceFigure: config as StoredSliceFigureRuntimeConfig }
+      : {
+          primeFigure: normalizePrimeConfig(
+            config as StoredPrimeFigureRuntimeConfig,
+          ),
+        }),
+  };
+  return selectFigureConfig(forcePlatformDefaults(wrapped), type) as
+    StoredSliceFigureRuntimeConfig | StoredPrimeFigureRuntimeConfig;
+}
+
+function normalizePresetName(name: string) {
+  const value = String(name ?? "").trim();
+  if (!value) invalid("推荐配置名称不能为空。");
+  if (value.length > 80) invalid("推荐配置名称不能超过 80 个字符。");
+  return value;
+}
+
 function normalizeFigureConfig(
   type: AgentType,
   config: StoredFigureRuntimeConfig,
@@ -448,13 +621,17 @@ function normalizePrimeConfig(
   };
   return {
     ...config,
-    version: 5,
+    version: 6,
     decisionModel: normalizeTextEndpoint(config.decisionModel),
     outputs: {
       ...config.outputs,
       image: {
         ...config.outputs.image,
         generator: normalizeEndpoint(config.outputs.image.generator),
+        parameters: normalizeImageParameters(
+          config.outputs.image.generator,
+          config.outputs.image.parameters,
+        ),
       },
       voice: {
         ...config.outputs.voice,
@@ -518,9 +695,19 @@ function patchPrimeConfig(
   current: StoredPrimeFigureRuntimeConfig,
   patch: PrimeFigureRuntimeConfigPatch,
 ): StoredPrimeFigureRuntimeConfig {
+  const imageGenerator = patch.outputs?.image?.generator
+    ? patchEndpoint(
+        current.outputs.image.generator,
+        patch.outputs.image.generator,
+      )
+    : current.outputs.image.generator;
+  const imageEndpointChanged = Boolean(
+    patch.outputs?.image?.generator?.model !== undefined ||
+    patch.outputs?.image?.generator?.source !== undefined,
+  );
   return {
     ...current,
-    version: 5,
+    version: 6,
     decisionModel: patch.decisionModel
       ? patchTextModel(current.decisionModel, patch.decisionModel)
       : current.decisionModel,
@@ -528,12 +715,12 @@ function patchPrimeConfig(
       image: {
         ...current.outputs.image,
         ...patch.outputs?.image,
-        generator: patch.outputs?.image?.generator
-          ? patchEndpoint(
-              current.outputs.image.generator,
-              patch.outputs.image.generator,
-            )
-          : current.outputs.image.generator,
+        generator: imageGenerator,
+        parameters:
+          patch.outputs?.image?.parameters ??
+          (imageEndpointChanged
+            ? normalizeImageParameters(imageGenerator, undefined)
+            : current.outputs.image.parameters),
       },
       voice: {
         ...current.outputs.voice,
@@ -680,6 +867,29 @@ function redactUserConfig(
   } as UserRuntimeConfigView;
 }
 
+function redactPresets(presets: StoredRuntimeConfigPresets) {
+  return {
+    sliceFigure: presets.sliceFigure.map((preset) => ({
+      ...preset,
+      config: redactFigureConfig(preset.config),
+    })),
+    primeFigure: presets.primeFigure.map((preset) => ({
+      ...preset,
+      config: redactFigureConfig(preset.config),
+    })),
+  };
+}
+
+function selectRedactedPresets(
+  presets: StoredRuntimeConfigPresets,
+  type: AgentType,
+) {
+  const redacted = redactPresets(presets);
+  if (type === "slice-figure") return redacted.sliceFigure;
+  if (type === "prime-figure") return redacted.primeFigure;
+  return [];
+}
+
 function redactFigureConfig(config: StoredFigureRuntimeConfig): any {
   if (!("llm" in config) && !("decisionModel" in config)) return config;
   if ("llm" in config) return { ...config, llm: redactEndpoint(config.llm) };
@@ -781,6 +991,11 @@ function validateFigureConfig(
     validateTextModel(value.decisionModel);
     if (value.outputs.image.enabled)
       validateEndpoint(value.outputs.image.generator);
+    if (value.outputs.image.enabled)
+      validateImageParameters(
+        value.outputs.image.generator,
+        value.outputs.image.parameters,
+      );
     if (value.outputs.voice.enabled) {
       const tts = value.outputs.voice.tts;
       if (
@@ -853,6 +1068,56 @@ function normalizeEndpoint<T extends StoredModelEndpointConfig>(config: T): T {
 
 function normalizeTextEndpoint(config: StoredTextModelConfig) {
   return normalizeEndpoint(config);
+}
+
+function normalizeImageParameters(
+  endpoint: StoredModelEndpointConfig,
+  parameters: Record<string, unknown> | undefined,
+) {
+  const value =
+    parameters && typeof parameters === "object" && !Array.isArray(parameters)
+      ? structuredClone(parameters)
+      : {};
+  if (endpoint.source !== "platform") return value;
+  if (endpoint.model === "openai/gpt-image-2")
+    return { quality: "low", ...value };
+  if (endpoint.model === "google/gemini-3.1-flash-lite-image")
+    return { resolution: "1K", ...value };
+  return value;
+}
+
+function validateImageParameters(
+  endpoint: StoredModelEndpointConfig,
+  parameters: Record<string, unknown>,
+) {
+  if (
+    !parameters ||
+    typeof parameters !== "object" ||
+    Array.isArray(parameters)
+  )
+    invalid("生图参数必须是 JSON 对象。");
+  let serialized = "";
+  try {
+    serialized = JSON.stringify(parameters);
+  } catch {
+    invalid("生图参数必须可以序列化为 JSON。");
+  }
+  if (serialized.length > 16_384) invalid("生图参数不能超过 16KB。");
+  if (endpoint.source !== "platform") return;
+  if (endpoint.model === "openai/gpt-image-2") {
+    if (Object.keys(parameters).some((key) => key !== "quality"))
+      invalid("GPT Image 2 平台配置仅支持 quality 参数。");
+    const quality = parameters.quality;
+    if (!["auto", "low", "medium", "high"].includes(String(quality)))
+      invalid("GPT Image 2 的质量必须是 auto、low、medium 或 high。");
+    return;
+  }
+  if (endpoint.model === "google/gemini-3.1-flash-lite-image") {
+    if (Object.keys(parameters).some((key) => key !== "resolution"))
+      invalid("Gemini 3.1 Flash Lite Image 平台配置仅支持 resolution 参数。");
+    if (parameters.resolution !== "1K")
+      invalid("Gemini 3.1 Flash Lite Image 当前仅支持 1K 分辨率。");
+  }
 }
 
 function normalizeFishAudio(config: StoredFishAudioConfig) {

@@ -44,13 +44,14 @@ describe("runtime config forms", () => {
     const html = renderToStaticMarkup(
       <PrimeRuntimeConfigForm
         value={{
-          version: 5,
+          version: 6,
           decisionModel: { ...endpoint, temperature: 0.4, maxTokens: 1600 },
           outputs: {
             image: {
               enabled: true,
               guidanceLevel: "medium",
               generator: { ...endpoint, model: "image-model" },
+              parameters: {},
             },
             voice: {
               enabled: true,
@@ -109,6 +110,7 @@ describe("runtime config forms", () => {
       />,
     );
     expect(html).toContain("图像生成");
+    expect(html).toContain("自定义生图参数（JSON）");
     expect(html).toContain("TTS 服务");
     expect(html).toContain("媒体理解");
     expect(html).toContain("连续消息合并间隔（毫秒）");

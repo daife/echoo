@@ -51,6 +51,8 @@ export interface PrimeFigureOutputConfigView {
     enabled: boolean;
     guidanceLevel: PrimeFigureGuidanceLevel;
     generator: ModelEndpointConfigView;
+    /** Model-specific parameters passed to the image generation endpoint. */
+    parameters: Record<string, unknown>;
   };
   voice: {
     enabled: boolean;
@@ -90,7 +92,7 @@ export interface PrimeFigureUnderstandingConfigView {
 }
 
 export interface PrimeFigureRuntimeConfigView {
-  version: 5;
+  version: 6;
   decisionModel: TextModelConfigView;
   outputs: PrimeFigureOutputConfigView;
   optimization: PrimeFigureOptimizationConfigView;
@@ -124,12 +126,25 @@ export interface UserRuntimeConfigView {
   sliceFigure: SliceFigureRuntimeConfigView;
   primeFigure: PrimeFigureRuntimeConfigView;
   primeWorld: PrimeWorldRuntimeConfigView;
+  presets?: RuntimeConfigPresetsView;
   warnings?: RuntimeConfigWarning[];
 }
 
 export interface AdminRuntimeDefaultsView {
   config: UserRuntimeConfigView;
+  presets: RuntimeConfigPresetsView;
   updatedAt: number;
+}
+
+export interface RuntimeConfigPresetView<TConfig> {
+  id: string;
+  name: string;
+  config: TConfig;
+}
+
+export interface RuntimeConfigPresetsView {
+  sliceFigure: Array<RuntimeConfigPresetView<SliceFigureRuntimeConfigView>>;
+  primeFigure: Array<RuntimeConfigPresetView<PrimeFigureRuntimeConfigView>>;
 }
 
 export interface ModelEndpointConfigPatch {
@@ -169,6 +184,7 @@ export interface PrimeFigureRuntimeConfigPatch {
       enabled?: boolean;
       guidanceLevel?: PrimeFigureGuidanceLevel;
       generator?: ModelEndpointConfigPatch;
+      parameters?: Record<string, unknown>;
     };
     voice?: {
       enabled?: boolean;
@@ -239,6 +255,10 @@ export interface ConversationRuntimeConfigResponse {
   mode: RuntimeConfigMode;
   conversationType: AgentType;
   config?: FigureRuntimeConfigView;
+  presets?: Array<
+    | RuntimeConfigPresetView<SliceFigureRuntimeConfigView>
+    | RuntimeConfigPresetView<PrimeFigureRuntimeConfigView>
+  >;
   validationError?: string;
   warnings?: RuntimeConfigWarning[];
 }

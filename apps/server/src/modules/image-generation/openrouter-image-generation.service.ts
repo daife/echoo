@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 export interface ImageGenerationReference {
   mimeType: string;
   data: Buffer;
@@ -14,6 +16,10 @@ import { environment } from "../../infra/config/environment.js";
 
 interface OpenRouterImageResponse {
   id?: string;
+  data?: Array<{
+    b64_json?: string;
+    media_type?: string;
+  }>;
   usage?: {
     cost?: number;
     prompt_tokens?: number;
@@ -34,6 +40,7 @@ interface OpenRouterImageResponse {
 export class OpenRouterImageGenerationService {
   constructor(
     private readonly config: StoredModelEndpointConfig,
+    private readonly parameters: Record<string, unknown> = {},
     private readonly fetcher: typeof fetch = fetch,
     private readonly billing = new BillingService(),
   ) {}
@@ -50,7 +57,8 @@ export class OpenRouterImageGenerationService {
     const model = this.config.model;
     const upstreamProvider = this.config.routingProvider?.trim();
     const baseUrl = this.config.baseUrl.replace(/\/+$/, "");
-    const response = await this.fetcher(`${baseUrl}/chat/completions`, {
+    const configuredParameters = sanitizeImageParameters(this.parameters);
+    const response = await this.fetcher(`${baseUrl}/images`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -60,28 +68,20 @@ export class OpenRouterImageGenerationService {
         ...(input.sessionId ? { "x-session-id": input.sessionId } : {}),
       },
       body: JSON.stringify({
+        ...configuredParameters,
         model,
-        ...(input.sessionId ? { session_id: input.sessionId } : {}),
         ...(upstreamProvider ? { provider: { only: [upstreamProvider] } } : {}),
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: input.prompt },
-              ...input.references.map((reference) => ({
+        prompt: input.prompt,
+        ...(input.references.length
+          ? {
+              input_references: input.references.map((reference) => ({
                 type: "image_url",
                 image_url: {
                   url: `data:${reference.mimeType};base64,${reference.data.toString("base64")}`,
                 },
               })),
-            ],
-          },
-        ],
-        modalities: ["image", "text"],
-        image_config: {
-          aspect_ratio: extractAspectRatio(input.prompt) ?? "3:4",
-          image_size: "1K",
-        },
+            }
+          : {}),
       }),
     });
     const payload = (await response.json()) as OpenRouterImageResponse;
@@ -90,22 +90,28 @@ export class OpenRouterImageGenerationService {
         `OpenRouter image generation failed: ${payload.error?.message ?? payload.message ?? response.statusText}`,
       );
     }
+    const dedicatedImage = payload.data?.[0];
     const imageUrl = payload.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-    if (!imageUrl)
+    const encoded = dedicatedImage?.b64_json ?? imageUrl;
+    if (!encoded)
       throw new Error("OpenRouter image generation returned no image data.");
-    const mimeType = normalizeImageMimeType(readDataUrlMimeType(imageUrl));
-    const data = Buffer.from(stripDataUrlPrefix(imageUrl), "base64");
+    const mimeType = normalizeImageMimeType(
+      dedicatedImage?.media_type ?? readDataUrlMimeType(encoded),
+    );
+    const data = Buffer.from(stripDataUrlPrefix(encoded), "base64");
     if (!data.length)
       throw new Error("OpenRouter image generation returned an empty image.");
     if (
       this.config.source === "platform" &&
-      payload.id &&
       typeof payload.usage?.cost === "number"
     )
       await this.billing.chargeUsage({
         service: "openrouter",
         model,
-        upstreamRequestId: payload.id,
+        upstreamRequestId:
+          payload.id ??
+          response.headers.get("x-request-id") ??
+          `image_${randomUUID()}`,
         upstreamCostUsd: payload.usage.cost,
         metadata: {
           kind: "image_generation",
@@ -116,6 +122,19 @@ export class OpenRouterImageGenerationService {
       });
     return { mimeType, data, model };
   }
+}
+
+function sanitizeImageParameters(parameters: Record<string, unknown>) {
+  const result = { ...parameters };
+  for (const reserved of [
+    "model",
+    "prompt",
+    "input_references",
+    "provider",
+    "stream",
+  ])
+    delete result[reserved];
+  return result;
 }
 
 function normalizeImageMimeType(value?: string): GeneratedImage["mimeType"] {
@@ -132,9 +151,4 @@ function stripDataUrlPrefix(value: string) {
 
 function readDataUrlMimeType(value: string) {
   return value.match(/^data:([^;,]+)[;,]/)?.[1];
-}
-
-function extractAspectRatio(prompt: string) {
-  const section = prompt.match(/【推荐比例】([\s\S]*?)$/)?.[1] ?? prompt;
-  return section.match(/\b(1:1|2:3|3:2|3:4|4:3|4:5|5:4|9:16|16:9)\b/)?.[1];
 }

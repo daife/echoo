@@ -23,7 +23,7 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
       },
     },
     primeFigure: {
-      version: 5,
+      version: 6,
       decisionModel: {
         ...sharedEndpoint,
         model: "google/gemini-2.5-flash-lite",
@@ -38,6 +38,7 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
             ...sharedEndpoint,
             model: "google/gemini-3.1-flash-lite-image",
           },
+          parameters: { resolution: "1K" },
         },
         voice: {
           enabled: true,

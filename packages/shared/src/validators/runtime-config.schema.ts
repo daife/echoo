@@ -3,6 +3,15 @@ import { z } from "zod";
 const optionalText = z.string().trim().max(2048).optional();
 const optionalPositive = z.number().finite().positive().optional();
 const optionalNonnegative = z.number().finite().nonnegative().optional();
+const imageParametersSchema = z
+  .record(z.string().max(120), z.unknown())
+  .refine((value) => {
+    try {
+      return JSON.stringify(value).length <= 16_384;
+    } catch {
+      return false;
+    }
+  }, "生图参数必须是小于 16KB 的 JSON 对象。");
 
 const modelEndpointPatchSchema = z.object({
   source: z.enum(["platform", "custom"]).optional(),
@@ -48,6 +57,7 @@ export const primeFigureRuntimeConfigPatchSchema = z.object({
           enabled: z.boolean().optional(),
           guidanceLevel: z.enum(["basic", "medium", "advanced"]).optional(),
           generator: modelEndpointPatchSchema.optional(),
+          parameters: imageParametersSchema.optional(),
         })
         .optional(),
       voice: z

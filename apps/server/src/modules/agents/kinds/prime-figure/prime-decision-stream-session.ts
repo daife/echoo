@@ -132,6 +132,7 @@ export class PrimeDecisionStreamSession {
       imageGeneration ??
       new OpenRouterImageGenerationService(
         input.runtimeConfig.outputs.image.generator,
+        input.runtimeConfig.outputs.image.parameters,
       );
   }
 

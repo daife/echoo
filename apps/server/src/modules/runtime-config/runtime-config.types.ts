@@ -33,13 +33,14 @@ export interface StoredSliceFigureRuntimeConfig {
 }
 
 export interface StoredPrimeFigureRuntimeConfig {
-  version: 5;
+  version: 6;
   decisionModel: StoredTextModelConfig;
   outputs: {
     image: {
       enabled: boolean;
       guidanceLevel: "basic" | "medium" | "advanced";
       generator: StoredModelEndpointConfig;
+      parameters: Record<string, unknown>;
     };
     voice: {
       enabled: boolean;
@@ -102,6 +103,17 @@ export interface StoredUserRuntimeConfig {
   sliceFigure: StoredSliceFigureRuntimeConfig;
   primeFigure: StoredPrimeFigureRuntimeConfig;
   primeWorld: StoredPrimeWorldRuntimeConfig;
+}
+
+export interface StoredRuntimeConfigPreset<TConfig> {
+  id: string;
+  name: string;
+  config: TConfig;
+}
+
+export interface StoredRuntimeConfigPresets {
+  sliceFigure: Array<StoredRuntimeConfigPreset<StoredSliceFigureRuntimeConfig>>;
+  primeFigure: Array<StoredRuntimeConfigPreset<StoredPrimeFigureRuntimeConfig>>;
 }
 
 export type StoredFigureRuntimeConfig =

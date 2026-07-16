@@ -876,6 +876,12 @@ function RuntimeConfigDialog({
         response.conversationType === "slice-figure" ? (
           <SliceRuntimeConfigForm
             value={response.config as SliceFigureRuntimeConfigView}
+            presets={response.presets?.filter(
+              (
+                preset,
+              ): preset is import("@echoo/shared").RuntimeConfigPresetView<SliceFigureRuntimeConfigView> =>
+                "llm" in preset.config,
+            )}
             onSave={(patch) => saveConfig(patch)}
             error={null}
             notice={notice}
@@ -886,6 +892,12 @@ function RuntimeConfigDialog({
         response.conversationType === "prime-figure" ? (
           <PrimeRuntimeConfigForm
             value={response.config as PrimeFigureRuntimeConfigView}
+            presets={response.presets?.filter(
+              (
+                preset,
+              ): preset is import("@echoo/shared").RuntimeConfigPresetView<PrimeFigureRuntimeConfigView> =>
+                "decisionModel" in preset.config,
+            )}
             onSave={(patch) => saveConfig(patch)}
             error={null}
             notice={notice}

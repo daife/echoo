@@ -1,5 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import {
+  primeFigureRuntimeConfigPatchSchema,
+  sliceFigureRuntimeConfigPatchSchema,
   userRuntimeConfigPatchSchema,
   type ModelRecommendationCategory,
 } from "@echoo/shared";
@@ -39,6 +41,10 @@ const recommendationsSchema = z.object({
       }),
     )
     .max(100),
+});
+
+const presetNameSchema = z.object({
+  name: z.string().trim().min(1).max(80),
 });
 
 export async function registerAdminRoutes(app: FastifyInstance) {
@@ -154,6 +160,75 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     }
   });
 
+  app.post<{ Params: { type: string }; Body: unknown }>(
+    "/runtime-presets/:type",
+    async (request, reply) => {
+      if (!(await request.requireAdmin(reply))) return;
+      try {
+        const type = parsePresetType(request.params.type);
+        const body = presetNameSchema.parse(request.body);
+        return await runtimeConfigs.createAdminRuntimePreset(type, body.name);
+      } catch (error) {
+        return reply.code(400).send({
+          error: "INVALID_RUNTIME_PRESET",
+          message: errorMessage(error),
+        });
+      }
+    },
+  );
+
+  app.patch<{
+    Params: { type: string; presetId: string };
+    Body: unknown;
+  }>("/runtime-presets/:type/:presetId", async (request, reply) => {
+    if (!(await request.requireAdmin(reply))) return;
+    try {
+      const type = parsePresetType(request.params.type);
+      const base = z
+        .object({
+          name: z.string().trim().min(1).max(80).optional(),
+          config: z.unknown().optional(),
+        })
+        .parse(request.body);
+      const config = base.config
+        ? type === "slice-figure"
+          ? sliceFigureRuntimeConfigPatchSchema.parse(base.config)
+          : primeFigureRuntimeConfigPatchSchema.parse(base.config)
+        : undefined;
+      return await runtimeConfigs.updateAdminRuntimePreset(
+        type,
+        request.params.presetId,
+        {
+          ...(base.name !== undefined ? { name: base.name } : {}),
+          ...(config ? { config } : {}),
+        },
+      );
+    } catch (error) {
+      return reply.code(400).send({
+        error: "INVALID_RUNTIME_PRESET",
+        message: errorMessage(error),
+      });
+    }
+  });
+
+  app.delete<{ Params: { type: string; presetId: string } }>(
+    "/runtime-presets/:type/:presetId",
+    async (request, reply) => {
+      if (!(await request.requireAdmin(reply))) return;
+      try {
+        return await runtimeConfigs.deleteAdminRuntimePreset(
+          parsePresetType(request.params.type),
+          request.params.presetId,
+        );
+      } catch (error) {
+        return reply.code(400).send({
+          error: "INVALID_RUNTIME_PRESET",
+          message: errorMessage(error),
+        });
+      }
+    },
+  );
+
   app.post("/openrouter/sync-models", async (request, reply) => {
     if (!(await request.requireAdmin(reply))) return;
     try {
@@ -236,4 +311,9 @@ function safeEqual(left: string, right: string) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "操作失败。";
+}
+
+function parsePresetType(value: string): "slice-figure" | "prime-figure" {
+  if (value === "slice-figure" || value === "prime-figure") return value;
+  throw new Error("推荐配置类型无效。");
 }

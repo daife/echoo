@@ -4,6 +4,7 @@ import type {
   PrimeFigureRuntimeConfigPatch,
   RecommendedModelView,
   SliceFigureRuntimeConfigPatch,
+  RuntimeConfigPresetsView,
   WalletView,
 } from "@echoo/shared";
 import { useEffect, useState, type FormEvent } from "react";
@@ -26,6 +27,7 @@ type CatalogModel = {
   description?: string | null;
   inputModalities: string[];
   outputModalities: string[];
+  supportedParameters: string[];
   pricing: Record<string, string | number | null>;
   available: boolean;
   syncedAt: number;
@@ -177,6 +179,8 @@ function AdminConsole({
 function RuntimeDefaultsPanel({ token, onExpired }: PanelProps) {
   const [value, setValue] = useState<AdminRuntimeDefaultsView | null>(null);
   const [status, setStatus] = useState("");
+  const [newSliceName, setNewSliceName] = useState("");
+  const [newPrimeName, setNewPrimeName] = useState("");
 
   const load = async () => {
     try {
@@ -211,6 +215,45 @@ function RuntimeDefaultsPanel({ token, onExpired }: PanelProps) {
     }
   };
 
+  const mutatePreset = async (
+    method: "POST" | "PATCH" | "DELETE",
+    path: string,
+    body?: unknown,
+  ) => {
+    try {
+      const presets = await authed<RuntimeConfigPresetsView>(
+        token,
+        `/runtime-presets/${path}`,
+        { method, ...(body === undefined ? {} : { body }) },
+      );
+      setValue((current) => (current ? { ...current, presets } : current));
+      setStatus("推荐配置已更新。");
+      return presets;
+    } catch (error) {
+      handlePanelError(error, setStatus, onExpired);
+      throw error;
+    }
+  };
+
+  const setPresetName = (
+    type: "sliceFigure" | "primeFigure",
+    id: string,
+    name: string,
+  ) =>
+    setValue((current) =>
+      current
+        ? {
+            ...current,
+            presets: {
+              ...current.presets,
+              [type]: current.presets[type].map((preset) =>
+                preset.id === id ? { ...preset, name } : preset,
+              ),
+            },
+          }
+        : current,
+    );
+
   if (!value)
     return (
       <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
@@ -243,6 +286,160 @@ function RuntimeDefaultsPanel({ token, onExpired }: PanelProps) {
           value={value.config.primeFigure}
           onSave={(primeFigure) => save({ primeFigure })}
         />
+      </section>
+      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold">切片角色推荐配置</h2>
+            <p className="mt-1 text-sm text-white/40">
+              数量不限，用户可在同一配置表单中一键应用。
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <input
+              value={newSliceName}
+              onChange={(event) => setNewSliceName(event.target.value)}
+              placeholder="例如：极致节省"
+              className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (!newSliceName.trim()) return;
+                void mutatePreset("POST", "slice-figure", {
+                  name: newSliceName,
+                }).then(() => setNewSliceName(""));
+              }}
+              className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black"
+            >
+              新增
+            </button>
+          </div>
+        </div>
+        <div className="space-y-5">
+          {value.presets.sliceFigure.map((preset) => (
+            <article
+              key={preset.id}
+              className="rounded-xl border border-white/8 bg-black/10 p-4"
+            >
+              <div className="mb-5 flex flex-wrap gap-2">
+                <input
+                  value={preset.name}
+                  onChange={(event) =>
+                    setPresetName("sliceFigure", preset.id, event.target.value)
+                  }
+                  className="min-w-52 flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    void mutatePreset("PATCH", `slice-figure/${preset.id}`, {
+                      name: preset.name,
+                    })
+                  }
+                  className="rounded-lg border border-white/10 px-3 py-2 text-sm"
+                >
+                  保存名称
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void mutatePreset("DELETE", `slice-figure/${preset.id}`)
+                  }
+                  className="rounded-lg border border-red-300/15 px-3 py-2 text-sm text-red-100/65"
+                >
+                  删除
+                </button>
+              </div>
+              <SliceRuntimeConfigForm
+                platformOnly
+                value={preset.config}
+                onSave={async (config) => {
+                  await mutatePreset("PATCH", `slice-figure/${preset.id}`, {
+                    config,
+                  });
+                }}
+              />
+            </article>
+          ))}
+        </div>
+      </section>
+      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold">本初角色推荐配置</h2>
+            <p className="mt-1 text-sm text-white/40">
+              预设编辑与用户编辑复用完全相同的表单。
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <input
+              value={newPrimeName}
+              onChange={(event) => setNewPrimeName(event.target.value)}
+              placeholder="例如：均衡"
+              className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (!newPrimeName.trim()) return;
+                void mutatePreset("POST", "prime-figure", {
+                  name: newPrimeName,
+                }).then(() => setNewPrimeName(""));
+              }}
+              className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black"
+            >
+              新增
+            </button>
+          </div>
+        </div>
+        <div className="space-y-5">
+          {value.presets.primeFigure.map((preset) => (
+            <article
+              key={preset.id}
+              className="rounded-xl border border-white/8 bg-black/10 p-4"
+            >
+              <div className="mb-5 flex flex-wrap gap-2">
+                <input
+                  value={preset.name}
+                  onChange={(event) =>
+                    setPresetName("primeFigure", preset.id, event.target.value)
+                  }
+                  className="min-w-52 flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    void mutatePreset("PATCH", `prime-figure/${preset.id}`, {
+                      name: preset.name,
+                    })
+                  }
+                  className="rounded-lg border border-white/10 px-3 py-2 text-sm"
+                >
+                  保存名称
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void mutatePreset("DELETE", `prime-figure/${preset.id}`)
+                  }
+                  className="rounded-lg border border-red-300/15 px-3 py-2 text-sm text-red-100/65"
+                >
+                  删除
+                </button>
+              </div>
+              <PrimeRuntimeConfigForm
+                platformOnly
+                value={preset.config}
+                onSave={async (config) => {
+                  await mutatePreset("PATCH", `prime-figure/${preset.id}`, {
+                    config,
+                  });
+                }}
+              />
+            </article>
+          ))}
+        </div>
       </section>
     </div>
   );
@@ -485,6 +682,9 @@ function ModelsPanel({ token, onExpired }: PanelProps) {
             </p>
             <p className="mt-2 break-all font-mono text-[11px] text-white/35">
               {JSON.stringify(model.pricing)}
+            </p>
+            <p className="mt-2 text-[11px] text-white/35">
+              参数：{model.supportedParameters.join(" · ") || "未声明"}
             </p>
             {model.providers.length ? (
               <div className="mt-3 space-y-1 text-xs text-emerald-100/55">
