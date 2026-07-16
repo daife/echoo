@@ -40,13 +40,19 @@ export function getPrimePresencePhaseDuration(
 
 export function isVisibleConversationMessage(message: LocalMessage) {
   if (getPrimeRuntimeErrorText(message)) return false;
-  if (message.contentType === "image" || message.contentType === "voice") {
+  if (
+    message.contentType === "image" ||
+    message.contentType === "voice" ||
+    message.contentType === "video"
+  ) {
     if (
       message.contentType === "voice" &&
       message.metadata?.audioStreaming === true
     )
       return true;
-    return Boolean(message.content.mediaUrl);
+    return Boolean(
+      message.content.mediaUrl || message.content.media?.resourceId,
+    );
   }
   if (message.role === "assistant" && message.status === "pending") {
     return Boolean(message.content.text?.trim());

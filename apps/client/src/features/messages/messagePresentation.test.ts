@@ -31,3 +31,46 @@ describe("prime runtime error presentation", () => {
     expect(isVisibleConversationMessage(runtimeErrorMessage)).toBe(false);
   });
 });
+
+describe("media message presentation", () => {
+  it("keeps video messages with a media URL in conversation history", () => {
+    const videoMessage: LocalMessage = {
+      id: "msg_video",
+      conversationId: "conv_1",
+      role: "user",
+      contentType: "video",
+      content: {
+        mediaUrl: "/api/resources/res_video/file",
+        resourceId: "res_video",
+      },
+      status: "sent",
+      createdAt: 1_234,
+      updatedAt: 1_234,
+      syncStatus: "synced",
+    };
+
+    expect(isVisibleConversationMessage(videoMessage)).toBe(true);
+  });
+
+  it("keeps media-reference-only videos in conversation history", () => {
+    const videoMessage: LocalMessage = {
+      id: "msg_video_reference",
+      conversationId: "conv_1",
+      role: "user",
+      contentType: "video",
+      content: {
+        media: {
+          resourceId: "res_video",
+          kind: "video",
+          variants: ["original"],
+        },
+      },
+      status: "sent",
+      createdAt: 1_234,
+      updatedAt: 1_234,
+      syncStatus: "synced",
+    };
+
+    expect(isVisibleConversationMessage(videoMessage)).toBe(true);
+  });
+});
