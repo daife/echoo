@@ -10,7 +10,8 @@ describe("runtime config forms", () => {
     const html = renderToStaticMarkup(
       <SliceRuntimeConfigForm
         value={{
-          version: 2,
+          version: 3,
+          replyAutoSegment: false,
           llm: {
             source: "custom",
             baseUrl: "https://openrouter.test/api/v1",
@@ -29,6 +30,7 @@ describe("runtime config forms", () => {
       />,
     );
     expect(html).toContain("记忆总结轮数");
+    expect(html).toContain("回复自动分段");
     expect(html).toContain('type="password"');
     expect(html).toContain("留空则保留");
     expect(html).not.toContain("sk-secret-value");
@@ -44,7 +46,7 @@ describe("runtime config forms", () => {
     const html = renderToStaticMarkup(
       <PrimeRuntimeConfigForm
         value={{
-          version: 6,
+          version: 7,
           decisionModel: { ...endpoint, temperature: 0.4, maxTokens: 1600 },
           outputs: {
             image: {
@@ -55,6 +57,7 @@ describe("runtime config forms", () => {
             },
             voice: {
               enabled: true,
+              requestStreaming: false,
               guidanceLevel: "medium",
               tts: {
                 source: "custom",
@@ -112,6 +115,7 @@ describe("runtime config forms", () => {
     expect(html).toContain("图像生成");
     expect(html).toContain("自定义生图参数（JSON）");
     expect(html).toContain("TTS 服务");
+    expect(html).toContain("流式语音请求");
     expect(html).toContain("媒体理解");
     expect(html).toContain("连续消息合并间隔（毫秒）");
     expect(html).toContain("允许 figure 发送表情");

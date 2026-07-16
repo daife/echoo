@@ -60,7 +60,6 @@ export interface SliceFigureDetail {
   responseStyle: string;
   systemPrompt: string;
   memorySummaryPrompt: string;
-  replyAutoSegment: boolean;
 }
 
 export type PrimeFigureVariableType = "string" | "number" | "boolean" | "json";
@@ -153,9 +152,7 @@ export interface PrimeFigureDetail {
   itinerary: string;
   variableDefinitions: PrimeFigureVariableDefinition[];
   referenceImages: PrimeFigureReferenceImage[];
-  /** Added in Prime Figure v4; legacy stored definitions may omit it. */
   stickers?: PrimeFigureSticker[];
-  voiceRequestStreaming: boolean;
 }
 
 export interface PrimeWorldDetail {
@@ -224,7 +221,6 @@ export interface CreateSliceFigureRequest {
   responseStyle: string;
   systemPrompt: string;
   memorySummaryPrompt: string;
-  replyAutoSegment?: boolean;
 }
 
 export type UpdateSliceFigureRequest = Omit<CreateSliceFigureRequest, "type">;
@@ -252,7 +248,6 @@ export interface CreatePrimeFigureRequest {
   variableDefinitions?: PrimeFigureVariableDefinition[];
   referenceImages?: PrimeFigureReferenceImageInput[];
   stickers?: PrimeFigureStickerInput[];
-  voiceRequestStreaming?: boolean;
   initialMood?: string;
   initialRelationshipStatus?: string;
 }
@@ -265,10 +260,6 @@ export type UpdatePrimeFigureRequest = Omit<
   currentMood: string;
   currentRelationshipStatus: string;
 };
-
-export interface UpdatePrimeFigurePreferencesRequest {
-  voiceRequestStreaming: boolean;
-}
 
 export interface AddPrimeFigureStickerRequest {
   upload: AgentResourceUpload;

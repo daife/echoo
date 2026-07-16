@@ -27,6 +27,11 @@ const generatedMimeTypes = new Map([
 const userMediaMimeTypes = new Map([
   ...allowedMimeTypes,
   ["audio/mpeg", ".mp3"],
+  ["video/mp4", ".mp4"],
+  ["video/webm", ".webm"],
+  ["video/quicktime", ".mov"],
+  ["video/mov", ".mov"],
+  ["video/mpeg", ".mpeg"],
 ]);
 
 export interface ResourceRecord {
@@ -142,20 +147,16 @@ export class ResourceRepository {
 
   async saveUserMedia(
     ownerUserId: string,
-    kind: "end_user_image" | "end_user_voice",
+    kind: "end_user_image" | "end_user_voice" | "end_user_video",
     upload: MessageMediaUpload,
   ): Promise<ResourceRecord> {
     const extension = userMediaMimeTypes.get(upload.mimeType);
-    const expectedKind = upload.mimeType.startsWith("image/")
-      ? "end_user_image"
-      : upload.mimeType === "audio/mpeg"
-        ? "end_user_voice"
-        : null;
+    const expectedKind = userMediaKind(upload.mimeType);
     if (!extension || expectedKind !== kind)
       throw new InvalidMediaUploadError("不支持的媒体格式。");
 
     const data = Buffer.from(stripDataUrlPrefix(upload.dataBase64), "base64");
-    const durationSeconds = validateUserMediaData(kind, data);
+    const durationSeconds = validateUserMediaData(kind, data, upload.mimeType);
 
     return this.persistReadyResource({
       ownerUserId,
@@ -170,17 +171,13 @@ export class ResourceRepository {
 
   async createPendingUpload(input: {
     ownerUserId: string;
-    kind: "end_user_image" | "end_user_voice";
+    kind: "end_user_image" | "end_user_voice" | "end_user_video";
     fileName: string;
     mimeType: string;
     byteSize: number;
   }) {
     const extension = userMediaMimeTypes.get(input.mimeType);
-    const expectedKind = input.mimeType.startsWith("image/")
-      ? "end_user_image"
-      : input.mimeType === "audio/mpeg"
-        ? "end_user_voice"
-        : null;
+    const expectedKind = userMediaKind(input.mimeType);
     if (!extension || expectedKind !== input.kind)
       throw new InvalidMediaUploadError("不支持的媒体格式。");
     const maximum =
@@ -281,8 +278,13 @@ export class ResourceRepository {
     try {
       const data = await this.storage.get(record.storageKey);
       const durationSeconds = validateUserMediaData(
-        record.kind === "end_user_voice" ? "end_user_voice" : "end_user_image",
+        record.kind === "end_user_voice"
+          ? "end_user_voice"
+          : record.kind === "end_user_video"
+            ? "end_user_video"
+            : "end_user_image",
         data,
+        record.mimeType,
       );
       const sha256 = digest(data);
       await this.upsertVariant(record, "original", {
@@ -694,14 +696,22 @@ export function validateJpegUpload(data: Uint8Array) {
 }
 
 export function validateUserMediaData(
-  kind: "end_user_image" | "end_user_voice",
+  kind: "end_user_image" | "end_user_voice" | "end_user_video",
   data: Uint8Array,
+  mimeType?: string,
 ) {
   if (kind === "end_user_image") {
     validateJpegUpload(data);
     return undefined;
   }
   if (!data.length) throw new InvalidMediaUploadError("媒体文件不能为空。");
+  if (kind === "end_user_video") {
+    if (data.length > 12 * 1024 * 1024)
+      throw new InvalidMediaUploadError("视频大小不能超过 12MB。");
+    if (!isLikelyVideo(data, mimeType))
+      throw new InvalidMediaUploadError("视频内容与声明的格式不匹配。");
+    return undefined;
+  }
 
   const durationSeconds = estimateMp3DurationSeconds(data);
   if (durationSeconds < 0.8)
@@ -712,6 +722,46 @@ export function validateUserMediaData(
   if (durationSeconds > 60.1)
     throw new InvalidMediaUploadError("语音时长不能超过 60 秒。");
   return durationSeconds;
+}
+
+function isLikelyVideo(data: Uint8Array, mimeType?: string) {
+  if (mimeType === "video/webm")
+    return (
+      data.length >= 4 &&
+      data[0] === 0x1a &&
+      data[1] === 0x45 &&
+      data[2] === 0xdf &&
+      data[3] === 0xa3
+    );
+  if (mimeType === "video/mpeg")
+    return (
+      data.length >= 4 &&
+      data[0] === 0x00 &&
+      data[1] === 0x00 &&
+      data[2] === 0x01 &&
+      (data[3] === 0xba || data[3] === 0xb3)
+    );
+  if (
+    mimeType === "video/mp4" ||
+    mimeType === "video/quicktime" ||
+    mimeType === "video/mov"
+  )
+    return (
+      data.length >= 12 &&
+      data[4] === 0x66 &&
+      data[5] === 0x74 &&
+      data[6] === 0x79 &&
+      data[7] === 0x70
+    );
+  return false;
+}
+
+function userMediaKind(mimeType: string) {
+  if (mimeType.startsWith("image/")) return "end_user_image" as const;
+  if (mimeType === "audio/mpeg") return "end_user_voice" as const;
+  if (mimeType.startsWith("video/") && userMediaMimeTypes.has(mimeType))
+    return "end_user_video" as const;
+  return null;
 }
 
 function stripDataUrlPrefix(value: string) {

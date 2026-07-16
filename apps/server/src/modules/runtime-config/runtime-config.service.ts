@@ -506,7 +506,7 @@ function normalizeUserConfig(
     version: 2,
     sliceFigure: {
       ...config.sliceFigure,
-      version: 2,
+      version: 3,
       llm: normalizeEndpoint(config.sliceFigure.llm),
     },
     primeFigure: normalizePrimeConfig(config.primeFigure),
@@ -621,7 +621,7 @@ function normalizePrimeConfig(
   };
   return {
     ...config,
-    version: 6,
+    version: 7,
     decisionModel: normalizeTextEndpoint(config.decisionModel),
     outputs: {
       ...config.outputs,
@@ -685,8 +685,9 @@ function patchSliceConfig(
 ): StoredSliceFigureRuntimeConfig {
   return {
     ...current,
-    version: 2,
+    version: 3,
     llm: patch.llm ? patchTextModel(current.llm, patch.llm) : current.llm,
+    replyAutoSegment: patch.replyAutoSegment ?? current.replyAutoSegment,
     context: { ...current.context, ...patch.context },
   };
 }
@@ -707,7 +708,7 @@ function patchPrimeConfig(
   );
   return {
     ...current,
-    version: 6,
+    version: 7,
     decisionModel: patch.decisionModel
       ? patchTextModel(current.decisionModel, patch.decisionModel)
       : current.decisionModel,

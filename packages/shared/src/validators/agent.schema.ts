@@ -72,7 +72,6 @@ export const createSliceFigureSchema = createAgentBaseSchema.extend({
   responseStyle: requiredText("回复风格"),
   systemPrompt: requiredText("系统提示词"),
   memorySummaryPrompt: requiredText("记忆总结提示词"),
-  replyAutoSegment: z.boolean().optional().default(false),
 });
 
 const primeVariableValueSchema = z.union([
@@ -262,7 +261,6 @@ export const createPrimeFigureSchema = createAgentBaseSchema.extend({
     .max(20, "每个本初角色最多可添加 20 个表情。")
     .optional()
     .default([]),
-  voiceRequestStreaming: z.boolean().optional().default(false),
   initialMood: optionalText(),
   initialRelationshipStatus: optionalText(),
 });
@@ -281,13 +279,7 @@ export const updatePrimeFigureSchema = createPrimeFigureSchema
     currentVariables: z.record(z.string(), primeVariableValueSchema),
     currentMood: z.string().trim(),
     currentRelationshipStatus: z.string().trim(),
-    // Preserve the stored preference when older clients omit this field.
-    voiceRequestStreaming: z.boolean().optional(),
   });
-
-export const updatePrimeFigurePreferencesSchema = z.object({
-  voiceRequestStreaming: z.boolean(),
-});
 
 export const addPrimeFigureStickerSchema = z.object({
   upload: imageUploadSchema,

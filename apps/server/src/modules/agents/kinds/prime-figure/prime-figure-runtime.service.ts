@@ -307,7 +307,7 @@ export class PrimeFigureRuntimeService {
     const streamSession = new PrimeDecisionStreamSession({
       ownerUserId: input.ownerUserId,
       conversationId: input.conversationId,
-      voiceRequestStreaming: input.agent.detail.voiceRequestStreaming,
+      voiceRequestStreaming: input.runtimeConfig.outputs.voice.requestStreaming,
       runtimeConfig: input.runtimeConfig,
     });
     const completionBase = {

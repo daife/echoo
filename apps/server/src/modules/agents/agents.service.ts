@@ -2,7 +2,6 @@ import type {
   AddPrimeFigureStickerRequest,
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
-  UpdatePrimeFigurePreferencesRequest,
   UpdatePrimeFigureRequest,
   UpdateSliceFigureRequest,
 } from "@echoo/shared";
@@ -68,19 +67,15 @@ export class AgentsService {
     return handler.update(userId, agentId, input);
   }
 
-  updatePrimeFigurePreferences(
-    userId: string,
-    agentId: string,
-    input: UpdatePrimeFigurePreferencesRequest,
-  ) {
-    return this.repository.updatePrimeFigurePreferences(userId, agentId, input);
-  }
-
   addPrimeFigureSticker(
     userId: string,
     agentId: string,
     input: AddPrimeFigureStickerRequest,
   ) {
     return this.repository.addPrimeFigureSticker(userId, agentId, input);
+  }
+
+  deletePrimeFigureSticker(userId: string, agentId: string, stickerId: string) {
+    return this.repository.deletePrimeFigureSticker(userId, agentId, stickerId);
   }
 }

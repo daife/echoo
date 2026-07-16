@@ -157,7 +157,6 @@ const initialSliceForm: CreateSliceFigureRequest = {
   openingLine: "",
   systemPrompt: DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT,
   memorySummaryPrompt: DEFAULT_SLICE_FIGURE_MEMORY_SUMMARY_PROMPT,
-  replyAutoSegment: false,
 };
 
 function SliceFigureCreateForm({
@@ -313,23 +312,6 @@ export function SliceFigureFormFields({
           existingAvatarUrl={existingAvatarUrl}
           existingCoverUrl={existingCoverUrl}
         />
-        <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.025] p-4">
-          <span>
-            <span className="block text-sm font-medium text-white/78">
-              回复自动分段
-            </span>
-            <span className="mt-1 block text-xs text-white/40">
-              只改变气泡展示，不改变消息和对话轮数。
-            </span>
-          </span>
-          <input
-            checked={Boolean(form.replyAutoSegment)}
-            type="checkbox"
-            onChange={(event) =>
-              onChange("replyAutoSegment", event.target.checked)
-            }
-          />
-        </label>
       </FormSection>
       <FormSection
         title="人格与对话 · 进入上下文"
@@ -452,7 +434,6 @@ export const initialPrimeForm = (): CreatePrimeFigureRequest => ({
   variableDefinitions: [],
   referenceImages: [],
   stickers: [],
-  voiceRequestStreaming: false,
   initialMood: "",
   initialRelationshipStatus: "",
 });

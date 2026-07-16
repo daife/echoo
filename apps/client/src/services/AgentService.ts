@@ -3,7 +3,6 @@ import type {
   AddPrimeFigureStickerRequest,
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
-  UpdatePrimeFigurePreferencesRequest,
   UpdatePrimeFigureRequest,
   UpdateSliceFigureRequest,
 } from "@echoo/shared";
@@ -31,14 +30,12 @@ export class AgentService {
     return this.api.updatePrimeFigure(agentId, input);
   }
 
-  updatePrimeFigurePreferences(
-    agentId: string,
-    input: UpdatePrimeFigurePreferencesRequest,
-  ) {
-    return this.api.updatePrimeFigurePreferences(agentId, input);
-  }
   addPrimeFigureSticker(agentId: string, input: AddPrimeFigureStickerRequest) {
     return this.api.addPrimeFigureSticker(agentId, input);
+  }
+
+  deletePrimeFigureSticker(agentId: string, stickerId: string) {
+    return this.api.deletePrimeFigureSticker(agentId, stickerId);
   }
 
   getPrimeFigureEditSnapshot(agentId: string) {

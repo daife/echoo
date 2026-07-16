@@ -39,6 +39,7 @@ const fishAudioPatchSchema = z.object({
 
 export const sliceFigureRuntimeConfigPatchSchema = z.object({
   llm: textModelPatchSchema.optional(),
+  replyAutoSegment: z.boolean().optional(),
   context: z
     .object({
       minimumRounds: optionalPositive,
@@ -63,6 +64,7 @@ export const primeFigureRuntimeConfigPatchSchema = z.object({
       voice: z
         .object({
           enabled: z.boolean().optional(),
+          requestStreaming: z.boolean().optional(),
           guidanceLevel: z.enum(["basic", "medium", "advanced"]).optional(),
           tts: fishAudioPatchSchema.optional(),
         })

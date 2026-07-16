@@ -50,15 +50,24 @@ export class MessageService {
     return this.api.createMediaMessage(input);
   }
   async uploadMedia(input: {
-    contentType: "image" | "voice";
+    contentType: "image" | "voice" | "video";
     blob: Blob;
     fileName: string;
   }) {
     if (!this.resources) throw new Error("媒体上传服务未配置。");
     const mimeType =
-      input.contentType === "voice" ? "audio/mpeg" : "image/jpeg";
+      input.contentType === "voice"
+        ? "audio/mpeg"
+        : input.contentType === "video"
+          ? normalizeVideoMimeType(input.blob.type)
+          : "image/jpeg";
     const ticket = await this.resources.createUpload({
-      kind: input.contentType === "voice" ? "end_user_voice" : "end_user_image",
+      kind:
+        input.contentType === "voice"
+          ? "end_user_voice"
+          : input.contentType === "video"
+            ? "end_user_video"
+            : "end_user_image",
       fileName: input.fileName,
       mimeType,
       byteSize: input.blob.size,
@@ -95,6 +104,18 @@ export class MessageService {
   ) {
     return this.api.updateAssistantMessage(conversationId, messageId, text);
   }
+}
+
+function normalizeVideoMimeType(value: string) {
+  if (
+    value === "video/mp4" ||
+    value === "video/webm" ||
+    value === "video/quicktime" ||
+    value === "video/mov" ||
+    value === "video/mpeg"
+  )
+    return value;
+  throw new Error("不支持的视频格式。");
 }
 
 function delay(milliseconds: number) {

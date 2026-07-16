@@ -57,6 +57,14 @@ export type CreateUserMediaMessageInput =
   | {
       ownerUserId: string;
       conversationId: string;
+      contentType: "video";
+      upload?: MessageMediaUpload;
+      resourceId?: string;
+      clientMessageId?: string | null;
+    }
+  | {
+      ownerUserId: string;
+      conversationId: string;
       contentType: "sticker";
       stickerId: string;
       clientMessageId?: string | null;
@@ -335,7 +343,11 @@ export class MessagingService {
       if (input.resourceId) {
         resource = await this.resources.findById(input.resourceId);
         const expectedKind =
-          input.contentType === "image" ? "end_user_image" : "end_user_voice";
+          input.contentType === "image"
+            ? "end_user_image"
+            : input.contentType === "video"
+              ? "end_user_video"
+              : "end_user_voice";
         if (
           !resource ||
           resource.ownerUserId !== input.ownerUserId ||
@@ -349,7 +361,11 @@ export class MessagingService {
       } else if (input.upload) {
         resource = await this.resources.saveUserMedia(
           input.ownerUserId,
-          input.contentType === "image" ? "end_user_image" : "end_user_voice",
+          input.contentType === "image"
+            ? "end_user_image"
+            : input.contentType === "video"
+              ? "end_user_video"
+              : "end_user_voice",
           input.upload,
         );
         createdResource = true;
@@ -380,11 +396,14 @@ export class MessagingService {
           fileName: input.upload?.fileName ?? resource.originalFileName,
           resourceId: resource.id,
           media:
-            input.contentType === "image"
+            input.contentType === "image" || input.contentType === "video"
               ? createVisualMediaReference({
                   resourceId: resource.id,
-                  kind: "image",
-                  variants: ["thumb", "display", "original"],
+                  kind: input.contentType,
+                  variants:
+                    input.contentType === "image"
+                      ? ["thumb", "display", "original"]
+                      : ["original"],
                 })
               : {
                   resourceId: resource.id,
@@ -403,7 +422,18 @@ export class MessagingService {
                 },
               },
             }
-          : {}),
+          : input.contentType === "video"
+            ? {
+                metadata: {
+                  kind: "prime_figure",
+                  primeContent: {
+                    type: "video",
+                    resourceId: resource.id,
+                    resourceUrl: resource.publicPath,
+                  } satisfies PrimeMessageContent,
+                },
+              }
+            : {}),
         createdAt: now,
         updatedAt: now,
       });
@@ -419,7 +449,12 @@ export class MessagingService {
     await this.conversations.updatePreview({
       ownerUserId: input.ownerUserId,
       conversationId: input.conversationId,
-      preview: input.contentType === "image" ? "[图片]" : "[语音]",
+      preview:
+        input.contentType === "image"
+          ? "[图片]"
+          : input.contentType === "video"
+            ? "[视频]"
+            : "[语音]",
       updatedAt: now,
     });
     this.appPush.pushToUser(input.ownerUserId, {

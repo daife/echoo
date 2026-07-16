@@ -9,13 +9,14 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
   return {
     version: 2,
     sliceFigure: {
-      version: 2,
+      version: 3,
       llm: {
         ...sharedEndpoint,
         model: "openai/gpt-4o-mini",
         temperature: 0.8,
         maxTokens: 1200,
       },
+      replyAutoSegment: false,
       context: {
         minimumRounds: 100,
         maximumRounds: 199,
@@ -23,7 +24,7 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
       },
     },
     primeFigure: {
-      version: 6,
+      version: 7,
       decisionModel: {
         ...sharedEndpoint,
         model: "google/gemini-2.5-flash-lite",
@@ -42,6 +43,7 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
         },
         voice: {
           enabled: true,
+          requestStreaming: false,
           guidanceLevel: "medium",
           tts: {
             source: "platform",

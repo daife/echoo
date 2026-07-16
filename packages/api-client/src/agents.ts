@@ -7,7 +7,6 @@ import type {
   CreateSliceFigureRequest,
   PrimeFigureEditSnapshot,
   UpdatePrimeFigureRequest,
-  UpdatePrimeFigurePreferencesRequest,
   UpdateSliceFigureRequest,
 } from "@echoo/shared";
 import type { ApiClient } from "./client";
@@ -65,20 +64,6 @@ export class AgentsApi {
       }));
   }
 
-  updatePrimeFigurePreferences(
-    agentId: string,
-    body: UpdatePrimeFigurePreferencesRequest,
-  ): Promise<CreateAgentResponse> {
-    return this.client
-      .patch<CreateAgentResponse>(
-        `/agents/${agentId}/prime-figure/preferences`,
-        body,
-      )
-      .then((response) => ({
-        agent: normalizeAgentResources(this.client, response.agent),
-      }));
-  }
-
   addPrimeFigureSticker(
     agentId: string,
     body: AddPrimeFigureStickerRequest,
@@ -87,6 +72,19 @@ export class AgentsApi {
       .post<CreateAgentResponse>(
         `/agents/${agentId}/prime-figure/stickers`,
         body,
+      )
+      .then((response) => ({
+        agent: normalizeAgentResources(this.client, response.agent),
+      }));
+  }
+
+  deletePrimeFigureSticker(
+    agentId: string,
+    stickerId: string,
+  ): Promise<CreateAgentResponse> {
+    return this.client
+      .delete<CreateAgentResponse>(
+        `/agents/${agentId}/prime-figure/stickers/${stickerId}`,
       )
       .then((response) => ({
         agent: normalizeAgentResources(this.client, response.agent),
@@ -144,7 +142,6 @@ function normalizeAgentResources(client: ApiClient, agent: Agent): Agent {
         resourcePath:
           client.resolveServerPath(item.resourcePath) ?? item.resourcePath,
       })),
-      voiceRequestStreaming: Boolean(agent.detail.voiceRequestStreaming),
     },
   } as Agent;
 }

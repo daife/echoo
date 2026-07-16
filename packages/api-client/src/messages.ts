@@ -72,14 +72,21 @@ export class MessageApi {
                 : { upload: input.upload }),
               durationSeconds: input.durationSeconds,
             }
-          : input.contentType === "sticker"
-            ? { contentType: input.contentType, stickerId: input.stickerId }
-            : {
+          : input.contentType === "video"
+            ? {
                 contentType: input.contentType,
-                amount: input.amount,
-                currency: input.currency,
-                note: input.note ?? "",
-              };
+                ...(input.resourceId
+                  ? { resourceId: input.resourceId }
+                  : { upload: input.upload }),
+              }
+            : input.contentType === "sticker"
+              ? { contentType: input.contentType, stickerId: input.stickerId }
+              : {
+                  contentType: input.contentType,
+                  amount: input.amount,
+                  currency: input.currency,
+                  note: input.note ?? "",
+                };
     return this.client.post<{ message: Message }>(
       `/conversations/${input.conversationId}/messages`,
       {

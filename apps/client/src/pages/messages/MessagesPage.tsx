@@ -25,7 +25,6 @@ import {
   type SliceFigureAgent,
   type SliceFigureRuntimeConfigPatch,
   type SliceFigureRuntimeConfigView,
-  type UpdatePrimeFigurePreferencesRequest,
   type UpdatePrimeFigureRequest,
   type UpdateSliceFigureRequest,
 } from "@echoo/shared";
@@ -78,13 +77,13 @@ export type UpdateAgentHandlers = {
     agentId: string,
     input: UpdatePrimeFigureRequest,
   ) => Promise<Agent>;
-  updatePrimeFigurePreferences: (
-    agentId: string,
-    input: UpdatePrimeFigurePreferencesRequest,
-  ) => Promise<Agent>;
   addPrimeFigureSticker: (
     agentId: string,
     input: AddPrimeFigureStickerRequest,
+  ) => Promise<Agent>;
+  deletePrimeFigureSticker: (
+    agentId: string,
+    stickerId: string,
   ) => Promise<Agent>;
   getPrimeFigureEditSnapshot: (
     agentId: string,
@@ -116,7 +115,8 @@ export function MessagesPage({
   const [editError, setEditError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isRuntimeConfigOpen, setIsRuntimeConfigOpen] = useState(false);
-  const [isUpdatingPreference, setIsUpdatingPreference] = useState(false);
+  const [runtimeConfig, setRuntimeConfig] =
+    useState<ConversationRuntimeConfigResponse | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [messageBeingEdited, setMessageBeingEdited] = useState<{
@@ -144,6 +144,7 @@ export function MessagesPage({
     canRollback,
     sendMessage,
     sendImage,
+    sendVideo,
     sendVoice,
     sendSticker,
     sendTransfer,
@@ -189,6 +190,26 @@ export function MessagesPage({
       : "";
   const conversationId = agent?.conversationId;
 
+  useEffect(() => {
+    if (!conversationId || agent?.type === "prime-world") {
+      setRuntimeConfig(null);
+      return;
+    }
+    let cancelled = false;
+    setRuntimeConfig(null);
+    void updateHandlers
+      .getConversationRuntimeConfig(conversationId)
+      .then((response) => {
+        if (!cancelled) setRuntimeConfig(response);
+      })
+      .catch(() => {
+        if (!cancelled) setRuntimeConfig(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [agent?.type, conversationId, updateHandlers]);
+
   const visibleMessages = useMemo(() => {
     if (!agent) return [];
     const visible = messages.filter(isVisibleConversationMessage);
@@ -197,7 +218,12 @@ export function MessagesPage({
         toBubbleMessages(
           message,
           canRollback,
-          agent.type === "slice-figure" && agent.detail.replyAutoSegment,
+          agent.type === "slice-figure" &&
+            runtimeConfig?.conversationType === "slice-figure" &&
+            Boolean(
+              (runtimeConfig.config as SliceFigureRuntimeConfigView | undefined)
+                ?.replyAutoSegment,
+            ),
           agent.type === "slice-figure",
           agent.type,
         ),
@@ -214,7 +240,7 @@ export function MessagesPage({
       ];
     }
     return [];
-  }, [agent, canRollback, messages]);
+  }, [agent, canRollback, messages, runtimeConfig]);
   const messageVirtualizer = useVirtualizer({
     count: visibleMessages.length,
     getScrollElement: () => mainRef.current,
@@ -463,64 +489,6 @@ export function MessagesPage({
                 <Copy size={16} />
                 {isExporting ? "正在导出…" : "导出角色"}
               </button>
-              {agent.type === "slice-figure" ? (
-                <label className="mt-1 flex cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 text-sm text-white/75 transition hover:bg-white/[0.06]">
-                  <span>回复自动分段</span>
-                  <input
-                    type="checkbox"
-                    checked={agent.detail.replyAutoSegment}
-                    disabled={isUpdatingPreference}
-                    onChange={async (event) => {
-                      const checked = event.target.checked;
-                      setIsUpdatingPreference(true);
-                      setEditError(null);
-                      try {
-                        await updateHandlers["slice-figure"](agent.id, {
-                          ...agentToUpdateForm(agent),
-                          replyAutoSegment: checked,
-                        });
-                      } catch (caught) {
-                        setEditError(
-                          caught instanceof Error
-                            ? caught.message
-                            : "设置保存失败。",
-                        );
-                      } finally {
-                        setIsUpdatingPreference(false);
-                      }
-                    }}
-                  />
-                </label>
-              ) : null}
-              {agent.type === "prime-figure" ? (
-                <label className="mt-1 flex cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 text-sm text-white/75 transition hover:bg-white/[0.06]">
-                  <span>流式语音请求</span>
-                  <input
-                    type="checkbox"
-                    checked={agent.detail.voiceRequestStreaming}
-                    disabled={isUpdatingPreference}
-                    onChange={async (event) => {
-                      const checked = event.target.checked;
-                      setIsUpdatingPreference(true);
-                      setEditError(null);
-                      try {
-                        await updateHandlers.updatePrimeFigurePreferences(
-                          agent.id,
-                          { voiceRequestStreaming: checked },
-                        );
-                      } catch (caught) {
-                        setEditError(
-                          caught instanceof Error
-                            ? caught.message
-                            : "设置保存失败。",
-                        );
-                      } finally {
-                        setIsUpdatingPreference(false);
-                      }
-                    }}
-                  />
-                </label>
-              ) : null}
               <button
                 className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-red-200/75 transition hover:bg-red-400/10 hover:text-red-100 disabled:opacity-40"
                 disabled={isDeletingConversation}
@@ -651,6 +619,7 @@ export function MessagesPage({
         onDraftChange={setDraft}
         onSendText={sendMessage}
         onSendImage={sendImage}
+        onSendVideo={sendVideo}
         onSendVoice={sendVoice}
         stickers={
           agent.type === "prime-figure" ? (agent.detail.stickers ?? []) : []
@@ -664,6 +633,11 @@ export function MessagesPage({
             description,
           });
         }}
+        onDeleteSticker={(stickerId) =>
+          updateHandlers
+            .deletePrimeFigureSticker(agent.id, stickerId)
+            .then(() => undefined)
+        }
       />
       {isEditOpen && agent.type === "slice-figure" ? (
         <EditSliceFigureDialog
@@ -732,6 +706,7 @@ export function MessagesPage({
               patch,
             )
           }
+          onChange={setRuntimeConfig}
           onClose={() => setIsRuntimeConfigOpen(false)}
         />
       ) : null}
@@ -743,6 +718,7 @@ function RuntimeConfigDialog({
   conversationId,
   load,
   update,
+  onChange,
   onClose,
 }: {
   conversationId: string;
@@ -750,6 +726,7 @@ function RuntimeConfigDialog({
   update: (
     patch: ConversationRuntimeConfigPatchRequest,
   ) => Promise<ConversationRuntimeConfigResponse>;
+  onChange: (response: ConversationRuntimeConfigResponse) => void;
   onClose: () => void;
 }) {
   const [response, setResponse] =
@@ -763,7 +740,10 @@ function RuntimeConfigDialog({
     setError(null);
     void load()
       .then((value) => {
-        if (!cancelled) setResponse(value);
+        if (!cancelled) {
+          setResponse(value);
+          onChange(value);
+        }
       })
       .catch((caught) => {
         if (!cancelled)
@@ -782,6 +762,7 @@ function RuntimeConfigDialog({
     try {
       const next = await update({ mode });
       setResponse(next);
+      onChange(next);
       const base =
         mode === "global"
           ? "该会话已实时使用用户全局配置。"
@@ -802,6 +783,7 @@ function RuntimeConfigDialog({
     try {
       const next = await update({ mode: "custom", config });
       setResponse(next);
+      onChange(next);
       setNotice(withConfigWarnings("会话独立配置已保存。", next.warnings));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "配置保存失败。");
@@ -1168,7 +1150,6 @@ export function primeSnapshotToForm(
       resourceId: item.resourceId,
       description: item.description,
     })),
-    voiceRequestStreaming: agent.detail.voiceRequestStreaming,
     initialMood: state.mood,
     initialRelationshipStatus: state.relationshipStatus,
   };
@@ -1214,7 +1195,6 @@ function agentToUpdateForm(agent: SliceFigureAgent): UpdateSliceFigureRequest {
     responseStyle: agent.detail.responseStyle,
     systemPrompt: agent.detail.systemPrompt,
     memorySummaryPrompt: agent.detail.memorySummaryPrompt,
-    replyAutoSegment: agent.detail.replyAutoSegment,
   };
 }
 

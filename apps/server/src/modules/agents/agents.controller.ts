@@ -1,13 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { ZodError } from "zod";
-import {
-  addPrimeFigureStickerSchema,
-  updatePrimeFigurePreferencesSchema,
-} from "@echoo/shared";
+import { addPrimeFigureStickerSchema } from "@echoo/shared";
 import type {
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
-  UpdatePrimeFigurePreferencesRequest,
   UpdatePrimeFigureRequest,
   UpdateSliceFigureRequest,
 } from "@echoo/shared";
@@ -116,36 +112,6 @@ export async function registerAgentRoutes(app: FastifyInstance) {
     },
   );
 
-  app.patch<{
-    Params: { agentId: string };
-    Body: UpdatePrimeFigurePreferencesRequest;
-  }>("/:agentId/prime-figure/preferences", async (request, reply) => {
-    const userId = await request.requireUserId(reply);
-    if (!userId) return;
-
-    try {
-      const input = updatePrimeFigurePreferencesSchema.parse(request.body);
-      const agent = await agents.updatePrimeFigurePreferences(
-        userId,
-        request.params.agentId,
-        input,
-      );
-      if (!agent)
-        return reply
-          .code(404)
-          .send({ error: "NOT_FOUND", message: "未找到本初角色。" });
-      return { agent };
-    } catch (error) {
-      if (error instanceof ZodError) {
-        return reply.code(400).send({
-          error: "VALIDATION_ERROR",
-          message: error.issues[0]?.message ?? "角色偏好数据无效。",
-        });
-      }
-      throw error;
-    }
-  });
-
   app.post<{ Params: { agentId: string }; Body: unknown }>(
     "/:agentId/prime-figure/stickers",
     { bodyLimit: 8 * 1024 * 1024 },
@@ -182,6 +148,25 @@ export async function registerAgentRoutes(app: FastifyInstance) {
           });
         throw error;
       }
+    },
+  );
+
+  app.delete<{ Params: { agentId: string; stickerId: string } }>(
+    "/:agentId/prime-figure/stickers/:stickerId",
+    async (request, reply) => {
+      const userId = await request.requireUserId(reply);
+      if (!userId) return;
+      const agent = await agents.deletePrimeFigureSticker(
+        userId,
+        request.params.agentId,
+        request.params.stickerId,
+      );
+      if (!agent)
+        return reply.code(404).send({
+          error: "STICKER_NOT_FOUND",
+          message: "未找到该表情。",
+        });
+      return { agent };
     },
   );
 

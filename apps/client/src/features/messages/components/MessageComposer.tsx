@@ -8,6 +8,7 @@ import {
   Plus,
   Smiley,
   UploadSimple,
+  VideoCamera,
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
@@ -23,6 +24,14 @@ const IMAGE_MIME_TYPES = new Set([
   "image/webp",
   "image/gif",
 ]);
+const VIDEO_MIME_TYPES = new Set([
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+  "video/mov",
+  "video/mpeg",
+]);
+const MAX_VIDEO_UPLOAD_BYTES = 12 * 1024 * 1024;
 export function MessageComposer({
   title,
   isPrimeFigure,
@@ -31,11 +40,13 @@ export function MessageComposer({
   onDraftChange,
   onSendText,
   onSendImage,
+  onSendVideo,
   onSendVoice,
   stickers,
   onSendSticker,
   onSendTransfer,
   onAddSticker,
+  onDeleteSticker,
 }: {
   title: string;
   isPrimeFigure: boolean;
@@ -44,15 +55,18 @@ export function MessageComposer({
   onDraftChange: (value: string) => void;
   onSendText: () => Promise<void> | void;
   onSendImage: (file: File) => Promise<void>;
+  onSendVideo: (file: File) => Promise<void>;
   onSendVoice: (blob: Blob, durationSeconds: number) => Promise<void>;
   stickers: PrimeFigureSticker[];
   onSendSticker: (stickerId: string) => Promise<void> | void;
   onSendTransfer: (amount: number, note?: string) => Promise<void> | void;
   onAddSticker: (file: File, description: string) => Promise<void>;
+  onDeleteSticker: (stickerId: string) => Promise<void>;
 }) {
   const [mode, setMode] = useState<"text" | "voice">("text");
   const [panel, setPanel] = useState<"more" | "stickers" | null>(null);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isCompressingImage, setIsCompressingImage] = useState(false);
@@ -63,8 +77,12 @@ export function MessageComposer({
   const [pendingStickerFile, setPendingStickerFile] = useState<File | null>(
     null,
   );
+  const [deletingStickerId, setDeletingStickerId] = useState<string | null>(
+    null,
+  );
   const inputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const videoInputRef = useRef<HTMLInputElement | null>(null);
   const stickerFileInputRef = useRef<HTMLInputElement | null>(null);
   const pushToTalk = usePushToTalk({
     disabled: isSending,
@@ -99,8 +117,35 @@ export function MessageComposer({
 
   const clearImage = () => {
     setSelectedImage(null);
+    setSelectedVideo(null);
     setPreviewUrl(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (videoInputRef.current) videoInputRef.current.value = "";
+  };
+
+  const selectVideo = (file?: File) => {
+    if (!file) return;
+    const mimeType = resolveVideoMimeType(file);
+    if (!mimeType) {
+      setNotice("请选择 MP4、WebM、MOV 或 MPEG 视频。");
+      return;
+    }
+    if (file.size > MAX_VIDEO_UPLOAD_BYTES) {
+      setNotice("视频大小不能超过 12MB。");
+      return;
+    }
+    const normalized =
+      file.type === mimeType
+        ? file
+        : new File([file], file.name, {
+            type: mimeType,
+            lastModified: file.lastModified,
+          });
+    setNotice(null);
+    setSelectedImage(null);
+    setSelectedVideo(normalized);
+    setPreviewUrl(URL.createObjectURL(normalized));
+    setPanel(null);
   };
 
   const selectImage = async (file?: File) => {
@@ -113,6 +158,7 @@ export function MessageComposer({
     setIsCompressingImage(true);
     try {
       const compressed = await compressImageToJpeg(file);
+      setSelectedVideo(null);
       setSelectedImage(compressed);
       setPreviewUrl(URL.createObjectURL(compressed));
       setPanel(null);
@@ -149,25 +195,35 @@ export function MessageComposer({
   return (
     <footer className="relative px-4 pb-4 pt-2 md:px-6 md:pb-6">
       <div className="pointer-events-none absolute inset-x-0 bottom-full h-16 bg-gradient-to-t from-[#0d0d10] to-transparent" />
-      {selectedImage && previewUrl ? (
+      {(selectedImage || selectedVideo) && previewUrl ? (
         <div className="mb-2 flex items-center gap-3 rounded-xl border border-white/10 bg-[#151519] p-3 shadow-[0_14px_38px_rgba(0,0,0,0.24)]">
-          <img
-            className="h-16 w-16 rounded-lg object-cover"
-            src={previewUrl}
-            alt="待发送图片预览"
-          />
+          {selectedVideo ? (
+            <video
+              className="h-16 w-16 rounded-lg bg-black object-cover"
+              src={previewUrl}
+              muted
+              playsInline
+              preload="metadata"
+            />
+          ) : (
+            <img
+              className="h-16 w-16 rounded-lg object-cover"
+              src={previewUrl}
+              alt="待发送图片预览"
+            />
+          )}
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm text-white/82">
-              {selectedImage.name}
+              {(selectedImage ?? selectedVideo)?.name}
             </p>
             <p className="mt-1 text-xs tabular-nums text-white/38">
-              {formatFileSize(selectedImage.size)}
+              {formatFileSize((selectedImage ?? selectedVideo)!.size)}
             </p>
           </div>
           <button
             className="grid h-9 w-9 place-items-center rounded-lg text-white/38 transition hover:bg-white/[0.06] hover:text-white"
             type="button"
-            aria-label="取消发送图片"
+            aria-label={selectedVideo ? "取消发送视频" : "取消发送图片"}
             onClick={clearImage}
           >
             <X size={16} />
@@ -177,12 +233,14 @@ export function MessageComposer({
             type="button"
             disabled={isSending}
             onClick={() => {
-              const file = selectedImage;
+              const file = selectedImage ?? selectedVideo;
               clearImage();
-              void onSendImage(file);
+              if (!file) return;
+              if (selectedVideo) void onSendVideo(file);
+              else void onSendImage(file);
             }}
           >
-            发送图片
+            {selectedVideo ? "发送视频" : "发送图片"}
           </button>
         </div>
       ) : null}
@@ -308,7 +366,7 @@ export function MessageComposer({
       </form>
       {panel === "more" && isPrimeFigure ? (
         <div className="mt-2 rounded-xl border border-white/10 bg-[#151519] p-3 shadow-[0_18px_44px_rgba(0,0,0,0.3)]">
-          <div className="grid grid-cols-3 gap-2 sm:w-80">
+          <div className="grid grid-cols-4 gap-2 sm:w-[26rem]">
             <button
               className="flex w-24 flex-col items-center gap-2 rounded-xl p-2 text-xs text-white/55 transition hover:bg-white/[0.055] hover:text-white"
               type="button"
@@ -319,6 +377,16 @@ export function MessageComposer({
                 <ImageSquare size={23} weight="duotone" />
               </span>
               {isCompressingImage ? "压缩中…" : "图片"}
+            </button>
+            <button
+              className="flex flex-col items-center gap-2 rounded-xl p-2 text-xs text-white/55 transition hover:bg-white/[0.055] hover:text-white"
+              type="button"
+              onClick={() => videoInputRef.current?.click()}
+            >
+              <span className="grid h-12 w-12 place-items-center rounded-xl bg-white/[0.065] text-white/74">
+                <VideoCamera size={23} weight="duotone" />
+              </span>
+              视频
             </button>
             <button
               className="flex flex-col items-center gap-2 rounded-xl p-2 text-xs text-white/55 transition hover:bg-white/[0.055] hover:text-white"
@@ -359,29 +427,74 @@ export function MessageComposer({
               });
             }}
           />
+          <input
+            ref={videoInputRef}
+            className="sr-only"
+            type="file"
+            accept="video/mp4,video/webm,video/quicktime,video/mov,video/mpeg,.mov"
+            onChange={(event) => {
+              selectVideo(event.currentTarget.files?.[0]);
+              event.currentTarget.value = "";
+            }}
+          />
         </div>
       ) : null}
       {panel === "stickers" && isPrimeFigure ? (
         <div className="mt-2 rounded-xl border border-white/10 bg-[#151519] p-3 shadow-[0_18px_44px_rgba(0,0,0,0.3)]">
           <div className="grid max-h-64 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-6">
             {stickers.map((sticker) => (
-              <button
+              <div
                 key={sticker.resourceId}
-                className="aspect-square overflow-hidden rounded-xl bg-white/[0.04] p-1 transition hover:bg-white/[0.1]"
-                type="button"
-                title={sticker.description}
-                onClick={() => {
-                  setPanel(null);
-                  void onSendSticker(sticker.resourceId);
-                }}
+                className="group relative aspect-square overflow-hidden rounded-xl bg-white/[0.04] p-1 transition hover:bg-white/[0.1]"
               >
-                <MediaAsset
-                  className="h-full w-full object-contain"
-                  mediaUrl={sticker.resourcePath}
-                  variant="thumb"
-                  alt={sticker.description}
-                />
-              </button>
+                <button
+                  className="h-full w-full"
+                  type="button"
+                  title={sticker.description}
+                  disabled={deletingStickerId === sticker.resourceId}
+                  onClick={() => {
+                    setPanel(null);
+                    void onSendSticker(sticker.resourceId);
+                  }}
+                >
+                  <MediaAsset
+                    className="h-full w-full object-contain"
+                    mediaUrl={sticker.resourcePath}
+                    variant="thumb"
+                    alt={sticker.description}
+                  />
+                </button>
+                <button
+                  className="absolute right-1 top-1 grid h-7 w-7 place-items-center rounded-lg bg-black/70 text-white/65 opacity-100 transition hover:bg-red-500/80 hover:text-white sm:opacity-0 sm:group-hover:opacity-100"
+                  type="button"
+                  aria-label={`删除表情：${sticker.description}`}
+                  disabled={deletingStickerId !== null}
+                  onClick={async (event) => {
+                    event.stopPropagation();
+                    if (
+                      !window.confirm(
+                        "删除后服务端不会保留该表情，确定继续吗？",
+                      )
+                    )
+                      return;
+                    setDeletingStickerId(sticker.resourceId);
+                    setNotice(null);
+                    try {
+                      await onDeleteSticker(sticker.resourceId);
+                    } catch (caught) {
+                      setNotice(
+                        caught instanceof Error
+                          ? caught.message
+                          : "表情删除失败。",
+                      );
+                    } finally {
+                      setDeletingStickerId(null);
+                    }
+                  }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
             ))}
             <label
               className={`grid aspect-square place-items-center rounded-xl border border-dashed border-white/15 text-white/45 transition ${stickers.length >= 20 ? "opacity-35" : "cursor-pointer hover:border-white/30 hover:text-white"}`}
@@ -549,6 +662,16 @@ function formatDuration(seconds: number) {
   return `${Math.floor(totalSeconds / 60)
     .toString()
     .padStart(2, "0")}:${(totalSeconds % 60).toString().padStart(2, "0")}`;
+}
+
+function resolveVideoMimeType(file: File) {
+  if (VIDEO_MIME_TYPES.has(file.type)) return file.type;
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  if (extension === "mp4" || extension === "m4v") return "video/mp4";
+  if (extension === "webm") return "video/webm";
+  if (extension === "mov") return "video/quicktime";
+  if (extension === "mpeg" || extension === "mpg") return "video/mpeg";
+  return null;
 }
 
 function formatFileSize(bytes: number) {

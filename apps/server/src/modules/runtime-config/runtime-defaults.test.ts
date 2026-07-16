@@ -25,9 +25,13 @@ test("administrator defaults are forced to platform sources without secrets", ()
 
   const result = forcePlatformDefaults(input);
   assert.equal(result.sliceFigure.llm.source, "platform");
+  assert.equal(result.sliceFigure.version, 3);
+  assert.equal(result.sliceFigure.replyAutoSegment, false);
   assert.equal(result.sliceFigure.llm.apiKey, "");
   assert.equal(result.sliceFigure.llm.baseUrl, "https://openrouter.ai/api/v1");
   assert.equal(result.primeFigure.outputs.voice.tts.source, "platform");
+  assert.equal(result.primeFigure.version, 7);
+  assert.equal(result.primeFigure.outputs.voice.requestStreaming, false);
   assert.equal(result.primeFigure.outputs.voice.tts.apiKey, "");
   assert.deepEqual(result.primeFigure.outputs.image.parameters, {
     resolution: "1K",

@@ -10,9 +10,16 @@ export class ResourcesApi {
   constructor(private readonly client: ApiClient) {}
 
   createUpload(input: {
-    kind: "end_user_image" | "end_user_voice";
+    kind: "end_user_image" | "end_user_voice" | "end_user_video";
     fileName: string;
-    mimeType: "image/jpeg" | "audio/mpeg";
+    mimeType:
+      | "image/jpeg"
+      | "audio/mpeg"
+      | "video/mp4"
+      | "video/webm"
+      | "video/quicktime"
+      | "video/mov"
+      | "video/mpeg";
     byteSize: number;
   }) {
     return this.client.post<MediaUploadTicket>("/resources/uploads", input);

@@ -118,6 +118,7 @@ export function useConversationMessages({
     canRollback,
     sendMessage: outgoing.sendMessage,
     sendImage: outgoing.sendImage,
+    sendVideo: outgoing.sendVideo,
     sendVoice: outgoing.sendVoice,
     sendSticker: outgoing.sendSticker,
     sendTransfer: outgoing.sendTransfer,

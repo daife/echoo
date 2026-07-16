@@ -131,20 +131,20 @@ IndexedDB 在这里不是媒体主体存储，也不保存角色、会话或消�
 
 主要表如下：
 
-| 表                             | 作用                                                      | 关键关系                                 |
-| ------------------------------ | --------------------------------------------------------- | ---------------------------------------- |
-| `users`                        | 用户、邮箱、密码哈希、邮箱验证时间                        | 邮箱唯一                                 |
-| `auth_tokens`                  | 邮箱验证和密码重置 token 的 SHA-256 哈希                  | 用户删除时级联删除                       |
-| `user_runtime_configs`         | 用户级 AI/运行配置，包括服务端使用的 API key              | 每用户一条                               |
-| `agents`                       | 角色定义 JSON、运行状态 JSON、`next_run_at`               | 属于用户                                 |
-| `conversations`                | 会话摘要、未读数、运行状态、关联角色                      | 一个角色唯一关联一个会话                 |
-| `conversation_runtime_configs` | 会话级运行配置覆盖                                        | 会话删除时级联删除                       |
-| `messages`                     | 全局递增 `seq`、正文 JSON、运行元数据、状态、全文检索列   | `client_message_id` 对用户唯一，用于幂等 |
-| `resources`                    | 对象元数据、provider、storage key、状态、hash 和时长     | 不保存二进制本体                         |
-| `resource_variants`            | original/thumb/display 的对象 key 与元数据                | 资源删除时级联删除                       |
-| `message_resources`            | 消息引用哪些资源                                          | 防止仍被消息引用的资源被删除             |
-| `agent_resources`              | 角色头像、封面、参考图、表情引用                          | 防止仍被角色引用的资源被删除             |
-| `schema_migrations`            | 已执行的数据库迁移                                        | 逐条记录 migration ID                    |
+| 表                             | 作用                                                    | 关键关系                                 |
+| ------------------------------ | ------------------------------------------------------- | ---------------------------------------- |
+| `users`                        | 用户、邮箱、密码哈希、邮箱验证时间                      | 邮箱唯一                                 |
+| `auth_tokens`                  | 邮箱验证和密码重置 token 的 SHA-256 哈希                | 用户删除时级联删除                       |
+| `user_runtime_configs`         | 用户级 AI/运行配置，包括服务端使用的 API key            | 每用户一条                               |
+| `agents`                       | 角色定义 JSON、运行状态 JSON、`next_run_at`             | 属于用户                                 |
+| `conversations`                | 会话摘要、未读数、运行状态、关联角色                    | 一个角色唯一关联一个会话                 |
+| `conversation_runtime_configs` | 会话级运行配置覆盖                                      | 会话删除时级联删除                       |
+| `messages`                     | 全局递增 `seq`、正文 JSON、运行元数据、状态、全文检索列 | `client_message_id` 对用户唯一，用于幂等 |
+| `resources`                    | 对象元数据、provider、storage key、状态、hash 和时长    | 不保存二进制本体                         |
+| `resource_variants`            | original/thumb/display 的对象 key 与元数据              | 资源删除时级联删除                       |
+| `message_resources`            | 消息引用哪些资源                                        | 防止仍被消息引用的资源被删除             |
+| `agent_resources`              | 角色头像、封面、参考图、表情引用                        | 防止仍被角色引用的资源被删除             |
+| `schema_migrations`            | 已执行的数据库迁移                                      | 逐条记录 migration ID                    |
 
 `agents.definition` 保存相对稳定的角色定义；`agents.runtime_state` 保存本初角色的变量、记忆、情绪、关系、沉默与唤醒计划。`conversations.runtime_state` 保存会话级运行进度，例如本初角色已处理到哪条用户消息。消息的 `run_metadata` 保存模型、媒体语义、转账状态、记忆摘要等扩展数据。
 
@@ -298,7 +298,7 @@ sequenceDiagram
 
 用户媒体采用独立上传流程：
 
-1. 客户端在本地生成图片 JPEG 或语音 MP3 Blob。
+1. 客户端准备图片 JPEG、语音 MP3 或原始视频 Blob。
 2. `POST /api/resources/uploads`：服务端鉴权、限流，在 MySQL 创建 `pending` resource，并返回 PUT ticket。
 3. 上传：
    - local provider：PUT 到 Echoo 服务端 `/api/resources/<id>/content`；
@@ -309,7 +309,7 @@ sequenceDiagram
 7. 资源 ready 后，客户端再提交消息，其中只带 `resourceId` 和幂等 `clientMessageId`。
 8. 服务端复核 owner、kind 和 ready 状态，写 `messages` 与 `message_resources`，更新预览并触发本初角色运行。
 
-图片/语音消息当前只允许本初角色会话。角色表情不重新上传，服务端会验证 `stickerId` 确实属于当前角色。
+图片、视频和语音消息当前只允许本初角色会话。视频支持 MP4、WebM、MOV/QuickTime 和 MPEG，原文件上限 12 MiB，不转码。角色表情不重新上传，服务端会验证 `stickerId` 确实属于当前角色；删除表情会移除服务端资源，但历史消息保留描述和失效资源标识，客户端可继续使用已有缓存。
 
 ### 5.5 AI 生成图片或语音
 
@@ -406,7 +406,7 @@ README 描述了 Telegram/微信/QQ 与角色会话绑定的目标流程，但�
 
 7. **下载默认经过服务端，形成双跳和带宽瓶颈。** 默认的 access 请求之后还要由 Echoo 服务端代理 MinIO stream。开启直下可降低服务端带宽，但要求 MinIO endpoint 对浏览器可达、使用 HTTPS、CORS 正确，并避免向客户端返回 Docker 内网域名。
 
-8. **媒体处理仍会整对象进入服务端内存。** 即使终端用户直传 MinIO，worker 随后仍用 `get()` 把完整对象读成 Buffer，再用 sharp/MP3 逻辑处理。当前 5/12 MiB 上限尚可，但扩展到视频或大文件前需要流式处理或独立媒体 worker。
+8. **媒体处理仍会整对象进入服务端内存。** 即使终端用户直传 MinIO，worker 随后仍用 `get()` 把完整对象读成 Buffer，再做图片、MP3 或视频签名校验。当前图片 5 MiB、语音/视频 12 MiB 上限尚可，但扩展到更大视频或文件前需要流式处理或独立媒体 worker。
 
 9. **资源与业务引用不是同一事务。** 创建角色时先创建对象和资源记录，再写角色事务，最后写 `agent_resources`；创建消息时 messages、`message_resources` 和 Redis 缓存也分步执行。尤其是角色事务已经提交、但 `replaceAgentReferences` 失败时，外层补偿会删除新资源，却不会回滚已经提交的角色，可能留下指向失效资源的角色。对象删除本身也多处使用 best-effort/`Promise.allSettled`：对象删除失败后数据库记录仍可能被移除，形成无法再由引用扫描发现的 MinIO 孤儿对象。这里需要事务 outbox/资源操作日志和可重复补偿。
 

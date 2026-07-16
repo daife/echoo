@@ -23,8 +23,9 @@ export interface StoredFishAudioConfig {
 }
 
 export interface StoredSliceFigureRuntimeConfig {
-  version: 2;
+  version: 3;
   llm: StoredTextModelConfig;
+  replyAutoSegment: boolean;
   context: {
     minimumRounds: number;
     maximumRounds: number;
@@ -33,7 +34,7 @@ export interface StoredSliceFigureRuntimeConfig {
 }
 
 export interface StoredPrimeFigureRuntimeConfig {
-  version: 6;
+  version: 7;
   decisionModel: StoredTextModelConfig;
   outputs: {
     image: {
@@ -44,6 +45,7 @@ export interface StoredPrimeFigureRuntimeConfig {
     };
     voice: {
       enabled: boolean;
+      requestStreaming: boolean;
       guidanceLevel: "basic" | "medium" | "advanced";
       tts: StoredFishAudioConfig;
     };

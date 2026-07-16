@@ -13,6 +13,7 @@ export function MediaAsset({
   containerClassName = "h-full w-full bg-white/[0.025]",
   alt,
   eager = false,
+  fallbackLabel = "媒体不可用",
 }: {
   mediaUrl?: string;
   variant?: MediaVariant;
@@ -20,8 +21,9 @@ export function MediaAsset({
   containerClassName?: string;
   alt: string;
   eager?: boolean;
+  fallbackLabel?: string;
 }) {
-  const { source, fallbackToDirect } = useMediaObjectUrl(
+  const { source, unavailable, fallbackToDirect } = useMediaObjectUrl(
     mediaUrl,
     variant,
     true,
@@ -37,6 +39,10 @@ export function MediaAsset({
           loading={eager ? "eager" : "lazy"}
           onError={fallbackToDirect}
         />
+      ) : unavailable ? (
+        <div className="grid h-full min-h-16 min-w-24 place-items-center px-3 text-center text-xs text-white/35">
+          {fallbackLabel}
+        </div>
       ) : null}
     </div>
   );
@@ -57,6 +63,7 @@ export function useMediaDirectUrl(
       setSource(resolveMediaUrl(mediaUrl));
       return;
     }
+    setSource(undefined);
     let cancelled = false;
     void mediaCache.getDirectUrl(mediaUrl, variant).then((url) => {
       if (!cancelled) setSource(resolveMediaUrl(url));
@@ -83,7 +90,9 @@ function useMediaObjectUrl(
       ? resolveMediaUrl(mediaUrl)
       : undefined,
   );
+  const [unavailable, setUnavailable] = useState(false);
   useEffect(() => {
+    setUnavailable(false);
     if (!mediaUrl) {
       setSource(undefined);
       return;
@@ -99,7 +108,10 @@ function useMediaObjectUrl(
     if (preferDirect) {
       let cancelled = false;
       void mediaCache.getDirectUrl(mediaUrl, variant).then((url) => {
-        if (!cancelled) setSource(resolveMediaUrl(url));
+        if (!cancelled) {
+          setSource(resolveMediaUrl(url));
+          if (!url) setUnavailable(true);
+        }
       });
       return () => {
         cancelled = true;
@@ -111,7 +123,10 @@ function useMediaObjectUrl(
       if (controller.signal.aborted) return;
       if (!blob) {
         void mediaCache.getDirectUrl(mediaUrl, variant).then((url) => {
-          if (!controller.signal.aborted) setSource(resolveMediaUrl(url));
+          if (!controller.signal.aborted) {
+            setSource(resolveMediaUrl(url));
+            if (!url) setUnavailable(true);
+          }
         });
         return;
       }
@@ -125,9 +140,11 @@ function useMediaObjectUrl(
   }, [enabled, mediaUrl, preferDirect, variant]);
   return {
     source,
+    unavailable,
     fallbackToDirect: () => {
-      if (fallbackKey && getResourceId(mediaUrl))
-        setDirectFallbackKey(fallbackKey);
+      if (!fallbackKey || !getResourceId(mediaUrl)) return;
+      if (preferDirect) setUnavailable(true);
+      else setDirectFallbackKey(fallbackKey);
     },
   };
 }

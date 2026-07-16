@@ -84,6 +84,14 @@ export function SliceRuntimeConfigForm({
         />
       </ConfigSection>
       <ConfigSection title="上下文与记忆">
+        <ToggleInput
+          label="回复自动分段"
+          checked={draft.replyAutoSegment}
+          onChange={(replyAutoSegment) =>
+            setDraft({ ...draft, replyAutoSegment })
+          }
+        />
+        <div className="hidden md:block" />
         <NumberInput
           label="最小保留轮数"
           value={draft.minimumRounds}
@@ -254,6 +262,14 @@ export function PrimeRuntimeConfigForm({
       ) : null}
       {draft.voiceEnabled ? (
         <ConfigSection title="TTS 服务">
+          <ToggleInput
+            label="流式语音请求"
+            checked={draft.voiceRequestStreaming}
+            onChange={(voiceRequestStreaming) =>
+              setDraft({ ...draft, voiceRequestStreaming })
+            }
+          />
+          <div className="hidden md:block" />
           <TtsFields
             draft={draft.tts}
             onChange={(tts) => setDraft({ ...draft, tts })}
@@ -1099,6 +1115,7 @@ function sliceDraft(value: SliceFigureRuntimeConfigView) {
     model: value.llm.model,
     temperature: String(value.llm.temperature),
     maxTokens: String(value.llm.maxTokens),
+    replyAutoSegment: value.replyAutoSegment,
     minimumRounds: String(value.context.minimumRounds),
     maximumRounds: String(value.context.maximumRounds),
     memorySummaryRounds: String(value.context.memorySummaryRounds),
@@ -1121,6 +1138,7 @@ function slicePatch(
       maxTokens: Number(draft.maxTokens),
       ...secretChange(apiKey, clearApiKey),
     },
+    replyAutoSegment: draft.replyAutoSegment,
     context: {
       minimumRounds: Number(draft.minimumRounds),
       maximumRounds: Number(draft.maximumRounds),
@@ -1141,6 +1159,7 @@ function primeDraft(value: PrimeFigureRuntimeConfigView) {
       2,
     ),
     voiceEnabled: value.outputs.voice.enabled,
+    voiceRequestStreaming: value.outputs.voice.requestStreaming,
     stickerEnabled: value.outputs.sticker.enabled,
     transferEnabled: value.outputs.transfer.enabled,
     voiceGuidance: value.outputs.voice.guidanceLevel,
@@ -1185,6 +1204,7 @@ function primePatch(
       },
       voice: {
         enabled: draft.voiceEnabled,
+        requestStreaming: draft.voiceRequestStreaming,
         guidanceLevel: draft.voiceGuidance,
         tts: {
           ...draft.tts,

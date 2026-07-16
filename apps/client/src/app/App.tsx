@@ -11,7 +11,6 @@ import type {
   AddPrimeFigureStickerRequest,
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
-  UpdatePrimeFigurePreferencesRequest,
   UpdatePrimeFigureRequest,
   UpdateSliceFigureRequest,
 } from "@echoo/shared";
@@ -55,8 +54,7 @@ export function App() {
   const runtime = useRuntime();
   const services = useMemo(() => initApp(runtime), [runtime]);
   const [view, setView] = useState<AppView>("home");
-  const [settingsReturnView, setSettingsReturnView] =
-    useState<AppView>("home");
+  const [settingsReturnView, setSettingsReturnView] = useState<AppView>("home");
   const [myAgents, setMyAgents] = useState<Agent[]>([]);
   const [isLoadingAgents, setIsLoadingAgents] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
@@ -262,32 +260,6 @@ export function App() {
     }
   };
 
-  const updatePrimeFigurePreferences = async (
-    agentId: string,
-    input: UpdatePrimeFigurePreferencesRequest,
-  ) => {
-    try {
-      const { agent } =
-        await services.agentService.updatePrimeFigurePreferences(
-          agentId,
-          input,
-        );
-      setMyAgents((current) =>
-        current.map((item) => (item.id === agent.id ? agent : item)),
-      );
-      setSelectedAgent((current) =>
-        current?.id === agent.id ? agent : current,
-      );
-      return agent;
-    } catch (error) {
-      if (error instanceof Error && error.message === "请重新登录。") {
-        await auth.signOut();
-        setView("auth");
-      }
-      throw error;
-    }
-  };
-
   const addPrimeFigureSticker = async (
     agentId: string,
     input: AddPrimeFigureStickerRequest,
@@ -295,6 +267,21 @@ export function App() {
     const { agent } = await services.agentService.addPrimeFigureSticker(
       agentId,
       input,
+    );
+    setMyAgents((current) =>
+      current.map((item) => (item.id === agent.id ? agent : item)),
+    );
+    setSelectedAgent((current) => (current?.id === agent.id ? agent : current));
+    return agent;
+  };
+
+  const deletePrimeFigureSticker = async (
+    agentId: string,
+    stickerId: string,
+  ) => {
+    const { agent } = await services.agentService.deletePrimeFigureSticker(
+      agentId,
+      stickerId,
     );
     setMyAgents((current) =>
       current.map((item) => (item.id === agent.id ? agent : item)),
@@ -345,8 +332,8 @@ export function App() {
           updateHandlers={{
             "slice-figure": updateSliceFigure,
             "prime-figure": updatePrimeFigure,
-            updatePrimeFigurePreferences,
             addPrimeFigureSticker,
+            deletePrimeFigureSticker,
             getPrimeFigureEditSnapshot: (agentId) =>
               services.agentService.getPrimeFigureEditSnapshot(agentId),
             exportAgent: (agentId) =>
@@ -428,9 +415,7 @@ export function App() {
       <div
         className={`relative z-10 mx-auto grid max-w-[1440px] grid-cols-1 px-5 pt-24 md:gap-6 md:px-16 md:pb-8 ${
           showMobileBottomNav ? "pb-28" : "pb-4"
-        } ${
-          view === "messages" ? "h-[100dvh] min-h-0" : "min-h-[100dvh]"
-        } ${
+        } ${view === "messages" ? "h-[100dvh] min-h-0" : "min-h-[100dvh]"} ${
           showConversationRail
             ? "md:grid-cols-[64px_300px_1fr]"
             : "md:grid-cols-[64px_1fr]"

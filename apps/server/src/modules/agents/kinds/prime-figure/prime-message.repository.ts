@@ -243,6 +243,13 @@ function toPrimeContent(
         ? { resourceId: content.resourceId }
         : {}),
     };
+  if (type === "video")
+    return {
+      type: "video",
+      ...(typeof content.resourceId === "string"
+        ? { resourceId: content.resourceId }
+        : {}),
+    };
   return { type: "text", text: String(content.text ?? "") };
 }
 

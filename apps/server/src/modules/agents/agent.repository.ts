@@ -14,7 +14,6 @@ import type {
   PrimeFigureState,
   PrimeFigureVariableValue,
   UpdatePrimeFigureRequest,
-  UpdatePrimeFigurePreferencesRequest,
   UpdateSliceFigureRequest,
 } from "@echoo/shared";
 import type { RowDataPacket } from "mysql2";
@@ -313,13 +312,6 @@ export class AgentRepository {
               ? (existing.detail.stickers ?? [])
               : []),
         ),
-        ...(existing.type === "prime-figure"
-          ? {
-              voiceRequestStreaming:
-                (input as UpdatePrimeFigureRequest).voiceRequestStreaming ??
-                existing.detail.voiceRequestStreaming,
-            }
-          : {}),
       },
     };
     if (nextAvatar !== undefined) {
@@ -451,30 +443,20 @@ export class AgentRepository {
               ),
             )
         : []),
-      // Sticker files can be referenced by historical messages. Removing an
-      // item from the active library must not invalidate those messages.
+      ...(existing.type === "prime-figure" && nextStickers !== undefined
+        ? (existing.detail.stickers ?? [])
+            .filter(
+              (current) =>
+                !nextStickers.some(
+                  (next) => next.resourceId === current.resourceId,
+                ),
+            )
+            .map((current) =>
+              this.deletePrimeFigureStickerResource(ownerUserId, current),
+            )
+        : []),
     ]).catch((error) => console.warn("旧角色资源清理失败。", error));
     return updated;
-  }
-
-  async updatePrimeFigurePreferences(
-    ownerUserId: string,
-    agentId: string,
-    input: UpdatePrimeFigurePreferencesRequest,
-  ) {
-    const result = await execute(
-      `UPDATE agents SET definition = JSON_SET(definition,
-        '$.detail.voiceRequestStreaming', CAST(? AS JSON)), updated_at = ?
-       WHERE id = ? AND owner_user_id = ? AND type = 'prime-figure'`,
-      [
-        JSON.stringify(input.voiceRequestStreaming),
-        Date.now(),
-        agentId,
-        ownerUserId,
-      ],
-    );
-    if (!result.affectedRows) return null;
-    return this.findById(ownerUserId, agentId);
   }
 
   async addPrimeFigureSticker(
@@ -493,16 +475,25 @@ export class AgentRepository {
         resourcePath: saved.publicPath,
         description: input.description.trim(),
       };
-      const result = await execute(
-        `UPDATE agents SET definition = JSON_SET(definition, '$.detail.stickers',
-           JSON_ARRAY_APPEND(COALESCE(JSON_EXTRACT(definition, '$.detail.stickers'), JSON_ARRAY()), '$', CAST(? AS JSON))),
-           updated_at = ?
-         WHERE id = ? AND owner_user_id = ? AND type = 'prime-figure'
-           AND JSON_LENGTH(COALESCE(JSON_EXTRACT(definition, '$.detail.stickers'), JSON_ARRAY())) < 20`,
-        [JSON.stringify(sticker), Date.now(), agentId, ownerUserId],
-      );
-      if (!result.affectedRows)
-        throw new Error("本初角色不存在，或表情数量已达到 20 个上限。");
+      await withTransaction(async (connection) => {
+        const result = await execute(
+          `UPDATE agents SET definition = JSON_SET(definition, '$.detail.stickers',
+             JSON_ARRAY_APPEND(COALESCE(JSON_EXTRACT(definition, '$.detail.stickers'), JSON_ARRAY()), '$', CAST(? AS JSON))),
+             updated_at = ?
+           WHERE id = ? AND owner_user_id = ? AND type = 'prime-figure'
+             AND JSON_LENGTH(COALESCE(JSON_EXTRACT(definition, '$.detail.stickers'), JSON_ARRAY())) < 20`,
+          [JSON.stringify(sticker), Date.now(), agentId, ownerUserId],
+          connection,
+        );
+        if (!result.affectedRows)
+          throw new Error("本初角色不存在，或表情数量已达到 20 个上限。");
+        await execute(
+          `INSERT INTO agent_resources
+            (agent_id, resource_id, usage_kind, created_at) VALUES (?, ?, 'sticker', ?)`,
+          [agentId, sticker.resourceId, Date.now()],
+          connection,
+        );
+      });
       return this.findById(ownerUserId, agentId);
     } catch (error) {
       await this.resources.deleteOwnedByPublicPath(
@@ -511,6 +502,45 @@ export class AgentRepository {
       );
       throw error;
     }
+  }
+
+  async deletePrimeFigureSticker(
+    ownerUserId: string,
+    agentId: string,
+    stickerId: string,
+  ) {
+    const agent = await this.findById(ownerUserId, agentId);
+    if (!agent || agent.type !== "prime-figure") return null;
+    const sticker = (agent.detail.stickers ?? []).find(
+      (item) => item.resourceId === stickerId,
+    );
+    if (!sticker) return null;
+    const nextStickers = (agent.detail.stickers ?? []).filter(
+      (item) => item.resourceId !== stickerId,
+    );
+    await withTransaction(async (connection) => {
+      await execute(
+        `UPDATE agents SET definition = JSON_SET(definition, '$.detail.stickers', CAST(? AS JSON)), updated_at = ?
+         WHERE id = ? AND owner_user_id = ? AND type = 'prime-figure'`,
+        [JSON.stringify(nextStickers), Date.now(), agentId, ownerUserId],
+        connection,
+      );
+      await execute(
+        "DELETE FROM agent_resources WHERE agent_id = ? AND resource_id = ? AND usage_kind = 'sticker'",
+        [agentId, stickerId],
+        connection,
+      );
+      await execute(
+        "DELETE FROM message_resources WHERE resource_id = ?",
+        [stickerId],
+        connection,
+      );
+    });
+    await this.resources.deleteOwnedByPublicPath(
+      ownerUserId,
+      sticker.resourcePath,
+    );
+    return this.findById(ownerUserId, agentId);
   }
 
   async getPrimeFigureEditSnapshot(
@@ -573,7 +603,6 @@ export class AgentRepository {
           openingLine: agent.detail.openingLine,
           systemPrompt: agent.detail.systemPrompt,
           memorySummaryPrompt: agent.detail.memorySummaryPrompt,
-          replyAutoSegment: agent.detail.replyAutoSegment,
         },
       };
     }
@@ -628,7 +657,6 @@ export class AgentRepository {
         ),
         referenceImages,
         stickers,
-        voiceRequestStreaming: agent.detail.voiceRequestStreaming,
         initialMood: state.mood,
         initialRelationshipStatus: state.relationshipStatus,
       },
@@ -814,6 +842,19 @@ export class AgentRepository {
     const resource = await this.resources.readForOwner(ownerUserId, record.id);
     return resource ? toResourceUpload(resource.record, resource.data) : null;
   }
+
+  private async deletePrimeFigureStickerResource(
+    ownerUserId: string,
+    sticker: PrimeFigureSticker,
+  ) {
+    await execute("DELETE FROM message_resources WHERE resource_id = ?", [
+      sticker.resourceId,
+    ]);
+    return this.resources.deleteOwnedByPublicPath(
+      ownerUserId,
+      sticker.resourcePath,
+    );
+  }
 }
 
 const SELECT_AGENT = `SELECT agents.*, conversations.id AS conversation_id
@@ -843,21 +884,6 @@ function rowToAgent(row: AgentRow): Agent {
             stickers:
               (stored as Extract<Agent, { type: "prime-figure" }>).detail
                 ?.stickers ?? [],
-            voiceRequestStreaming: Boolean(
-              (stored as Extract<Agent, { type: "prime-figure" }>).detail
-                ?.voiceRequestStreaming,
-            ),
-          },
-        }
-      : {}),
-    ...(row.type === "slice-figure"
-      ? {
-          detail: {
-            ...(stored as Extract<Agent, { type: "slice-figure" }>).detail,
-            replyAutoSegment: Boolean(
-              (stored as Extract<Agent, { type: "slice-figure" }>).detail
-                ?.replyAutoSegment,
-            ),
           },
         }
       : {}),
@@ -923,7 +949,6 @@ function buildDetail(
       responseStyle: value.responseStyle,
       systemPrompt: value.systemPrompt,
       memorySummaryPrompt: value.memorySummaryPrompt,
-      replyAutoSegment: value.replyAutoSegment ?? false,
     };
   }
   const value = input as CreatePrimeFigureRequest;
@@ -944,7 +969,6 @@ function buildDetail(
     variableDefinitions: value.variableDefinitions ?? [],
     referenceImages,
     stickers,
-    voiceRequestStreaming: value.voiceRequestStreaming ?? false,
   };
 }
 

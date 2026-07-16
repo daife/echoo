@@ -15,12 +15,14 @@ import { parsePrimeFigureHintCommand } from "../../features/messages/messagePres
 import { MAX_IMAGE_UPLOAD_BYTES } from "../../shared/utils/imageCompression";
 
 interface PendingMediaPayload {
-  contentType: "image" | "voice";
+  contentType: "image" | "voice" | "video";
   blob: Blob;
   fileName: string;
   objectUrl: string;
   durationSeconds?: number;
 }
+
+const MAX_VIDEO_UPLOAD_BYTES = 12 * 1024 * 1024;
 
 export function useOutgoingMessages(input: {
   conversationId?: string;
@@ -68,7 +70,7 @@ export function useOutgoingMessages(input: {
         })
       : input.messageService.sendMediaMessage({
           conversationId: input.conversationId!,
-          contentType: "image",
+          contentType: payload.contentType,
           resourceId: uploaded.resourceId,
           clientMessageId,
         });
@@ -183,6 +185,14 @@ export function useOutgoingMessages(input: {
       payload.blob.size > MAX_IMAGE_UPLOAD_BYTES
     ) {
       input.setError("图片大小不能超过 5MB。");
+      URL.revokeObjectURL(payload.objectUrl);
+      return;
+    }
+    if (
+      payload.contentType === "video" &&
+      payload.blob.size > MAX_VIDEO_UPLOAD_BYTES
+    ) {
+      input.setError("视频大小不能超过 12MB。");
       URL.revokeObjectURL(payload.objectUrl);
       return;
     }
@@ -360,6 +370,13 @@ export function useOutgoingMessages(input: {
         fileName: `voice_${Date.now()}.mp3`,
         objectUrl: URL.createObjectURL(blob),
         durationSeconds,
+      }),
+    sendVideo: (file: File) =>
+      sendMediaMessage({
+        contentType: "video",
+        blob: file,
+        fileName: file.name,
+        objectUrl: URL.createObjectURL(file),
       }),
     sendSticker: (stickerId: string) =>
       sendStructuredMessage({ contentType: "sticker", stickerId }),

@@ -26,7 +26,7 @@ export function createPendingTextMessage(input: {
 
 export function createPendingMediaMessage(input: {
   conversationId: string;
-  contentType: "image" | "voice";
+  contentType: "image" | "voice" | "video";
   mediaUrl: string;
   fileName: string;
   durationSeconds?: number;

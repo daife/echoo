@@ -91,6 +91,13 @@ export type CreateMediaMessageInput =
     }
   | {
       conversationId: string;
+      contentType: "video";
+      upload?: MessageMediaUpload;
+      resourceId?: string;
+      clientMessageId?: string;
+    }
+  | {
+      conversationId: string;
       contentType: "sticker";
       stickerId: string;
       clientMessageId?: string;

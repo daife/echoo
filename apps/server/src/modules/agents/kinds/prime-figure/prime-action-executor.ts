@@ -30,6 +30,7 @@ import {
   type ResolvedPrimeVoiceMedia,
 } from "./prime-decision-stream-session.js";
 import { isPrimeOutputEnabled } from "./prime-output-capabilities.js";
+import { ResourceRepository } from "../../../resources/resource.repository.js";
 
 export class PrimeActionExecutor {
   constructor(
@@ -39,6 +40,7 @@ export class PrimeActionExecutor {
     private readonly logs = new PrimeActionLogRepository(),
     private readonly conversations = new ConversationRepository(),
     private readonly appPush = new AppPushService(),
+    private readonly resources = new ResourceRepository(),
   ) {}
 
   async executeDecision(input: {
@@ -218,6 +220,22 @@ export class PrimeActionExecutor {
           !isPrimeOutputEnabled(input.runtimeConfig, "sticker")
         )
           continue;
+        if (action.message.type === "sticker") {
+          const stickerId = action.message.stickerId;
+          const sticker = (input.agent.detail.stickers ?? []).find(
+            (item) => item.resourceId === stickerId,
+          );
+          const resource = sticker
+            ? await this.resources.findById(sticker.resourceId)
+            : null;
+          if (
+            !sticker ||
+            !resource ||
+            resource.ownerUserId !== input.ownerUserId ||
+            resource.status !== "ready"
+          )
+            continue;
+        }
         await waitForPacedReveal(timedMessageText(action.message));
         const occurredAtMs = input.paceUnstreamedMessages
           ? Date.now()

@@ -33,8 +33,9 @@ export interface FishAudioConfigView {
 }
 
 export interface SliceFigureRuntimeConfigView {
-  version: 2;
+  version: 3;
   llm: TextModelConfigView;
+  replyAutoSegment: boolean;
   context: {
     minimumRounds: number;
     maximumRounds: number;
@@ -56,6 +57,7 @@ export interface PrimeFigureOutputConfigView {
   };
   voice: {
     enabled: boolean;
+    requestStreaming: boolean;
     guidanceLevel: PrimeFigureGuidanceLevel;
     tts: FishAudioConfigView;
   };
@@ -92,7 +94,7 @@ export interface PrimeFigureUnderstandingConfigView {
 }
 
 export interface PrimeFigureRuntimeConfigView {
-  version: 6;
+  version: 7;
   decisionModel: TextModelConfigView;
   outputs: PrimeFigureOutputConfigView;
   optimization: PrimeFigureOptimizationConfigView;
@@ -174,6 +176,7 @@ export interface FishAudioConfigPatch {
 
 export interface SliceFigureRuntimeConfigPatch {
   llm?: TextModelConfigPatch;
+  replyAutoSegment?: boolean;
   context?: Partial<SliceFigureRuntimeConfigView["context"]>;
 }
 
@@ -188,6 +191,7 @@ export interface PrimeFigureRuntimeConfigPatch {
     };
     voice?: {
       enabled?: boolean;
+      requestStreaming?: boolean;
       guidanceLevel?: PrimeFigureGuidanceLevel;
       tts?: FishAudioConfigPatch;
     };

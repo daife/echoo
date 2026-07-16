@@ -36,6 +36,23 @@ const createMediaMessageSchema = z.discriminatedUnion("contentType", [
     clientMessageId: z.string().trim().min(1).max(96).optional(),
   }),
   z.object({
+    contentType: z.literal("video"),
+    upload: mediaUploadBaseSchema
+      .extend({
+        mimeType: z.enum([
+          "video/mp4",
+          "video/webm",
+          "video/quicktime",
+          "video/mov",
+          "video/mpeg",
+        ]),
+        dataBase64: z.string().min(1),
+      })
+      .optional(),
+    resourceId: z.string().trim().min(1).max(120).optional(),
+    clientMessageId: z.string().trim().min(1).max(96).optional(),
+  }),
+  z.object({
     contentType: z.literal("sticker"),
     stickerId: z.string().trim().min(1).max(120),
     clientMessageId: z.string().trim().min(1).max(96).optional(),
@@ -161,7 +178,7 @@ export async function registerMessagingRoutes(app: FastifyInstance) {
         if (result.kind === "unsupported_type")
           return reply.code(409).send({
             error: "MEDIA_MESSAGE_UNSUPPORTED",
-            message: "图片、语音、表情和转账消息仅支持本初角色会话。",
+            message: "图片、视频、语音、表情和转账消息仅支持本初角色会话。",
           });
         if (result.kind === "invalid_sticker")
           return reply.code(400).send({

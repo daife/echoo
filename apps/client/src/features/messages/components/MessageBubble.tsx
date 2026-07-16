@@ -481,6 +481,7 @@ function ChatVisualMedia({
           containerClassName="h-full w-fit max-w-full"
           className="h-full w-auto max-w-full object-cover"
           alt={alt}
+          fallbackLabel={kind === "sticker" ? "表情已删除" : "媒体不可用"}
         />
       )}
       <span className="pointer-events-none absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-lg bg-black/45 text-white/80 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
