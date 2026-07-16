@@ -12,10 +12,7 @@ import {
 } from "../../services/localMessageState";
 import { mediaCache } from "../../services/mediaCache";
 import { parsePrimeFigureHintCommand } from "../../features/messages/messagePresentation";
-import {
-  MAX_IMAGE_UPLOAD_BYTES,
-  readImageDimensions,
-} from "../../shared/utils/imageCompression";
+import { MAX_IMAGE_UPLOAD_BYTES } from "../../shared/utils/imageCompression";
 
 interface PendingMediaPayload {
   contentType: "image" | "voice";
@@ -23,8 +20,6 @@ interface PendingMediaPayload {
   fileName: string;
   objectUrl: string;
   durationSeconds?: number;
-  width?: number;
-  height?: number;
 }
 
 export function useOutgoingMessages(input: {
@@ -197,8 +192,6 @@ export function useOutgoingMessages(input: {
       mediaUrl: payload.objectUrl,
       fileName: payload.fileName,
       durationSeconds: payload.durationSeconds,
-      width: payload.width,
-      height: payload.height,
     });
     const clientMessageId = pending.clientMessageId!;
     pendingMediaRef.current.set(clientMessageId, payload);
@@ -353,16 +346,13 @@ export function useOutgoingMessages(input: {
     setDraft,
     isSending,
     sendMessage,
-    sendImage: async (file: File) => {
-      const dimensions = await readImageDimensions(file);
-      return sendMediaMessage({
+    sendImage: (file: File) =>
+      sendMediaMessage({
         contentType: "image",
         blob: file,
         fileName: file.name,
         objectUrl: URL.createObjectURL(file),
-        ...dimensions,
-      });
-    },
+      }),
     sendVoice: (blob: Blob, durationSeconds: number) =>
       sendMediaMessage({
         contentType: "voice",

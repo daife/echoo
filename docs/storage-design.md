@@ -140,7 +140,7 @@ IndexedDB 在这里不是媒体主体存储，也不保存角色、会话或消�
 | `conversations`                | 会话摘要、未读数、运行状态、关联角色                      | 一个角色唯一关联一个会话                 |
 | `conversation_runtime_configs` | 会话级运行配置覆盖                                        | 会话删除时级联删除                       |
 | `messages`                     | 全局递增 `seq`、正文 JSON、运行元数据、状态、全文检索列   | `client_message_id` 对用户唯一，用于幂等 |
-| `resources`                    | 对象元数据、provider、storage key、状态、hash、尺寸和时长 | 不保存二进制本体                         |
+| `resources`                    | 对象元数据、provider、storage key、状态、hash 和时长     | 不保存二进制本体                         |
 | `resource_variants`            | original/thumb/display 的对象 key 与元数据                | 资源删除时级联删除                       |
 | `message_resources`            | 消息引用哪些资源                                          | 防止仍被消息引用的资源被删除             |
 | `agent_resources`              | 角色头像、封面、参考图、表情引用                          | 防止仍被角色引用的资源被删除             |
@@ -167,7 +167,7 @@ Redis 当前有五类用途：
    - 失败最多重试 3 次，最终写入 `echoo:agent-runs:failed`。
 
 3. **资源处理和清理队列**
-   - `echoo:resource-processing`：校验上传、计算 hash/尺寸/时长、生成 thumb/display。
+   - `echoo:resource-processing`：校验上传、计算 hash/时长、生成 thumb/display。
    - `echoo:resource-cleanup`：每小时扫描 24 小时前的孤儿资源并删除对象。
    - 两者也使用 Redis Stream、consumer group 和资源锁。
 

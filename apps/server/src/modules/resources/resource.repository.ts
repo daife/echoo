@@ -40,8 +40,6 @@ export interface ResourceRecord {
   publicPath: string;
   byteSize?: number;
   sha256?: string;
-  width?: number;
-  height?: number;
   status: "pending" | "processing" | "ready" | "failed" | "deleting";
   durationSeconds?: number;
   createdAt: number;
@@ -65,8 +63,6 @@ interface ResourceRow extends RowDataPacket {
   public_path: string;
   byte_size: number | null;
   sha256: string | null;
-  width: number | null;
-  height: number | null;
   duration_ms: number | null;
   status: ResourceRecord["status"];
   created_at: number;
@@ -80,8 +76,6 @@ export interface ResourceVariantRecord {
   mimeType: string;
   byteSize: number;
   etag?: string;
-  width?: number;
-  height?: number;
 }
 
 interface ResourceVariantRow extends RowDataPacket {
@@ -92,8 +86,6 @@ interface ResourceVariantRow extends RowDataPacket {
   mime_type: string;
   byte_size: number;
   etag: string | null;
-  width: number | null;
-  height: number | null;
 }
 
 export class ResourceRepository {
@@ -293,8 +285,6 @@ export class ResourceRepository {
         data,
       );
       const sha256 = digest(data);
-      let width: number | undefined;
-      let height: number | undefined;
       await this.upsertVariant(record, "original", {
         mimeType: record.mimeType,
         data,
@@ -302,9 +292,6 @@ export class ResourceRepository {
       if (record.kind === "end_user_image") {
         const sharp = (await import("sharp")).default;
         const image = sharp(data, { failOn: "error" }).rotate();
-        const metadata = await image.metadata();
-        width = metadata.width;
-        height = metadata.height;
         const thumb = await image
           .clone()
           .resize({
@@ -335,13 +322,11 @@ export class ResourceRepository {
         });
       }
       await execute(
-        `UPDATE resources SET byte_size = ?, sha256 = ?, width = ?, height = ?,
-          duration_ms = ?, status = 'ready', updated_at = ? WHERE id = ?`,
+        `UPDATE resources SET byte_size = ?, sha256 = ?, duration_ms = ?,
+          status = 'ready', updated_at = ? WHERE id = ?`,
         [
           data.length,
           sha256,
-          width ?? null,
-          height ?? null,
           durationSeconds === undefined
             ? null
             : Math.round(durationSeconds * 1000),
@@ -528,8 +513,6 @@ export class ResourceRepository {
       mimeType: selected?.mimeType ?? record.mimeType,
       byteSize: selected?.byteSize ?? record.byteSize,
       etag: selected?.etag,
-      width: selected?.width ?? record.width,
-      height: selected?.height ?? record.height,
       storageKey: key,
     };
   }
@@ -597,7 +580,6 @@ export class ResourceRepository {
         const record = (await this.findById(id))!;
         const sharp = (await import("sharp")).default;
         const image = sharp(input.data, { failOn: "error" }).rotate();
-        const metadata = await image.metadata();
         const thumb = await image
           .clone()
           .resize({
@@ -626,10 +608,6 @@ export class ResourceRepository {
           mimeType: "image/webp",
           data: display,
         });
-        await execute(
-          "UPDATE resources SET width = ?, height = ?, updated_at = ? WHERE id = ?",
-          [metadata.width ?? null, metadata.height ?? null, Date.now(), id],
-        );
       }
     } catch (error) {
       await execute("DELETE FROM resources WHERE id = ?", [id]).catch(
@@ -755,8 +733,6 @@ function rowToResource(row: ResourceRow): ResourceRecord {
     publicPath: row.public_path,
     ...(row.byte_size !== null ? { byteSize: row.byte_size } : {}),
     ...(row.sha256 ? { sha256: row.sha256 } : {}),
-    ...(row.width !== null ? { width: row.width } : {}),
-    ...(row.height !== null ? { height: row.height } : {}),
     ...(row.duration_ms !== null
       ? { durationSeconds: row.duration_ms / 1000 }
       : {}),
@@ -774,8 +750,6 @@ function rowToVariant(row: ResourceVariantRow): ResourceVariantRecord {
     mimeType: row.mime_type,
     byteSize: row.byte_size,
     ...(row.etag ? { etag: row.etag } : {}),
-    ...(row.width !== null ? { width: row.width } : {}),
-    ...(row.height !== null ? { height: row.height } : {}),
   };
 }
 

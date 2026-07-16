@@ -10,18 +10,16 @@ export function MediaAsset({
   mediaUrl,
   variant = "thumb",
   className,
+  containerClassName = "h-full w-full bg-white/[0.025]",
   alt,
   eager = false,
-  width,
-  height,
 }: {
   mediaUrl?: string;
   variant?: MediaVariant;
   className: string;
+  containerClassName?: string;
   alt: string;
   eager?: boolean;
-  width?: number;
-  height?: number;
 }) {
   const { source, fallbackToDirect } = useMediaObjectUrl(
     mediaUrl,
@@ -30,15 +28,13 @@ export function MediaAsset({
   );
 
   return (
-    <div className="h-full w-full bg-white/[0.025]">
+    <div className={containerClassName}>
       {source ? (
         <img
           className={className}
           src={source}
           alt={alt}
           loading={eager ? "eager" : "lazy"}
-          width={width}
-          height={height}
           onError={fallbackToDirect}
         />
       ) : null}

@@ -5,14 +5,16 @@ const mediaReferenceBaseSchema = z.object({
   resourceId: z.string().trim().min(1),
   variants: z.array(mediaVariantSchema),
 });
-const visualMediaReferenceSchema = mediaReferenceBaseSchema.extend({
-  kind: z.enum(["image", "sticker", "video"]),
-  width: z.number().int().positive(),
-  height: z.number().int().positive(),
-});
-const nonVisualMediaReferenceSchema = mediaReferenceBaseSchema.extend({
-  kind: z.enum(["voice", "file"]),
-});
+const visualMediaReferenceSchema = mediaReferenceBaseSchema
+  .extend({
+    kind: z.enum(["image", "sticker", "video"]),
+  })
+  .strict();
+const nonVisualMediaReferenceSchema = mediaReferenceBaseSchema
+  .extend({
+    kind: z.enum(["voice", "file"]),
+  })
+  .strict();
 
 export const mediaReferenceSchema = z.union([
   visualMediaReferenceSchema,

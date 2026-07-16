@@ -26,7 +26,6 @@ import {
 } from "../../infra/database/mysql.js";
 import { createId } from "../../shared/utils/id.js";
 import { ResourceRepository } from "../resources/resource.repository.js";
-import { requireVisualDimensions } from "../resources/media-reference.js";
 
 interface AgentRow extends RowDataPacket {
   id: string;
@@ -493,7 +492,6 @@ export class AgentRepository {
         resourceId: saved.id,
         resourcePath: saved.publicPath,
         description: input.description.trim(),
-        ...requireVisualDimensions(saved),
       };
       const result = await execute(
         `UPDATE agents SET definition = JSON_SET(definition, '$.detail.stickers',
@@ -735,7 +733,6 @@ export class AgentRepository {
             resourceId: saved.id,
             resourcePath: saved.publicPath,
             description: input.description.trim(),
-            ...requireVisualDimensions(saved),
           });
           continue;
         }
@@ -753,7 +750,6 @@ export class AgentRepository {
           resourceId: resource.id,
           resourcePath: resource.publicPath,
           description: input.description.trim(),
-          ...requireVisualDimensions(resource),
         });
       }
       return result;

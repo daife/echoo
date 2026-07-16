@@ -75,15 +75,6 @@ export async function imageFileToUpload(
   };
 }
 
-export async function readImageDimensions(image: Blob) {
-  const decoded = await decodeImage(image);
-  try {
-    return { width: decoded.width, height: decoded.height };
-  } finally {
-    decoded.dispose();
-  }
-}
-
 async function encodeWithinLimit(canvas: HTMLCanvasElement) {
   const highestQuality = await canvasToJpeg(canvas, MAX_JPEG_QUALITY);
   if (highestQuality.size <= MAX_IMAGE_UPLOAD_BYTES) return highestQuality;

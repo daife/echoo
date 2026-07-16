@@ -35,8 +35,6 @@ interface MediaReferenceBase {
 export type MediaReference =
   | (MediaReferenceBase & {
       kind: "image" | "sticker" | "video";
-      width: number;
-      height: number;
     })
   | (MediaReferenceBase & {
       kind: "voice" | "file";
@@ -50,8 +48,6 @@ export interface MediaAccessItem {
   mimeType: string;
   byteSize?: number;
   etag?: string;
-  width?: number;
-  height?: number;
 }
 
 export interface MediaUploadTicket {
@@ -68,8 +64,6 @@ export interface MediaResourceStatus {
   status: "pending" | "processing" | "ready" | "failed" | "deleting";
   mimeType: string;
   byteSize?: number;
-  width?: number;
-  height?: number;
   durationSeconds?: number;
 }
 
@@ -139,9 +133,4 @@ export interface Message {
 
 export type LocalMessage = Message & {
   syncStatus: "synced" | "pending" | "failed";
-  /** Client-only layout metadata for optimistic media messages. */
-  localMediaDimensions?: {
-    width: number;
-    height: number;
-  };
 };

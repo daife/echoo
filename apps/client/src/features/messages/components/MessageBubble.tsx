@@ -1,4 +1,5 @@
 import {
+  ArrowsOut,
   ArrowCounterClockwise,
   Check,
   Money,
@@ -14,13 +15,13 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { MediaAsset, useMediaDirectUrl } from "../../media/MediaAsset";
 import { mediaCache } from "../../../services/mediaCache";
 import {
   sanitizeVoiceTranscript,
   tokenizeParentheticalText,
 } from "../messagePresentation";
-import { fitMessageMedia } from "../mediaLayout";
 
 export interface MessageBubbleModel {
   id: string;
@@ -28,10 +29,15 @@ export interface MessageBubbleModel {
   text: string;
   createdAt: number;
   deliveryState?: "sending" | "failed";
-  kind?: "text" | "image" | "voice" | "sticker" | "transfer" | "memory-summary";
+  kind?:
+    | "text"
+    | "image"
+    | "video"
+    | "voice"
+    | "sticker"
+    | "transfer"
+    | "memory-summary";
   mediaUrl?: string;
-  mediaWidth?: number;
-  mediaHeight?: number;
   transcript?: string;
   durationSeconds?: number;
   canRollback?: boolean;
@@ -76,6 +82,7 @@ export function MessageBubble({
   const hasActions = canRollback || canEdit || canShowTranscript;
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
+  const [isMediaOpen, setIsMediaOpen] = useState(false);
   const pressTimerRef = useRef<number | null>(null);
   const didLongPressRef = useRef(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -127,6 +134,40 @@ export function MessageBubble({
         onContextMenu: handleContextMenu,
       }
     : {};
+
+  const openMedia = () => {
+    if (didLongPressRef.current) {
+      didLongPressRef.current = false;
+      return;
+    }
+    setIsMediaOpen(true);
+  };
+
+  const mediaViewer =
+    message.mediaUrl &&
+    (message.kind === "image" ||
+      message.kind === "sticker" ||
+      message.kind === "video") ? (
+      <MediaViewer
+        mediaUrl={message.mediaUrl}
+        kind={message.kind}
+        open={isMediaOpen}
+        alt={
+          message.kind === "sticker"
+            ? mine
+              ? "我发送的表情"
+              : "角色发送的表情"
+            : message.kind === "video"
+              ? mine
+                ? "我发送的视频"
+                : "角色发送的视频"
+              : mine
+                ? "我发送的图片"
+                : "角色发送的图片"
+        }
+        onClose={() => setIsMediaOpen(false)}
+      />
+    ) : null;
 
   const actionMenu = isActionOpen ? (
     <div
@@ -188,67 +229,72 @@ export function MessageBubble({
       </div>
     );
 
-  if (message.kind === "image") {
+  if (message.kind === "image" || message.kind === "video") {
     if (!message.mediaUrl) return null;
     return (
-      <div
-        className={`relative flex max-w-[85%] gap-2 md:max-w-[70%] ${
-          mine ? "items-end self-end" : "items-start self-start"
-        }`}
-        {...longPressProps}
-      >
-        {actionMenu}
-        {mine ? (
-          <DeliveryIndicator
-            state={message.deliveryState}
-            canRetry={Boolean(canRetry)}
-            onRetry={() => onRetry?.(message.id)}
-          />
-        ) : (
-          <div className="mt-1 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
-        )}
-        <CachedMediaImage
-          className={`h-full w-full rounded-xl object-contain ${
-            mine && message.deliveryState === "failed"
-              ? "outline outline-1 outline-red-300/25"
-              : ""
+      <>
+        <div
+          className={`relative flex max-w-[85%] gap-2 md:max-w-[70%] ${
+            mine ? "items-end self-end" : "items-start self-start"
           }`}
-          mediaUrl={message.mediaUrl}
-          width={message.mediaWidth}
-          height={message.mediaHeight}
-          alt={mine ? "我发送的图片" : "角色发送的图片"}
-          variant="display"
-          kind="image"
-        />
-        {mine ? (
-          <div className="mt-1 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
-        ) : null}
-      </div>
+          {...longPressProps}
+        >
+          {actionMenu}
+          {mine ? (
+            <DeliveryIndicator
+              state={message.deliveryState}
+              canRetry={Boolean(canRetry)}
+              onRetry={() => onRetry?.(message.id)}
+            />
+          ) : (
+            <div className="mt-1 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
+          )}
+          <ChatVisualMedia
+            mediaUrl={message.mediaUrl}
+            alt={
+              message.kind === "video"
+                ? mine
+                  ? "我发送的视频"
+                  : "角色发送的视频"
+                : mine
+                  ? "我发送的图片"
+                  : "角色发送的图片"
+            }
+            kind={message.kind}
+            failed={mine && message.deliveryState === "failed"}
+            onOpen={openMedia}
+          />
+          {mine ? (
+            <div className="mt-1 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
+          ) : null}
+        </div>
+        {mediaViewer}
+      </>
     );
   }
 
   if (message.kind === "sticker") {
     if (!message.mediaUrl) return null;
     return (
-      <div
-        className={`relative flex max-w-[55%] items-end gap-2 ${mine ? "self-end" : "self-start"}`}
-      >
-        {!mine ? (
-          <div className="mb-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
-        ) : null}
-        <CachedMediaImage
-          className="h-full w-full object-contain"
-          mediaUrl={message.mediaUrl}
-          width={message.mediaWidth}
-          height={message.mediaHeight}
-          alt={mine ? "我发送的表情" : "角色发送的表情"}
-          variant="thumb"
-          kind="sticker"
-        />
-        {mine ? (
-          <div className="mb-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
-        ) : null}
-      </div>
+      <>
+        <div
+          className={`relative flex max-w-[55%] items-end gap-2 ${mine ? "self-end" : "self-start"}`}
+        >
+          {!mine ? (
+            <div className="mb-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
+          ) : null}
+          <ChatVisualMedia
+            mediaUrl={message.mediaUrl}
+            alt={mine ? "我发送的表情" : "角色发送的表情"}
+            kind="sticker"
+            onOpen={openMedia}
+          />
+          {mine ? (
+            <div className="mb-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
+          ) : null}
+        </div>
+        {mediaViewer}
+      </>
     );
   }
 
@@ -398,42 +444,146 @@ function ParentheticalText({ value }: { value: string }) {
   ));
 }
 
-function CachedMediaImage({
+function ChatVisualMedia({
   mediaUrl,
-  className,
   alt,
-  variant,
-  width,
-  height,
   kind,
+  failed = false,
+  onOpen,
 }: {
   mediaUrl: string;
-  className: string;
   alt: string;
-  variant: "thumb" | "display";
-  width?: number;
-  height?: number;
-  kind: "image" | "sticker";
+  kind: "image" | "sticker" | "video";
+  failed?: boolean;
+  onOpen: () => void;
 }) {
-  const layout = fitMessageMedia({ width, height }, kind);
+  const isSticker = kind === "sticker";
+  const frameClass = isSticker
+    ? "h-44 max-w-[min(240px,55vw)]"
+    : "h-80 max-w-[min(360px,85vw)]";
+
   return (
-    <div
-      className="max-w-full shrink-0 overflow-hidden rounded-xl bg-white/[0.025]"
+    <button
+      className={`group relative block w-fit shrink-0 overflow-hidden rounded-xl bg-white/[0.025] text-left transition active:scale-[0.99] ${frameClass} ${
+        failed ? "outline outline-1 outline-red-300/25" : ""
+      }`}
+      type="button"
       data-media-frame={kind}
-      style={{
-        width: layout.width,
-        aspectRatio: `${layout.width} / ${layout.height}`,
-      }}
+      aria-label={`${alt}，点击放大查看`}
+      onClick={onOpen}
     >
-      <MediaAsset
-        mediaUrl={mediaUrl}
-        variant={variant}
-        className={className}
-        alt={alt}
-        width={width}
-        height={height}
-      />
-    </div>
+      {kind === "video" ? (
+        <InlineVideoPreview mediaUrl={mediaUrl} />
+      ) : (
+        <MediaAsset
+          mediaUrl={mediaUrl}
+          variant={isSticker ? "thumb" : "display"}
+          containerClassName="h-full w-fit max-w-full"
+          className="h-full w-auto max-w-full object-cover"
+          alt={alt}
+        />
+      )}
+      <span className="pointer-events-none absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-lg bg-black/45 text-white/80 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+        <ArrowsOut size={15} weight="bold" />
+      </span>
+    </button>
+  );
+}
+
+function InlineVideoPreview({ mediaUrl }: { mediaUrl: string }) {
+  const source = useMediaDirectUrl(mediaUrl, true, "original");
+  return source ? (
+    <video
+      className="h-full w-auto max-w-full bg-black/30 object-cover"
+      src={source}
+      preload="metadata"
+      muted
+      playsInline
+      aria-hidden="true"
+    />
+  ) : (
+    <div className="h-full w-60 animate-pulse bg-white/[0.035]" />
+  );
+}
+
+function MediaViewer({
+  mediaUrl,
+  kind,
+  alt,
+  open,
+  onClose,
+}: {
+  mediaUrl: string;
+  kind: "image" | "sticker" | "video";
+  alt: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const source = useMediaDirectUrl(mediaUrl, open, "original");
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose, open]);
+
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] grid place-items-center bg-black/88 p-4 backdrop-blur-md"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${alt}放大预览`}
+      onClick={onClose}
+    >
+      <button
+        className="absolute right-4 top-4 grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-black/45 text-white/80 transition hover:bg-black/65 hover:text-white active:scale-95"
+        type="button"
+        aria-label="关闭媒体预览"
+        autoFocus
+        onClick={onClose}
+      >
+        <X size={21} weight="bold" />
+      </button>
+      <div
+        className="flex max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] items-center justify-center"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {source ? (
+          kind === "video" ? (
+            <video
+              className="max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] rounded-xl bg-black object-contain shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+              src={source}
+              controls
+              autoPlay
+              playsInline
+            />
+          ) : (
+            <img
+              className="max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] rounded-xl object-contain shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+              src={source}
+              alt={alt}
+            />
+          )
+        ) : (
+          <SpinnerGap
+            className="animate-spin text-white/55"
+            size={28}
+            aria-label="媒体加载中"
+          />
+        )}
+      </div>
+    </div>,
+    document.body,
   );
 }
 

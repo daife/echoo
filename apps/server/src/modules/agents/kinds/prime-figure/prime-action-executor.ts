@@ -615,8 +615,6 @@ function toMessageContent(
               resourceId: imageMedia.resourceId,
               kind: "image",
               variants: ["thumb", "display", "original"],
-              width: imageMedia.width,
-              height: imageMedia.height,
             }),
           }
         : {}),
@@ -633,8 +631,6 @@ function toMessageContent(
         resourceId: sticker.resourceId,
         kind: "sticker",
         variants: ["thumb", "display", "original"],
-        width: sticker.width,
-        height: sticker.height,
       }),
     };
   }

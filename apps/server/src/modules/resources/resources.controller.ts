@@ -173,8 +173,6 @@ export async function registerResourceRoutes(app: FastifyInstance) {
           mimeType: access.mimeType,
           byteSize: access.byteSize,
           etag: access.etag,
-          width: access.width,
-          height: access.height,
         };
       }),
     );
@@ -270,15 +268,11 @@ function resourceView(
     status: resource.status,
     mimeType: resource.mimeType,
     byteSize: resource.byteSize,
-    width: resource.width,
-    height: resource.height,
     durationSeconds: resource.durationSeconds,
     variants: variants.map((variant) => ({
       variant: variant.variant,
       mimeType: variant.mimeType,
       byteSize: variant.byteSize,
-      width: variant.width,
-      height: variant.height,
       etag: variant.etag,
     })),
   };

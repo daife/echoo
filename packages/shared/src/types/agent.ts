@@ -22,8 +22,6 @@ export interface PrimeFigureSticker {
   resourceId: string;
   resourcePath: string;
   description: string;
-  width: number;
-  height: number;
 }
 
 export type PrimeFigureStickerInput =

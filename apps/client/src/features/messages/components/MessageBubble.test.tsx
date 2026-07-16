@@ -30,7 +30,7 @@ describe("MessageBubble transfers", () => {
 });
 
 describe("MessageBubble media layout", () => {
-  it("reserves the final image aspect ratio before the source resolves", () => {
+  it("renders images at the fixed chat height without dimension metadata", () => {
     const html = renderToStaticMarkup(
       <MessageBubble
         message={{
@@ -40,18 +40,16 @@ describe("MessageBubble media layout", () => {
           createdAt: 1234,
           kind: "image",
           mediaUrl: "/api/resources/resource_image/file",
-          mediaWidth: 900,
-          mediaHeight: 1_600,
         }}
       />,
     );
 
     expect(html).toContain('data-media-frame="image"');
-    expect(html).toContain("width:270px");
-    expect(html).toContain("aspect-ratio:270 / 480");
+    expect(html).toContain("h-80");
+    expect(html).toContain("点击放大查看");
   });
 
-  it("keeps a stable fallback frame when dimensions are unavailable", () => {
+  it("renders stickers at their smaller fixed chat height", () => {
     const html = renderToStaticMarkup(
       <MessageBubble
         message={{
@@ -66,7 +64,25 @@ describe("MessageBubble media layout", () => {
     );
 
     expect(html).toContain('data-media-frame="sticker"');
-    expect(html).toContain("width:176px");
-    expect(html).toContain("aspect-ratio:176 / 176");
+    expect(html).toContain("h-44");
+  });
+
+  it("renders a fixed-height video preview that opens the media viewer", () => {
+    const html = renderToStaticMarkup(
+      <MessageBubble
+        message={{
+          id: "msg_video",
+          from: "agent",
+          text: "",
+          createdAt: 1234,
+          kind: "video",
+          mediaUrl: "/api/resources/resource_video/file",
+        }}
+      />,
+    );
+
+    expect(html).toContain('data-media-frame="video"');
+    expect(html).toContain("h-80");
+    expect(html).toContain("点击放大查看");
   });
 });

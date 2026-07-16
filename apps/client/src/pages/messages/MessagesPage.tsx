@@ -1285,14 +1285,6 @@ function toBubbleMessages(
   const primeContent = readPrimeContent(message.metadata);
   const isSticker = primeContent?.type === "sticker";
   const isTransfer = primeContent?.type === "transfer";
-  const persistedMedia = message.content.media;
-  const mediaDimensions =
-    persistedMedia &&
-    (persistedMedia.kind === "image" ||
-      persistedMedia.kind === "sticker" ||
-      persistedMedia.kind === "video")
-      ? { width: persistedMedia.width, height: persistedMedia.height }
-      : message.localMediaDimensions;
   const text =
     message.contentType === "text" && !isTransfer
       ? (message.content.text ?? "")
@@ -1326,14 +1318,14 @@ function toBubbleMessages(
             ? "transfer"
             : message.contentType === "image"
               ? "image"
-              : "text",
+              : message.contentType === "video"
+                ? "video"
+                : "text",
     mediaUrl:
       message.content.mediaUrl ??
       (message.content.media?.resourceId
         ? `/api/resources/${message.content.media.resourceId}/file`
         : undefined),
-    mediaWidth: mediaDimensions?.width,
-    mediaHeight: mediaDimensions?.height,
     transcript:
       message.contentType === "voice" ? message.content.text : undefined,
     durationSeconds:
