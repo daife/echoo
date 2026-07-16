@@ -134,7 +134,7 @@ export async function registerResourceRoutes(app: FastifyInstance) {
     const userId = await request.requireUserId(reply);
     if (!userId) return;
     const resource = await resources.findById(request.params.id);
-    if (!resource || resource.ownerUserId !== userId)
+    if (!resource || !(await resources.canUserAccess(userId, resource.id)))
       return reply.code(404).send({ error: "RESOURCE_NOT_FOUND" });
     return resourceView(resource, await resources.listVariants(resource.id));
   });
@@ -155,7 +155,7 @@ export async function registerResourceRoutes(app: FastifyInstance) {
         const resource = await resources.findById(item.resourceId);
         if (
           !resource ||
-          resource.ownerUserId !== userId ||
+          !(await resources.canUserAccess(userId, resource.id)) ||
           resource.status !== "ready"
         )
           return {
@@ -198,7 +198,7 @@ export async function registerResourceRoutes(app: FastifyInstance) {
     const tokenUserId = verifyMediaToken(app, request.query.token, resource.id);
     const userId = tokenUserId ?? (await request.requireUserId(reply));
     if (!userId) return;
-    if (resource.ownerUserId !== userId)
+    if (!(await resources.canUserAccess(userId, resource.id)))
       return reply.code(403).send({ error: "RESOURCE_FORBIDDEN" });
 
     const variant = variantSchema

@@ -19,7 +19,6 @@ import {
   invalidatesProactiveWakeup,
   PrimeFigureStateRepository,
 } from "./prime-figure-state.repository.js";
-import { PrimeFigureRepository } from "./prime-figure.repository.js";
 import { parseReadableMinute } from "./prime-time.js";
 import type { StoredPrimeFigureRuntimeConfig } from "../../../runtime-config/runtime-config.types.js";
 import type { PrimeDecisionTrigger } from "./prime-figure-runtime.service.js";
@@ -35,7 +34,6 @@ import { ResourceRepository } from "../../../resources/resource.repository.js";
 export class PrimeActionExecutor {
   constructor(
     private readonly states = new PrimeFigureStateRepository(),
-    private readonly figures = new PrimeFigureRepository(),
     private readonly messages = new MessageRepository(),
     private readonly logs = new PrimeActionLogRepository(),
     private readonly conversations = new ConversationRepository(),
@@ -78,6 +76,10 @@ export class PrimeActionExecutor {
         decision.variables,
       ),
       memories: appendMemories(input.state, decision, APP_TIME_ZONE, now),
+      currentSituation:
+        decision.stateUpdates?.currentSituation ?? input.state.currentSituation,
+      schedule: decision.stateUpdates?.schedule ?? input.state.schedule,
+      itinerary: decision.stateUpdates?.itinerary ?? input.state.itinerary,
       mood: decision.figureMood,
       moodObservedAtMs: now,
       relationshipStatus:
@@ -384,11 +386,6 @@ export class PrimeActionExecutor {
           scheduleWakeupAction.afterMinutes === null,
       });
 
-      await this.figures.applyRuntimeUpdates(
-        input.agent.id,
-        input.agent.detail,
-        decision.stateUpdates ?? {},
-      );
       await this.states.save(input.ownerUserId, input.agent.id, state);
       if (muteChanged)
         this.appPush.pushToUser(input.ownerUserId, {

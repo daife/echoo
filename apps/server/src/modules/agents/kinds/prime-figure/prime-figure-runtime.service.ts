@@ -792,7 +792,7 @@ export async function buildPrimeChatMessages(
     .reverse()
     .find((message) => message.sender === "end_user");
   const eventTime = lastEndUserMessage?.occurredAtMs ?? now;
-  const scheduleSegment = findScheduleSegment(agent.detail.schedule, eventTime);
+  const scheduleSegment = findScheduleSegment(state.schedule, eventTime);
   const hints: string[] = [];
   const debugUserHint =
     trigger === "debug_hint" && debugInstruction?.trim()
@@ -1145,13 +1145,10 @@ export async function buildPrimeChatMessages(
       now: formatReadableMinute(now, timezone),
       weekday: formatWeekdayCode(now, timezone),
       figureNow: {
-        currentSituation: sanitizeVisibleText(
-          agent.detail.currentSituation,
-          timezone,
-        ),
-        itinerary: sanitizeVisibleText(agent.detail.itinerary, timezone),
+        currentSituation: sanitizeVisibleText(state.currentSituation, timezone),
+        itinerary: sanitizeVisibleText(state.itinerary, timezone),
         schedule: {
-          segments: agent.detail.schedule.segments.map((segment) => ({
+          segments: state.schedule.segments.map((segment) => ({
             label: sanitizeVisibleText(segment.label, timezone),
             days: segment.days,
             start: segment.start,

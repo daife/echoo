@@ -22,6 +22,8 @@ import { registerRuntimeConfigRoutes } from "./modules/runtime-config/runtime-co
 import { registerAdminRoutes } from "./modules/admin/admin.controller.js";
 import { registerBillingRoutes } from "./modules/billing/billing.controller.js";
 import { registerPlatformCatalogRoutes } from "./modules/platform-catalog/platform-catalog.controller.js";
+import { registerCharacterAssetRoutes } from "./modules/character-assets/character-assets.controller.js";
+import { registerSocialRoutes } from "./modules/social/social.controller.js";
 
 export async function buildApp() {
   await initializeDatabase();
@@ -81,6 +83,8 @@ export async function buildApp() {
   await app.register(registerRuntimeConfigRoutes, { prefix: "/api" });
   await app.register(registerBillingRoutes, { prefix: "/api" });
   await app.register(registerPlatformCatalogRoutes, { prefix: "/api" });
+  await app.register(registerCharacterAssetRoutes, { prefix: "/api" });
+  await app.register(registerSocialRoutes, { prefix: "/api" });
   await app.register(registerAdminRoutes, { prefix: "/api/admin" });
   await app.register(registerRealtimeGateway);
   app.addHook("onReady", async () => {

@@ -166,6 +166,9 @@ export const primeFigureStateSchema = z.object({
     .optional()
     .default({}),
   memories: z.array(primeFigureMemorySchema).optional().default([]),
+  currentSituation: optionalText(),
+  schedule: primeFigureScheduleSchema.optional().default({ segments: [] }),
+  itinerary: optionalText(),
   mood: optionalText(),
   moodObservedAtMs: z.number().nonnegative(),
   relationshipStatus: optionalText(),

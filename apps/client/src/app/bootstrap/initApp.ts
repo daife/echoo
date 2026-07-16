@@ -2,6 +2,7 @@ import {
   AgentsApi,
   ApiClient,
   AuthApi,
+  CharacterAssetsApi,
   MessageApi,
   RuntimeConfigApi,
   ResourcesApi,
@@ -11,6 +12,7 @@ import { AuthService } from "../../services/AuthService";
 import { MessageService } from "../../services/MessageService";
 import type { RuntimeBundle } from "../../runtimes/factory/RuntimeBundle";
 import { RuntimeConfigService } from "../../services/RuntimeConfigService";
+import { CharacterAssetService } from "../../services/CharacterAssetService";
 
 export function initApp(runtime: RuntimeBundle) {
   const api = new ApiClient({
@@ -20,6 +22,9 @@ export function initApp(runtime: RuntimeBundle) {
 
   return {
     agentService: new AgentService(new AgentsApi(api)),
+    characterAssetService: new CharacterAssetService(
+      new CharacterAssetsApi(api),
+    ),
     authService: new AuthService(
       new AuthApi(api),
       runtime.auth,

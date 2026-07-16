@@ -102,6 +102,9 @@ export interface PrimeFigureSchedule {
 export interface PrimeFigureState {
   variables: Record<string, PrimeFigureVariableValue>;
   memories: PrimeFigureMemory[];
+  currentSituation: string;
+  schedule: PrimeFigureSchedule;
+  itinerary: string;
   mood: string;
   moodObservedAtMs: number;
   relationshipStatus: string;
@@ -153,6 +156,8 @@ export interface PrimeFigureDetail {
   variableDefinitions: PrimeFigureVariableDefinition[];
   referenceImages: PrimeFigureReferenceImage[];
   stickers?: PrimeFigureSticker[];
+  initialMood: string;
+  initialRelationshipStatus: string;
 }
 
 export interface PrimeWorldDetail {
@@ -173,6 +178,7 @@ export interface AgentBase {
   tags: string[];
   introduction: string;
   isPublic: boolean;
+  publishedAssetId?: string;
   /**
    * Persistent session id for this user's session with the figure.
    * Server-side storage currently uses conversations.id as the session id.

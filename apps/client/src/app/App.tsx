@@ -158,6 +158,13 @@ export function App() {
     setView("messages");
   }, []);
 
+  const handleAgentInstalled = useCallback((agent: Agent) => {
+    setMyAgents((current) => [
+      agent,
+      ...current.filter((item) => item.id !== agent.id),
+    ]);
+  }, []);
+
   const openConversationList = useCallback(() => {
     setSelectedAgent(null);
     setView("messages");
@@ -198,7 +205,19 @@ export function App() {
 
   const createSliceFigure = async (input: CreateSliceFigureRequest) => {
     try {
-      const { agent } = await services.agentService.createSliceFigure(input);
+      const created = await services.agentService.createSliceFigure(input);
+      let agent = created.agent;
+      if (input.isPublic) {
+        const published = await services.characterAssetService.publish(
+          agent.id,
+          false,
+        );
+        agent = {
+          ...agent,
+          isPublic: true,
+          publishedAssetId: published.asset.id,
+        };
+      }
       setMyAgents((current) => [
         agent,
         ...current.filter((item) => item.id !== agent.id),
@@ -216,7 +235,19 @@ export function App() {
 
   const createPrimeFigure = async (input: CreatePrimeFigureRequest) => {
     try {
-      const { agent } = await services.agentService.createPrimeFigure(input);
+      const created = await services.agentService.createPrimeFigure(input);
+      let agent = created.agent;
+      if (input.isPublic) {
+        const published = await services.characterAssetService.publish(
+          agent.id,
+          false,
+        );
+        agent = {
+          ...agent,
+          isPublic: true,
+          publishedAssetId: published.asset.id,
+        };
+      }
       setMyAgents((current) => [
         agent,
         ...current.filter((item) => item.id !== agent.id),
@@ -237,10 +268,30 @@ export function App() {
     input: UpdateSliceFigureRequest,
   ) => {
     try {
-      const { agent } = await services.agentService.updateSliceFigure(
+      const updated = await services.agentService.updateSliceFigure(
         agentId,
         input,
       );
+      let agent = updated.agent;
+      const previous = myAgents.find((item) => item.id === agentId);
+      if (input.isPublic) {
+        const published = await services.characterAssetService.publish(
+          agentId,
+          false,
+        );
+        agent = {
+          ...agent,
+          isPublic: true,
+          publishedAssetId: published.asset.id,
+        };
+      } else if (previous?.isPublic && previous.publishedAssetId) {
+        await services.characterAssetService.unlist(previous.publishedAssetId);
+        agent = {
+          ...agent,
+          isPublic: false,
+          publishedAssetId: previous.publishedAssetId,
+        };
+      }
       setMyAgents((current) =>
         current.map((item) => (item.id === agent.id ? agent : item)),
       );
@@ -262,10 +313,30 @@ export function App() {
     input: UpdatePrimeFigureRequest,
   ) => {
     try {
-      const { agent } = await services.agentService.updatePrimeFigure(
+      const updated = await services.agentService.updatePrimeFigure(
         agentId,
         input,
       );
+      let agent = updated.agent;
+      const previous = myAgents.find((item) => item.id === agentId);
+      if (input.isPublic) {
+        const published = await services.characterAssetService.publish(
+          agentId,
+          false,
+        );
+        agent = {
+          ...agent,
+          isPublic: true,
+          publishedAssetId: published.asset.id,
+        };
+      } else if (previous?.isPublic && previous.publishedAssetId) {
+        await services.characterAssetService.unlist(previous.publishedAssetId);
+        agent = {
+          ...agent,
+          isPublic: false,
+          publishedAssetId: previous.publishedAssetId,
+        };
+      }
       setMyAgents((current) =>
         current.map((item) => (item.id === agent.id ? agent : item)),
       );
@@ -312,6 +383,37 @@ export function App() {
     return agent;
   };
 
+  const publishAgent = async (
+    agentId: string,
+    includeRecommendedRuntimeConfig: boolean,
+  ) => {
+    const response = await services.characterAssetService.publish(
+      agentId,
+      includeRecommendedRuntimeConfig,
+    );
+    setMyAgents((current) =>
+      current.map((agent) =>
+        agent.id === agentId
+          ? {
+              ...agent,
+              isPublic: true,
+              publishedAssetId: response.asset.id,
+            }
+          : agent,
+      ),
+    );
+    return response;
+  };
+
+  const unlistAgentAsset = async (agentId: string, assetId: string) => {
+    await services.characterAssetService.unlist(assetId);
+    setMyAgents((current) =>
+      current.map((agent) =>
+        agent.id === agentId ? { ...agent, isPublic: false } : agent,
+      ),
+    );
+  };
+
   const ActivePage = useMemo(() => {
     if (auth.isLoading) {
       return (
@@ -329,7 +431,14 @@ export function App() {
         />
       );
     }
-    if (view === "explore") return <ExplorePage />;
+    if (view === "explore")
+      return (
+        <ExplorePage
+          service={services.characterAssetService}
+          isAuthenticated={Boolean(auth.user)}
+          onAgentInstalled={handleAgentInstalled}
+        />
+      );
     if (view === "profile")
       return (
         <ProfilePage
@@ -337,6 +446,8 @@ export function App() {
           isLoadingAgents={isLoadingAgents}
           onOpenAgent={openAgent}
           onOpenSettings={openSettings}
+          onPublishAgent={publishAgent}
+          onUnlistAsset={unlistAgentAsset}
         />
       );
     if (view === "create")
@@ -397,6 +508,7 @@ export function App() {
     closeConversation,
     closeSettings,
     handleConversationDeleted,
+    handleAgentInstalled,
     isLoadingAgents,
     myAgents,
     openConversationList,

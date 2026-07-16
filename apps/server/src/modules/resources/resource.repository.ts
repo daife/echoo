@@ -434,6 +434,28 @@ export class ResourceRepository {
     return row ? rowToResource(row) : null;
   }
 
+  async canUserAccess(userId: string, resourceId: string) {
+    const row = await queryOne<RowDataPacket>(
+      `SELECT resources.id FROM resources
+       WHERE resources.id = ? AND (
+         resources.owner_user_id = ? OR
+         EXISTS (
+           SELECT 1 FROM character_asset_version_resources version_resources
+           JOIN character_asset_versions versions
+             ON versions.id = version_resources.version_id
+           JOIN character_assets assets ON assets.id = versions.asset_id
+           LEFT JOIN character_asset_installations installations
+             ON installations.version_id = versions.id
+              AND installations.owner_user_id = ?
+           WHERE version_resources.resource_id = resources.id
+             AND (assets.status = 'published' OR installations.id IS NOT NULL)
+         )
+       ) LIMIT 1`,
+      [resourceId, userId, userId],
+    );
+    return Boolean(row);
+  }
+
   async findByPublicPath(ownerUserId: string, publicPath: string) {
     const row = await queryOne<ResourceRow>(
       "SELECT * FROM resources WHERE owner_user_id = ? AND public_path = ?",

@@ -38,13 +38,9 @@ CREATE TABLE IF NOT EXISTS agents (
   type ENUM('slice-figure', 'prime-figure', 'prime-world') NOT NULL,
   name VARCHAR(160) NOT NULL,
   definition JSON NOT NULL,
-  runtime_state JSON NOT NULL,
-  is_public BOOLEAN NOT NULL DEFAULT FALSE,
-  next_run_at BIGINT NULL,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   INDEX idx_agents_owner_created (owner_user_id, created_at DESC),
-  INDEX idx_agents_due (type, next_run_at),
   CONSTRAINT fk_agents_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -58,12 +54,107 @@ CREATE TABLE IF NOT EXISTS conversations (
   unread_count INT UNSIGNED NOT NULL DEFAULT 0,
   pinned_at BIGINT NULL,
   runtime_state JSON NOT NULL,
+  next_run_at BIGINT NULL,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   UNIQUE KEY uq_conversations_agent (agent_id),
   INDEX idx_conversations_owner_updated (owner_user_id, pinned_at DESC, updated_at DESC),
+  INDEX idx_conversations_due (type, next_run_at),
   CONSTRAINT fk_conversations_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_conversations_agent FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS social_objects (
+  id VARCHAR(64) PRIMARY KEY,
+  object_type VARCHAR(48) NOT NULL,
+  like_count INT UNSIGNED NOT NULL DEFAULT 0,
+  comment_count INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  INDEX idx_social_objects_type_created (object_type, created_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS character_assets (
+  id VARCHAR(64) PRIMARY KEY,
+  author_user_id VARCHAR(64) NOT NULL,
+  source_agent_id VARCHAR(64) NULL UNIQUE,
+  status ENUM('published', 'unlisted') NOT NULL DEFAULT 'published',
+  latest_version_id VARCHAR(64) NULL,
+  published_at BIGINT NOT NULL,
+  unlisted_at BIGINT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  INDEX idx_character_assets_author_updated (author_user_id, updated_at DESC),
+  INDEX idx_character_assets_status_published (status, published_at DESC),
+  CONSTRAINT fk_character_assets_social FOREIGN KEY (id) REFERENCES social_objects(id) ON DELETE CASCADE,
+  CONSTRAINT fk_character_assets_author FOREIGN KEY (author_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_character_assets_source FOREIGN KEY (source_agent_id) REFERENCES agents(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS character_asset_versions (
+  id VARCHAR(64) PRIMARY KEY,
+  asset_id VARCHAR(64) NOT NULL,
+  version_number INT UNSIGNED NOT NULL,
+  snapshot JSON NOT NULL,
+  recommended_runtime_config JSON NULL,
+  created_at BIGINT NOT NULL,
+  UNIQUE KEY uq_character_asset_version (asset_id, version_number),
+  INDEX idx_character_asset_versions_asset_created (asset_id, created_at DESC),
+  CONSTRAINT fk_character_asset_versions_asset FOREIGN KEY (asset_id) REFERENCES character_assets(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS character_asset_version_resources (
+  version_id VARCHAR(64) NOT NULL,
+  resource_id VARCHAR(64) NOT NULL,
+  usage_kind VARCHAR(48) NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (version_id, resource_id, usage_kind),
+  INDEX idx_character_asset_version_resources_resource (resource_id),
+  CONSTRAINT fk_character_asset_version_resources_version FOREIGN KEY (version_id) REFERENCES character_asset_versions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_character_asset_version_resources_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS character_asset_installations (
+  id VARCHAR(64) PRIMARY KEY,
+  owner_user_id VARCHAR(64) NOT NULL,
+  asset_id VARCHAR(64) NOT NULL,
+  version_id VARCHAR(64) NOT NULL,
+  agent_id VARCHAR(64) NOT NULL UNIQUE,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  UNIQUE KEY uq_character_asset_installation_owner (owner_user_id, asset_id),
+  INDEX idx_character_asset_installations_asset (asset_id),
+  CONSTRAINT fk_character_asset_installations_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_character_asset_installations_asset FOREIGN KEY (asset_id) REFERENCES character_assets(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_character_asset_installations_version FOREIGN KEY (version_id) REFERENCES character_asset_versions(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_character_asset_installations_agent FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS social_likes (
+  object_id VARCHAR(64) NOT NULL,
+  user_id VARCHAR(64) NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (object_id, user_id),
+  INDEX idx_social_likes_user_created (user_id, created_at DESC),
+  CONSTRAINT fk_social_likes_object FOREIGN KEY (object_id) REFERENCES social_objects(id) ON DELETE CASCADE,
+  CONSTRAINT fk_social_likes_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS social_comments (
+  id VARCHAR(64) PRIMARY KEY,
+  object_id VARCHAR(64) NOT NULL,
+  author_user_id VARCHAR(64) NOT NULL,
+  parent_comment_id VARCHAR(64) NULL,
+  body TEXT NOT NULL,
+  status ENUM('visible', 'deleted', 'hidden') NOT NULL DEFAULT 'visible',
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  deleted_at BIGINT NULL,
+  INDEX idx_social_comments_object_created (object_id, created_at DESC),
+  INDEX idx_social_comments_parent_created (parent_comment_id, created_at ASC),
+  CONSTRAINT fk_social_comments_object FOREIGN KEY (object_id) REFERENCES social_objects(id) ON DELETE CASCADE,
+  CONSTRAINT fk_social_comments_author FOREIGN KEY (author_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_social_comments_parent FOREIGN KEY (parent_comment_id) REFERENCES social_comments(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS user_runtime_configs (

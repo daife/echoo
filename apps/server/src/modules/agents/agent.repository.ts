@@ -32,8 +32,9 @@ interface AgentRow extends RowDataPacket {
   type: Agent["type"];
   name: string;
   definition: unknown;
-  runtime_state: unknown;
-  is_public: number | boolean;
+  conversation_runtime_state: unknown;
+  is_public?: number | boolean;
+  published_asset_id?: string | null;
   conversation_id: string | null;
   created_at: number;
   updated_at: number;
@@ -126,17 +127,14 @@ export class AgentRepository {
       await withTransaction(async (connection) => {
         await execute(
           `INSERT INTO agents
-         (id, owner_user_id, type, name, definition, runtime_state, is_public,
-          next_run_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+         (id, owner_user_id, type, name, definition, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [
             id,
             ownerUserId,
             input.type,
             input.name,
             JSON.stringify(definition),
-            JSON.stringify(runtimeState),
-            input.isPublic,
             now,
             now,
           ],
@@ -145,8 +143,8 @@ export class AgentRepository {
         await execute(
           `INSERT INTO conversations
          (id, owner_user_id, agent_id, type, title, last_message_preview,
-          unread_count, pinned_at, runtime_state, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 0, NULL, JSON_OBJECT(), ?, ?)`,
+          unread_count, pinned_at, runtime_state, next_run_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, NULL, ?, ?)`,
           [
             conversationId,
             ownerUserId,
@@ -154,6 +152,7 @@ export class AgentRepository {
             input.type,
             input.name,
             preview,
+            JSON.stringify(runtimeState),
             now,
             now,
           ],
@@ -312,6 +311,13 @@ export class AgentRepository {
               ? (existing.detail.stickers ?? [])
               : []),
         ),
+        ...(existing.type === "prime-figure"
+          ? {
+              initialMood: existing.detail.initialMood,
+              initialRelationshipStatus:
+                existing.detail.initialRelationshipStatus,
+            }
+          : {}),
       },
     };
     if (nextAvatar !== undefined) {
@@ -328,12 +334,15 @@ export class AgentRepository {
       await withTransaction(async (connection) => {
         if (nextRuntimeState) {
           await execute(
-            "UPDATE agents SET name = ?, definition = ?, runtime_state = ?, is_public = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?",
+            "UPDATE agents SET name = ?, definition = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?",
+            [input.name, JSON.stringify(definition), now, agentId, ownerUserId],
+            connection,
+          );
+          await execute(
+            "UPDATE conversations SET runtime_state = ?, title = ?, updated_at = ? WHERE agent_id = ? AND owner_user_id = ?",
             [
-              input.name,
-              JSON.stringify(definition),
               JSON.stringify(nextRuntimeState),
-              input.isPublic,
+              input.name,
               now,
               agentId,
               ownerUserId,
@@ -342,23 +351,17 @@ export class AgentRepository {
           );
         } else {
           await execute(
-            "UPDATE agents SET name = ?, definition = ?, is_public = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?",
-            [
-              input.name,
-              JSON.stringify(definition),
-              input.isPublic,
-              now,
-              agentId,
-              ownerUserId,
-            ],
+            "UPDATE agents SET name = ?, definition = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?",
+            [input.name, JSON.stringify(definition), now, agentId, ownerUserId],
             connection,
           );
         }
-        await execute(
-          "UPDATE conversations SET title = ?, updated_at = ? WHERE agent_id = ? AND owner_user_id = ?",
-          [input.name, now, agentId, ownerUserId],
-          connection,
-        );
+        if (!nextRuntimeState)
+          await execute(
+            "UPDATE conversations SET title = ?, updated_at = ? WHERE agent_id = ? AND owner_user_id = ?",
+            [input.name, now, agentId, ownerUserId],
+            connection,
+          );
       });
     } catch (error) {
       await Promise.all([
@@ -650,25 +653,24 @@ export class AgentRepository {
         variableDefinitions: agent.detail.variableDefinitions.map(
           (definition) => ({
             ...definition,
-            ...(state.variables[definition.key] !== undefined
-              ? { defaultValue: state.variables[definition.key] }
-              : { defaultValue: undefined }),
           }),
         ),
         referenceImages,
         stickers,
-        initialMood: state.mood,
-        initialRelationshipStatus: state.relationshipStatus,
+        initialMood: agent.detail.initialMood,
+        initialRelationshipStatus: agent.detail.initialRelationshipStatus,
       },
     };
   }
 
   async getRuntimeState<T>(ownerUserId: string, agentId: string) {
     const row = await queryOne<AgentRow>(
-      "SELECT runtime_state FROM agents WHERE owner_user_id = ? AND id = ?",
+      `SELECT conversations.runtime_state AS conversation_runtime_state
+       FROM agents JOIN conversations ON conversations.agent_id = agents.id
+       WHERE agents.owner_user_id = ? AND agents.id = ?`,
       [ownerUserId, agentId],
     );
-    return row ? parseJson<T>(row.runtime_state, {} as T) : null;
+    return row ? parseJson<T>(row.conversation_runtime_state, {} as T) : null;
   }
 
   async saveRuntimeState(
@@ -678,7 +680,9 @@ export class AgentRepository {
     nextRunAt?: number | null,
   ) {
     await execute(
-      "UPDATE agents SET runtime_state = ?, next_run_at = ?, updated_at = ? WHERE owner_user_id = ? AND id = ?",
+      `UPDATE conversations JOIN agents ON agents.id = conversations.agent_id
+       SET conversations.runtime_state = ?, conversations.next_run_at = ?, conversations.updated_at = ?
+       WHERE agents.owner_user_id = ? AND agents.id = ?`,
       [
         JSON.stringify(state),
         nextRunAt ?? null,
@@ -857,8 +861,14 @@ export class AgentRepository {
   }
 }
 
-const SELECT_AGENT = `SELECT agents.*, conversations.id AS conversation_id
-  FROM agents LEFT JOIN conversations ON conversations.agent_id = agents.id`;
+const SELECT_AGENT = `SELECT agents.*, conversations.id AS conversation_id,
+  conversations.runtime_state AS conversation_runtime_state,
+  (published_assets.status = 'published') AS is_public,
+  published_assets.id AS published_asset_id
+  FROM agents
+  LEFT JOIN conversations ON conversations.agent_id = agents.id
+  LEFT JOIN character_assets published_assets
+    ON published_assets.source_agent_id = agents.id`;
 
 function rowToAgent(row: AgentRow): Agent {
   const stored = parseJson<
@@ -869,7 +879,10 @@ function rowToAgent(row: AgentRow): Agent {
   >(row.definition, {} as never);
   const runtimeState =
     row.type === "prime-figure"
-      ? parseJson<PrimeFigureState>(row.runtime_state, {} as PrimeFigureState)
+      ? parseJson<PrimeFigureState>(
+          row.conversation_runtime_state,
+          {} as PrimeFigureState,
+        )
       : null;
   return {
     ...stored,
@@ -892,6 +905,9 @@ function rowToAgent(row: AgentRow): Agent {
     type: row.type,
     name: row.name,
     isPublic: Boolean(row.is_public),
+    ...(row.published_asset_id
+      ? { publishedAssetId: row.published_asset_id }
+      : {}),
     conversationId: row.conversation_id ?? "",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -969,6 +985,8 @@ function buildDetail(
     variableDefinitions: value.variableDefinitions ?? [],
     referenceImages,
     stickers,
+    initialMood: value.initialMood ?? "",
+    initialRelationshipStatus: value.initialRelationshipStatus ?? "",
   };
 }
 
@@ -982,6 +1000,9 @@ function buildRuntimeState(input: CreateAgentInput, now: number) {
   const state: PrimeFigureState = {
     variables,
     memories: [],
+    currentSituation: input.currentSituation ?? "",
+    schedule: { segments: input.schedule?.segments ?? [] },
+    itinerary: input.itinerary ?? "",
     mood: input.initialMood ?? "",
     moodObservedAtMs: now,
     relationshipStatus: input.initialRelationshipStatus ?? "",

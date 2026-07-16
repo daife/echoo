@@ -110,7 +110,10 @@ export class AgentsApi {
   }
 }
 
-function normalizeAgentResources(client: ApiClient, agent: Agent): Agent {
+export function normalizeAgentResources(
+  client: ApiClient,
+  agent: Agent,
+): Agent {
   const normalized = {
     ...agent,
     ...(agent.avatarResourcePath
