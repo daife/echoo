@@ -1,10 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
+  getActivePrimaryNavigationView,
+  PRIMARY_NAVIGATION_VIEWS,
+  shouldShowDesktopConversationRail,
   shouldShowMobileBottomNav,
   shouldShowMobileConversationList,
 } from "./navigationPresentation";
 
 describe("responsive navigation presentation", () => {
+  it("places explore third in the primary navigation", () => {
+    expect(PRIMARY_NAVIGATION_VIEWS).toEqual([
+      "home",
+      "messages",
+      "explore",
+      "profile",
+    ]);
+  });
+
   it("keeps the mobile navigation visible on the conversation list", () => {
     expect(shouldShowMobileBottomNav("messages", false, true)).toBe(true);
     expect(shouldShowMobileConversationList("messages", false)).toBe(true);
@@ -29,5 +41,42 @@ describe("responsive navigation presentation", () => {
   it("keeps an exit visible while a protected page shows authentication", () => {
     expect(shouldShowMobileBottomNav("messages", true, false)).toBe(true);
     expect(shouldShowMobileBottomNav("settings", false, false)).toBe(true);
+  });
+
+  it("shows the desktop conversation rail on shared content views", () => {
+    for (const view of [
+      "home",
+      "messages",
+      "explore",
+      "profile",
+      "settings",
+      "bindings",
+    ] as const) {
+      expect(shouldShowDesktopConversationRail(view, true)).toBe(true);
+    }
+    expect(shouldShowDesktopConversationRail("create", true)).toBe(false);
+    expect(shouldShowDesktopConversationRail("auth", true)).toBe(false);
+  });
+
+  it("only shows public desktop rails before authentication", () => {
+    expect(shouldShowDesktopConversationRail("home", false)).toBe(true);
+    expect(shouldShowDesktopConversationRail("explore", false)).toBe(true);
+    expect(shouldShowDesktopConversationRail("profile", false)).toBe(false);
+    expect(shouldShowDesktopConversationRail("messages", false)).toBe(false);
+  });
+
+  it("keeps profile active in settings", () => {
+    expect(getActivePrimaryNavigationView("settings", "home")).toBe(
+      "profile",
+    );
+  });
+
+  it("keeps the binding source navigation item active", () => {
+    expect(getActivePrimaryNavigationView("bindings", "explore")).toBe(
+      "explore",
+    );
+    expect(getActivePrimaryNavigationView("bindings", "settings")).toBe(
+      "profile",
+    );
   });
 });

@@ -1,9 +1,7 @@
 import {
   ChatCircleText,
   Compass,
-  GearSix,
   House,
-  LinkSimple,
   UserCircle,
 } from "@phosphor-icons/react";
 import type {
@@ -28,6 +26,10 @@ import { MessagesPage } from "../pages/messages/MessagesPage";
 import { ProfilePage } from "../pages/profile/ProfilePage";
 import { SettingsPage } from "../pages/settings/SettingsPage";
 import {
+  getActivePrimaryNavigationView,
+  PRIMARY_NAVIGATION_VIEWS,
+  type PrimaryNavigationView,
+  shouldShowDesktopConversationRail,
   shouldShowMobileBottomNav,
   shouldShowMobileConversationList,
 } from "./navigationPresentation";
@@ -42,19 +44,28 @@ type AppView =
   | "create"
   | "auth";
 
-const navItems = [
-  { id: "home", label: "首页", icon: House },
-  { id: "messages", label: "聊天", icon: ChatCircleText },
-  { id: "bindings", label: "绑定", icon: LinkSimple },
-  { id: "profile", label: "个人主页", icon: UserCircle },
-] satisfies { id: AppView; label: string; icon: typeof House }[];
+const navItemPresentation = {
+  home: { label: "首页", icon: House },
+  messages: { label: "聊天", icon: ChatCircleText },
+  explore: { label: "探索", icon: Compass },
+  profile: { label: "个人主页", icon: UserCircle },
+} satisfies Record<
+  PrimaryNavigationView,
+  { label: string; icon: typeof House }
+>;
+
+const navItems = PRIMARY_NAVIGATION_VIEWS.map((id) => ({
+  id,
+  ...navItemPresentation[id],
+}));
 
 export function App() {
   const auth = useAuth();
   const runtime = useRuntime();
   const services = useMemo(() => initApp(runtime), [runtime]);
   const [view, setView] = useState<AppView>("home");
-  const [settingsReturnView, setSettingsReturnView] = useState<AppView>("home");
+  const [bindingsReturnView, setBindingsReturnView] =
+    useState<AppView>("messages");
   const [myAgents, setMyAgents] = useState<Agent[]>([]);
   const [isLoadingAgents, setIsLoadingAgents] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
@@ -64,12 +75,15 @@ export function App() {
     view === "settings" ||
     view === "profile" ||
     view === "create";
-  const showConversationRail =
-    (view === "home" ||
-      view === "messages" ||
-      view === "bindings" ||
-      view === "settings") &&
-    (!protectedView || !!auth.user);
+  const showConversationRail = shouldShowDesktopConversationRail(
+    view,
+    !!auth.user,
+  );
+  const activeNavView = getActivePrimaryNavigationView(
+    view,
+    bindingsReturnView,
+  );
+  const isViewportPanel = view === "messages" || view === "bindings";
   const showMobileBottomNav = shouldShowMobileBottomNav(
     view,
     !!selectedAgent,
@@ -155,14 +169,22 @@ export function App() {
   }, []);
 
   const openSettings = useCallback(() => {
-    if (view === "settings") return;
-    setSettingsReturnView(view === "auth" ? "home" : view);
     setView("settings");
-  }, [view]);
+  }, []);
 
   const closeSettings = useCallback(() => {
-    setView(settingsReturnView);
-  }, [settingsReturnView]);
+    setView("profile");
+  }, []);
+
+  const openBindings = useCallback(() => {
+    if (view === "bindings") return;
+    setBindingsReturnView(view);
+    setView("bindings");
+  }, [view]);
+
+  const closeBindings = useCallback(() => {
+    setView(bindingsReturnView);
+  }, [bindingsReturnView]);
 
   const handleConversationDeleted = useCallback((conversationId: string) => {
     setMyAgents((current) =>
@@ -314,6 +336,7 @@ export function App() {
           agents={myAgents}
           isLoadingAgents={isLoadingAgents}
           onOpenAgent={openAgent}
+          onOpenSettings={openSettings}
         />
       );
     if (view === "create")
@@ -353,7 +376,7 @@ export function App() {
         />
       );
     }
-    if (view === "bindings") return <BindingsPanel />;
+    if (view === "bindings") return <BindingsPanel onBack={closeBindings} />;
     if (view === "settings")
       return (
         <SettingsPage
@@ -370,12 +393,14 @@ export function App() {
   }, [
     auth.isLoading,
     auth.user,
+    closeBindings,
     closeConversation,
     closeSettings,
     handleConversationDeleted,
     isLoadingAgents,
     myAgents,
     openConversationList,
+    openSettings,
     protectedView,
     selectedAgent,
     view,
@@ -388,44 +413,20 @@ export function App() {
         <div className="absolute bottom-[4%] right-[3%] h-[30rem] w-[30rem] rounded-full bg-white/[0.035] blur-[150px]" />
       </div>
 
-      <header className="fixed inset-x-0 top-0 z-40 border-b border-white/10 bg-[#09090b]/78 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between px-5 md:px-16">
-          <button
-            aria-label="探索"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-white/55 transition hover:bg-white/[0.05] hover:text-white active:translate-y-px"
-            onClick={() => setView("explore")}
-          >
-            <Compass size={20} weight="duotone" />
-          </button>
-          <div className="text-sm font-semibold tracking-[0.24em] text-white">
-            ECHOO <span className="text-white/35">/</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              aria-label="设置"
-              className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg text-white/55 transition hover:bg-white/[0.05] hover:text-white"
-              onClick={openSettings}
-            >
-              <GearSix size={22} weight="duotone" />
-            </button>
-          </div>
-        </div>
-      </header>
-
       <div
-        className={`relative z-10 mx-auto grid max-w-[1440px] grid-cols-1 px-5 pt-24 md:gap-6 md:px-16 md:pb-8 ${
-          showMobileBottomNav ? "pb-28" : "pb-4"
-        } ${view === "messages" ? "h-[100dvh] min-h-0" : "min-h-[100dvh]"} ${
+        className={`relative z-10 mx-auto grid max-w-[1440px] grid-cols-1 px-5 pt-5 md:gap-6 md:px-16 md:pb-6 md:pt-6 ${
+          showMobileBottomNav ? "pb-28" : "pb-5"
+        } ${isViewportPanel ? "h-[100dvh] min-h-0" : "min-h-[100dvh]"} ${
           showConversationRail
             ? "md:grid-cols-[64px_300px_1fr]"
             : "md:grid-cols-[64px_1fr]"
         }`}
       >
         <aside className="hidden md:block">
-          <nav className="glass-panel sticky top-24 flex flex-col items-center gap-2 rounded-xl p-2">
+          <nav className="glass-panel sticky top-6 flex flex-col items-center gap-2 rounded-xl p-2">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const active = view === item.id;
+              const active = activeNavView === item.id;
               return (
                 <button
                   key={item.id}
@@ -447,7 +448,9 @@ export function App() {
         {showConversationRail ? (
           <ConversationRail
             agents={myAgents}
+            isBindingsActive={view === "bindings"}
             onOpenAgent={openAgent}
+            onOpenBindings={openBindings}
             onOpenChat={openConversationList}
           />
         ) : null}
@@ -456,13 +459,15 @@ export function App() {
           <ConversationRail
             agents={myAgents}
             layout="mobile"
+            isBindingsActive={view === "bindings"}
             onOpenAgent={openAgent}
+            onOpenBindings={openBindings}
             onOpenChat={openConversationList}
           />
         ) : null}
 
         <main
-          className={`min-w-0 ${view === "messages" ? "min-h-0 overflow-hidden" : ""} ${
+          className={`min-w-0 ${isViewportPanel ? "min-h-0 overflow-hidden" : ""} ${
             showMobileConversationList ? "hidden md:block" : ""
           }`}
         >
@@ -474,7 +479,7 @@ export function App() {
         <nav className="fixed bottom-6 left-1/2 z-50 flex h-16 w-[calc(100%-40px)] max-w-md -translate-x-1/2 items-center justify-around rounded-full border border-white/10 bg-[#09090b]/50 px-3 backdrop-blur-2xl shadow-[0_0_60px_rgba(255,255,255,0.10)] md:hidden">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const active = view === item.id;
+            const active = activeNavView === item.id;
             return (
               <button
                 key={item.id}

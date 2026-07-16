@@ -28,10 +28,12 @@ export function ProfilePage({
   agents,
   isLoadingAgents,
   onOpenAgent,
+  onOpenSettings,
 }: {
   agents: Agent[];
   isLoadingAgents: boolean;
   onOpenAgent: (agent: Agent) => void;
+  onOpenSettings: () => void;
 }) {
   const cards = agents.map((agent) => ({
     id: agent.id,
@@ -50,6 +52,14 @@ export function ProfilePage({
     <section className="space-y-8">
       <div className="relative overflow-hidden rounded-2xl border border-white/8 bg-[#0d0d10]/80 p-7 text-center md:p-10">
         <div className="pointer-events-none absolute left-1/2 top-0 h-[32rem] w-[32rem] -translate-x-1/2 rounded-full bg-white/[0.05] blur-[110px]" />
+        <button
+          aria-label="设置"
+          className="absolute right-5 top-5 z-20 grid h-10 w-10 place-items-center rounded-lg text-white/52 transition hover:bg-white/[0.06] hover:text-white active:translate-y-px"
+          type="button"
+          onClick={onOpenSettings}
+        >
+          <GearSix size={20} weight="duotone" />
+        </button>
         <div className="relative z-10 flex flex-col items-center">
           <div className="grid h-36 w-36 place-items-center rounded-full border border-white/18 bg-white/[0.05] shadow-[0_0_48px_rgba(255,255,255,0.12)] md:h-40 md:w-40">
             <Robot size={72} weight="thin" className="text-white" />
@@ -90,10 +100,6 @@ export function ProfilePage({
             <button className="flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-medium text-[#09090b] active:scale-95">
               <PencilSimple size={17} />
               编辑资料
-            </button>
-            <button className="flex items-center gap-2 rounded-full border border-white/15 px-5 py-3 text-sm text-white/70 transition hover:border-white/25 hover:text-white active:scale-95">
-              <GearSix size={17} />
-              偏好设置
             </button>
           </div>
         </div>

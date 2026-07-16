@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   CheckCircle,
   LinkSimple,
   Robot,
@@ -27,69 +28,81 @@ const bindings = [
   },
 ];
 
-export function BindingsPanel() {
+export function BindingsPanel({ onBack }: { onBack: () => void }) {
   return (
-    <section className="space-y-6">
-      <div>
-        <p className="text-xs uppercase tracking-[0.22em] text-white/38">
-          绑定
-        </p>
-        <h1 className="mt-2 text-4xl font-semibold text-white">角色接口</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-white/52">
-          每个外部接口绑定一个角色会话。消息和模型回复会在网页端、Android、iOS、Windows
-          以及已绑定接口之间始终归属于同一角色会话。
-        </p>
-      </div>
+    <section className="h-full min-h-0 overflow-y-auto rounded-2xl border border-white/8 bg-[#0d0d10]/80 p-6 md:p-8">
+      <div className="space-y-6">
+        <div className="flex items-start gap-3">
+          <button
+            aria-label="返回"
+            className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-lg text-white/48 transition hover:bg-white/[0.06] hover:text-white active:translate-y-px"
+            type="button"
+            onClick={onBack}
+          >
+            <ArrowLeft size={19} />
+          </button>
+          <div>
+            <p className="text-xs uppercase tracking-[0.22em] text-white/38">
+              绑定
+            </p>
+            <h1 className="mt-2 text-4xl font-semibold text-white">角色接口</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/52">
+              每个外部接口绑定一个角色会话。消息和模型回复会在网页端、Android、iOS、Windows
+              以及已绑定接口之间始终归属于同一角色会话。
+            </p>
+          </div>
+        </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {bindings.map((binding) => {
-          const active = binding.status === "active";
-          return (
-            <article
-              key={binding.name}
-              className="glass-panel rounded-2xl p-6 transition hover:border-white/18"
-            >
-              <div className="flex items-center gap-4">
-                <div className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-white">
+        <div className="grid gap-4 lg:grid-cols-2">
+          {bindings.map((binding) => {
+            const active = binding.status === "active";
+            return (
+              <article
+                key={binding.name}
+                className="glass-panel rounded-2xl p-6 transition hover:border-white/18"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="grid h-12 w-12 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-white">
+                    {active ? (
+                      <Robot size={23} weight="duotone" />
+                    ) : (
+                      <LinkSimple size={23} weight="duotone" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-semibold text-white">
+                        {binding.name}
+                      </h2>
+                      <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.12em] text-white/42">
+                        {active ? "已绑定" : "可绑定"}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-white/42">
+                      角色：{binding.agent}
+                    </p>
+                  </div>
                   {active ? (
-                    <Robot size={23} weight="duotone" />
+                    <CheckCircle
+                      size={22}
+                      className="text-white/60"
+                      weight="duotone"
+                    />
                   ) : (
-                    <LinkSimple size={23} weight="duotone" />
+                    <WarningCircle
+                      size={22}
+                      className="text-white/38"
+                      weight="duotone"
+                    />
                   )}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-semibold text-white">
-                      {binding.name}
-                    </h2>
-                    <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.12em] text-white/42">
-                      {active ? "已绑定" : "可绑定"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-white/42">
-                    角色：{binding.agent}
-                  </p>
-                </div>
-                {active ? (
-                  <CheckCircle
-                    size={22}
-                    className="text-white/60"
-                    weight="duotone"
-                  />
-                ) : (
-                  <WarningCircle
-                    size={22}
-                    className="text-white/38"
-                    weight="duotone"
-                  />
-                )}
-              </div>
-              <p className="mt-5 text-sm leading-6 text-white/48">
-                {binding.description}
-              </p>
-            </article>
-          );
-        })}
+                <p className="mt-5 text-sm leading-6 text-white/48">
+                  {binding.description}
+                </p>
+              </article>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
