@@ -8,6 +8,7 @@ import type {
   ChatCompletionMessage,
 } from "../../../ai/ai-provider.interface.js";
 import { AiProviderRegistry } from "../../../ai/ai-provider.registry.js";
+import { modelSessionId } from "../../../ai/model-session.js";
 import {
   UserRepository,
   toUserProfile,
@@ -113,6 +114,7 @@ export class SliceFigureRuntimeService {
       const result = await summarizeEntries({
         provider,
         model,
+        sessionId: modelSessionId(input.conversationId, "decision"),
         prompt,
         entries,
         maxTokens: runtimeConfig.llm.maxTokens,
@@ -149,7 +151,7 @@ export class SliceFigureRuntimeService {
     const model = runtimeConfig.llm.model;
     const completion: ChatCompletionInput = {
       model,
-      sessionId: input.conversationId,
+      sessionId: modelSessionId(input.conversationId, "decision"),
       messages: buildChatMessages(
         context.agent,
         context.user,
@@ -292,6 +294,7 @@ function formatMemorySourceMessage(message: Message) {
 async function summarizeEntries(input: {
   provider: ReturnType<AiProviderRegistry["createProvider"]>;
   model: string;
+  sessionId: string;
   prompt: string;
   entries: string[];
   maxTokens: number;
@@ -301,6 +304,7 @@ async function summarizeEntries(input: {
   for (let index = 0; index < chunks.length; index += 1) {
     const result = await input.provider.createChatCompletion({
       model: input.model,
+      sessionId: input.sessionId,
       messages: [
         { role: "system", content: input.prompt },
         {

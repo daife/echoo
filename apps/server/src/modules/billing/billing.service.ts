@@ -49,7 +49,7 @@ export class BillingService {
   }
 
   async chargeUsage(input: {
-    service: "openrouter" | "fish_audio";
+    service: "openrouter" | "deepseek" | "fish_audio";
     model: string;
     upstreamRequestId: string;
     upstreamCostUsd: number;
@@ -71,7 +71,7 @@ export class BillingService {
   protected async settleCharge(
     context: BillingRunContext,
     input: {
-      service: "openrouter" | "fish_audio";
+      service: "openrouter" | "deepseek" | "fish_audio";
       model: string;
       upstreamRequestId: string;
       upstreamCostUsd: number;

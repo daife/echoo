@@ -16,6 +16,10 @@ import { RuntimeConfigRepository } from "./runtime-config.repository.js";
 import { PlatformCatalogService } from "../platform-catalog/platform-catalog.service.js";
 import { environment } from "../../infra/config/environment.js";
 import { PlatformSettingsService } from "../platform-settings/platform-settings.service.js";
+import {
+  isPlatformDeepSeekRoute,
+  PLATFORM_DEEPSEEK_BASE_URL,
+} from "../ai/platform-deepseek.js";
 import type {
   StoredFigureRuntimeConfig,
   StoredFishAudioConfig,
@@ -866,15 +870,8 @@ function normalizeFishAudio(config: StoredFishAudioConfig) {
 function resolvePlatformFigureConfig(
   config: StoredFigureRuntimeConfig,
 ): StoredFigureRuntimeConfig {
-  const resolveEndpoint = <T extends StoredModelEndpointConfig>(value: T): T =>
-    value.source === "platform"
-      ? {
-          ...value,
-          baseUrl: environment.platformOpenRouterBaseUrl,
-          apiKey: environment.platformOpenRouterApiKey,
-        }
-      : value;
-  const resolveText = (value: StoredTextModelConfig) => resolveEndpoint(value);
+  const resolveText = (value: StoredTextModelConfig) =>
+    resolvePlatformTextEndpoint(value);
   if ("llm" in config) return { ...config, llm: resolveText(config.llm) };
   if (!("decisionModel" in config)) return config;
   const tts = config.outputs.voice.tts;
@@ -885,7 +882,9 @@ function resolvePlatformFigureConfig(
       ...config.outputs,
       image: {
         ...config.outputs.image,
-        generator: resolveEndpoint(config.outputs.image.generator),
+        generator: resolvePlatformOpenRouterEndpoint(
+          config.outputs.image.generator,
+        ),
       },
       voice: {
         ...config.outputs.voice,
@@ -921,6 +920,31 @@ function resolvePlatformFigureConfig(
       },
     },
   };
+}
+
+export function resolvePlatformTextEndpoint<
+  T extends StoredModelEndpointConfig,
+>(value: T): T {
+  if (value.source !== "platform") return value;
+  if (isPlatformDeepSeekRoute(value))
+    return {
+      ...value,
+      baseUrl: PLATFORM_DEEPSEEK_BASE_URL,
+      apiKey: environment.platformDeepSeekApiKey,
+    };
+  return resolvePlatformOpenRouterEndpoint(value);
+}
+
+export function resolvePlatformOpenRouterEndpoint<
+  T extends StoredModelEndpointConfig,
+>(value: T): T {
+  return value.source === "platform"
+    ? {
+        ...value,
+        baseUrl: environment.platformOpenRouterBaseUrl,
+        apiKey: environment.platformOpenRouterApiKey,
+      }
+    : value;
 }
 
 function positiveInteger(value: number, label: string) {

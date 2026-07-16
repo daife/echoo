@@ -192,3 +192,30 @@ test("uses the same OpenRouter JSON object fallback for streaming requests", asy
     globalThis.fetch = originalFetch;
   }
 });
+
+test("includes streaming usage for the official DeepSeek API", async () => {
+  const originalFetch = globalThis.fetch;
+  let body: Record<string, unknown> | undefined;
+  globalThis.fetch = async (_input, init) => {
+    body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(
+      'data: {"id":"request-1","choices":[{"delta":{"content":"ok"}}]}\n\ndata: {"id":"request-1","choices":[],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}\n\ndata: [DONE]\n\n',
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    );
+  };
+
+  try {
+    for await (const _delta of streamOpenAiCompatibleChatCompletion({
+      providerId: "openrouter",
+      apiKey: "test-key",
+      baseUrl: "https://api.deepseek.com",
+      completion,
+    })) {
+      // Consume the stream so the mocked request is completed.
+    }
+
+    assert.deepEqual(body?.stream_options, { include_usage: true });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

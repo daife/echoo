@@ -183,6 +183,13 @@ function sendChatCompletionRequest(
   extraBody?: Record<string, unknown>,
   options?: { forceJsonObject?: boolean },
 ) {
+  const body = {
+    ...buildOpenAiCompatibleRequestBody(input, options),
+    ...extraBody,
+    ...(extraBody?.stream === true && isDeepSeekApiUrl(input.baseUrl)
+      ? { stream_options: { include_usage: true } }
+      : {}),
+  };
   return fetch(`${input.baseUrl.replace(/\/+$/, "")}/chat/completions`, {
     method: "POST",
     headers: {
@@ -190,10 +197,7 @@ function sendChatCompletionRequest(
       Authorization: `Bearer ${input.apiKey}`,
       ...input.headers,
     },
-    body: JSON.stringify({
-      ...buildOpenAiCompatibleRequestBody(input, options),
-      ...extraBody,
-    }),
+    body: JSON.stringify(body),
   });
 }
 

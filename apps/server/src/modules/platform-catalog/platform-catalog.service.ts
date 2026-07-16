@@ -37,6 +37,11 @@ interface EndpointRow extends RowDataPacket {
   status: number;
 }
 
+export interface EndpointUsagePricing {
+  promptUsdPerToken: number;
+  completionUsdPerToken: number;
+}
+
 interface RecommendationRow extends ModelRow {
   category: ModelRecommendationCategory;
   service: "openrouter" | "fish_audio";
@@ -55,6 +60,26 @@ type OpenRouterModel = {
 };
 
 export class PlatformCatalogService {
+  async getEndpointUsagePricing(
+    modelId: string,
+    providerSlug: string,
+  ): Promise<EndpointUsagePricing | undefined> {
+    const row = await queryOne<EndpointRow>(
+      `SELECT provider_slug, provider_name, pricing, status
+         FROM platform_model_endpoints
+        WHERE model_id = ? AND provider_slug = ?`,
+      [modelId, providerSlug],
+    );
+    if (!row) return undefined;
+
+    const pricing = objectValue(row.pricing);
+    const promptUsdPerToken = nonnegativeFiniteNumber(pricing.prompt);
+    const completionUsdPerToken = nonnegativeFiniteNumber(pricing.completion);
+    if (promptUsdPerToken === undefined || completionUsdPerToken === undefined)
+      return undefined;
+    return { promptUsdPerToken, completionUsdPerToken };
+  }
+
   async syncModels() {
     const payload = await openRouterFetch<{ data?: OpenRouterModel[] }>(
       "/models?output_modalities=all",
@@ -444,4 +469,12 @@ function objectValue(value: unknown): Record<string, string | number | null> {
   return parsed && typeof parsed === "object" && !Array.isArray(parsed)
     ? (parsed as Record<string, string | number | null>)
     : {};
+}
+
+function nonnegativeFiniteNumber(value: unknown) {
+  if (typeof value === "number")
+    return Number.isFinite(value) && value >= 0 ? value : undefined;
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }

@@ -55,7 +55,8 @@ export interface ChatToolCall {
 export interface ChatCompletionInput {
   model: string;
   /**
-   * Persistent conversation/session id. OpenRouter uses this as session_id for sticky routing.
+   * Persistent role-specific session id. OpenRouter uses it as session_id for
+   * sticky routing; the official DeepSeek API uses it as user_id isolation.
    */
   sessionId?: string;
   messages: ChatCompletionMessage[];

@@ -8,6 +8,7 @@ const managedKeys = [
   "MYSQL_URL",
   "RESOURCE_STORAGE_PROVIDER",
   "PLATFORM_OPENROUTER_API_KEY",
+  "PLATFORM_DEEPSEEK_API_KEY",
   "OPENROUTER_API_KEY",
 ] as const;
 
@@ -54,5 +55,20 @@ test("legacy provider keys are not used", () => {
       RESOURCE_STORAGE_PROVIDER: "local",
     },
     () => assert.equal(buildEnvironment().platformOpenRouterApiKey, ""),
+  );
+});
+
+test("reads the platform DeepSeek key from its dedicated environment variable", () => {
+  withEnvironment(
+    {
+      NODE_ENV: "development",
+      PLATFORM_DEEPSEEK_API_KEY: "deepseek-secret",
+      RESOURCE_STORAGE_PROVIDER: "local",
+    },
+    () =>
+      assert.equal(
+        buildEnvironment().platformDeepSeekApiKey,
+        "deepseek-secret",
+      ),
   );
 });

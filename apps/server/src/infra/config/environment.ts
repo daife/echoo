@@ -111,6 +111,7 @@ export function buildEnvironment() {
       optional("PLATFORM_OPENROUTER_BASE_URL") ??
       "https://openrouter.ai/api/v1",
     platformOpenRouterApiKey: optional("PLATFORM_OPENROUTER_API_KEY") ?? "",
+    platformDeepSeekApiKey: optional("PLATFORM_DEEPSEEK_API_KEY") ?? "",
     platformFishAudioHttpUrl:
       optional("PLATFORM_FISH_AUDIO_HTTP_URL") ??
       "https://api.fish.audio/v1/tts",
