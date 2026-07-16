@@ -1,5 +1,6 @@
 import {
   ArrowDown,
+  ArrowLeft,
   Copy,
   GearSix,
   PencilSimple,
@@ -102,10 +103,12 @@ export function MessagesPage({
   agent,
   updateHandlers,
   onConversationDeleted,
+  onBack,
 }: {
   agent?: Agent;
   updateHandlers: UpdateAgentHandlers;
   onConversationDeleted?: (conversationId: string) => void;
+  onBack: () => void;
 }) {
   const { user } = useAuth();
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -379,6 +382,14 @@ export function MessagesPage({
     <section className="grid h-full min-h-0 grid-rows-[auto_1fr_auto] overflow-hidden rounded-[1.25rem] bg-[#0d0d10]/92 shadow-[0_28px_90px_rgba(0,0,0,0.28)]">
       <header className="flex items-center justify-between border-b border-white/8 px-5 py-4 md:px-7">
         <div className="flex items-center gap-4">
+          <button
+            aria-label="返回会话列表"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-white/48 transition hover:bg-white/[0.06] hover:text-white active:translate-y-px"
+            type="button"
+            onClick={onBack}
+          >
+            <ArrowLeft size={18} />
+          </button>
           <div className="grid h-11 w-11 place-items-center rounded-xl bg-white/[0.06] text-white/75">
             <Waveform size={23} weight="duotone" />
           </div>

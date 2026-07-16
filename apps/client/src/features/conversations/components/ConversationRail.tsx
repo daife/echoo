@@ -3,10 +3,12 @@ import type { Agent } from "@echoo/shared";
 
 export function ConversationRail({
   agents,
+  layout = "desktop",
   onOpenAgent,
   onOpenChat,
 }: {
   agents: Agent[];
+  layout?: "desktop" | "mobile";
   onOpenAgent: (agent: Agent) => void;
   onOpenChat: () => void;
 }) {
@@ -18,8 +20,20 @@ export function ConversationRail({
   }));
 
   return (
-    <aside className="hidden min-w-0 md:block">
-      <div className="sticky top-24 overflow-hidden rounded-xl bg-[#0d0d10]/72">
+    <aside
+      className={
+        layout === "mobile"
+          ? "min-h-0 min-w-0 md:hidden"
+          : "hidden min-w-0 md:block"
+      }
+    >
+      <div
+        className={
+          layout === "mobile"
+            ? "flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-[#0d0d10]/72"
+            : "sticky top-24 overflow-hidden rounded-xl bg-[#0d0d10]/72"
+        }
+      >
         <div className="border-b border-white/8 p-5">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold tracking-[-0.015em] text-white">
@@ -30,7 +44,13 @@ export function ConversationRail({
             </span>
           </div>
         </div>
-        <div className="max-h-[calc(100dvh-220px)] overflow-y-auto p-2 no-scrollbar">
+        <div
+          className={
+            layout === "mobile"
+              ? "min-h-0 flex-1 overflow-y-auto p-2 no-scrollbar"
+              : "max-h-[calc(100dvh-220px)] overflow-y-auto p-2 no-scrollbar"
+          }
+        >
           {!visibleConversations.length ? (
             <div className="px-4 py-12 text-center">
               <Robot className="mx-auto text-white/35" size={24} />

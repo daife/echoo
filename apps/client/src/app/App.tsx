@@ -28,6 +28,10 @@ import { HomePage } from "../pages/home/HomePage";
 import { MessagesPage } from "../pages/messages/MessagesPage";
 import { ProfilePage } from "../pages/profile/ProfilePage";
 import { SettingsPage } from "../pages/settings/SettingsPage";
+import {
+  shouldShowMobileBottomNav,
+  shouldShowMobileConversationList,
+} from "./navigationPresentation";
 
 type AppView =
   | "home"
@@ -43,7 +47,7 @@ const navItems = [
   { id: "home", label: "首页", icon: House },
   { id: "messages", label: "聊天", icon: ChatCircleText },
   { id: "bindings", label: "绑定", icon: LinkSimple },
-  { id: "settings", label: "设置", icon: GearSix },
+  { id: "profile", label: "个人主页", icon: UserCircle },
 ] satisfies { id: AppView; label: string; icon: typeof House }[];
 
 export function App() {
@@ -51,6 +55,8 @@ export function App() {
   const runtime = useRuntime();
   const services = useMemo(() => initApp(runtime), [runtime]);
   const [view, setView] = useState<AppView>("home");
+  const [settingsReturnView, setSettingsReturnView] =
+    useState<AppView>("home");
   const [myAgents, setMyAgents] = useState<Agent[]>([]);
   const [isLoadingAgents, setIsLoadingAgents] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
@@ -66,6 +72,13 @@ export function App() {
       view === "bindings" ||
       view === "settings") &&
     (!protectedView || !!auth.user);
+  const showMobileBottomNav = shouldShowMobileBottomNav(
+    view,
+    !!selectedAgent,
+    !!auth.user,
+  );
+  const showMobileConversationList =
+    !!auth.user && shouldShowMobileConversationList(view, !!selectedAgent);
 
   useEffect(() => {
     if (
@@ -128,10 +141,30 @@ export function App() {
     };
   }, [auth.user, runtime.message]);
 
-  const openAgent = (agent: Agent) => {
+  const openAgent = useCallback((agent: Agent) => {
     setSelectedAgent(agent);
     setView("messages");
-  };
+  }, []);
+
+  const openConversationList = useCallback(() => {
+    setSelectedAgent(null);
+    setView("messages");
+  }, []);
+
+  const closeConversation = useCallback(() => {
+    setSelectedAgent(null);
+    setView("messages");
+  }, []);
+
+  const openSettings = useCallback(() => {
+    if (view === "settings") return;
+    setSettingsReturnView(view === "auth" ? "home" : view);
+    setView("settings");
+  }, [view]);
+
+  const closeSettings = useCallback(() => {
+    setView(settingsReturnView);
+  }, [settingsReturnView]);
 
   const handleConversationDeleted = useCallback((conversationId: string) => {
     setMyAgents((current) =>
@@ -329,26 +362,33 @@ export function App() {
               ),
           }}
           onConversationDeleted={handleConversationDeleted}
+          onBack={closeConversation}
         />
       );
     }
     if (view === "bindings") return <BindingsPanel />;
     if (view === "settings")
       return (
-        <SettingsPage runtimeConfigService={services.runtimeConfigService} />
+        <SettingsPage
+          runtimeConfigService={services.runtimeConfigService}
+          onBack={closeSettings}
+        />
       );
     return (
       <HomePage
         onCreateAgent={() => setView("create")}
-        onOpenChat={() => setView("messages")}
+        onOpenChat={openConversationList}
       />
     );
   }, [
     auth.isLoading,
     auth.user,
+    closeConversation,
+    closeSettings,
     handleConversationDeleted,
     isLoadingAgents,
     myAgents,
+    openConversationList,
     protectedView,
     selectedAgent,
     view,
@@ -375,18 +415,20 @@ export function App() {
           </div>
           <div className="flex items-center gap-3">
             <button
-              aria-label="个人资料"
+              aria-label="设置"
               className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg text-white/55 transition hover:bg-white/[0.05] hover:text-white"
-              onClick={() => setView(auth.user ? "profile" : "auth")}
+              onClick={openSettings}
             >
-              <UserCircle size={24} weight="duotone" />
+              <GearSix size={22} weight="duotone" />
             </button>
           </div>
         </div>
       </header>
 
       <div
-        className={`relative z-10 mx-auto grid max-w-[1440px] grid-cols-1 px-5 pb-28 pt-24 md:gap-6 md:px-16 md:pb-8 ${
+        className={`relative z-10 mx-auto grid max-w-[1440px] grid-cols-1 px-5 pt-24 md:gap-6 md:px-16 md:pb-8 ${
+          showMobileBottomNav ? "pb-28" : "pb-4"
+        } ${
           view === "messages" ? "h-[100dvh] min-h-0" : "min-h-[100dvh]"
         } ${
           showConversationRail
@@ -421,37 +463,54 @@ export function App() {
           <ConversationRail
             agents={myAgents}
             onOpenAgent={openAgent}
-            onOpenChat={() => setView("messages")}
+            onOpenChat={openConversationList}
+          />
+        ) : null}
+
+        {showMobileConversationList ? (
+          <ConversationRail
+            agents={myAgents}
+            layout="mobile"
+            onOpenAgent={openAgent}
+            onOpenChat={openConversationList}
           />
         ) : null}
 
         <main
-          className={`min-w-0 ${view === "messages" ? "min-h-0 overflow-hidden" : ""}`}
+          className={`min-w-0 ${view === "messages" ? "min-h-0 overflow-hidden" : ""} ${
+            showMobileConversationList ? "hidden md:block" : ""
+          }`}
         >
           {ActivePage}
         </main>
       </div>
 
-      <nav className="fixed bottom-6 left-1/2 z-50 flex h-16 w-[calc(100%-40px)] max-w-md -translate-x-1/2 items-center justify-around rounded-full border border-white/10 bg-[#09090b]/50 px-3 backdrop-blur-2xl shadow-[0_0_60px_rgba(255,255,255,0.10)] md:hidden">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const active = view === item.id;
-          return (
-            <button
-              key={item.id}
-              aria-label={item.label}
-              className={`flex h-11 w-11 items-center justify-center rounded-full transition active:scale-95 ${
-                active
-                  ? "bg-white text-[#09090b]"
-                  : "text-white/55 hover:text-white"
-              }`}
-              onClick={() => setView(item.id)}
-            >
-              <Icon size={22} weight={active ? "fill" : "regular"} />
-            </button>
-          );
-        })}
-      </nav>
+      {showMobileBottomNav ? (
+        <nav className="fixed bottom-6 left-1/2 z-50 flex h-16 w-[calc(100%-40px)] max-w-md -translate-x-1/2 items-center justify-around rounded-full border border-white/10 bg-[#09090b]/50 px-3 backdrop-blur-2xl shadow-[0_0_60px_rgba(255,255,255,0.10)] md:hidden">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = view === item.id;
+            return (
+              <button
+                key={item.id}
+                aria-label={item.label}
+                className={`flex h-11 w-11 items-center justify-center rounded-full transition active:scale-95 ${
+                  active
+                    ? "bg-white text-[#09090b]"
+                    : "text-white/55 hover:text-white"
+                }`}
+                onClick={() =>
+                  item.id === "messages"
+                    ? openConversationList()
+                    : setView(item.id)
+                }
+              >
+                <Icon size={22} weight={active ? "fill" : "regular"} />
+              </button>
+            );
+          })}
+        </nav>
+      ) : null}
     </div>
   );
 }

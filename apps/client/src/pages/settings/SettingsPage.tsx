@@ -4,6 +4,7 @@ import type {
   UserRuntimeConfigView,
   WalletView,
 } from "@echoo/shared";
+import { ArrowLeft } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import {
@@ -14,8 +15,10 @@ import type { RuntimeConfigService } from "../../services/RuntimeConfigService";
 
 export function SettingsPage({
   runtimeConfigService,
+  onBack,
 }: {
   runtimeConfigService: RuntimeConfigService;
+  onBack: () => void;
 }) {
   const auth = useAuth();
   const [config, setConfig] = useState<UserRuntimeConfigView | null>(null);
@@ -80,11 +83,21 @@ export function SettingsPage({
 
   return (
     <section className="space-y-6">
-      <div>
-        <p className="text-xs uppercase tracking-[0.22em] text-white/38">
-          账户与运行时
-        </p>
-        <h1 className="mt-2 text-4xl font-semibold text-white">设置</h1>
+      <div className="flex items-start gap-3">
+        <button
+          aria-label="返回"
+          className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-lg text-white/48 transition hover:bg-white/[0.06] hover:text-white active:translate-y-px"
+          type="button"
+          onClick={onBack}
+        >
+          <ArrowLeft size={19} />
+        </button>
+        <div>
+          <p className="text-xs uppercase tracking-[0.22em] text-white/38">
+            账户与运行时
+          </p>
+          <h1 className="mt-2 text-4xl font-semibold text-white">设置</h1>
+        </div>
       </div>
       <div className="glass-panel flex flex-col gap-4 rounded-2xl p-5 md:flex-row md:items-center md:justify-between">
         <div>
