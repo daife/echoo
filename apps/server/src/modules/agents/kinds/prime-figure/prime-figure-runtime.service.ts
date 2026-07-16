@@ -80,7 +80,6 @@ interface PrimeDecisionRequest {
   debugInstruction?: string;
   wakeupToken?: string;
   passiveStage?: 1 | 2 | 3;
-  onModelActivityChange?: (active: boolean) => void;
   agent: PrimeFigureAgent;
   state: PrimeFigureState;
   runtimeConfig: StoredPrimeFigureRuntimeConfig;
@@ -116,7 +115,6 @@ export class PrimeFigureRuntimeService {
     debugInstruction?: string;
     wakeupToken?: string;
     passiveStage?: 1 | 2 | 3;
-    onModelActivityChange?: (active: boolean) => void;
   }): Promise<PrimeFigureDecision | null> {
     const trigger = input.trigger ?? "end_user_message";
     const agent = await this.agents.findByConversation(
@@ -326,20 +324,14 @@ export class PrimeFigureRuntimeService {
     try {
       return await advanceHandledSequenceAfterSuccessfulRun(
         (async () => {
-          input.onModelActivityChange?.(true);
-          let finalResponse: ChatCompletionResult;
-          try {
-            finalResponse = await this.completeWithOptionalRecall({
-              request: input,
-              provider,
-              completionBase,
-              packet,
-              streamSession,
-              diagnostics,
-            });
-          } finally {
-            input.onModelActivityChange?.(false);
-          }
+          const finalResponse = await this.completeWithOptionalRecall({
+            request: input,
+            provider,
+            completionBase,
+            packet,
+            streamSession,
+            diagnostics,
+          });
           const envelope = parsePrimeDecisionEnvelope(
             finalResponse.text,
             input.agent,
@@ -355,39 +347,33 @@ export class PrimeFigureRuntimeService {
             actionIndex: number;
             error: string;
           }> = [];
-          input.onModelActivityChange?.(true);
-          let finalDecision: PrimeFigureDecision;
-          try {
-            finalDecision = await this.contentOptimizer.optimizeDecision(
-              decision,
-              input.runtimeConfig,
-              input.conversationId,
-              {
-                onVoiceStart: (index) =>
-                  streamSession.beginVoiceOptimization(
-                    sourceActionIndices[index] ?? index,
-                  ),
-                onVoiceDelta: (index, delta) =>
-                  streamSession.pushOptimizedVoiceDelta(
-                    sourceActionIndices[index] ?? index,
-                    delta,
-                  ),
-                onVoiceComplete: (index, transcript) =>
-                  streamSession.completeVoiceOptimization(
-                    sourceActionIndices[index] ?? index,
-                    transcript,
-                  ),
-                onVoiceFallback: (index, transcript) =>
-                  streamSession.fallbackVoiceOptimization(
-                    sourceActionIndices[index] ?? index,
-                    transcript,
-                  ),
-                onFailure: (failure) => optimizationFailures.push(failure),
-              },
-            );
-          } finally {
-            input.onModelActivityChange?.(false);
-          }
+          const finalDecision = await this.contentOptimizer.optimizeDecision(
+            decision,
+            input.runtimeConfig,
+            input.conversationId,
+            {
+              onVoiceStart: (index) =>
+                streamSession.beginVoiceOptimization(
+                  sourceActionIndices[index] ?? index,
+                ),
+              onVoiceDelta: (index, delta) =>
+                streamSession.pushOptimizedVoiceDelta(
+                  sourceActionIndices[index] ?? index,
+                  delta,
+                ),
+              onVoiceComplete: (index, transcript) =>
+                streamSession.completeVoiceOptimization(
+                  sourceActionIndices[index] ?? index,
+                  transcript,
+                ),
+              onVoiceFallback: (index, transcript) =>
+                streamSession.fallbackVoiceOptimization(
+                  sourceActionIndices[index] ?? index,
+                  transcript,
+                ),
+              onFailure: (failure) => optimizationFailures.push(failure),
+            },
+          );
           for (const failure of optimizationFailures)
             await this.logs.save({
               ownerUserId: input.ownerUserId,

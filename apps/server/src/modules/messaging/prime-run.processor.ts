@@ -23,7 +23,7 @@ export class PrimeRunProcessor {
         active: true,
         expiresAt: Date.now() + ACTIVITY_LEASE_MS,
       });
-    const setModelActivity = (nextActive: boolean) => {
+    const setTurnActivity = (nextActive: boolean) => {
       if (nextActive) {
         if (active) return;
         active = true;
@@ -42,6 +42,7 @@ export class PrimeRunProcessor {
         active: false,
       });
     };
+    setTurnActivity(true);
     try {
       await this.runtime.requestDecision({
         ownerUserId: job.ownerUserId,
@@ -50,10 +51,9 @@ export class PrimeRunProcessor {
         debugInstruction: job.debugInstruction,
         wakeupToken: job.wakeupToken,
         passiveStage: job.passiveStage,
-        onModelActivityChange: setModelActivity,
       });
     } finally {
-      setModelActivity(false);
+      setTurnActivity(false);
     }
   }
 

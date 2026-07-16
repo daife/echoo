@@ -1,6 +1,8 @@
 import type { LocalMessage } from "@echoo/shared";
 import { describe, expect, it } from "vitest";
 import {
+  getConversationPresenceLabel,
+  getPrimePresencePhaseDuration,
   getPrimeRuntimeErrorText,
   isVisibleConversationMessage,
 } from "./messagePresentation";
@@ -29,6 +31,35 @@ describe("prime runtime error presentation", () => {
 
   it("keeps persisted runtime errors out of conversation history", () => {
     expect(isVisibleConversationMessage(runtimeErrorMessage)).toBe(false);
+  });
+});
+
+describe("conversation presence presentation", () => {
+  it("shows typing while an unmuted figure turn is active", () => {
+    expect(
+      getConversationPresenceLabel({
+        agentTypeLabel: "本初角色",
+        isAgentActive: true,
+        isAgentMuted: false,
+      }),
+    ).toBe("对方输入中…");
+  });
+
+  it("keeps mute ahead of active turn presentation", () => {
+    expect(
+      getConversationPresenceLabel({
+        agentTypeLabel: "本初角色",
+        isAgentActive: true,
+        isAgentMuted: true,
+      }),
+    ).toBe("对方已开启勿扰");
+  });
+
+  it("keeps the configured random phase duration boundaries", () => {
+    expect(getPrimePresencePhaseDuration("typing", 0)).toBe(1_800);
+    expect(getPrimePresencePhaseDuration("typing", 1)).toBe(4_200);
+    expect(getPrimePresencePhaseDuration("online", 0)).toBe(900);
+    expect(getPrimePresencePhaseDuration("online", 1)).toBe(2_100);
   });
 });
 
