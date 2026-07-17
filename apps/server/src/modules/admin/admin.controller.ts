@@ -256,13 +256,31 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get<{ Querystring: { q?: string; limit?: string } }>(
+  app.get<{
+    Querystring: {
+      q?: string;
+      limit?: string;
+      category?: string;
+      includeProviders?: string;
+    };
+  }>(
     "/models",
     async (request, reply) => {
       if (!(await request.requireAdmin(reply))) return;
+      const category = request.query.category;
+      if (category && !isRecommendationCategory(category))
+        return reply.code(400).send({
+          error: "INVALID_CATEGORY",
+          message: "推荐模型分类无效。",
+        });
+      const recommendationCategory = category as
+        | ModelRecommendationCategory
+        | undefined;
       return catalog.listModels(
         request.query.q,
         Number(request.query.limit ?? 100),
+        recommendationCategory,
+        request.query.includeProviders !== "false",
       );
     },
   );

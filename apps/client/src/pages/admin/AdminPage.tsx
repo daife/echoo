@@ -635,26 +635,34 @@ function ModelsPanel({ token, onExpired }: PanelProps) {
   };
   return (
     <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
-      <div className="flex flex-wrap gap-2">
+      <form
+        className="flex flex-wrap gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void load();
+        }}
+      >
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索模型"
+          aria-label="搜索模型"
           className="min-w-60 flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2"
         />
         <button
-          onClick={() => void load()}
+          type="submit"
           className="rounded-lg border border-white/10 px-4 py-2"
         >
           搜索
         </button>
         <button
+          type="button"
           onClick={() => void syncModels()}
           className="rounded-lg bg-white px-4 py-2 font-medium text-black"
         >
           从 OpenRouter 同步
         </button>
-      </div>
+      </form>
       {status ? <p className="mt-3 text-sm text-white/50">{status}</p> : null}
       <div className="mt-5 grid gap-3 md:grid-cols-2">
         {models.map((model) => (
@@ -713,6 +721,14 @@ function RecommendationsPanel({ token, onExpired }: PanelProps) {
   >([]);
   const [modelId, setModelId] = useState("");
   const [providers, setProviders] = useState("");
+  const [candidateModels, setCandidateModels] = useState<CatalogModel[]>([]);
+  const [candidatesOpen, setCandidatesOpen] = useState(true);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [candidateError, setCandidateError] = useState("");
+  const [providerCandidates, setProviderCandidates] = useState<
+    CatalogModel["providers"]
+  >([]);
+  const [providersLoading, setProvidersLoading] = useState(false);
   const [multiplier, setMultiplier] = useState("1");
   const [status, setStatus] = useState("");
   const load = async () => {
@@ -736,7 +752,78 @@ function RecommendationsPanel({ token, onExpired }: PanelProps) {
   };
   useEffect(() => {
     void load();
+    void loadCandidates();
   }, [category]);
+  const loadCandidates = async () => {
+    if (category === "fish_tts") {
+      setCandidateModels([]);
+      setCandidateError("");
+      return;
+    }
+    setCandidatesLoading(true);
+    setCandidateError("");
+    try {
+      setCandidateModels(
+        await authed<CatalogModel[]>(
+          token,
+          `/models?category=${encodeURIComponent(category)}&limit=500&includeProviders=false`,
+        ),
+      );
+      setCandidatesOpen(true);
+    } catch (error) {
+      if ((error as { expired?: boolean })?.expired) onExpired();
+      setCandidateError(messageOf(error));
+    } finally {
+      setCandidatesLoading(false);
+    }
+  };
+  const getProviders = async () => {
+    const id = modelId.trim();
+    if (!id || category === "fish_tts") return;
+    setProvidersLoading(true);
+    setCandidateError("");
+    try {
+      const result = await authed<{
+        count: number;
+        providers: CatalogModel["providers"];
+      }>(token, "/openrouter/sync-endpoints", {
+        method: "POST",
+        body: { modelId: id },
+      });
+      setProviderCandidates(result.providers);
+      setStatus(`已获取 ${result.count} 个支持服务商。`);
+    } catch (error) {
+      handlePanelError(error, setStatus, onExpired);
+    } finally {
+      setProvidersLoading(false);
+    }
+  };
+  const toggleProvider = (slug: string) => {
+    const current = commaSeparatedValues(providers);
+    setProviders(
+      (current.includes(slug)
+        ? current.filter((item) => item !== slug)
+        : [...current, slug]
+      ).join(", "),
+    );
+  };
+  const addRecommendation = (event: FormEvent) => {
+    event.preventDefault();
+    const id = modelId.trim();
+    if (!id) return;
+    if (items.some((item) => item.modelId === id)) {
+      setStatus(`${id} 已在当前推荐列表中。`);
+      return;
+    }
+    setItems([
+      ...items,
+      { modelId: id, providerSlugs: commaSeparatedValues(providers) },
+    ]);
+    setModelId("");
+    setProviders("");
+    setProviderCandidates([]);
+    setCandidatesOpen(true);
+  };
   const save = async () => {
     try {
       await authed(token, `/recommendations/${category}`, {
@@ -764,15 +851,23 @@ function RecommendationsPanel({ token, onExpired }: PanelProps) {
       handlePanelError(error, setStatus, onExpired);
     }
   };
+  const visibleCandidateModels = filteredCandidateModels(
+    candidateModels,
+    modelId,
+  );
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_.65fr]">
       <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
         <h2 className="text-xl font-semibold">推荐模型列表</h2>
         <select
           value={category}
-          onChange={(e) =>
-            setCategory(e.target.value as ModelRecommendationCategory)
-          }
+          onChange={(e) => {
+            setCategory(e.target.value as ModelRecommendationCategory);
+            setModelId("");
+            setProviders("");
+            setProviderCandidates([]);
+            setCandidatesOpen(true);
+          }}
           className="mt-4 w-full rounded-lg border border-white/10 bg-[#15151a] px-3 py-2"
         >
           {categories.map((item) => (
@@ -781,40 +876,126 @@ function RecommendationsPanel({ token, onExpired }: PanelProps) {
             </option>
           ))}
         </select>
-        <div className="mt-4 flex gap-2">
-          <input
-            value={modelId}
-            onChange={(e) => setModelId(e.target.value)}
-            placeholder="模型 ID"
-            className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2"
-          />
-          <input
-            value={providers}
-            onChange={(e) => setProviders(e.target.value)}
-            placeholder="推荐服务商 slug，逗号分隔"
-            className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2"
-          />
+        <form className="mt-4 space-y-3" onSubmit={addRecommendation}>
+          <label className="block text-sm text-white/58">
+            模型 ID
+            <div className="relative mt-1.5">
+              <input
+                value={modelId}
+                onFocus={() => setCandidatesOpen(true)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setCandidatesOpen(false);
+                }}
+                onChange={(e) => {
+                  setModelId(e.target.value);
+                  setProviderCandidates([]);
+                  setCandidatesOpen(true);
+                }}
+                placeholder="选择候选或自行输入模型 ID"
+                autoComplete="off"
+                className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2.5 text-white outline-none focus:border-white/25"
+              />
+              {candidatesOpen && category !== "fish_tts" ? (
+                <div className="absolute inset-x-0 top-full z-20 mt-1 max-h-72 overflow-auto rounded-lg border border-white/10 bg-[#15151a] p-1 shadow-2xl shadow-black/45">
+                  {candidatesLoading ? (
+                    <p className="px-3 py-2 text-xs text-white/40">
+                      正在获取匹配当前分类的模型...
+                    </p>
+                  ) : visibleCandidateModels.length ? (
+                    visibleCandidateModels.map((model) => (
+                      <button
+                        key={model.modelId}
+                        type="button"
+                        onClick={() => {
+                          setModelId(model.modelId);
+                          setProviders("");
+                          setProviderCandidates([]);
+                          setCandidatesOpen(false);
+                        }}
+                        className="block w-full rounded-md px-3 py-2 text-left hover:bg-white/[0.06] focus:bg-white/[0.06] focus:outline-none"
+                      >
+                        <span className="block text-sm text-white/85">
+                          {model.name}
+                        </span>
+                        <span className="mt-0.5 block break-all font-mono text-[11px] text-white/40">
+                          {model.modelId}
+                        </span>
+                        <span className="mt-1 block text-[11px] text-emerald-100/50">
+                          {modelCapabilityLabel(model)}
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="px-3 py-2 text-xs text-white/40">
+                      没有匹配候选，仍可直接使用手填 ID。
+                    </p>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          </label>
+          {candidateError ? (
+            <p className="text-xs text-red-200/70">{candidateError}</p>
+          ) : null}
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+            <label className="block text-sm text-white/58">
+              推荐服务商
+              <input
+                value={providers}
+                onFocus={() => setCandidatesOpen(false)}
+                onChange={(e) => setProviders(e.target.value)}
+                placeholder="服务商 slug，逗号分隔，也可点击下方候选"
+                className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2.5 text-white outline-none focus:border-white/25"
+              />
+            </label>
+            {category !== "fish_tts" ? (
+              <button
+                type="button"
+                disabled={!modelId.trim() || providersLoading}
+                onClick={() => {
+                  setCandidatesOpen(false);
+                  void getProviders();
+                }}
+                className="self-end rounded-lg border border-white/10 px-4 py-2.5 text-sm text-white/75 disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                {providersLoading ? "获取中..." : "获取支持服务商"}
+              </button>
+            ) : null}
+          </div>
+          {providerCandidates.length ? (
+            <div className="flex flex-wrap gap-2" aria-label="支持服务商候选">
+              {providerCandidates.map((provider) => {
+                const selected = commaSeparatedValues(providers).includes(
+                  provider.provider_slug,
+                );
+                return (
+                  <button
+                    key={provider.provider_slug}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => toggleProvider(provider.provider_slug)}
+                    className={`rounded-lg border px-3 py-1.5 text-left text-xs ${
+                      selected
+                        ? "border-emerald-200/25 bg-emerald-200/10 text-emerald-50/80"
+                        : "border-white/10 bg-white/[0.025] text-white/55"
+                    }`}
+                  >
+                    {provider.provider_name}
+                    <span className="ml-1 font-mono text-[10px] opacity-60">
+                      {provider.provider_slug}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
           <button
-            onClick={() => {
-              if (!modelId.trim()) return;
-              setItems([
-                ...items,
-                {
-                  modelId: modelId.trim(),
-                  providerSlugs: providers
-                    .split(",")
-                    .map((v) => v.trim())
-                    .filter(Boolean),
-                },
-              ]);
-              setModelId("");
-              setProviders("");
-            }}
-            className="rounded-lg bg-white px-4 text-black"
+            type="submit"
+            className="rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-black"
           >
-            添加
+            添加推荐模型
           </button>
-        </div>
+        </form>
         <div className="mt-4 space-y-2">
           {items.map((item, index) => (
             <div
@@ -920,4 +1101,40 @@ function handlePanelError(
 
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : "操作失败。";
+}
+
+function commaSeparatedValues(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function filteredCandidateModels(models: CatalogModel[], query: string) {
+  const normalized = query.trim().toLocaleLowerCase();
+  return models
+    .filter(
+      (model) =>
+        !normalized ||
+        model.modelId.toLocaleLowerCase().includes(normalized) ||
+        model.name.toLocaleLowerCase().includes(normalized),
+    )
+    .slice(0, 20);
+}
+
+function modelCapabilityLabel(model: CatalogModel) {
+  const capabilities = [
+    `${model.inputModalities.join("+")} → ${model.outputModalities.join("+")}`,
+  ];
+  if (model.supportedParameters.includes("tools")) capabilities.push("工具调用");
+  if (
+    model.supportedParameters.includes("structured_outputs") ||
+    model.supportedParameters.includes("response_format")
+  )
+    capabilities.push("JSON 输出");
+  return capabilities.join(" · ");
 }

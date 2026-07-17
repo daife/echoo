@@ -59,6 +59,52 @@ type OpenRouterModel = {
   supported_parameters?: string[];
 };
 
+type ModelCapabilities = {
+  inputModalities: string[];
+  outputModalities: string[];
+  supportedParameters: string[];
+};
+
+type CapabilityRequirements = {
+  inputs: string[];
+  outputs: string[];
+  parameterGroups?: string[][];
+};
+
+const recommendationRequirements: Partial<
+  Record<ModelRecommendationCategory, CapabilityRequirements>
+> = {
+  slice_text: { inputs: ["text"], outputs: ["text"] },
+  prime_decision: {
+    inputs: ["text"],
+    outputs: ["text"],
+    parameterGroups: [["tools"], ["structured_outputs", "response_format"]],
+  },
+  image_generation: { inputs: ["text"], outputs: ["image"] },
+  image_optimization: { inputs: ["text"], outputs: ["text"] },
+  voice_optimization: { inputs: ["text"], outputs: ["text"] },
+  visual_understanding: { inputs: ["image"], outputs: ["text"] },
+  audio_understanding: { inputs: ["audio"], outputs: ["text"] },
+};
+
+export function modelSupportsRecommendationCategory(
+  category: ModelRecommendationCategory,
+  capabilities: ModelCapabilities,
+) {
+  const requirements = recommendationRequirements[category];
+  if (!requirements) return false;
+  return (
+    missingCapabilities(
+      capabilities.inputModalities,
+      capabilities.outputModalities,
+      capabilities.supportedParameters,
+      requirements.inputs,
+      requirements.outputs,
+      requirements.parameterGroups,
+    ).length === 0
+  );
+}
+
 export class PlatformCatalogService {
   async getEndpointUsagePricing(
     modelId: string,
@@ -159,17 +205,42 @@ export class PlatformCatalogService {
         );
       }
     });
-    return { modelId, count: endpoints.length, syncedAt: now };
+    return {
+      modelId,
+      count: endpoints.length,
+      syncedAt: now,
+      providers: await this.providersFor(modelId),
+    };
   }
 
-  async listModels(search = "", limit = 100) {
+  async listModels(
+    search = "",
+    limit = 100,
+    category?: ModelRecommendationCategory,
+    includeProviders = true,
+  ) {
+    const requestedLimit = Math.min(500, Math.max(1, limit));
     const rows = await queryRows<ModelRow>(
       `SELECT * FROM platform_models
         WHERE (? = '' OR model_id LIKE ? OR name LIKE ?)
         ORDER BY available DESC, name ASC LIMIT ?`,
-      [search, `%${search}%`, `%${search}%`, Math.min(500, Math.max(1, limit))],
+      [search, `%${search}%`, `%${search}%`, category ? 500 : requestedLimit],
     );
-    return Promise.all(rows.map((row) => this.toModel(row, true)));
+    const compatibleRows = category
+      ? rows.filter((row) =>
+          Boolean(row.available) &&
+          modelSupportsRecommendationCategory(category, {
+            inputModalities: stringArray(row.input_modalities),
+            outputModalities: stringArray(row.output_modalities),
+            supportedParameters: stringArray(row.supported_parameters),
+          }),
+        )
+      : rows;
+    return Promise.all(
+      compatibleRows
+        .slice(0, requestedLimit)
+        .map((row) => this.toModel(row, includeProviders)),
+    );
   }
 
   async getRecommendations(category: ModelRecommendationCategory) {
@@ -359,22 +430,14 @@ export class PlatformCatalogService {
     const inputs = stringArray(row.input_modalities);
     const outputs = stringArray(row.output_modalities);
     const supportedParameters = stringArray(row.supported_parameters);
-    const missing = [
-      ...requiredInputs
-        .filter((item) => !inputs.includes(item))
-        .map((item) => `输入 ${item}`),
-      ...requiredOutputs
-        .filter((item) => !outputs.includes(item))
-        .map((item) => `输出 ${item}`),
-      ...requiredParameterGroups
-        .filter(
-          (alternatives) =>
-            !alternatives.some((item) => supportedParameters.includes(item)),
-        )
-        .map((alternatives) =>
-          alternatives.includes("tools") ? "工具调用" : "JSON 结构化输出",
-        ),
-    ];
+    const missing = missingCapabilities(
+      inputs,
+      outputs,
+      supportedParameters,
+      requiredInputs,
+      requiredOutputs,
+      requiredParameterGroups,
+    );
     if (missing.length)
       throw new Error(
         `模型 ${endpoint.model} 不支持当前配置所需的${missing.join("、")}能力。`,
@@ -431,6 +494,32 @@ export class PlatformCatalogService {
       [modelId, ...(selected ?? [])],
     );
   }
+}
+
+function missingCapabilities(
+  inputs: string[],
+  outputs: string[],
+  supportedParameters: string[],
+  requiredInputs: string[],
+  requiredOutputs: string[],
+  requiredParameterGroups: string[][] = [],
+) {
+  return [
+    ...requiredInputs
+      .filter((item) => !inputs.includes(item))
+      .map((item) => `输入 ${item}`),
+    ...requiredOutputs
+      .filter((item) => !outputs.includes(item))
+      .map((item) => `输出 ${item}`),
+    ...requiredParameterGroups
+      .filter(
+        (alternatives) =>
+          !alternatives.some((item) => supportedParameters.includes(item)),
+      )
+      .map((alternatives) =>
+        alternatives.includes("tools") ? "工具调用" : "JSON 结构化输出",
+      ),
+  ];
 }
 
 async function openRouterFetch<T>(path: string): Promise<T> {
