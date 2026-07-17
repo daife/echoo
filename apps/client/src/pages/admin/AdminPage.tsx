@@ -723,7 +723,7 @@ function RecommendationsPanel({ token, onExpired }: PanelProps) {
   const [modelId, setModelId] = useState("");
   const [providers, setProviders] = useState("");
   const [candidateModels, setCandidateModels] = useState<CatalogModel[]>([]);
-  const [candidatesOpen, setCandidatesOpen] = useState(true);
+  const [candidatesOpen, setCandidatesOpen] = useState(false);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidateError, setCandidateError] = useState("");
   const [providerCandidates, setProviderCandidates] = useState<
@@ -770,7 +770,6 @@ function RecommendationsPanel({ token, onExpired }: PanelProps) {
           `/models?category=${encodeURIComponent(category)}&limit=500&includeProviders=false`,
         ),
       );
-      setCandidatesOpen(true);
     } catch (error) {
       if ((error as { expired?: boolean })?.expired) onExpired();
       setCandidateError(messageOf(error));
@@ -823,7 +822,7 @@ function RecommendationsPanel({ token, onExpired }: PanelProps) {
     setModelId("");
     setProviders("");
     setProviderCandidates([]);
-    setCandidatesOpen(true);
+    setCandidatesOpen(false);
   };
   const save = async () => {
     try {
@@ -867,7 +866,7 @@ function RecommendationsPanel({ token, onExpired }: PanelProps) {
             setModelId("");
             setProviders("");
             setProviderCandidates([]);
-            setCandidatesOpen(true);
+            setCandidatesOpen(false);
           }}
           className="mt-4 w-full rounded-lg border border-white/10 bg-[#15151a] px-3 py-2"
         >
@@ -878,26 +877,45 @@ function RecommendationsPanel({ token, onExpired }: PanelProps) {
           ))}
         </select>
         <form className="mt-4 space-y-3" onSubmit={addRecommendation}>
-          <label className="block text-sm text-white/58">
+          <label
+            htmlFor="recommendation-model-id"
+            className="block text-sm text-white/58"
+          >
             模型 ID
-            <div className="relative mt-1.5">
-              <input
-                value={modelId}
-                onFocus={() => setCandidatesOpen(true)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") setCandidatesOpen(false);
-                }}
-                onChange={(e) => {
-                  setModelId(e.target.value);
-                  setProviderCandidates([]);
-                  setCandidatesOpen(true);
-                }}
-                placeholder="选择候选或自行输入模型 ID"
-                autoComplete="off"
-                className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2.5 text-white outline-none focus:border-white/25"
-              />
-              {candidatesOpen && category !== "fish_tts" ? (
-                <div className="absolute inset-x-0 top-full z-20 mt-1 max-h-72 overflow-auto rounded-lg border border-white/10 bg-[#15151a] p-1 shadow-2xl shadow-black/45">
+          </label>
+          <div className="relative">
+            <input
+              id="recommendation-model-id"
+              value={modelId}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setCandidatesOpen(false);
+              }}
+              onChange={(e) => {
+                setModelId(e.target.value);
+                setProviderCandidates([]);
+              }}
+              placeholder="选择候选或自行输入模型 ID"
+              autoComplete="off"
+              aria-controls="recommendation-model-candidates"
+              aria-expanded={candidatesOpen}
+              className="w-full rounded-lg border border-white/10 bg-black/20 py-2.5 pl-3 pr-24 text-white outline-none focus:border-white/25"
+            />
+            {category !== "fish_tts" ? (
+              <button
+                type="button"
+                onClick={() => setCandidatesOpen((open) => !open)}
+                aria-controls="recommendation-model-candidates"
+                aria-expanded={candidatesOpen}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md px-2.5 py-1.5 text-xs text-white/55 hover:bg-white/[0.06] hover:text-white/80"
+              >
+                {candidatesOpen ? "隐藏列表" : "显示列表"}
+              </button>
+            ) : null}
+            {candidatesOpen && category !== "fish_tts" ? (
+              <div
+                id="recommendation-model-candidates"
+                className="absolute inset-x-0 top-full z-20 mt-1 max-h-72 overflow-auto rounded-lg border border-white/10 bg-[#15151a] p-1 shadow-2xl shadow-black/45"
+              >
                   {candidatesLoading ? (
                     <p className="px-3 py-2 text-xs text-white/40">
                       正在获取匹配当前分类的模型...
@@ -933,8 +951,7 @@ function RecommendationsPanel({ token, onExpired }: PanelProps) {
                   )}
                 </div>
               ) : null}
-            </div>
-          </label>
+          </div>
           {candidateError ? (
             <p className="text-xs text-red-200/70">{candidateError}</p>
           ) : null}

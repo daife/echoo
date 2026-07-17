@@ -9,7 +9,7 @@ import type {
   RuntimeConfigPresetView,
 } from "@echoo/shared";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { useOptionalServices } from "../../app/providers/ServicesProvider";
+import { useServices } from "../../app/providers/ServicesProvider";
 
 interface FormStatusProps {
   disabled?: boolean;
@@ -789,13 +789,12 @@ function RecommendationChooser<
   draft: T;
   onChange: (value: T) => void;
 }) {
-  const services = useOptionalServices();
+  const services = useServices();
   const [models, setModels] = useState<RecommendedModelView[] | null>(null);
   const [error, setError] = useState("");
   const load = async () => {
     setError("");
     try {
-      if (!services) throw new Error("应用服务尚未初始化。");
       setModels(await services.runtimeConfigService.getRecommendations(category));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "获取推荐模型失败。");

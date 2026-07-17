@@ -20,7 +20,3 @@ export function useServices() {
   if (!services) throw new Error("ServicesProvider is missing");
   return services;
 }
-
-export function useOptionalServices() {
-  return useContext(ServicesContext);
-}
