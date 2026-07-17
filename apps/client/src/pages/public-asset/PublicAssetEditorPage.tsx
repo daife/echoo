@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   Archive,
   FloppyDisk,
+  Trash,
   UploadSimple,
 } from "@phosphor-icons/react";
 import type {
@@ -30,11 +31,13 @@ export function PublicAssetEditorPage({
   draft,
   service,
   onDraftChange,
+  onDeleted,
   onBack,
 }: {
   draft: CharacterAssetDraft;
   service: CharacterAssetService;
   onDraftChange: (draft: CharacterAssetDraft) => void;
+  onDeleted: () => void;
   onBack: () => void;
 }) {
   const [tab, setTab] = useState<"character" | "recommendation">("character");
@@ -66,6 +69,22 @@ export function PublicAssetEditorPage({
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "下架失败。");
     } finally {
+      setBusy(false);
+    }
+  };
+
+  const deletePermanently = async () => {
+    const confirmed = window.confirm(
+      "确定彻底删除这个公共作品吗？作品、历史版本、点赞和评论将无法恢复；其他用户已经添加的角色不会被删除，但之后无法再从该作品更新。",
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      await service.delete(draft.id);
+      onDeleted();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "彻底删除失败。");
       setBusy(false);
     }
   };
@@ -105,6 +124,16 @@ export function PublicAssetEditorPage({
               className="flex items-center gap-2 rounded-full px-4 py-2 text-xs text-white/48 hover:bg-white/[0.05] hover:text-white disabled:opacity-40"
             >
               <Archive size={15} /> 下架
+            </button>
+          ) : null}
+          {draft.status === "unlisted" ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void deletePermanently()}
+              className="flex items-center gap-2 rounded-full px-4 py-2 text-xs text-red-200/65 hover:bg-red-400/10 hover:text-red-100 disabled:opacity-40"
+            >
+              <Trash size={15} /> 彻底删除
             </button>
           ) : null}
           <button

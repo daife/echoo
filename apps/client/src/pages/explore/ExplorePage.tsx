@@ -16,6 +16,17 @@ import { useEffect, useMemo, useState } from "react";
 import { MediaAsset } from "../../features/media/MediaAsset";
 import type { CharacterAssetService } from "../../services/CharacterAssetService";
 
+export const PRIME_FIGURE_UPDATE_WARNING =
+  "更新本初角色会覆盖当前的角色设定、日程、行程、当前情境、参数值、情绪与关系状态；聊天记录和长期记忆会保留。建议先进入该角色会话，从右上角菜单导出角色 JSON 备份。\n\n仍要更新到最新版吗？";
+
+export function requiresPrimeFigureUpdateWarning(asset: CharacterAssetSummary) {
+  return Boolean(
+    asset.snapshot.type === "prime-figure" &&
+    asset.installedVersionId &&
+    asset.updateAvailable,
+  );
+}
+
 export function CharacterCatalog({
   service,
   isAuthenticated,
@@ -221,6 +232,11 @@ export function CharacterCatalog({
 
   const installOrUpdate = async (asset: CharacterAssetSummary) => {
     if (!isAuthenticated) return onRequireAuth();
+    if (
+      requiresPrimeFigureUpdateWarning(asset) &&
+      !window.confirm(PRIME_FIGURE_UPDATE_WARNING)
+    )
+      return;
     setBusyId(asset.id);
     try {
       const result = asset.installedVersionId

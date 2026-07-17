@@ -325,6 +325,37 @@ export class CharacterAssetRepository {
     return result.affectedRows > 0;
   }
 
+  async deleteUnlisted(ownerUserId: string, assetId: string) {
+    return withTransaction(async (connection) => {
+      const asset = await queryOne<
+        RowDataPacket & { status: "draft" | "published" | "unlisted" }
+      >(
+        `SELECT status FROM character_assets
+         WHERE id = ? AND author_user_id = ? FOR UPDATE`,
+        [assetId, ownerUserId],
+        connection,
+      );
+      if (!asset) return "not-found" as const;
+      if (asset.status !== "unlisted") return "not-unlisted" as const;
+
+      // An installation is only the update link. Removing it leaves the copied
+      // agent, conversation, messages, runtime state and resource references intact.
+      await execute(
+        "DELETE FROM character_asset_installations WHERE asset_id = ?",
+        [assetId],
+        connection,
+      );
+      const result = await execute(
+        "DELETE FROM social_objects WHERE id = ?",
+        [assetId],
+        connection,
+      );
+      return result.affectedRows
+        ? ("deleted" as const)
+        : ("not-found" as const);
+    });
+  }
+
   async findVersion(assetId: string, versionId: string) {
     const row = await queryOne<VersionRow>(
       `SELECT * FROM character_asset_versions WHERE asset_id = ? AND id = ?`,
@@ -436,7 +467,7 @@ export class CharacterAssetRepository {
       );
       if (!conversation) return null;
       const now = Date.now();
-      const state = reconcileRuntimeState(
+      const state = reconcileInstalledPrimeRuntimeState(
         parseJson<Record<string, unknown>>(conversation.runtime_state, {}),
         input.snapshot,
         now,
@@ -713,41 +744,29 @@ function initialRuntimeState(snapshot: CharacterAssetSnapshot, now: number) {
   };
 }
 
-function reconcileRuntimeState(
+export function reconcileInstalledPrimeRuntimeState(
   current: Record<string, unknown>,
   snapshot: CharacterAssetSnapshot,
   now: number,
 ) {
   if (snapshot.type !== "prime-figure") return current;
-  const previousVariables =
-    current.variables && typeof current.variables === "object"
-      ? (current.variables as Record<string, unknown>)
-      : {};
   const variables = Object.fromEntries(
-    snapshot.detail.variableDefinitions.flatMap((definition) => {
-      const previous = previousVariables[definition.key];
-      return [
-        [
-          definition.key,
-          variableMatches(definition.type, previous)
-            ? previous
-            : (definition.defaultValue ?? null),
-        ],
-      ];
-    }),
+    snapshot.detail.variableDefinitions.map((definition) => [
+      definition.key,
+      definition.defaultValue ?? null,
+    ]),
   );
-  return { ...current, variables, updatedAt: now };
-}
-
-function variableMatches(type: string, value: unknown) {
-  return (
-    (type === "string" && typeof value === "string") ||
-    (type === "number" &&
-      typeof value === "number" &&
-      Number.isFinite(value)) ||
-    (type === "boolean" && typeof value === "boolean") ||
-    (type === "json" && value !== undefined && typeof value === "object")
-  );
+  return {
+    ...current,
+    variables,
+    currentSituation: snapshot.detail.currentSituation,
+    schedule: snapshot.detail.schedule,
+    itinerary: snapshot.detail.itinerary,
+    mood: snapshot.detail.initialMood,
+    moodObservedAtMs: now,
+    relationshipStatus: snapshot.detail.initialRelationshipStatus,
+    updatedAt: now,
+  };
 }
 
 async function copyVersionResourceReferences(

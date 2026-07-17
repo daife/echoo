@@ -155,6 +155,20 @@ export async function registerCharacterAssetRoutes(app: FastifyInstance) {
     },
   );
 
+  app.delete<{ Params: { assetId: string } }>(
+    "/character-assets/:assetId",
+    async (request, reply) => {
+      const userId = await request.requireUserId(reply);
+      if (!userId) return;
+      try {
+        await assets.deleteUnlisted(userId, request.params.assetId);
+        return { ok: true };
+      } catch (error) {
+        return assetError(reply, error);
+      }
+    },
+  );
+
   app.post<{ Params: { assetId: string } }>(
     "/character-assets/:assetId/install",
     async (request, reply) => {

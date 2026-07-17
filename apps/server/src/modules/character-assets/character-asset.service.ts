@@ -155,6 +155,14 @@ export class CharacterAssetService {
       throw new CharacterAssetNotFoundError("未找到可下架的角色资产。");
   }
 
+  async deleteUnlisted(ownerUserId: string, assetId: string) {
+    const result = await this.assets.deleteUnlisted(ownerUserId, assetId);
+    if (result === "not-found")
+      throw new CharacterAssetNotFoundError("未找到要删除的公共角色。");
+    if (result === "not-unlisted")
+      throw new CharacterAssetForbiddenError("请先下架公共角色，再彻底删除。");
+  }
+
   async install(
     ownerUserId: string,
     assetId: string,

@@ -352,7 +352,9 @@ export function App() {
     await services.characterAssetService.unlist(assetId);
     setMyAgents((current) =>
       current.map((agent) =>
-        agent.id === agentId ? { ...agent, isPublic: false } : agent,
+        agent.id === agentId
+          ? { ...agent, isPublic: false, publishedAssetId: undefined }
+          : agent,
       ),
     );
     const next = await services.characterAssetService.getDraft(assetId);
@@ -385,11 +387,44 @@ export function App() {
           draft={editingPublicAsset}
           service={services.characterAssetService}
           onBack={() => setView("profile")}
+          onDeleted={() => {
+            setPublicAssets((current) =>
+              current.filter((asset) => asset.id !== editingPublicAsset.id),
+            );
+            if (editingPublicAsset.sourceAgentId) {
+              setMyAgents((current) =>
+                current.map((agent) =>
+                  agent.id === editingPublicAsset.sourceAgentId
+                    ? {
+                        ...agent,
+                        isPublic: false,
+                        publishedAssetId: undefined,
+                      }
+                    : agent,
+                ),
+              );
+            }
+            setEditingPublicAsset(null);
+            setView("profile");
+          }}
           onDraftChange={(next) => {
             setEditingPublicAsset(next);
             setPublicAssets((current) =>
               current.map((asset) => (asset.id === next.id ? next : asset)),
             );
+            if (next.sourceAgentId)
+              setMyAgents((current) =>
+                current.map((agent) =>
+                  agent.id === next.sourceAgentId
+                    ? {
+                        ...agent,
+                        isPublic: next.status === "published",
+                        publishedAssetId:
+                          next.status === "published" ? next.id : undefined,
+                      }
+                    : agent,
+                ),
+              );
           }}
         />
       );

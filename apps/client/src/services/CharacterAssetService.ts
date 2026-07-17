@@ -12,6 +12,9 @@ export class CharacterAssetService {
   unlist(assetId: string) {
     return this.api.unlist(assetId);
   }
+  delete(assetId: string) {
+    return this.api.delete(assetId);
+  }
   install(assetId: string, applyRecommendedRuntimeConfig: boolean) {
     return this.api.install(assetId, { applyRecommendedRuntimeConfig });
   }

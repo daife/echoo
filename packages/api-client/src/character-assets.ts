@@ -47,6 +47,10 @@ export class CharacterAssetsApi {
     );
   }
 
+  delete(assetId: string) {
+    return this.client.delete<{ ok: true }>(`/character-assets/${assetId}`);
+  }
+
   install(
     assetId: string,
     input: InstallCharacterAssetRequest,

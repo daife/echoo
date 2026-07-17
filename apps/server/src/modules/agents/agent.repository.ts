@@ -647,18 +647,21 @@ export class AgentRepository {
         type: "prime-figure",
         ...base,
         decisionStyle: agent.detail.decisionStyle,
-        currentSituation: agent.detail.currentSituation,
-        schedule: agent.detail.schedule,
-        itinerary: agent.detail.itinerary,
+        currentSituation: state.currentSituation,
+        schedule: state.schedule,
+        itinerary: state.itinerary,
         variableDefinitions: agent.detail.variableDefinitions.map(
           (definition) => ({
             ...definition,
+            ...(state.variables[definition.key] !== undefined
+              ? { defaultValue: state.variables[definition.key] }
+              : {}),
           }),
         ),
         referenceImages,
         stickers,
-        initialMood: agent.detail.initialMood,
-        initialRelationshipStatus: agent.detail.initialRelationshipStatus,
+        initialMood: state.mood,
+        initialRelationshipStatus: state.relationshipStatus,
       },
     };
   }
