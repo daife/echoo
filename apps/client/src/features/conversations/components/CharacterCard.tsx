@@ -1,6 +1,7 @@
 import { ArrowUpRight } from "@phosphor-icons/react";
 import type { AgentAttribute } from "@echoo/shared";
 import { MediaAsset } from "../../media/MediaAsset";
+import { IdentityAvatar } from "../../../shared/components/IdentityAvatar";
 
 export interface CharacterCardAgent {
   id?: string;
@@ -36,16 +37,11 @@ export function CharacterCard({
         ) : null}
         <div className="absolute inset-x-8 bottom-0 top-10 rounded-t-full border border-white/10 bg-black/20 backdrop-blur-xl" />
         <div className="absolute bottom-6 left-6 right-6 flex items-end justify-between">
-          <div className="h-20 w-20 overflow-hidden rounded-full border border-white/20 bg-white/[0.06] shadow-[0_0_38px_rgba(255,255,255,0.12)]">
-            {agent.avatarResourcePath ? (
-              <MediaAsset
-                className="h-full w-full object-cover"
-                mediaUrl={agent.avatarResourcePath}
-                variant="thumb"
-                alt={agent.name}
-              />
-            ) : null}
-          </div>
+          <IdentityAvatar
+            mediaUrl={agent.avatarResourcePath}
+            alt={agent.name}
+            className="h-20 w-20 border-white/20 bg-white/[0.06] shadow-[0_0_38px_rgba(255,255,255,0.12)]"
+          />
           <span className="rounded-full border border-white/12 bg-white/[0.04] px-3 py-1 text-xs text-white/70 backdrop-blur-xl">
             {agent.kind}
           </span>

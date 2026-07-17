@@ -3,8 +3,10 @@ import {
   loginSchema,
   registerSchema,
   resetPasswordSchema,
+  updateUserProfileSchema,
   verifyEmailSchema,
   type AuthSession,
+  type UpdateUserProfileRequest,
 } from "@echoo/shared";
 import type { FastifyInstance } from "fastify";
 import { environment } from "../../infra/config/environment.js";
@@ -21,6 +23,7 @@ import type {
 import { toUserProfile, UserRepository } from "./user.repository.js";
 import { RuntimeConfigService } from "../runtime-config/runtime-config.service.js";
 import { BillingService } from "../billing/billing.service.js";
+import { ResourceRepository } from "../resources/resource.repository.js";
 
 export class AuthService {
   private readonly tokenService: TokenService;
@@ -32,6 +35,7 @@ export class AuthService {
     private readonly users = new UserRepository(),
     private readonly runtimeConfigs = new RuntimeConfigService(),
     private readonly billing = new BillingService(),
+    private readonly resources = new ResourceRepository(),
   ) {
     this.tokenService = new TokenService(app);
   }
@@ -98,6 +102,45 @@ export class AuthService {
       throw new AuthError("USER_NOT_FOUND", "用户不存在。", 404);
     }
     return toUserProfile(user);
+  }
+
+  async updateProfile(userId: string, input: UpdateUserProfileRequest) {
+    const body = updateUserProfileSchema.parse(input);
+    const existing = await this.users.findById(userId);
+    if (!existing) throw new AuthError("USER_NOT_FOUND", "用户不存在。", 404);
+
+    const nextAvatar =
+      body.avatar && typeof body.avatar === "object"
+        ? await this.resources.saveImage(userId, "user_avatar", body.avatar)
+        : null;
+    try {
+      const updated = await this.users.updateProfile(userId, {
+        ...(body.displayName !== undefined
+          ? { displayName: body.displayName }
+          : {}),
+        ...(body.signature !== undefined ? { signature: body.signature } : {}),
+        ...(body.avatar !== undefined
+          ? { avatarResourceId: nextAvatar?.id ?? null }
+          : {}),
+      });
+      if (!updated) throw new AuthError("USER_NOT_FOUND", "用户不存在。", 404);
+
+      if (
+        body.avatar !== undefined &&
+        existing.avatarUrl &&
+        existing.avatarUrl !== nextAvatar?.publicPath
+      )
+        await this.resources
+          .deleteOwnedByPublicPath(userId, existing.avatarUrl)
+          .catch(() => false);
+      return toUserProfile(updated);
+    } catch (error) {
+      if (nextAvatar)
+        await this.resources
+          .deleteOwnedByPublicPath(userId, nextAvatar.publicPath)
+          .catch(() => false);
+      throw error;
+    }
   }
 
   async forgotPassword(input: ForgotPasswordBody) {

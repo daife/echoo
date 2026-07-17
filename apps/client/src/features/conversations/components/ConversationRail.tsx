@@ -1,5 +1,6 @@
-import { LinkSimple, Robot } from "@phosphor-icons/react";
+import { LinkSimple } from "@phosphor-icons/react";
 import type { Agent } from "@echoo/shared";
+import { IdentityAvatar } from "../../../shared/components/IdentityAvatar";
 
 export function ConversationRail({
   agents,
@@ -75,8 +76,7 @@ export function ConversationRail({
         >
           {!visibleConversations.length ? (
             <div className="px-4 py-12 text-center">
-              <Robot className="mx-auto text-white/35" size={24} />
-              <p className="mt-3 text-sm text-white/42">
+              <p className="text-sm text-white/42">
                 创建角色后，会话会出现在这里。
               </p>
             </div>
@@ -92,9 +92,11 @@ export function ConversationRail({
                     : onOpenChat()
                 }
               >
-                <div className="grid h-10 w-10 place-items-center rounded-lg bg-white/[0.06] text-white/75">
-                  <Robot size={19} weight="duotone" />
-                </div>
+                <IdentityAvatar
+                  mediaUrl={conversation.agent.avatarResourcePath}
+                  alt={`${conversation.name}的头像`}
+                  className="h-10 w-10"
+                />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <div className="truncate text-sm font-medium text-white">

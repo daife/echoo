@@ -1,12 +1,14 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { ZodError } from "zod";
 import { AuthError, AuthService } from "./auth.service.js";
+import { InvalidMediaUploadError } from "../resources/resource.repository.js";
 import type {
   ForgotPasswordBody,
   LoginBody,
   RegisterBody,
   ResetPasswordBody,
   VerifyEmailBody,
+  UpdateUserProfileBody,
 } from "./auth.types.js";
 
 export async function registerAuthRoutes(app: FastifyInstance) {
@@ -33,6 +35,20 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     if (!userId) return;
     return authService.me(userId);
   });
+
+  app.patch<{ Body: UpdateUserProfileBody }>(
+    "/me",
+    { bodyLimit: 8 * 1024 * 1024 },
+    async (request, reply) => {
+      const userId = await request.requireUserId(reply);
+      if (!userId) return;
+      try {
+        return await authService.updateProfile(userId, request.body);
+      } catch (error) {
+        return sendAuthError(reply, error);
+      }
+    },
+  );
 
   app.post<{ Body: ForgotPasswordBody }>(
     "/password/forgot",
@@ -76,13 +92,16 @@ function sendAuthError(reply: FastifyReply, error: unknown) {
   }
 
   if (error instanceof ZodError) {
+    return reply.code(400).send({
+      error: "VALIDATION_ERROR",
+      message: error.issues[0]?.message ?? "输入无效。",
+    });
+  }
+
+  if (error instanceof InvalidMediaUploadError)
     return reply
       .code(400)
-      .send({
-        error: "VALIDATION_ERROR",
-        message: error.issues[0]?.message ?? "输入无效。",
-      });
-  }
+      .send({ error: "INVALID_MEDIA_UPLOAD", message: error.message });
 
   throw error;
 }

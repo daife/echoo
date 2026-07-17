@@ -22,6 +22,7 @@ import {
   sanitizeVoiceTranscript,
   tokenizeParentheticalText,
 } from "../messagePresentation";
+import { IdentityAvatar } from "../../../shared/components/IdentityAvatar";
 
 export interface MessageBubbleModel {
   id: string;
@@ -55,12 +56,16 @@ export interface MessageBubbleModel {
 
 export function MessageBubble({
   message,
+  avatarUrl,
+  avatarAlt,
   onRetry,
   onRollback,
   onEdit,
   onResolveTransfer,
 }: {
   message: MessageBubbleModel;
+  avatarUrl?: string;
+  avatarAlt?: string;
   onRetry?: (messageId: string) => void;
   onRollback?: (messageId: string) => void;
   onEdit?: (messageId: string, text: string) => void;
@@ -247,7 +252,7 @@ export function MessageBubble({
               onRetry={() => onRetry?.(message.id)}
             />
           ) : (
-            <div className="mt-1 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
+            <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} />
           )}
           <ChatVisualMedia
             mediaUrl={message.mediaUrl}
@@ -264,9 +269,7 @@ export function MessageBubble({
             failed={mine && message.deliveryState === "failed"}
             onOpen={openMedia}
           />
-          {mine ? (
-            <div className="mt-1 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
-          ) : null}
+          {mine ? <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} /> : null}
         </div>
         {mediaViewer}
       </>
@@ -281,7 +284,7 @@ export function MessageBubble({
           className={`relative flex max-w-[55%] items-end gap-2 ${mine ? "self-end" : "self-start"}`}
         >
           {!mine ? (
-            <div className="mb-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
+            <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} />
           ) : null}
           <ChatVisualMedia
             mediaUrl={message.mediaUrl}
@@ -289,9 +292,7 @@ export function MessageBubble({
             kind="sticker"
             onOpen={openMedia}
           />
-          {mine ? (
-            <div className="mb-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
-          ) : null}
+          {mine ? <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} /> : null}
         </div>
         {mediaViewer}
       </>
@@ -305,9 +306,7 @@ export function MessageBubble({
       <div
         className={`relative flex w-[min(82%,320px)] items-end gap-2 ${mine ? "self-end" : "self-start"}`}
       >
-        {!mine ? (
-          <div className="mb-3 h-7 w-1 flex-shrink-0 rounded-full bg-amber-200/35" />
-        ) : null}
+        {!mine ? <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} /> : null}
         <div className="min-w-0 flex-1 overflow-hidden rounded-2xl border border-amber-200/10 bg-gradient-to-br from-[#7a4b16] to-[#4b2b10] shadow-[0_14px_32px_rgba(0,0,0,0.22)]">
           <div className="flex items-center gap-3 px-4 py-4">
             <span className="grid h-11 w-11 flex-none place-items-center rounded-full bg-white/14 text-white">
@@ -350,9 +349,7 @@ export function MessageBubble({
             </div>
           ) : null}
         </div>
-        {mine ? (
-          <div className="mb-3 h-7 w-1 flex-shrink-0 rounded-full bg-amber-200/20" />
-        ) : null}
+        {mine ? <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} /> : null}
       </div>
     );
   }
@@ -373,7 +370,7 @@ export function MessageBubble({
             onRetry={() => onRetry?.(message.id)}
           />
         ) : (
-          <div className="mt-3 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
+          <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} />
         )}
         <VoiceBubble
           mediaUrl={message.mediaUrl}
@@ -381,9 +378,7 @@ export function MessageBubble({
           transcript={isTranscriptOpen ? cleanTranscript : undefined}
           suppressNextClickRef={didLongPressRef}
         />
-        {mine ? (
-          <div className="mt-3 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
-        ) : null}
+        {mine ? <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} /> : null}
       </div>
     );
   }
@@ -403,7 +398,7 @@ export function MessageBubble({
           onRetry={() => onRetry?.(message.id)}
         />
       ) : (
-        <div className="mb-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/25" />
+        <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} />
       )}
       <div
         className={`rounded-xl px-4 py-3 text-sm leading-6 ${
@@ -423,10 +418,18 @@ export function MessageBubble({
           />
         ) : null}
       </div>
-      {mine ? (
-        <div className="mb-2 h-7 w-1 flex-shrink-0 rounded-full bg-white/15" />
-      ) : null}
+      {mine ? <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} /> : null}
     </div>
+  );
+}
+
+function MessageAvatar({ mediaUrl, alt }: { mediaUrl?: string; alt?: string }) {
+  return (
+    <IdentityAvatar
+      mediaUrl={mediaUrl}
+      alt={alt ?? "消息发送者头像"}
+      className="mb-1 h-8 w-8"
+    />
   );
 }
 

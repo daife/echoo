@@ -1,3 +1,5 @@
+import type { AgentResourceUpload } from "./agent.js";
+
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
@@ -9,8 +11,16 @@ export interface UserProfile {
   email: string;
   displayName: string;
   avatarUrl?: string;
+  signature: string;
   emailVerifiedAt?: number;
   createdAt: number;
+}
+
+export interface UpdateUserProfileRequest {
+  displayName?: string;
+  signature?: string;
+  /** Upload to replace, null to remove, omitted to preserve. */
+  avatar?: AgentResourceUpload | null;
 }
 
 export interface AuthSession {

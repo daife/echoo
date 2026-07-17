@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS users (
   id VARCHAR(64) PRIMARY KEY,
   email VARCHAR(255) NOT NULL UNIQUE,
   display_name VARCHAR(120) NOT NULL,
+  signature VARCHAR(160) NOT NULL DEFAULT '',
   password_hash VARCHAR(255) NOT NULL,
   email_verified_at BIGINT NULL,
   created_at BIGINT NOT NULL,
@@ -51,6 +52,17 @@ CREATE TABLE IF NOT EXISTS resource_variants (
   updated_at BIGINT NOT NULL,
   PRIMARY KEY (resource_id, variant),
   CONSTRAINT fk_resource_variants_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS user_resources (
+  user_id VARCHAR(64) NOT NULL,
+  usage_kind VARCHAR(48) NOT NULL,
+  resource_id VARCHAR(64) NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (user_id, usage_kind),
+  INDEX idx_user_resources_resource (resource_id),
+  CONSTRAINT fk_user_resources_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_user_resources_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS agents (

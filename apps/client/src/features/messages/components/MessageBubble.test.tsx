@@ -86,3 +86,60 @@ describe("MessageBubble media layout", () => {
     expect(html).toContain("点击放大查看");
   });
 });
+
+describe("MessageBubble identity", () => {
+  it("renders the figure avatar instead of a vertical marker", () => {
+    const html = renderToStaticMarkup(
+      <MessageBubble
+        avatarUrl="https://example.test/figure.jpg"
+        avatarAlt="小霁的头像"
+        message={{
+          id: "msg_agent",
+          from: "agent",
+          text: "晚上好。",
+          createdAt: 1234,
+          kind: "text",
+        }}
+      />,
+    );
+
+    expect(html).toContain('data-identity-avatar="image"');
+    expect(html).toContain("小霁的头像");
+    expect(html).not.toContain("h-7 w-1");
+  });
+
+  it("keeps an empty user avatar when no image is available", () => {
+    const html = renderToStaticMarkup(
+      <MessageBubble
+        avatarAlt="我的头像"
+        message={{
+          id: "msg_me",
+          from: "me",
+          text: "你好。",
+          createdAt: 1234,
+          kind: "text",
+        }}
+      />,
+    );
+
+    expect(html).toContain('data-identity-avatar="empty"');
+    expect(html).not.toContain("Robot");
+  });
+
+  it("does not render an avatar for memory summaries", () => {
+    const html = renderToStaticMarkup(
+      <MessageBubble
+        avatarUrl="https://example.test/figure.jpg"
+        message={{
+          id: "msg_memory",
+          from: "agent",
+          text: "",
+          createdAt: 1234,
+          kind: "memory-summary",
+        }}
+      />,
+    );
+
+    expect(html).not.toContain("data-identity-avatar");
+  });
+});

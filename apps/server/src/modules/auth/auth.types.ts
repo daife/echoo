@@ -21,3 +21,5 @@ export interface ResetPasswordBody {
 export interface VerifyEmailBody {
   token: string;
 }
+
+export type { UpdateUserProfileRequest as UpdateUserProfileBody } from "@echoo/shared";

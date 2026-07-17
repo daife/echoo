@@ -101,6 +101,7 @@ export class ResourceRepository {
   async saveImage(
     ownerUserId: string,
     kind:
+      | "user_avatar"
       | "agent_avatar"
       | "agent_cover"
       | "prime_figure_reference"
@@ -354,6 +355,7 @@ export class ResourceRepository {
       `SELECT resources.* FROM resources
        LEFT JOIN message_resources ON message_resources.resource_id = resources.id
        LEFT JOIN agent_resources ON agent_resources.resource_id = resources.id
+       LEFT JOIN user_resources ON user_resources.resource_id = resources.id
        LEFT JOIN character_asset_version_resources asset_versions
          ON asset_versions.resource_id = resources.id
        LEFT JOIN character_asset_draft_resources asset_drafts
@@ -363,6 +365,7 @@ export class ResourceRepository {
          AND (resources.status != 'ready' OR resources.storage_key LIKE '%/original.%')
          AND message_resources.resource_id IS NULL
          AND agent_resources.resource_id IS NULL
+         AND user_resources.resource_id IS NULL
          AND asset_versions.resource_id IS NULL
          AND asset_drafts.resource_id IS NULL
        ORDER BY resources.created_at ASC LIMIT ?`,
@@ -382,6 +385,8 @@ export class ResourceRepository {
       `UPDATE resources SET status = 'deleting', updated_at = ?
        WHERE id = ? AND NOT EXISTS (
          SELECT 1 FROM message_resources WHERE resource_id = resources.id
+       ) AND NOT EXISTS (
+         SELECT 1 FROM user_resources WHERE resource_id = resources.id
        ) AND NOT EXISTS (
          SELECT 1 FROM agent_resources WHERE resource_id = resources.id
        ) AND NOT EXISTS (

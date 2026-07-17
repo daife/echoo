@@ -1,4 +1,4 @@
-import type { UserProfile } from "@echoo/shared";
+import type { UpdateUserProfileRequest, UserProfile } from "@echoo/shared";
 import type { PropsWithChildren } from "react";
 import {
   createContext,
@@ -33,6 +33,7 @@ interface AuthContextValue {
   }) => Promise<{ resetToken?: string }>;
   resetPassword: (input: { token: string; password: string }) => Promise<void>;
   verifyEmail: (input: { token: string }) => Promise<void>;
+  updateProfile: (input: UpdateUserProfileRequest) => Promise<UserProfile>;
   signOut: () => Promise<void>;
   clearAuthLinkParams: (keys: Array<keyof AuthLinkParams>) => Promise<void>;
   setAuthMode: (mode: AuthMode) => void;
@@ -143,6 +144,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
         await runAuthAction(() => services.authService.verifyEmail(input));
         await clearAuthLinkParams(["verificationToken"]);
         setAuthMode("login");
+      },
+      updateProfile: async (input) => {
+        const previousAvatarUrl = user?.avatarUrl;
+        const nextUser = await runAuthAction(() =>
+          services.authService.updateProfile(input),
+        );
+        setUser(nextUser);
+        if (previousAvatarUrl && previousAvatarUrl !== nextUser.avatarUrl)
+          await mediaCache.delete([previousAvatarUrl]).catch(() => undefined);
+        return nextUser;
       },
       signOut: async () => {
         await mediaCache.clearCurrentUser().catch(() => undefined);

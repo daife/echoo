@@ -6,6 +6,7 @@ import type {
   RegisterRequest,
   RegisterResponse,
   ResetPasswordRequest,
+  UpdateUserProfileRequest,
   UserProfile,
   VerifyEmailRequest,
 } from "@echoo/shared";
@@ -24,6 +25,10 @@ export class AuthApi {
 
   me(): Promise<UserProfile> {
     return this.client.get<UserProfile>("/auth/me");
+  }
+
+  updateProfile(body: UpdateUserProfileRequest): Promise<UserProfile> {
+    return this.client.patch<UserProfile>("/auth/me", body);
   }
 
   forgotPassword(body: ForgotPasswordRequest): Promise<ForgotPasswordResponse> {

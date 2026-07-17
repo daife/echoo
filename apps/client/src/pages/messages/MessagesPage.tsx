@@ -6,7 +6,6 @@ import {
   PencilSimple,
   SlidersHorizontal,
   Trash,
-  Waveform,
   X,
 } from "@phosphor-icons/react";
 import {
@@ -394,9 +393,6 @@ export function MessagesPage({
     return (
       <section className="grid h-full min-h-0 place-items-center overflow-hidden rounded-2xl border border-white/8 bg-[#0d0d10]/80 p-8 text-center">
         <div className="max-w-sm">
-          <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-full border border-white/15 bg-white/[0.05]">
-            <Waveform size={26} weight="thin" />
-          </div>
           <h1 className="text-lg font-semibold text-white">{title}</h1>
           <p className="mt-2 text-sm leading-6 text-white/45">{subtitle}</p>
         </div>
@@ -416,9 +412,6 @@ export function MessagesPage({
           >
             <ArrowLeft size={18} />
           </button>
-          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-white/75">
-            <Waveform size={20} weight="duotone" />
-          </div>
           <div className="min-w-0">
             <h1 className="truncate text-base font-semibold tracking-[-0.015em] text-white">
               {title}
@@ -564,6 +557,16 @@ export function MessagesPage({
                   ) : null}
                   <MessageBubble
                     message={message}
+                    avatarUrl={
+                      message.from === "me"
+                        ? user?.avatarUrl
+                        : agent.avatarResourcePath
+                    }
+                    avatarAlt={
+                      message.from === "me"
+                        ? `${user?.displayName ?? "我"}的头像`
+                        : `${agent.name}的头像`
+                    }
                     onRetry={retryFailedMessage}
                     onRollback={canRollback ? rollbackConversation : undefined}
                     onEdit={(messageId, text) =>

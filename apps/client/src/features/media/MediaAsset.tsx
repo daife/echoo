@@ -39,7 +39,7 @@ export function MediaAsset({
           loading={eager ? "eager" : "lazy"}
           onError={fallbackToDirect}
         />
-      ) : unavailable ? (
+      ) : unavailable && fallbackLabel ? (
         <div className="grid h-full min-h-16 min-w-24 place-items-center px-3 text-center text-xs text-white/35">
           {fallbackLabel}
         </div>

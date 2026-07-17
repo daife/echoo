@@ -5,6 +5,7 @@ import type {
   RegisterResponse,
   RegisterRequest,
   ResetPasswordRequest,
+  UpdateUserProfileRequest,
   VerifyEmailRequest,
 } from "@echoo/shared";
 import type { AuthApi } from "@echoo/api-client";
@@ -52,6 +53,12 @@ export class AuthService {
       await this.signOut();
       return null;
     }
+  }
+
+  async updateProfile(body: UpdateUserProfileRequest) {
+    const user = await this.api.updateProfile(body);
+    await this.storage.setSetting(currentUserKey, user);
+    return user;
   }
 
   async saveSession(session: AuthSession) {
