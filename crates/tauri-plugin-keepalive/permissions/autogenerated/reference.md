@@ -9,6 +9,32 @@
 <tr>
 <td>
 
+`keepalive:allow-handoff`
+
+</td>
+<td>
+
+Enables the handoff command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`keepalive:deny-handoff`
+
+</td>
+<td>
+
+Denies the handoff command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `keepalive:allow-start`
 
 </td>

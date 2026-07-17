@@ -11,6 +11,10 @@ class KeepAlivePlugin: Plugin {
   }
 
   @objc public func status(_ invoke: Invoke) throws {
-    invoke.resolve(["status": "unsupported"])
+    invoke.resolve("unsupported")
+  }
+
+  @objc public func handoff(_ invoke: Invoke) throws {
+    invoke.resolve(["accessToken": "", "refreshToken": "", "expiresAt": 0, "cursor": 0])
   }
 }

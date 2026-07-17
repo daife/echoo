@@ -1,4 +1,4 @@
-import { estimateMp3DurationSeconds, type LocalMessage } from "@echoo/shared";
+import type { LocalMessage } from "@echoo/shared";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import type { MessageRuntime } from "../../runtimes/contracts";
@@ -38,6 +38,7 @@ export function useConversationRealtime(input: {
 }) {
   const streamBuffersRef = useRef(new Map<string, StreamDisplayBuffer>());
   const audioChunksRef = useRef(new Map<string, Uint8Array[]>());
+  const audioByteCountsRef = useRef(new Map<string, number>());
 
   const clearStreamBuffers = useCallback(() => {
     streamBuffersRef.current.forEach((buffer) => {
@@ -45,6 +46,7 @@ export function useConversationRealtime(input: {
     });
     streamBuffersRef.current.clear();
     audioChunksRef.current.clear();
+    audioByteCountsRef.current.clear();
   }, []);
 
   const scheduleStreamDrain = useCallback(
@@ -166,6 +168,28 @@ export function useConversationRealtime(input: {
     const conversationId = input.conversationId;
     if (!conversationId) return;
     const unsubscribers = [
+      input.runtime.onSyncChange((change) => {
+        if (
+          change.entityType !== "message" ||
+          change.conversationId !== conversationId
+        )
+          return;
+        if (change.operation === "delete") {
+          input.setMessages((current) =>
+            current.filter((message) => message.id !== change.entityId),
+          );
+          return;
+        }
+        if (change.entity?.entityType === "message") {
+          const message = change.entity.value;
+          input.setMessages((current) =>
+            mergeLocalMessage(current, {
+              ...message,
+              syncStatus: "synced",
+            }),
+          );
+        }
+      }),
       input.runtime.onMessageCreated((message) => {
         if (message.conversationId !== conversationId) return;
         const runtimeErrorText = getPrimeRuntimeErrorText(message);
@@ -203,6 +227,7 @@ export function useConversationRealtime(input: {
             });
           });
           audioChunksRef.current.delete(message.id);
+          audioByteCountsRef.current.delete(message.id);
         } else {
           completeStreamedMessage({ ...message, syncStatus: "synced" });
         }
@@ -228,6 +253,7 @@ export function useConversationRealtime(input: {
       input.runtime.onMessageAudioStarted((event) => {
         if (event.conversationId !== conversationId) return;
         audioChunksRef.current.set(event.messageId, []);
+        audioByteCountsRef.current.set(event.messageId, 0);
         updateAudioMessage(input.setMessages, event.messageId, {
           audioStreaming: true,
           liveAudioDurationSeconds: 0,
@@ -236,13 +262,15 @@ export function useConversationRealtime(input: {
       input.runtime.onMessageAudioChunk((event) => {
         if (event.conversationId !== conversationId) return;
         const chunks = audioChunksRef.current.get(event.messageId) ?? [];
-        chunks.push(decodeBase64(event.dataBase64));
+        chunks.push(event.data);
         audioChunksRef.current.set(event.messageId, chunks);
+        const byteCount =
+          (audioByteCountsRef.current.get(event.messageId) ?? 0) +
+          event.data.byteLength;
+        audioByteCountsRef.current.set(event.messageId, byteCount);
         updateAudioMessage(input.setMessages, event.messageId, {
           audioStreaming: true,
-          liveAudioDurationSeconds: estimateMp3DurationSeconds(
-            concatBytes(chunks),
-          ),
+          liveAudioDurationSeconds: byteCount / 16_000,
         });
       }),
       input.runtime.onMessageAudioCompleted((event) => {
@@ -264,6 +292,7 @@ export function useConversationRealtime(input: {
           audioStreaming: false,
         });
         audioChunksRef.current.delete(event.messageId);
+        audioByteCountsRef.current.delete(event.messageId);
       }),
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());

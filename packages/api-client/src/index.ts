@@ -5,3 +5,4 @@ export * from "./messages";
 export * from "./runtime-config";
 export * from "./resources";
 export * from "./character-assets";
+export * from "./sync";

@@ -1,6 +1,7 @@
 import type { RuntimeConfigApi } from "@echoo/api-client";
 import type {
   ConversationRuntimeConfigPatchRequest,
+  ModelRecommendationCategory,
   UserRuntimeConfigPatch,
 } from "@echoo/shared";
 
@@ -13,6 +14,10 @@ export class RuntimeConfigService {
 
   getWallet() {
     return this.api.getWallet();
+  }
+
+  getRecommendations(category: ModelRecommendationCategory) {
+    return this.api.getRecommendations(category);
   }
 
   updateUserConfig(patch: UserRuntimeConfigPatch) {

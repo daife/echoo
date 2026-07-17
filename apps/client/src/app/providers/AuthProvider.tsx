@@ -8,10 +8,10 @@ import {
   useMemo,
   useState,
 } from "react";
-import { initApp } from "../bootstrap/initApp";
 import type { AuthLinkParams } from "../../runtimes/contracts";
 import { useRuntime } from "./RuntimeProvider";
 import { mediaCache } from "../../services/mediaCache";
+import { useServices } from "./ServicesProvider";
 
 type AuthMode = "login" | "register" | "forgot" | "reset" | "verify";
 
@@ -44,7 +44,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const runtime = useRuntime();
-  const services = useMemo(() => initApp(runtime), [runtime]);
+  const services = useServices();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [authLinkParams, setAuthLinkParams] = useState<AuthLinkParams>({});
   const [isLoading, setIsLoading] = useState(true);

@@ -13,20 +13,47 @@ export async function startRealtimeEventBus() {
         source: string;
         userId?: string;
         payload: unknown;
+        binary?: { header: unknown; dataBase64: string };
       };
       if (event.source === instanceId) return;
-      if (event.userId)
+      if (event.userId && event.binary)
+        wsSessionManager.broadcastBinaryToUser(
+          event.userId,
+          event.binary.header,
+          Buffer.from(event.binary.dataBase64, "base64"),
+        );
+      else if (event.userId)
         wsSessionManager.broadcastToUser(event.userId, event.payload);
-      else wsSessionManager.broadcast(event.payload);
     } catch {
       /* discard malformed broker events */
     }
   });
 }
 
+export function publishRealtimeBinary(
+  userId: string,
+  header: unknown,
+  data: Buffer,
+) {
+  wsSessionManager.broadcastBinaryToUser(userId, header, data);
+  void getRedis()
+    .then((redis) =>
+      redis.publish(
+        CHANNEL,
+        JSON.stringify({
+          source: instanceId,
+          userId,
+          payload: null,
+          binary: { header, dataBase64: data.toString("base64") },
+        }),
+      ),
+    )
+    .catch((error) => console.error("Realtime binary publish failed", error));
+}
+
 export function publishRealtime(userId: string | null, payload: unknown) {
-  wsSessionManager.broadcastToUser(userId ?? "", payload);
-  if (!userId) wsSessionManager.broadcast(payload);
+  if (!userId) return;
+  wsSessionManager.broadcastToUser(userId, payload);
   void getRedis()
     .then((redis) =>
       redis.publish(
@@ -39,4 +66,13 @@ export function publishRealtime(userId: string | null, payload: unknown) {
       ),
     )
     .catch((error) => console.error("Realtime publish failed", error));
+}
+
+export async function publishDurableRealtime(userId: string, payload: unknown) {
+  wsSessionManager.broadcastToUser(userId, payload);
+  const redis = await getRedis();
+  await redis.publish(
+    CHANNEL,
+    JSON.stringify({ source: instanceId, userId, payload }),
+  );
 }

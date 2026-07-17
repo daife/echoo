@@ -13,6 +13,8 @@ import {
   withTransaction,
 } from "../../../../infra/database/mysql.js";
 import { AgentRepository } from "../../agent.repository.js";
+import { ChangeEventRepository } from "../../../sync/change-event.repository.js";
+import { syncScheduledRuns } from "./scheduled-run.repository.js";
 
 export interface DuePrimeFigureWakeup {
   ownerUserId: string;
@@ -42,7 +44,10 @@ const WAKEUP_LEASE_MS = 10 * 60_000;
 const MAX_WAKEUP_DELIVERY_ATTEMPTS = 3;
 
 export class PrimeFigureStateRepository {
-  constructor(private readonly agents = new AgentRepository()) {}
+  constructor(
+    private readonly agents = new AgentRepository(),
+    private readonly events = new ChangeEventRepository(),
+  ) {}
   async createInitial(input: {
     ownerUserId: string;
     agentId: string;
@@ -66,15 +71,7 @@ export class PrimeFigureStateRepository {
     });
   }
   async findByAgent(ownerUserId: string, agentId: string) {
-    const row = await queryOne<StateRow>(
-      `SELECT conversations.runtime_state
-       FROM agents JOIN conversations ON conversations.agent_id = agents.id
-       WHERE agents.owner_user_id = ? AND agents.id = ?`,
-      [ownerUserId, agentId],
-    );
-    return row
-      ? parseJson<PrimeFigureState>(row.runtime_state, null as never)
-      : null;
+    return this.agents.getRuntimeState<PrimeFigureState>(ownerUserId, agentId);
   }
   async save(ownerUserId: string, agentId: string, state: PrimeFigureState) {
     await this.agents.saveRuntimeState(
@@ -111,16 +108,21 @@ export class PrimeFigureStateRepository {
     return withTransaction(async (connection) => {
       const rows = await queryRows<DueRow>(
         `SELECT agents.owner_user_id, agents.id AS agent_id,
-          conversations.id AS conversation_id, conversations.runtime_state
-         FROM agents JOIN conversations ON conversations.agent_id = agents.id
-         WHERE agents.type = 'prime-figure' AND conversations.next_run_at IS NOT NULL
-          AND conversations.next_run_at <= ?
-         ORDER BY conversations.next_run_at ASC LIMIT ? FOR UPDATE SKIP LOCKED`,
+          conversations.id AS conversation_id, runtime.state_json AS runtime_state
+         FROM scheduled_runs scheduled
+         JOIN conversations ON conversations.id = scheduled.conversation_id
+         JOIN agents ON agents.id = conversations.agent_id
+         JOIN agent_runtime_states runtime ON runtime.agent_id = agents.id
+         WHERE agents.type = 'prime-figure' AND scheduled.due_at <= ?
+         ORDER BY scheduled.due_at ASC LIMIT ? FOR UPDATE SKIP LOCKED`,
         [now, Math.min(Math.max(Math.trunc(limit), 1), 500)],
         connection,
       );
       const due: DuePrimeFigureWakeup[] = [];
+      const claimedConversations = new Set<string>();
       for (const row of rows) {
+        if (claimedConversations.has(row.conversation_id)) continue;
+        claimedConversations.add(row.conversation_id);
         const state = parseJson<PrimeFigureState>(
           row.runtime_state,
           null as never,
@@ -197,17 +199,31 @@ export class PrimeFigureStateRepository {
         }
 
         state.updatedAt = now;
+        const { memories: _memories, ...storedState } = state;
         await execute(
-          `UPDATE conversations SET runtime_state = ?, next_run_at = ?, updated_at = ?
-           WHERE id = ?`,
-          [
-            JSON.stringify(state),
-            nextPrimeRunAt(state),
-            now,
-            row.conversation_id,
-          ],
+          `UPDATE agent_runtime_states SET state_json = ?, version = version + 1, updated_at = ?
+           WHERE agent_id = ? AND conversation_id = ?`,
+          [JSON.stringify(storedState), now, row.agent_id, row.conversation_id],
           connection,
         );
+        await syncScheduledRuns(connection, {
+          ownerUserId: row.owner_user_id,
+          conversationId: row.conversation_id,
+          state,
+          now,
+        });
+        if (muteEnded)
+          await this.events.append(
+            {
+              ownerUserId: row.owner_user_id,
+              entityType: "agent",
+              entityId: row.agent_id,
+              conversationId: row.conversation_id,
+              operation: "upsert",
+              createdAt: now,
+            },
+            connection,
+          );
         if (event || muteEnded)
           due.push({
             ownerUserId: row.owner_user_id,
@@ -221,6 +237,15 @@ export class PrimeFigureStateRepository {
     });
   }
 
+  async nextDueAt() {
+    const row = await queryOne<RowDataPacket & { due_at: number | null }>(
+      "SELECT MIN(due_at) AS due_at FROM scheduled_runs",
+    );
+    return row?.due_at === null || row?.due_at === undefined
+      ? null
+      : Number(row.due_at);
+  }
+
   async recordMessageInteraction(input: {
     ownerUserId: string;
     conversationId: string;
@@ -230,8 +255,9 @@ export class PrimeFigureStateRepository {
   }) {
     await withTransaction(async (connection) => {
       const row = await queryOne<ConversationStateRow>(
-        `SELECT agents.owner_user_id, agents.id AS agent_id, conversations.runtime_state
+        `SELECT agents.owner_user_id, agents.id AS agent_id, runtime.state_json AS runtime_state
          FROM agents JOIN conversations ON conversations.agent_id = agents.id
+         JOIN agent_runtime_states runtime ON runtime.agent_id = agents.id
          WHERE agents.type = 'prime-figure' AND agents.owner_user_id = ?
           AND conversations.id = ? FOR UPDATE`,
         [input.ownerUserId, input.conversationId],
@@ -265,18 +291,24 @@ export class PrimeFigureStateRepository {
       }
       if (!changed) return;
       state.updatedAt = Date.now();
+      const { memories: _memories, ...storedState } = state;
       await execute(
-        `UPDATE conversations SET runtime_state = ?, next_run_at = ?, updated_at = ?
-         WHERE owner_user_id = ? AND id = ?`,
+        `UPDATE agent_runtime_states SET state_json = ?, version = version + 1, updated_at = ?
+         WHERE owner_user_id = ? AND conversation_id = ?`,
         [
-          JSON.stringify(state),
-          nextPrimeRunAt(state),
+          JSON.stringify(storedState),
           state.updatedAt,
           input.ownerUserId,
           input.conversationId,
         ],
         connection,
       );
+      await syncScheduledRuns(connection, {
+        ownerUserId: input.ownerUserId,
+        conversationId: input.conversationId,
+        state,
+        now: state.updatedAt,
+      });
     });
   }
 
@@ -304,8 +336,9 @@ export class PrimeFigureStateRepository {
   }) {
     if (!input.proactive && !input.passive) return;
     const rows = await queryRows<ConversationStateRow>(
-      `SELECT agents.owner_user_id, agents.id AS agent_id, conversations.runtime_state
+      `SELECT agents.owner_user_id, agents.id AS agent_id, runtime.state_json AS runtime_state
        FROM agents JOIN conversations ON conversations.agent_id = agents.id
+       JOIN agent_runtime_states runtime ON runtime.agent_id = agents.id
        LEFT JOIN conversation_runtime_configs configs
         ON configs.conversation_id = conversations.id
        WHERE agents.type = 'prime-figure' AND agents.owner_user_id = ?
@@ -324,8 +357,9 @@ export class PrimeFigureStateRepository {
   }) {
     if (!input.proactive && !input.passive) return;
     const row = await queryOne<ConversationStateRow>(
-      `SELECT agents.owner_user_id, agents.id AS agent_id, conversations.runtime_state
+      `SELECT agents.owner_user_id, agents.id AS agent_id, runtime.state_json AS runtime_state
        FROM agents JOIN conversations ON conversations.agent_id = agents.id
+       JOIN agent_runtime_states runtime ON runtime.agent_id = agents.id
        WHERE agents.type = 'prime-figure' AND agents.owner_user_id = ?
         AND conversations.id = ?`,
       [input.ownerUserId, input.conversationId],

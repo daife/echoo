@@ -4,6 +4,8 @@ import type {
   UserRuntimeConfigPatch,
   UserRuntimeConfigView,
   WalletView,
+  ModelRecommendationCategory,
+  RecommendedModelView,
 } from "@echoo/shared";
 import type { ApiClient } from "./client";
 
@@ -38,5 +40,13 @@ export class RuntimeConfigApi {
 
   getWallet(): Promise<WalletView> {
     return this.client.get("/users/me/wallet");
+  }
+
+  getRecommendations(
+    category: ModelRecommendationCategory,
+  ): Promise<RecommendedModelView[]> {
+    return this.client.get(
+      `/platform/recommendations?category=${encodeURIComponent(category)}`,
+    );
   }
 }

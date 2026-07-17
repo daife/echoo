@@ -8,6 +8,7 @@
     "dev": "turbo dev",
     "dev:client": "turbo dev --filter=@echoo/client",
     "dev:server": "turbo dev --filter=@echoo/server",
+    "db:recreate": "pnpm --filter @echoo/server db:recreate",
     "build": "turbo build",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",

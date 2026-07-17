@@ -1,38 +1,46 @@
 export interface ApiClientOptions {
   baseUrl: string;
   getAccessToken?: () => Promise<string | null>;
+  refreshAccessToken?: () => Promise<string | null>;
+}
+
+export interface ApiRequestOptions {
+  signal?: AbortSignal;
 }
 
 export class ApiClient {
+  private refreshPromise: Promise<string | null> | null = null;
   constructor(private readonly options: ApiClientOptions) {}
 
   async get<T>(
     path: string,
     query?: Record<string, string | number | undefined>,
+    options?: ApiRequestOptions,
   ): Promise<T> {
-    return this.request<T>("GET", path, undefined, query);
+    return this.request<T>("GET", path, undefined, query, options);
   }
 
-  async post<T>(path: string, body?: unknown): Promise<T> {
-    return this.request<T>("POST", path, body);
+  async post<T>(path: string, body?: unknown, options?: ApiRequestOptions): Promise<T> {
+    return this.request<T>("POST", path, body, undefined, options);
   }
 
-  async patch<T>(path: string, body?: unknown): Promise<T> {
-    return this.request<T>("PATCH", path, body);
+  async patch<T>(path: string, body?: unknown, options?: ApiRequestOptions): Promise<T> {
+    return this.request<T>("PATCH", path, body, undefined, options);
   }
 
-  async put<T>(path: string, body?: unknown): Promise<T> {
-    return this.request<T>("PUT", path, body);
+  async put<T>(path: string, body?: unknown, options?: ApiRequestOptions): Promise<T> {
+    return this.request<T>("PUT", path, body, undefined, options);
   }
 
-  async delete<T>(path: string, body?: unknown): Promise<T> {
-    return this.request<T>("DELETE", path, body);
+  async delete<T>(path: string, body?: unknown, options?: ApiRequestOptions): Promise<T> {
+    return this.request<T>("DELETE", path, body, undefined, options);
   }
 
   async putBinary(
     pathOrUrl: string,
     body: Blob,
     headers: Record<string, string>,
+    options?: ApiRequestOptions,
   ): Promise<void> {
     const baseUrl = this.options.baseUrl.endsWith("/")
       ? this.options.baseUrl
@@ -52,6 +60,7 @@ export class ApiClient {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body,
+      signal: options?.signal,
     });
     if (!response.ok)
       throw new Error(
@@ -74,6 +83,8 @@ export class ApiClient {
     path: string,
     body?: unknown,
     query?: Record<string, string | number | undefined>,
+    requestOptions?: ApiRequestOptions,
+    retried = false,
   ): Promise<T> {
     const baseUrl = this.options.baseUrl.endsWith("/")
       ? this.options.baseUrl
@@ -95,7 +106,25 @@ export class ApiClient {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: serializedBody,
+      signal: requestOptions?.signal,
     });
+
+    if (
+      response.status === 401 &&
+      !retried &&
+      this.options.refreshAccessToken
+    ) {
+      const refreshed = await this.refreshOnce();
+      if (refreshed)
+        return this.request<T>(
+          method,
+          path,
+          body,
+          query,
+          requestOptions,
+          true,
+        );
+    }
 
     if (!response.ok) {
       let detail = response.statusText;
@@ -112,5 +141,15 @@ export class ApiClient {
     }
 
     return (await response.json()) as T;
+  }
+
+  private refreshOnce() {
+    if (!this.options.refreshAccessToken) return Promise.resolve(null);
+    if (!this.refreshPromise) {
+      this.refreshPromise = this.options
+        .refreshAccessToken()
+        .finally(() => (this.refreshPromise = null));
+    }
+    return this.refreshPromise;
   }
 }

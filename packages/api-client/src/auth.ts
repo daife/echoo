@@ -23,6 +23,14 @@ export class AuthApi {
     return this.client.post<AuthSession>("/auth/login", body);
   }
 
+  refresh(refreshToken: string): Promise<AuthSession> {
+    return this.client.post<AuthSession>("/auth/refresh", { refreshToken });
+  }
+
+  logout(refreshToken: string): Promise<{ ok: true }> {
+    return this.client.post<{ ok: true }>("/auth/logout", { refreshToken });
+  }
+
   me(): Promise<UserProfile> {
     return this.client.get<UserProfile>("/auth/me");
   }

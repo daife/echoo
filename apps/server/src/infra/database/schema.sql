@@ -20,6 +20,18 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
   CONSTRAINT fk_auth_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  id VARCHAR(64) PRIMARY KEY,
+  user_id VARCHAR(64) NOT NULL,
+  refresh_token_hash CHAR(64) NOT NULL UNIQUE,
+  expires_at BIGINT NOT NULL,
+  revoked_at BIGINT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  INDEX idx_auth_sessions_user_active (user_id, revoked_at, expires_at),
+  CONSTRAINT fk_auth_sessions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS resources (
   id VARCHAR(64) PRIMARY KEY,
   owner_user_id VARCHAR(64) NOT NULL,
@@ -97,15 +109,75 @@ CREATE TABLE IF NOT EXISTS conversations (
   last_message_preview VARCHAR(500) NULL,
   unread_count INT UNSIGNED NOT NULL DEFAULT 0,
   pinned_at BIGINT NULL,
-  runtime_state JSON NOT NULL,
-  next_run_at BIGINT NULL,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   UNIQUE KEY uq_conversations_agent (agent_id),
   INDEX idx_conversations_owner_updated (owner_user_id, pinned_at DESC, updated_at DESC),
-  INDEX idx_conversations_due (type, next_run_at),
   CONSTRAINT fk_conversations_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_conversations_agent FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS agent_runtime_states (
+  agent_id VARCHAR(64) PRIMARY KEY,
+  owner_user_id VARCHAR(64) NOT NULL,
+  conversation_id VARCHAR(64) NOT NULL UNIQUE,
+  state_json JSON NOT NULL,
+  version BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  updated_at BIGINT NOT NULL,
+  INDEX idx_agent_runtime_owner (owner_user_id, updated_at),
+  CONSTRAINT fk_agent_runtime_agent FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+  CONSTRAINT fk_agent_runtime_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_agent_runtime_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS prime_memories (
+  id VARCHAR(64) PRIMARY KEY,
+  agent_id VARCHAR(64) NOT NULL,
+  owner_user_id VARCHAR(64) NOT NULL,
+  content TEXT NOT NULL,
+  event_at BIGINT NOT NULL,
+  recorded_at BIGINT NOT NULL,
+  INDEX idx_prime_memories_agent_event (agent_id, event_at, recorded_at),
+  CONSTRAINT fk_prime_memories_agent FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+  CONSTRAINT fk_prime_memories_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS scheduled_runs (
+  id VARCHAR(160) PRIMARY KEY,
+  owner_user_id VARCHAR(64) NOT NULL,
+  conversation_id VARCHAR(64) NOT NULL,
+  kind ENUM('proactive', 'passive', 'mute_ended') NOT NULL,
+  due_at BIGINT NOT NULL,
+  lease_until BIGINT NULL,
+  attempts INT UNSIGNED NOT NULL DEFAULT 0,
+  token VARCHAR(128) NULL,
+  payload_json JSON NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  UNIQUE KEY uq_scheduled_runs_conversation_kind (conversation_id, kind),
+  INDEX idx_scheduled_runs_due (due_at, lease_until),
+  CONSTRAINT fk_scheduled_runs_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_scheduled_runs_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS conversation_media (
+  conversation_id VARCHAR(64) NOT NULL,
+  owner_user_id VARCHAR(64) NOT NULL,
+  media_index INT UNSIGNED NOT NULL,
+  media_id VARCHAR(64) NOT NULL,
+  media_type ENUM('image', 'video', 'voice') NOT NULL,
+  resource_id VARCHAR(64) NOT NULL,
+  description TEXT NULL,
+  source ENUM('message', 'figure_cover', 'figure_reference', 'generated') NOT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  PRIMARY KEY (conversation_id, media_id),
+  UNIQUE KEY uq_conversation_media_resource (conversation_id, resource_id),
+  UNIQUE KEY uq_conversation_media_index (conversation_id, media_index),
+  INDEX idx_conversation_media_owner (owner_user_id, conversation_id),
+  CONSTRAINT fk_conversation_media_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_conversation_media_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_conversation_media_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS social_objects (
@@ -331,6 +403,21 @@ CREATE TABLE IF NOT EXISTS messages (
   FULLTEXT INDEX ftx_messages_content (search_text),
   CONSTRAINT fk_messages_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_messages_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS change_events (
+  seq BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  owner_user_id VARCHAR(64) NOT NULL,
+  entity_type ENUM('agent', 'message', 'resource', 'asset') NOT NULL,
+  entity_id VARCHAR(96) NOT NULL,
+  conversation_id VARCHAR(64) NULL,
+  operation ENUM('upsert', 'delete') NOT NULL,
+  published_at BIGINT NULL,
+  created_at BIGINT NOT NULL,
+  INDEX idx_change_events_owner_seq (owner_user_id, seq),
+  INDEX idx_change_events_unpublished (published_at, seq),
+  INDEX idx_change_events_created (created_at),
+  CONSTRAINT fk_change_events_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS message_resources (

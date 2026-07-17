@@ -296,7 +296,7 @@ export class RuntimeConfigService {
     let previousConfig: StoredFigureRuntimeConfig = global;
     if (input.mode === "custom") {
       custom = storedCustom
-        ? normalizeFigureConfig(conversation.type, storedCustom)
+        ? storedCustom
         : structuredClone(global);
       if (stored?.mode === "custom") previousConfig = custom;
       if (input.config)
@@ -385,14 +385,11 @@ export class RuntimeConfigService {
     }
     if (!stored?.userConfig)
       throw new RuntimeConfigNotFoundError("无法初始化用户运行配置。");
-    const userConfig = normalizeUserConfig(stored.userConfig);
-    if (JSON.stringify(userConfig) !== JSON.stringify(stored.userConfig))
-      await this.repository.saveUserConfig(ownerUserId, userConfig);
+    const userConfig = stored.userConfig;
+    validateUserConfig(userConfig);
     const conversationType = stored.conversationType as AgentType;
     const global = selectFigureConfig(userConfig, conversationType);
-    const custom = stored.customConfig
-      ? normalizeFigureConfig(conversationType, stored.customConfig)
-      : null;
+    const custom = stored.customConfig;
     const mode = stored?.mode === "custom" && custom ? "custom" : "global";
     const config = mode === "custom" ? custom! : global;
     validateFigureConfig(conversationType, config);
@@ -402,10 +399,8 @@ export class RuntimeConfigService {
   private async ensureUserConfig(ownerUserId: string) {
     const existing = await this.repository.findUserConfig(ownerUserId);
     if (existing) {
-      const normalized = normalizeUserConfig(existing);
-      if (JSON.stringify(normalized) !== JSON.stringify(existing))
-        await this.repository.saveUserConfig(ownerUserId, normalized);
-      return normalized;
+      validateUserConfig(existing);
+      return existing;
     }
     await this.repository.insertUserConfigIfAbsent(
       ownerUserId,
@@ -462,7 +457,7 @@ export class RuntimeConfigService {
 
   private normalizePlatformDefaults(config: StoredUserRuntimeConfig) {
     try {
-      const normalized = forcePlatformDefaults(normalizeUserConfig(config));
+      const normalized = forcePlatformDefaults(config);
       validateUserConfig(normalized);
       return normalized;
     } catch (error) {
@@ -519,21 +514,6 @@ function disabledWakeups(
     proactive:
       previous.wakeups.proactive.enabled && !next.wakeups.proactive.enabled,
     passive: previous.wakeups.passive.enabled && !next.wakeups.passive.enabled,
-  };
-}
-
-function normalizeUserConfig(
-  config: StoredUserRuntimeConfig,
-): StoredUserRuntimeConfig {
-  return {
-    ...config,
-    version: 2,
-    sliceFigure: {
-      ...config.sliceFigure,
-      version: 3,
-      llm: normalizeEndpoint(config.sliceFigure.llm),
-    },
-    primeFigure: normalizePrimeConfig(config.primeFigure),
   };
 }
 
@@ -606,11 +586,7 @@ function forcePlatformPreset(
     ...defaults,
     ...(type === "slice-figure"
       ? { sliceFigure: config as StoredSliceFigureRuntimeConfig }
-      : {
-          primeFigure: normalizePrimeConfig(
-            config as StoredPrimeFigureRuntimeConfig,
-          ),
-        }),
+      : { primeFigure: config as StoredPrimeFigureRuntimeConfig }),
   };
   return selectFigureConfig(forcePlatformDefaults(wrapped), type) as
     StoredSliceFigureRuntimeConfig | StoredPrimeFigureRuntimeConfig;
@@ -621,86 +597,6 @@ function normalizePresetName(name: string) {
   if (!value) invalid("推荐配置名称不能为空。");
   if (value.length > 80) invalid("推荐配置名称不能超过 80 个字符。");
   return value;
-}
-
-function normalizeFigureConfig(
-  type: AgentType,
-  config: StoredFigureRuntimeConfig,
-): StoredFigureRuntimeConfig {
-  return type === "prime-figure"
-    ? normalizePrimeConfig(config as StoredPrimeFigureRuntimeConfig)
-    : config;
-}
-
-function normalizePrimeConfig(
-  config: StoredPrimeFigureRuntimeConfig,
-): StoredPrimeFigureRuntimeConfig {
-  const defaults = buildRuntimeConfigDefaults().primeFigure;
-  const legacy = config as StoredPrimeFigureRuntimeConfig & {
-    wakeups?: StoredPrimeFigureRuntimeConfig["wakeups"];
-    outputs: StoredPrimeFigureRuntimeConfig["outputs"] & {
-      sticker?: StoredPrimeFigureRuntimeConfig["outputs"]["sticker"];
-      transfer?: StoredPrimeFigureRuntimeConfig["outputs"]["transfer"];
-    };
-  };
-  return {
-    ...config,
-    version: 7,
-    decisionModel: normalizeTextEndpoint(config.decisionModel),
-    outputs: {
-      ...config.outputs,
-      image: {
-        ...config.outputs.image,
-        generator: normalizeEndpoint(config.outputs.image.generator),
-        parameters: normalizeImageParameters(
-          config.outputs.image.generator,
-          config.outputs.image.parameters,
-        ),
-      },
-      voice: {
-        ...config.outputs.voice,
-        tts: normalizeFishAudio(config.outputs.voice.tts),
-      },
-      sticker: {
-        ...defaults.outputs.sticker,
-        ...legacy.outputs?.sticker,
-      },
-      transfer: {
-        ...defaults.outputs.transfer,
-        ...legacy.outputs?.transfer,
-      },
-    },
-    optimization: {
-      image: {
-        ...config.optimization.image,
-        model: normalizeTextEndpoint(config.optimization.image.model),
-      },
-      voice: {
-        ...config.optimization.voice,
-        model: normalizeTextEndpoint(config.optimization.voice.model),
-      },
-    },
-    understanding: {
-      visual: {
-        ...config.understanding.visual,
-        model: normalizeTextEndpoint(config.understanding.visual.model),
-      },
-      audio: {
-        ...config.understanding.audio,
-        model: normalizeTextEndpoint(config.understanding.audio.model),
-      },
-    },
-    wakeups: {
-      proactive: {
-        ...defaults.wakeups.proactive,
-        ...legacy.wakeups?.proactive,
-      },
-      passive: {
-        ...defaults.wakeups.passive,
-        ...legacy.wakeups?.passive,
-      },
-    },
-  };
 }
 
 function patchSliceConfig(
@@ -1079,22 +975,6 @@ function validateEndpoint(config: StoredModelEndpointConfig) {
     invalid("自定义模型必须配置 API 地址和 API Key。");
 }
 
-function normalizeEndpoint<T extends StoredModelEndpointConfig>(config: T): T {
-  const legacy = config as T & {
-    provider?: string;
-    source?: "platform" | "custom";
-  };
-  const { provider: _provider, ...rest } = legacy;
-  return {
-    ...rest,
-    source: legacy.source ?? (legacy.apiKey?.trim() ? "custom" : "platform"),
-  } as T;
-}
-
-function normalizeTextEndpoint(config: StoredTextModelConfig) {
-  return normalizeEndpoint(config);
-}
-
 function normalizeImageParameters(
   endpoint: StoredModelEndpointConfig,
   parameters: Record<string, unknown> | undefined,
@@ -1143,18 +1023,6 @@ function validateImageParameters(
     if (parameters.resolution !== "1K")
       invalid("Gemini 3.1 Flash Lite Image 当前仅支持 1K 分辨率。");
   }
-}
-
-function normalizeFishAudio(config: StoredFishAudioConfig) {
-  const legacy = config as StoredFishAudioConfig & {
-    provider?: string;
-    source?: "platform" | "custom";
-  };
-  const { provider: _provider, ...rest } = legacy;
-  return {
-    ...rest,
-    source: legacy.source ?? (legacy.apiKey?.trim() ? "custom" : "platform"),
-  };
 }
 
 function resolvePlatformFigureConfig(

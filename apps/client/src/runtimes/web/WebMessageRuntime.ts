@@ -1,4 +1,11 @@
-import type { AppWsServerEvent, Message } from "@echoo/shared";
+import type {
+  AppWsServerEvent,
+  Message,
+  SyncBootstrap,
+  SyncChange,
+  SyncPage,
+  BinaryWsFrameHeader,
+} from "@echoo/shared";
 import type {
   AuthRuntime,
   ConversationAgentActivityEvent,
@@ -17,6 +24,11 @@ export class WebMessageRuntime implements MessageRuntime {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private shouldReconnect = false;
+  private syncStatus: "stopped" | "connecting" | "syncing" | "live" =
+    "stopped";
+  private readonly pendingSyncChanges: SyncChange[] = [];
+  private readonly syncChangeHandlers = new Set<(change: SyncChange) => void>();
+  private readonly syncResetHandlers = new Set<() => void>();
   private readonly activeConversations = new Map<
     string,
     ConversationAgentActivityEvent
@@ -61,6 +73,7 @@ export class WebMessageRuntime implements MessageRuntime {
 
   async startRealtime(): Promise<void> {
     this.shouldReconnect = true;
+    this.syncStatus = "connecting";
     this.clearReconnectTimer();
     if (this.socket && this.socket.readyState <= WebSocket.OPEN)
       return this.connectPromise ?? Promise.resolve();
@@ -79,14 +92,29 @@ export class WebMessageRuntime implements MessageRuntime {
 
   private async openSocket(): Promise<void> {
     const url = import.meta.env.VITE_WS_URL ?? "ws://localhost:8787/ws";
-    const token = await this.auth.getAccessToken();
-    if (!this.shouldReconnect) return;
+    let token = await this.auth.getAccessToken();
+    if (!this.shouldReconnect || !token) return;
     if (this.socket && this.socket.readyState <= WebSocket.OPEN) return;
 
+    let ticketResponse = await fetch(`${apiBaseUrl()}/realtime/ticket`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (ticketResponse.status === 401) {
+      token = await this.refreshAccessToken();
+      if (!token) throw new Error("登录会话已失效。");
+      ticketResponse = await fetch(`${apiBaseUrl()}/realtime/ticket`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }
+    if (!ticketResponse.ok) throw new Error("无法建立实时连接。");
+    const { ticket } = (await ticketResponse.json()) as { ticket: string };
     const socketUrl = new URL(url);
-    if (token) socketUrl.searchParams.set("token", token);
+    socketUrl.searchParams.set("ticket", ticket);
 
     const socket = new WebSocket(socketUrl);
+    socket.binaryType = "arraybuffer";
     this.socket = socket;
     socket.onopen = () => {
       if (this.socket === socket) this.reconnectAttempt = 0;
@@ -94,11 +122,29 @@ export class WebMessageRuntime implements MessageRuntime {
     socket.onclose = () => {
       if (this.socket !== socket) return;
       this.socket = null;
+      this.syncStatus = "connecting";
       this.clearActiveConversations();
       this.scheduleReconnect();
     };
     socket.onmessage = (event) => {
+      if (event.data instanceof ArrayBuffer) {
+        const frame = decodeBinaryFrame(event.data);
+        if (frame?.header.type === "message.audio.chunk")
+          this.audioChunkHandlers.forEach((handler) =>
+            handler({ ...frame.header, data: frame.data }),
+          );
+        return;
+      }
       const payload = JSON.parse(event.data as string) as AppWsServerEvent;
+      if (payload.type === "realtime.ready") {
+        void this.catchUp(payload.headCursor, token).catch(() => socket.close());
+        return;
+      }
+      if (payload.type === "sync.change") {
+        if (this.syncStatus !== "live") this.pendingSyncChanges.push(payload.change);
+        else this.applySyncChange(payload.change);
+        return;
+      }
       if (payload.type === "conversation.agent_activity") {
         this.applyAgentActivity(payload);
         return;
@@ -108,9 +154,6 @@ export class WebMessageRuntime implements MessageRuntime {
         return;
       }
       if (payload.type === "message.created") {
-        socket.send(
-          JSON.stringify({ type: "ack", messageId: payload.message.id }),
-        );
         this.messageCreatedHandlers.forEach((handler) =>
           handler(payload.message),
         );
@@ -123,9 +166,6 @@ export class WebMessageRuntime implements MessageRuntime {
       }
 
       if (payload.type === "message.completed") {
-        socket.send(
-          JSON.stringify({ type: "ack", messageId: payload.message.id }),
-        );
         this.messageCompletedHandlers.forEach((handler) =>
           handler(payload.message),
         );
@@ -139,8 +179,6 @@ export class WebMessageRuntime implements MessageRuntime {
       }
       if (payload.type === "message.audio.started")
         this.audioStartedHandlers.forEach((handler) => handler(payload));
-      else if (payload.type === "message.audio.chunk")
-        this.audioChunkHandlers.forEach((handler) => handler(payload));
       else if (payload.type === "message.audio.completed")
         this.audioCompletedHandlers.forEach((handler) => handler(payload));
       else if (payload.type === "message.audio.failed")
@@ -154,6 +192,120 @@ export class WebMessageRuntime implements MessageRuntime {
     this.clearActiveConversations();
     this.socket?.close(1000, "client stop");
     this.socket = null;
+    this.syncStatus = "stopped";
+    this.pendingSyncChanges.length = 0;
+  }
+
+  getSyncStatus() {
+    return this.syncStatus;
+  }
+
+  async getSyncCursor() {
+    const token = await this.auth.getAccessToken();
+    return token
+      ? Number(localStorage.getItem(syncCursorKey(token)) ?? 0)
+      : 0;
+  }
+
+  async setSyncCursor(cursor: number) {
+    const token = await this.auth.getAccessToken();
+    if (token && Number.isSafeInteger(cursor) && cursor >= 0)
+      localStorage.setItem(syncCursorKey(token), String(cursor));
+  }
+
+  onSyncChange(handler: (change: SyncChange) => void) {
+    this.syncChangeHandlers.add(handler);
+    return () => this.syncChangeHandlers.delete(handler);
+  }
+
+  onSyncReset(handler: () => void) {
+    this.syncResetHandlers.add(handler);
+    return () => this.syncResetHandlers.delete(handler);
+  }
+
+  private async catchUp(headCursor: number, token: string) {
+    this.syncStatus = "syncing";
+    let cursor = Number(localStorage.getItem(syncCursorKey(token)) ?? 0);
+    for (;;) {
+      const response = await fetch(
+        `${apiBaseUrl()}/sync?after=${cursor}&limit=500`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!response.ok) throw new Error("增量同步失败。");
+      const page = (await response.json()) as SyncPage;
+      if (page.resetRequired) {
+        this.syncResetHandlers.forEach((handler) => handler());
+        const bootstrapResponse = await fetch(`${apiBaseUrl()}/sync/bootstrap`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!bootstrapResponse.ok) throw new Error("同步快照失败。");
+        const bootstrap = (await bootstrapResponse.json()) as SyncBootstrap;
+        const now = Date.now();
+        bootstrap.agents.forEach((value) =>
+          this.applySyncChange({
+            cursor: bootstrap.cursor,
+            entityType: "agent",
+            entityId: value.id,
+            conversationId: value.conversationId,
+            operation: "upsert",
+            entity: { entityType: "agent", value },
+            createdAt: now,
+          }),
+        );
+        bootstrap.assets.forEach((value) =>
+          this.applySyncChange({
+            cursor: bootstrap.cursor,
+            entityType: "asset",
+            entityId: value.id,
+            operation: "upsert",
+            entity: { entityType: "asset", value },
+            createdAt: now,
+          }),
+        );
+        cursor = bootstrap.cursor;
+        break;
+      }
+      page.changes.forEach((change) => this.applySyncChange(change));
+      cursor = page.cursor;
+      if (!page.hasMore && cursor >= headCursor) break;
+      if (!page.hasMore && page.headCursor <= cursor) break;
+    }
+    this.pendingSyncChanges
+      .splice(0)
+      .sort((left, right) => left.cursor - right.cursor)
+      .forEach((change) => {
+        if (change.cursor > cursor) this.applySyncChange(change);
+      });
+    this.syncStatus = "live";
+  }
+
+  private applySyncChange(change: SyncChange) {
+    const tokenPromise = this.auth.getAccessToken();
+    void tokenPromise.then((token) => {
+      if (token) {
+        const key = syncCursorKey(token);
+        const current = Number(localStorage.getItem(key) ?? 0);
+        if (change.cursor > current) localStorage.setItem(key, String(change.cursor));
+      }
+    });
+    this.syncChangeHandlers.forEach((handler) => handler(change));
+  }
+
+  private async refreshAccessToken() {
+    const refreshToken = await this.auth.getRefreshToken();
+    if (!refreshToken) return null;
+    const response = await fetch(`${apiBaseUrl()}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!response.ok) {
+      await this.auth.clearTokens();
+      return null;
+    }
+    const session = (await response.json()) as import("@echoo/shared").AuthSession;
+    await this.auth.saveTokens(session.tokens);
+    return session.tokens.accessToken;
   }
 
   private scheduleReconnect() {
@@ -301,5 +453,42 @@ export class WebMessageRuntime implements MessageRuntime {
   ): () => void {
     this.audioFailedHandlers.add(handler);
     return () => this.audioFailedHandlers.delete(handler);
+  }
+}
+
+export function decodeBinaryFrame(value: ArrayBuffer) {
+  if (value.byteLength < 4) return null;
+  const view = new DataView(value);
+  const headerLength = view.getUint32(0);
+  if (headerLength <= 0 || headerLength > value.byteLength - 4) return null;
+  try {
+    const header = JSON.parse(
+      new TextDecoder().decode(new Uint8Array(value, 4, headerLength)),
+    ) as BinaryWsFrameHeader;
+    return {
+      header,
+      data: new Uint8Array(value, 4 + headerLength),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function apiBaseUrl() {
+  return (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787/api").replace(
+    /\/+$/,
+    "",
+  );
+}
+
+function syncCursorKey(token: string) {
+  const payload = token.split(".")[1];
+  try {
+    const user = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as {
+      sub?: string;
+    };
+    return `sync.cursor.v2:${user.sub ?? "unknown"}`;
+  } catch {
+    return "sync.cursor.v2:unknown";
   }
 }

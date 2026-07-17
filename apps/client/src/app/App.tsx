@@ -13,8 +13,15 @@ import type {
   UpdatePrimeFigureRequest,
   UpdateSliceFigureRequest,
 } from "@echoo/shared";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { initApp } from "./bootstrap/initApp";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type SetStateAction,
+} from "react";
+import { useServices } from "./providers/ServicesProvider";
 import { useAuth } from "./providers/AuthProvider";
 import { useRuntime } from "./providers/RuntimeProvider";
 import { BindingsPanel } from "../features/bindings/components/BindingsPanel";
@@ -65,16 +72,52 @@ const navItems = PRIMARY_NAVIGATION_VIEWS.map((id) => ({
 export function App() {
   const auth = useAuth();
   const runtime = useRuntime();
-  const services = useMemo(() => initApp(runtime), [runtime]);
+  const services = useServices();
+  const queryClient = useQueryClient();
   const [view, setView] = useState<AppView>("home");
   const [bindingsReturnView, setBindingsReturnView] =
     useState<AppView>("messages");
-  const [myAgents, setMyAgents] = useState<Agent[]>([]);
-  const [isLoadingAgents, setIsLoadingAgents] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
-  const [publicAssets, setPublicAssets] = useState<CharacterAssetDraft[]>([]);
   const [editingPublicAsset, setEditingPublicAsset] =
     useState<CharacterAssetDraft | null>(null);
+  const agentQueryKey = useMemo(
+    () => ["agents", "mine", auth.user?.id ?? "anonymous"] as const,
+    [auth.user?.id],
+  );
+  const assetQueryKey = useMemo(
+    () => ["assets", "mine", auth.user?.id ?? "anonymous"] as const,
+    [auth.user?.id],
+  );
+  const agentsQuery = useQuery({
+    queryKey: agentQueryKey,
+    queryFn: () => services.agentService.listMyAgents(),
+    enabled: Boolean(auth.user),
+    staleTime: Infinity,
+  });
+  const assetsQuery = useQuery({
+    queryKey: assetQueryKey,
+    queryFn: () => services.characterAssetService.listMine(),
+    enabled: Boolean(auth.user),
+    staleTime: Infinity,
+  });
+  const myAgents = agentsQuery.data ?? [];
+  const publicAssets = assetsQuery.data ?? [];
+  const isLoadingAgents = agentsQuery.isPending && Boolean(auth.user);
+  const setMyAgents = useCallback(
+    (update: SetStateAction<Agent[]>) =>
+      queryClient.setQueryData<Agent[]>(agentQueryKey, (current = []) =>
+        resolveStateUpdate(update, current),
+      ),
+    [agentQueryKey, queryClient],
+  );
+  const setPublicAssets = useCallback(
+    (update: SetStateAction<CharacterAssetDraft[]>) =>
+      queryClient.setQueryData<CharacterAssetDraft[]>(
+        assetQueryKey,
+        (current = []) => resolveStateUpdate(update, current),
+      ),
+    [assetQueryKey, queryClient],
+  );
   const protectedView =
     view === "messages" ||
     view === "bindings" ||
@@ -110,46 +153,20 @@ export function App() {
 
   useEffect(() => {
     if (!auth.user) {
-      setMyAgents([]);
       setSelectedAgent(null);
-      setPublicAssets([]);
       setEditingPublicAsset(null);
       return;
     }
-
-    let cancelled = false;
-    setIsLoadingAgents(true);
-    void services.agentService
-      .listMyAgents()
-      .then((agents) => {
-        if (!cancelled) setMyAgents(agents);
-      })
-      .catch(async (error) => {
-        if (cancelled) return;
-        if (error instanceof Error && error.message === "请重新登录。") {
-          await auth.signOut();
-          setView("auth");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoadingAgents(false);
-      });
-    void services.characterAssetService
-      .listMine()
-      .then((assets) => {
-        if (!cancelled) setPublicAssets(assets);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [auth.user, services.agentService]);
+    const error = agentsQuery.error;
+    if (error instanceof Error && error.message === "请重新登录。") {
+      void auth.signOut().then(() => setView("auth"));
+    }
+  }, [agentsQuery.error, auth]);
 
   useEffect(() => {
     if (!auth.user) return;
     void runtime.message.startRealtime();
-    const unsubscribe = runtime.message.onConversationAgentMuteChanged(
+    const unsubscribeMute = runtime.message.onConversationAgentMuteChanged(
       (event) => {
         const updateAgent = (agent: Agent) =>
           agent.conversationId === event.conversationId &&
@@ -162,8 +179,50 @@ export function App() {
         );
       },
     );
+    const unsubscribeSync = runtime.message.onSyncChange((change) => {
+      if (change.entityType === "agent") {
+        if (change.operation === "delete") {
+          setMyAgents((current) =>
+            current.filter((agent) => agent.id !== change.entityId),
+          );
+          setSelectedAgent((current) =>
+            current?.id === change.entityId ? null : current,
+          );
+          return;
+        }
+        if (change.entity?.entityType !== "agent") return;
+        const agent = change.entity.value;
+        setMyAgents((current) => [
+          agent,
+          ...current.filter((item) => item.id !== agent.id),
+        ]);
+        setSelectedAgent((current) =>
+          current?.id === agent.id ? agent : current,
+        );
+      }
+      if (change.entityType === "asset") {
+        if (change.operation === "delete")
+          setPublicAssets((current) =>
+            current.filter((asset) => asset.id !== change.entityId),
+          );
+        else if (change.entity?.entityType === "asset") {
+          const asset = change.entity.value;
+          setPublicAssets((current) => [
+            asset,
+            ...current.filter((item) => item.id !== asset.id),
+          ]);
+        }
+      }
+    });
+    const unsubscribeReset = runtime.message.onSyncReset(() => {
+      setMyAgents([]);
+      setPublicAssets([]);
+      setSelectedAgent(null);
+    });
     return () => {
-      unsubscribe();
+      unsubscribeMute();
+      unsubscribeSync();
+      unsubscribeReset();
       void runtime.message.stopRealtime();
     };
   }, [auth.user, runtime.message]);
@@ -624,4 +683,10 @@ function withPrimeFigureMute(
   return muteUntilMs && muteUntilMs > Date.now()
     ? { ...rest, muteUntilMs }
     : rest;
+}
+
+function resolveStateUpdate<T>(update: SetStateAction<T>, current: T): T {
+  return typeof update === "function"
+    ? (update as (value: T) => T)(current)
+    : update;
 }

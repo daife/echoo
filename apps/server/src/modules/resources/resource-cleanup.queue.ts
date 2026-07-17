@@ -15,6 +15,12 @@ export class ResourceCleanupQueue {
 
   async enqueueSweep() {
     const redis = await getRedis();
+    const hourBucket = Math.floor(Date.now() / 3_600_000);
+    const leader = await redis.set(`echoo:resource-cleanup:sweep:${hourBucket}`, this.consumer, {
+      NX: true,
+      EX: 65 * 60,
+    });
+    if (!leader) return;
     await redis.xAdd(STREAM, "*", { cutoff: String(Date.now() - GRACE_MS) });
   }
 

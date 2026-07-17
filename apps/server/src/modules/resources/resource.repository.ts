@@ -6,8 +6,14 @@ import {
   type MessageMediaUpload,
 } from "@echoo/shared";
 import type { RowDataPacket } from "mysql2";
-import { execute, queryOne, queryRows } from "../../infra/database/mysql.js";
+import {
+  execute,
+  queryOne,
+  queryRows,
+  withTransaction,
+} from "../../infra/database/mysql.js";
 import { createId } from "../../shared/utils/id.js";
+import { ChangeEventRepository } from "../sync/change-event.repository.js";
 import {
   createResourceStorage,
   type ResourceStorage,
@@ -96,6 +102,7 @@ interface ResourceVariantRow extends RowDataPacket {
 export class ResourceRepository {
   constructor(
     private readonly storage: ResourceStorage = createResourceStorage(),
+    private readonly events = new ChangeEventRepository(),
   ) {}
 
   async saveImage(
@@ -193,7 +200,8 @@ export class ResourceRepository {
     const id = createId("res");
     const storageKey = `${input.ownerUserId}/${id}/original${extension}`;
     const now = Date.now();
-    await execute(
+    await withTransaction(async (connection) => {
+      await execute(
       `INSERT INTO resources (
         id, owner_user_id, kind, mime_type, original_file_name,
         storage_provider, storage_key, public_path,
@@ -211,8 +219,20 @@ export class ResourceRepository {
         input.byteSize,
         now,
         now,
-      ],
-    );
+        ],
+        connection,
+      );
+      await this.events.append(
+        {
+          ownerUserId: input.ownerUserId,
+          entityType: "resource",
+          entityId: id,
+          operation: "upsert",
+          createdAt: now,
+        },
+        connection,
+      );
+    });
     return {
       resource: await this.findById(id),
       uploadUrl: await this.storage.signPut(
@@ -257,10 +277,17 @@ export class ResourceRepository {
       throw new InvalidMediaUploadError("上传对象不存在或为空。");
     if (record.byteSize !== undefined && object.size !== record.byteSize)
       throw new InvalidMediaUploadError("上传内容大小与声明不一致。");
-    await execute(
-      "UPDATE resources SET status = 'processing', updated_at = ? WHERE id = ? AND status = 'pending'",
-      [Date.now(), id],
-    );
+    await withTransaction(async (connection) => {
+      await execute(
+        "UPDATE resources SET status = 'processing', updated_at = ? WHERE id = ? AND status = 'pending'",
+        [Date.now(), id],
+        connection,
+      );
+      await this.events.append(
+        { ownerUserId, entityType: "resource", entityId: id, operation: "upsert" },
+        connection,
+      );
+    });
     return this.findById(id);
   }
 
@@ -324,7 +351,8 @@ export class ResourceRepository {
           data: display,
         });
       }
-      await execute(
+      await withTransaction(async (connection) => {
+        await execute(
         `UPDATE resources SET byte_size = ?, sha256 = ?, duration_ms = ?,
           status = 'ready', updated_at = ? WHERE id = ?`,
         [
@@ -335,8 +363,19 @@ export class ResourceRepository {
             : Math.round(durationSeconds * 1000),
           Date.now(),
           id,
-        ],
-      );
+          ],
+          connection,
+        );
+        await this.events.append(
+          {
+            ownerUserId: record.ownerUserId,
+            entityType: "resource",
+            entityId: id,
+            operation: "upsert",
+          },
+          connection,
+        );
+      });
       return this.findById(id);
     } catch (error) {
       throw error;
@@ -344,10 +383,24 @@ export class ResourceRepository {
   }
 
   async markProcessingFailed(id: string) {
-    await execute(
-      "UPDATE resources SET status = 'failed', updated_at = ? WHERE id = ? AND status = 'processing'",
-      [Date.now(), id],
-    );
+    const record = await this.findById(id);
+    await withTransaction(async (connection) => {
+      const result = await execute(
+        "UPDATE resources SET status = 'failed', updated_at = ? WHERE id = ? AND status = 'processing'",
+        [Date.now(), id],
+        connection,
+      );
+      if (record && result.affectedRows)
+        await this.events.append(
+          {
+            ownerUserId: record.ownerUserId,
+            entityType: "resource",
+            entityId: id,
+            operation: "upsert",
+          },
+          connection,
+        );
+    });
   }
 
   async listOrphanedResources(cutoff: number, limit = 100) {
@@ -402,10 +455,22 @@ export class ResourceRepository {
     );
     if (!variants.some((variant) => variant.storageKey === record.storageKey))
       await this.storage.delete(record.storageKey);
-    await execute(
-      "DELETE FROM resources WHERE id = ? AND status = 'deleting'",
-      [id],
-    );
+    await withTransaction(async (connection) => {
+      await execute(
+        "DELETE FROM resources WHERE id = ? AND status = 'deleting'",
+        [id],
+        connection,
+      );
+      await this.events.append(
+        {
+          ownerUserId: record.ownerUserId,
+          entityType: "resource",
+          entityId: id,
+          operation: "delete",
+        },
+        connection,
+      );
+    });
     return true;
   }
 
@@ -591,8 +656,9 @@ export class ResourceRepository {
       input.mimeType,
     );
     try {
-      await execute(
-        `INSERT INTO resources (
+      await withTransaction(async (connection) => {
+        await execute(
+          `INSERT INTO resources (
           id, owner_user_id, kind, mime_type, original_file_name,
           storage_provider, storage_key, public_path, byte_size,
           sha256, duration_ms, status, created_at, updated_at
@@ -613,10 +679,11 @@ export class ResourceRepository {
             : Math.round(input.durationSeconds * 1000),
           now,
           now,
-        ],
-      );
-      await execute(
-        `INSERT INTO resource_variants (
+          ],
+          connection,
+        );
+        await execute(
+          `INSERT INTO resource_variants (
           resource_id, variant, storage_provider, storage_key, mime_type,
           byte_size, etag, created_at, updated_at
         ) VALUES (?, 'original', ?, ?, ?, ?, ?, ?, ?)`,
@@ -629,8 +696,20 @@ export class ResourceRepository {
           stored.etag ?? null,
           now,
           now,
-        ],
-      );
+          ],
+          connection,
+        );
+        await this.events.append(
+          {
+            ownerUserId: input.ownerUserId,
+            entityType: "resource",
+            entityId: id,
+            operation: "upsert",
+            createdAt: now,
+          },
+          connection,
+        );
+      });
       if (input.mimeType.startsWith("image/")) {
         const record = (await this.findById(id))!;
         const sharp = (await import("sharp")).default;
@@ -665,9 +744,18 @@ export class ResourceRepository {
         });
       }
     } catch (error) {
-      await execute("DELETE FROM resources WHERE id = ?", [id]).catch(
-        () => undefined,
-      );
+      await withTransaction(async (connection) => {
+        await execute("DELETE FROM resources WHERE id = ?", [id], connection);
+        await this.events.append(
+          {
+            ownerUserId: input.ownerUserId,
+            entityType: "resource",
+            entityId: id,
+            operation: "delete",
+          },
+          connection,
+        );
+      }).catch(() => undefined);
       await this.storage.delete(storageKey).catch(() => undefined);
       await this.storage
         .delete(`${input.ownerUserId}/${id}/thumb.webp`)

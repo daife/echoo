@@ -133,9 +133,7 @@ export function normalizeAgentResources(
     type: "prime-figure",
     detail: {
       ...agent.detail,
-      // Characters saved before reference-image support do not have this field.
-      // Keep one legacy character from aborting normalization of the whole list.
-      referenceImages: (agent.detail.referenceImages ?? []).map((item) => ({
+      referenceImages: agent.detail.referenceImages.map((item) => ({
         ...item,
         resourcePath:
           client.resolveServerPath(item.resourcePath) ?? item.resourcePath,

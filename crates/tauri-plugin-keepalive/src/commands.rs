@@ -14,3 +14,13 @@ pub async fn stop() -> Result<(), String> {
 pub async fn status() -> Result<KeepAliveStatus, String> {
     Ok(KeepAliveStatus::Unsupported)
 }
+
+#[tauri::command]
+pub async fn handoff() -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({
+        "accessToken": "",
+        "refreshToken": "",
+        "expiresAt": 0,
+        "cursor": 0
+    }))
+}

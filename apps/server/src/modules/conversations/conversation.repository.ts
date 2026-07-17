@@ -6,6 +6,7 @@ import {
   queryRows,
   withTransaction,
 } from "../../infra/database/mysql.js";
+import { ChangeEventRepository } from "../sync/change-event.repository.js";
 
 interface ConversationRow extends RowDataPacket {
   id: string;
@@ -20,6 +21,7 @@ interface ConversationRow extends RowDataPacket {
 }
 
 export class ConversationRepository {
+  constructor(private readonly events = new ChangeEventRepository()) {}
   async listByOwner(ownerUserId: string) {
     const rows = await queryRows<ConversationRow>(
       `SELECT * FROM conversations WHERE owner_user_id = ?
@@ -71,6 +73,17 @@ export class ConversationRepository {
           [ownerUserId, conversation.agent_id],
           connection,
         );
+        if (result.affectedRows)
+          await this.events.append(
+            {
+              ownerUserId,
+              entityType: "agent",
+              entityId: conversation.agent_id,
+              conversationId,
+              operation: "delete",
+            },
+            connection,
+          );
         return result.affectedRows > 0;
       }
 
@@ -88,9 +101,11 @@ export class ConversationRepository {
     conversationId: string,
   ) {
     const row = await queryOne<RowDataPacket & { handled_seq: number | null }>(
-      `SELECT CAST(JSON_EXTRACT(runtime_state,
+      `SELECT CAST(JSON_EXTRACT(runtime.state_json,
        '$.primeDispatch.lastHandledEndUserSeq') AS UNSIGNED) AS handled_seq
-       FROM conversations WHERE owner_user_id = ? AND id = ?`,
+       FROM conversations JOIN agent_runtime_states runtime
+         ON runtime.conversation_id = conversations.id
+       WHERE conversations.owner_user_id = ? AND conversations.id = ?`,
       [ownerUserId, conversationId],
     );
     return row?.handled_seq ?? null;
@@ -102,14 +117,16 @@ export class ConversationRepository {
     sequence: number,
   ) {
     await execute(
-      `UPDATE conversations SET runtime_state = JSON_SET(
-       JSON_SET(runtime_state, '$.primeDispatch', COALESCE(
-         JSON_EXTRACT(runtime_state, '$.primeDispatch'), JSON_OBJECT())),
+      `UPDATE agent_runtime_states runtime JOIN conversations
+         ON conversations.id = runtime.conversation_id
+       SET runtime.state_json = JSON_SET(
+       JSON_SET(runtime.state_json, '$.primeDispatch', COALESCE(
+         JSON_EXTRACT(runtime.state_json, '$.primeDispatch'), JSON_OBJECT())),
        '$.primeDispatch.lastHandledEndUserSeq', CAST(GREATEST(COALESCE(CAST(
-         JSON_EXTRACT(runtime_state, '$.primeDispatch.lastHandledEndUserSeq') AS UNSIGNED), 0), ?)
-         AS UNSIGNED))
-       WHERE owner_user_id = ? AND id = ?`,
-      [sequence, ownerUserId, conversationId],
+         JSON_EXTRACT(runtime.state_json, '$.primeDispatch.lastHandledEndUserSeq') AS UNSIGNED), 0), ?)
+         AS UNSIGNED)), runtime.version = runtime.version + 1, runtime.updated_at = ?
+       WHERE conversations.owner_user_id = ? AND conversations.id = ?`,
+      [sequence, Date.now(), ownerUserId, conversationId],
     );
   }
 }

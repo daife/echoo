@@ -1,6 +1,6 @@
 import type { Agent } from "@echoo/shared";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { initApp } from "../../app/bootstrap/initApp";
+import { useServices } from "../../app/providers/ServicesProvider";
 import { useRuntime } from "../../app/providers/RuntimeProvider";
 import type { RuntimeErrorNotice } from "../../features/messages/messagePresentation";
 import { useConversationActions } from "./useConversationActions";
@@ -16,7 +16,7 @@ export function useConversationMessages({
   onConversationDeleted?: (conversationId: string) => void;
 }) {
   const runtime = useRuntime();
-  const services = useMemo(() => initApp(runtime), [runtime]);
+  const services = useServices();
   const [isAgentActive, setIsAgentActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [runtimeErrorNotice, setRuntimeErrorNotice] =

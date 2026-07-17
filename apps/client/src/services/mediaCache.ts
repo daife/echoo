@@ -1,9 +1,10 @@
 import type { MediaAccessItem, MediaVariant } from "@echoo/shared";
 
 const DATABASE_NAME = "echoo-media-cache";
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 const METADATA_STORE = "metadata";
-const CACHE_NAME = "echoo-media-bodies-v2";
+const CACHE_NAME = "echoo-media-bodies-v3";
+const LEGACY_CACHE_NAMES = ["echoo-media-bodies-v2"];
 const FALLBACK_BUDGET_BYTES = 128 * 1024 * 1024;
 const MAXIMUM_BUDGET_BYTES = 512 * 1024 * 1024;
 const TARGET_RATIO = 0.8;
@@ -51,6 +52,15 @@ interface MediaCacheSession {
 export class MediaCache {
   private readonly inFlight = new Map<string, Promise<Blob | null>>();
   private readonly accessUrls = new Map<string, MediaAccessItem>();
+  private readonly pendingAccess = new Map<
+    string,
+    {
+      resourceId: string;
+      variant: MediaVariant;
+      resolve: (value: MediaAccessItem | null) => void;
+    }[]
+  >();
+  private accessFlushScheduled = false;
   private activeDownloads = 0;
   private readonly downloadWaiters: Array<() => void> = [];
   private session?: MediaCacheSession;
@@ -200,24 +210,67 @@ export class MediaCache {
     const key = `${resourceId}:${variant}`;
     const cached = this.accessUrls.get(key);
     if (cached && cached.expiresAt > this.now() + 30_000) return cached;
+    return new Promise<MediaAccessItem | null>((resolve) => {
+      const pending = this.pendingAccess.get(key) ?? [];
+      pending.push({ resourceId, variant, resolve });
+      this.pendingAccess.set(key, pending);
+      if (this.accessFlushScheduled) return;
+      this.accessFlushScheduled = true;
+      queueMicrotask(() => void this.flushAccessRequests());
+    });
+  }
+
+  private async flushAccessRequests() {
+    this.accessFlushScheduled = false;
+    const batches = [...this.pendingAccess.entries()];
+    this.pendingAccess.clear();
+    if (!batches.length || !this.session) return;
     const token = await this.session.getAccessToken();
-    if (!token) return null;
-    const response = await this.fetcher(
-      `${getApiOrigin()}/api/resources/access`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ items: [{ resourceId, variant }] }),
-      },
-    );
-    if (!response.ok) return null;
-    const payload = (await response.json()) as { items?: MediaAccessItem[] };
-    const item = payload.items?.find((candidate) => "url" in candidate);
-    if (item) this.accessUrls.set(key, item);
-    return item ?? null;
+    if (!token) {
+      batches.forEach(([, waiters]) =>
+        waiters.forEach((waiter) => waiter.resolve(null)),
+      );
+      return;
+    }
+    for (let offset = 0; offset < batches.length; offset += 50) {
+      const chunk = batches.slice(offset, offset + 50);
+      try {
+        const response = await this.fetcher(
+          `${getApiOrigin()}/api/resources/access`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              items: chunk.map(([, [waiter]]) => ({
+                resourceId: waiter!.resourceId,
+                variant: waiter!.variant,
+              })),
+            }),
+          },
+        );
+        const payload = response.ok
+          ? ((await response.json()) as { items?: MediaAccessItem[] })
+          : {};
+        for (const [key, waiters] of chunk) {
+          const first = waiters[0]!;
+          const item = payload.items?.find(
+            (candidate) =>
+              "url" in candidate &&
+              candidate.resourceId === first.resourceId &&
+              candidate.variant === first.variant,
+          );
+          if (item) this.accessUrls.set(key, item);
+          waiters.forEach((waiter) => waiter.resolve(item ?? null));
+        }
+      } catch {
+        chunk.forEach(([, waiters]) =>
+          waiters.forEach((waiter) => waiter.resolve(null)),
+        );
+      }
+    }
   }
 
   private async acquireDownloadSlot(signal?: AbortSignal) {
@@ -370,6 +423,10 @@ class BrowserMediaCacheStore implements MediaCacheStore {
       const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
       let settled = false;
       request.onupgradeneeded = () => {
+        if (typeof caches !== "undefined")
+          void Promise.all(
+            LEGACY_CACHE_NAMES.map((name) => caches.delete(name)),
+          );
         for (const name of Array.from(request.result.objectStoreNames))
           request.result.deleteObjectStore(name);
         request.result.createObjectStore(METADATA_STORE, { keyPath: "key" });

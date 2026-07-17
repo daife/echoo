@@ -7,6 +7,7 @@ import type {
   RuntimeConfigPresetsView,
   WalletView,
 } from "@echoo/shared";
+import { ApiClient } from "@echoo/api-client";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   PrimeRuntimeConfigForm,
@@ -1071,23 +1072,15 @@ async function adminRequest<T>(
   options: { method?: string; body?: unknown; token?: string },
 ) {
   const base = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787/api";
-  const response = await fetch(`${base.replace(/\/+$/, "")}/admin${path}`, {
-    method: options.method ?? "GET",
-    headers: {
-      ...(options.body !== undefined
-        ? { "Content-Type": "application/json" }
-        : {}),
-      ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
-    },
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+  const client = new ApiClient({
+    baseUrl: `${base.replace(/\/+$/, "")}/admin`,
+    getAccessToken: async () => options.token ?? null,
   });
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => ({}))) as {
-      message?: string;
-    };
-    throw new Error(payload.message ?? `请求失败：${response.status}`);
-  }
-  return (await response.json()) as T;
+  if (options.method === "POST") return client.post<T>(path, options.body);
+  if (options.method === "PUT") return client.put<T>(path, options.body);
+  if (options.method === "PATCH") return client.patch<T>(path, options.body);
+  if (options.method === "DELETE") return client.delete<T>(path, options.body);
+  return client.get<T>(path);
 }
 
 function handlePanelError(

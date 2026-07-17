@@ -68,6 +68,8 @@ export class AuthService {
   }
 
   async signOut() {
+    const refreshToken = await this.auth.getRefreshToken();
+    if (refreshToken) await this.api.logout(refreshToken).catch(() => undefined);
     await this.auth.clearTokens();
     await this.storage.removeSetting(currentUserKey);
   }

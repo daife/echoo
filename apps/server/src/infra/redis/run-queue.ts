@@ -37,6 +37,8 @@ export class AgentRunQueue {
   private running = false;
   private readonly consumer = `${hostname()}:${process.pid}:${createId("msg")}`;
   private readonly inFlight = new Set<Promise<void>>();
+  private lastPendingClaimAt = 0;
+  private retryCount = 0;
 
   async enqueue(job: AgentRunJob) {
     const redis = await getRedis();
@@ -91,6 +93,23 @@ export class AgentRunQueue {
         await Promise.race(this.inFlight);
         continue;
       }
+      if (Date.now() - this.lastPendingClaimAt >= 30_000) {
+        this.lastPendingClaimAt = Date.now();
+        const claimed = decodeAutoClaim(
+          await redis.sendCommand([
+            "XAUTOCLAIM",
+            STREAM,
+            GROUP,
+            this.consumer,
+            "60000",
+            "0-0",
+            "COUNT",
+            String(concurrency - this.inFlight.size),
+          ]),
+        );
+        for (const entry of claimed) this.startEntry(entry, handler, onActivity);
+        if (claimed.length) continue;
+      }
       const batches = await redis.xReadGroup(
         GROUP,
         this.consumer,
@@ -102,39 +121,7 @@ export class AgentRunQueue {
       );
       for (const batch of batches ?? []) {
         for (const entry of batch.messages) {
-          const job = {
-            id: entry.id,
-            ownerUserId: entry.message.ownerUserId,
-            conversationId: entry.message.conversationId,
-            kind: entry.message.kind as AgentRunJob["kind"],
-            attempts: Number(entry.message.attempts || 0),
-            trigger: entry.message.trigger as AgentRunJob["trigger"],
-            ...(entry.message.debugInstruction
-              ? { debugInstruction: entry.message.debugInstruction }
-              : {}),
-            ...(entry.message.assistantMessageId
-              ? { assistantMessageId: entry.message.assistantMessageId }
-              : {}),
-            ...(entry.message.wakeupToken
-              ? { wakeupToken: entry.message.wakeupToken }
-              : {}),
-            ...(entry.message.passiveStage
-              ? {
-                  passiveStage: Number(
-                    entry.message.passiveStage,
-                  ) as AgentRunJob["passiveStage"],
-                }
-              : {}),
-          };
-          const task = this.handleEntry(
-            job,
-            entry.id,
-            handler,
-            onActivity,
-          ).finally(() => {
-            this.inFlight.delete(task);
-          });
-          this.inFlight.add(task);
+          this.startEntry(entry, handler, onActivity);
         }
       }
     }
@@ -143,6 +130,18 @@ export class AgentRunQueue {
 
   stop() {
     this.running = false;
+  }
+
+  private startEntry(
+    entry: { id: string; message: Record<string, string> },
+    handler: (job: AgentRunJob) => Promise<void>,
+    onActivity?: (activity: AgentRunActivity) => void,
+  ) {
+    const job = toJob(entry);
+    const task = this.handleEntry(job, entry.id, handler, onActivity).finally(
+      () => this.inFlight.delete(task),
+    );
+    this.inFlight.add(task);
   }
 
   private async handleEntry(
@@ -156,6 +155,8 @@ export class AgentRunQueue {
       await this.process(redis, job, handler, onActivity);
     } catch (error) {
       if ((job.attempts ?? 0) < 3) {
+        this.retryCount += 1;
+        await delay(retryDelay(job.attempts ?? 0));
         await this.enqueue({ ...job, attempts: (job.attempts ?? 0) + 1 });
       } else {
         await redis.xAdd("echoo:agent-runs:failed", "*", {
@@ -238,6 +239,58 @@ export class AgentRunQueue {
   private cancelledKey(conversationId: string) {
     return `echoo:run-cancelled:${conversationId}`;
   }
+
+  async metrics() {
+    const redis = await getRedis();
+    const pending = await redis.sendCommand(["XPENDING", STREAM, GROUP]).catch(() => []);
+    return {
+      pending: Array.isArray(pending) ? Number(pending[0] ?? 0) : 0,
+      retries: this.retryCount,
+      failed: Number(await redis.xLen("echoo:agent-runs:failed")),
+    };
+  }
+}
+
+function toJob(entry: { id: string; message: Record<string, string> }): AgentRunJob {
+  return {
+    id: entry.id,
+    ownerUserId: entry.message.ownerUserId!,
+    conversationId: entry.message.conversationId!,
+    kind: entry.message.kind as AgentRunJob["kind"],
+    attempts: Number(entry.message.attempts || 0),
+    trigger: entry.message.trigger as AgentRunJob["trigger"],
+    ...(entry.message.debugInstruction
+      ? { debugInstruction: entry.message.debugInstruction }
+      : {}),
+    ...(entry.message.assistantMessageId
+      ? { assistantMessageId: entry.message.assistantMessageId }
+      : {}),
+    ...(entry.message.wakeupToken
+      ? { wakeupToken: entry.message.wakeupToken }
+      : {}),
+    ...(entry.message.passiveStage
+      ? {
+          passiveStage: Number(entry.message.passiveStage) as AgentRunJob["passiveStage"],
+        }
+      : {}),
+  };
+}
+
+function decodeAutoClaim(value: unknown) {
+  const entries = Array.isArray(value) && Array.isArray(value[1]) ? value[1] : [];
+  return entries.flatMap((raw): Array<{ id: string; message: Record<string, string> }> => {
+    if (!Array.isArray(raw) || typeof raw[0] !== "string" || !Array.isArray(raw[1]))
+      return [];
+    const message: Record<string, string> = {};
+    for (let index = 0; index < raw[1].length; index += 2)
+      message[String(raw[1][index])] = String(raw[1][index + 1] ?? "");
+    return [{ id: raw[0], message }];
+  });
+}
+
+function retryDelay(attempt: number) {
+  const base = [1_000, 5_000, 30_000][attempt] ?? 30_000;
+  return base + Math.floor(Math.random() * Math.max(100, base * 0.2));
 }
 
 async function renewLock(

@@ -40,6 +40,15 @@ export async function initializeDatabase() {
     for (const statement of schema.split(/;\s*(?:\r?\n|$)/)) {
       if (statement.trim()) await connection.query(statement);
     }
+    const [legacyColumns] = await connection.query<RowDataPacket[]>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = DATABASE() AND table_name = 'conversations'
+         AND column_name IN ('runtime_state', 'next_run_at')`,
+    );
+    if (legacyColumns.length)
+      throw new Error(
+        "检测到不兼容的旧 Echoo schema。请确认备份后运行 ECHOO_CONFIRM_RECREATE=echoo pnpm db:recreate。",
+      );
   } finally {
     connection.release();
   }

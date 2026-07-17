@@ -14,6 +14,8 @@ import {
   withTransaction,
 } from "../../infra/database/mysql.js";
 import { createId } from "../../shared/utils/id.js";
+import { syncScheduledRuns } from "../agents/kinds/prime-figure/scheduled-run.repository.js";
+import { ChangeEventRepository } from "../sync/change-event.repository.js";
 
 interface AssetRow extends RowDataPacket {
   id: string;
@@ -65,6 +67,8 @@ export interface AssetResourceReference {
 }
 
 export class CharacterAssetRepository {
+  constructor(private readonly events = new ChangeEventRepository()) {}
+
   async createDraft(input: {
     authorUserId: string;
     sourceAgentId: string;
@@ -110,6 +114,16 @@ export class CharacterAssetRepository {
         connection,
       );
       await replaceDraftResources(connection, assetId, input.resources, now);
+      await this.events.append(
+        {
+          ownerUserId: input.authorUserId,
+          entityType: "asset",
+          entityId: assetId,
+          operation: "upsert",
+          createdAt: now,
+        },
+        connection,
+      );
       return assetId;
     });
   }
@@ -163,6 +177,16 @@ export class CharacterAssetRepository {
         input.resources,
         now,
       );
+      await this.events.append(
+        {
+          ownerUserId: input.ownerUserId,
+          entityType: "asset",
+          entityId: input.assetId,
+          operation: "upsert",
+          createdAt: now,
+        },
+        connection,
+      );
       return true;
     });
   }
@@ -176,9 +200,10 @@ export class CharacterAssetRepository {
           draft_snapshot: unknown;
           draft_recommended_runtime_config: unknown | null;
           draft_dirty: number;
+          source_agent_id: string | null;
         }
       >(
-        `SELECT status, latest_version_id, draft_snapshot,
+        `SELECT status, latest_version_id, draft_snapshot, source_agent_id,
                 draft_recommended_runtime_config, draft_dirty
            FROM character_assets
           WHERE id = ? AND author_user_id = ? FOR UPDATE`,
@@ -193,6 +218,13 @@ export class CharacterAssetRepository {
                   published_at = ?, updated_at = ? WHERE id = ?`,
           [now, now, assetId],
           connection,
+        );
+        await this.appendAssetAndSourceAgentEvents(
+          connection,
+          ownerUserId,
+          assetId,
+          row.source_agent_id,
+          now,
         );
         return { assetId, versionId: row.latest_version_id!, relisted: true };
       }
@@ -245,6 +277,13 @@ export class CharacterAssetRepository {
         "UPDATE social_objects SET updated_at = ? WHERE id = ?",
         [now, assetId],
         connection,
+      );
+      await this.appendAssetAndSourceAgentEvents(
+        connection,
+        ownerUserId,
+        assetId,
+        row.source_agent_id,
+        now,
       );
       return { assetId, versionId, versionNumber, relisted: false };
     });
@@ -316,13 +355,30 @@ export class CharacterAssetRepository {
   }
 
   async unlist(ownerUserId: string, assetId: string) {
-    const now = Date.now();
-    const result = await execute(
-      `UPDATE character_assets SET status = 'unlisted', unlisted_at = ?, updated_at = ?
-       WHERE id = ? AND author_user_id = ? AND status = 'published'`,
-      [now, now, assetId, ownerUserId],
-    );
-    return result.affectedRows > 0;
+    return withTransaction(async (connection) => {
+      const asset = await queryOne<RowDataPacket & { source_agent_id: string | null }>(
+        "SELECT source_agent_id FROM character_assets WHERE id = ? AND author_user_id = ? FOR UPDATE",
+        [assetId, ownerUserId],
+        connection,
+      );
+      if (!asset) return false;
+      const now = Date.now();
+      const result = await execute(
+        `UPDATE character_assets SET status = 'unlisted', unlisted_at = ?, updated_at = ?
+         WHERE id = ? AND author_user_id = ? AND status = 'published'`,
+        [now, now, assetId, ownerUserId],
+        connection,
+      );
+      if (result.affectedRows)
+        await this.appendAssetAndSourceAgentEvents(
+          connection,
+          ownerUserId,
+          assetId,
+          asset.source_agent_id,
+          now,
+        );
+      return result.affectedRows > 0;
+    });
   }
 
   async deleteUnlisted(ownerUserId: string, assetId: string) {
@@ -350,6 +406,16 @@ export class CharacterAssetRepository {
         [assetId],
         connection,
       );
+      if (result.affectedRows)
+        await this.events.append(
+          {
+            ownerUserId,
+            entityType: "asset",
+            entityId: assetId,
+            operation: "delete",
+          },
+          connection,
+        );
       return result.affectedRows
         ? ("deleted" as const)
         : ("not-found" as const);
@@ -429,6 +495,17 @@ export class CharacterAssetRepository {
         agentId,
         now,
       );
+      await this.events.append(
+        {
+          ownerUserId: input.ownerUserId,
+          entityType: "agent",
+          entityId: agentId,
+          conversationId,
+          operation: "upsert",
+          createdAt: now,
+        },
+        connection,
+      );
       return {
         id: installationId,
         agent_id: agentId,
@@ -460,8 +537,10 @@ export class CharacterAssetRepository {
       const conversation = await queryOne<
         RowDataPacket & { id: string; runtime_state: unknown }
       >(
-        `SELECT id, runtime_state FROM conversations
-         WHERE agent_id = ? AND owner_user_id = ? FOR UPDATE`,
+        `SELECT conversations.id, runtime.state_json AS runtime_state
+         FROM conversations JOIN agent_runtime_states runtime
+           ON runtime.conversation_id = conversations.id
+         WHERE conversations.agent_id = ? AND conversations.owner_user_id = ? FOR UPDATE`,
         [installation.agent_id, input.ownerUserId],
         connection,
       );
@@ -472,6 +551,10 @@ export class CharacterAssetRepository {
         input.snapshot,
         now,
       );
+      const { memories: _memories, ...storedState } = state as Record<
+        string,
+        unknown
+      >;
       await execute(
         "UPDATE agents SET type = ?, name = ?, definition = ?, updated_at = ? WHERE id = ?",
         [
@@ -484,17 +567,28 @@ export class CharacterAssetRepository {
         connection,
       );
       await execute(
-        `UPDATE conversations SET type = ?, title = ?, runtime_state = ?, updated_at = ?
+        `UPDATE conversations SET type = ?, title = ?, updated_at = ?
          WHERE id = ?`,
         [
           input.snapshot.type,
           input.snapshot.name,
-          JSON.stringify(state),
           now,
           conversation.id,
         ],
         connection,
       );
+      await execute(
+        `UPDATE agent_runtime_states SET state_json = ?, version = version + 1, updated_at = ?
+         WHERE agent_id = ?`,
+        [JSON.stringify(storedState), now, installation.agent_id],
+        connection,
+      );
+      await syncScheduledRuns(connection, {
+        ownerUserId: input.ownerUserId,
+        conversationId: conversation.id,
+        state,
+        now,
+      });
       await execute(
         `UPDATE character_asset_installations SET version_id = ?, updated_at = ?
          WHERE id = ?`,
@@ -512,8 +606,49 @@ export class CharacterAssetRepository {
         installation.agent_id,
         now,
       );
+      await this.events.append(
+        {
+          ownerUserId: input.ownerUserId,
+          entityType: "agent",
+          entityId: installation.agent_id,
+          conversationId: conversation.id,
+          operation: "upsert",
+          createdAt: now,
+        },
+        connection,
+      );
       return installation.agent_id;
     });
+  }
+
+  private async appendAssetAndSourceAgentEvents(
+    connection: PoolConnection,
+    ownerUserId: string,
+    assetId: string,
+    sourceAgentId: string | null,
+    now: number,
+  ) {
+    await this.events.append(
+      {
+        ownerUserId,
+        entityType: "asset",
+        entityId: assetId,
+        operation: "upsert",
+        createdAt: now,
+      },
+      connection,
+    );
+    if (sourceAgentId)
+      await this.events.append(
+        {
+          ownerUserId,
+          entityType: "agent",
+          entityId: sourceAgentId,
+          operation: "upsert",
+          createdAt: now,
+        },
+        connection,
+      );
   }
 }
 
@@ -688,8 +823,8 @@ async function insertSnapshotAgent(
   await execute(
     `INSERT INTO conversations
      (id, owner_user_id, agent_id, type, title, last_message_preview,
-      unread_count, pinned_at, runtime_state, next_run_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, NULL, ?, ?)`,
+      unread_count, pinned_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)`,
     [
       conversationId,
       ownerUserId,
@@ -697,12 +832,29 @@ async function insertSnapshotAgent(
       snapshot.type,
       snapshot.name,
       snapshot.introduction || snapshot.detail.persona,
-      JSON.stringify(initialRuntimeState(snapshot, now)),
       now,
       now,
     ],
     connection,
   );
+  const state = initialRuntimeState(snapshot, now);
+  const { memories: _memories, ...storedState } = state as Record<
+    string,
+    unknown
+  >;
+  await execute(
+    `INSERT INTO agent_runtime_states
+     (agent_id, owner_user_id, conversation_id, state_json, version, updated_at)
+     VALUES (?, ?, ?, ?, 1, ?)`,
+    [agentId, ownerUserId, conversationId, JSON.stringify(storedState), now],
+    connection,
+  );
+  await syncScheduledRuns(connection, {
+    ownerUserId,
+    conversationId,
+    state,
+    now,
+  });
 }
 
 function snapshotToDefinition(snapshot: CharacterAssetSnapshot) {

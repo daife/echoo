@@ -24,6 +24,7 @@ import { toUserProfile, UserRepository } from "./user.repository.js";
 import { RuntimeConfigService } from "../runtime-config/runtime-config.service.js";
 import { BillingService } from "../billing/billing.service.js";
 import { ResourceRepository } from "../resources/resource.repository.js";
+import { AuthSessionRepository } from "./auth-session.repository.js";
 
 export class AuthService {
   private readonly tokenService: TokenService;
@@ -36,6 +37,7 @@ export class AuthService {
     private readonly runtimeConfigs = new RuntimeConfigService(),
     private readonly billing = new BillingService(),
     private readonly resources = new ResourceRepository(),
+    private readonly sessions = new AuthSessionRepository(),
   ) {
     this.tokenService = new TokenService(app);
   }
@@ -205,15 +207,37 @@ export class AuthService {
     return { ok: true as const };
   }
 
+  async refresh(refreshToken: string) {
+    const rotated = await this.sessions.rotate(refreshToken);
+    if (!rotated)
+      throw new AuthError("REFRESH_TOKEN_INVALID", "登录会话已失效。", 401);
+    const user = await this.users.findById(rotated.userId);
+    if (!user) throw new AuthError("USER_NOT_FOUND", "用户不存在。", 404);
+    return {
+      user: toUserProfile(user),
+      tokens: {
+        accessToken: this.tokenService.createAccessToken(user.id),
+        refreshToken: rotated.token,
+        expiresAt: Date.now() + accessTokenTtlMs,
+      },
+    };
+  }
+
+  async logout(refreshToken: string) {
+    if (refreshToken) await this.sessions.revoke(refreshToken);
+    return { ok: true as const };
+  }
+
   private async createSession(userId: string): Promise<AuthSession> {
     const user = await this.users.findById(userId);
     if (!user) throw new AuthError("USER_NOT_FOUND", "用户不存在。", 404);
 
+    const refresh = await this.sessions.create(userId);
     return {
       user: toUserProfile(user),
       tokens: {
         accessToken: this.tokenService.createAccessToken(userId),
-        refreshToken: this.tokenService.createRefreshToken(userId),
+        refreshToken: refresh.token,
         expiresAt: Date.now() + accessTokenTtlMs,
       },
     };

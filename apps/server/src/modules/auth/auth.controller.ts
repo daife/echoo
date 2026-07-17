@@ -30,6 +30,21 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     }
   });
 
+  app.post<{ Body: { refreshToken?: string } }>(
+    "/refresh",
+    async (request, reply) => {
+      try {
+        return await authService.refresh(request.body?.refreshToken ?? "");
+      } catch (error) {
+        return sendAuthError(reply, error);
+      }
+    },
+  );
+
+  app.post<{ Body: { refreshToken?: string } }>("/logout", async (request) =>
+    authService.logout(request.body?.refreshToken ?? ""),
+  );
+
   app.get("/me", async (request, reply) => {
     const userId = await request.requireUserId(reply);
     if (!userId) return;

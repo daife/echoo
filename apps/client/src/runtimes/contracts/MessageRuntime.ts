@@ -1,4 +1,4 @@
-import type { AppWsServerEvent, Message } from "@echoo/shared";
+import type { AppWsServerEvent, Message, SyncChange } from "@echoo/shared";
 
 export type MessageDeltaEvent = Extract<
   AppWsServerEvent,
@@ -8,10 +8,13 @@ export type MessageAudioStartedEvent = Extract<
   AppWsServerEvent,
   { type: "message.audio.started" }
 >;
-export type MessageAudioChunkEvent = Extract<
-  AppWsServerEvent,
-  { type: "message.audio.chunk" }
->;
+export type MessageAudioChunkEvent = {
+  type: "message.audio.chunk";
+  messageId: string;
+  conversationId: string;
+  sequence: number;
+  data: Uint8Array;
+};
 export type MessageAudioCompletedEvent = Extract<
   AppWsServerEvent,
   { type: "message.audio.completed" }
@@ -33,6 +36,10 @@ export interface MessageRuntime {
   startRealtime(): Promise<void>;
   stopRealtime(): Promise<void>;
   getStatus(): Promise<"running" | "stopped" | "unsupported">;
+  getSyncStatus(): "stopped" | "connecting" | "syncing" | "live";
+  getSyncCursor(): Promise<number>;
+  onSyncChange(handler: (change: SyncChange) => void): () => void;
+  onSyncReset(handler: () => void): () => void;
   onMessageCreated(handler: (message: Message) => void): () => void;
   onMessageDelta(handler: (event: MessageDeltaEvent) => void): () => void;
   onMessageCompleted(handler: (message: Message) => void): () => void;

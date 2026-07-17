@@ -77,30 +77,46 @@ export class SliceReplyProcessor {
   ) {
     let streamedText = "";
     let liveCacheWrite = Promise.resolve();
+    let pendingDelta = "";
+    let deltaTimer: NodeJS.Timeout | undefined;
+    const flushDelta = () => {
+      if (deltaTimer) clearTimeout(deltaTimer);
+      deltaTimer = undefined;
+      const delta = pendingDelta;
+      pendingDelta = "";
+      if (!delta) return;
+      const updatedAt = Date.now();
+      this.appPush.pushToUser(ownerUserId, {
+        type: "message.delta",
+        messageId: pendingMessage.id,
+        conversationId,
+        delta,
+        updatedAt,
+      });
+      const liveText = streamedText;
+      liveCacheWrite = liveCacheWrite.then(() =>
+        this.repository.updateCachedLive(ownerUserId, {
+          ...pendingMessage,
+          content: { text: liveText },
+          updatedAt,
+        }),
+      );
+    };
     try {
       const reply = await this.runtime.createStreamingReply(
         { ownerUserId, conversationId },
         (delta) => {
           streamedText += delta.text;
-          const liveText = streamedText;
-          const updatedAt = Date.now();
-          this.appPush.pushToUser(ownerUserId, {
-            type: "message.delta",
-            messageId: pendingMessage.id,
-            conversationId,
-            delta: delta.text,
-            updatedAt,
-          });
-          liveCacheWrite = liveCacheWrite.then(() =>
-            this.repository.updateCachedLive(ownerUserId, {
-              ...pendingMessage,
-              content: { text: liveText },
-              updatedAt,
-            }),
-          );
+          pendingDelta += delta.text;
+          if (pendingDelta.length >= 1_024) flushDelta();
+          else if (!deltaTimer) {
+            deltaTimer = setTimeout(flushDelta, 40);
+            deltaTimer.unref();
+          }
         },
       );
       if (!reply) return undefined;
+      flushDelta();
       await liveCacheWrite;
       if (
         !(await this.pendingStillExists(
@@ -139,6 +155,7 @@ export class SliceReplyProcessor {
       await this.createMemorySummariesOrQueueRetry(ownerUserId, conversationId);
       return message;
     } catch {
+      flushDelta();
       await liveCacheWrite;
       if (
         !(await this.pendingStillExists(

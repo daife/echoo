@@ -1,6 +1,6 @@
 # Echoo 当前存储设计与数据流
 
-> 本文描述的是仓库当前代码的实际行为，而不是目标架构。结论基于 2026-07-15 的代码，并用 CodeGraph 辅助追踪了跨模块调用关系。文中的“IndexedDB”也对应日常口语中的“IndexDB”。
+> 本文保留为 2026-07-15 重构前审计记录，不再描述当前运行时。当前实现以 `apps/server/src/infra/database/schema.sql`、`apps/server/src/modules/sync`、拆分后的 runtime state/scheduled run repositories 与 README 的重建说明为准；进程内 delivery 队列、`conversations.runtime_state` 和旧同步服务均已删除。
 
 ## 1. 一句话结论
 

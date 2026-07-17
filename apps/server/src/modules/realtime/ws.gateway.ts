@@ -1,22 +1,36 @@
 import type { FastifyInstance } from "fastify";
-import { AckService } from "./ack.service.js";
 import { wsSessionManager } from "./ws-session-manager.js";
+import { ChangeEventRepository } from "../sync/change-event.repository.js";
 
 export async function registerRealtimeGateway(app: FastifyInstance) {
-  const ackService = new AckService();
+  const events = new ChangeEventRepository();
 
-  app.get<{ Querystring: { token?: string } }>(
+  app.post("/api/realtime/ticket", async (request, reply) => {
+    const userId = await request.requireUserId(reply);
+    if (!userId) return;
+    return {
+      ticket: app.jwt.sign(
+        { sub: userId, type: "realtime-ticket", jti: crypto.randomUUID() },
+        { expiresIn: "30s" },
+      ),
+      expiresAt: Date.now() + 30_000,
+    };
+  });
+
+  app.get<{ Querystring: { ticket?: string } }>(
     "/ws",
     { websocket: true },
     async (socket, request) => {
-      let userId: string | null = null;
-      if (request.query.token) {
-        try {
-          const payload = app.jwt.verify<{ sub: string }>(request.query.token);
-          userId = payload.sub;
-        } catch {
-          userId = null;
-        }
+      let userId: string;
+      try {
+        const payload = app.jwt.verify<{ sub: string; type?: string }>(
+          request.query.ticket ?? "",
+        );
+        if (payload.type !== "realtime-ticket") throw new Error("bad ticket");
+        userId = payload.sub;
+      } catch {
+        socket.close(1008, "authentication required");
+        return;
       }
 
       wsSessionManager.add(socket, userId);
@@ -24,14 +38,14 @@ export async function registerRealtimeGateway(app: FastifyInstance) {
         JSON.stringify({
           type: "realtime.ready",
           connectionId: crypto.randomUUID(),
+          protocolVersion: 2,
+          headCursor: await events.head(userId),
         }),
       );
 
       socket.on("message", (raw: Buffer) => {
         const payload = safeParse(raw);
-        if (payload.type === "ack" && payload.messageId) {
-          ackService.acknowledge(payload.messageId);
-        }
+        if (payload.type === "ping") socket.pong();
       });
 
       socket.on("close", () => wsSessionManager.remove(socket));
@@ -39,9 +53,9 @@ export async function registerRealtimeGateway(app: FastifyInstance) {
   );
 }
 
-function safeParse(raw: Buffer): { type?: string; messageId?: string } {
+function safeParse(raw: Buffer): { type?: string } {
   try {
-    return JSON.parse(raw.toString()) as { type?: string; messageId?: string };
+    return JSON.parse(raw.toString()) as { type?: string };
   } catch {
     return {};
   }

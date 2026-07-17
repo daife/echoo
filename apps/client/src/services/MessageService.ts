@@ -4,12 +4,14 @@ import type {
   LocalMessage,
   Message,
 } from "@echoo/shared";
+import type { MessageRuntime } from "../runtimes/contracts";
 
 /** MySQL is canonical. The client keeps only the currently visible page in React state. */
 export class MessageService {
   constructor(
     private readonly api: MessageApi,
     private readonly resources?: ResourcesApi,
+    private readonly runtime?: MessageRuntime,
   ) {}
   async loadLatestConversationMessages(conversationId: string, limit = 50) {
     const page = await this.api.listConversationMessages(conversationId, {
@@ -74,13 +76,51 @@ export class MessageService {
     });
     await this.resources.upload(ticket, input.blob);
     await this.resources.complete(ticket.resourceId);
-    for (let attempt = 0; attempt < 120; attempt += 1) {
+    if (this.runtime?.getSyncStatus() === "live") {
+      const pushed = await this.waitForResource(ticket.resourceId, 30_000);
+      if (pushed?.status === "ready") return pushed;
+      if (pushed?.status === "failed") throw new Error("媒体处理失败。");
+    }
+    const fallbackDelays = [1_000, 2_000, 4_000, 8_000];
+    for (const fallbackDelay of fallbackDelays) {
+      await delay(fallbackDelay);
       const status = await this.resources.status(ticket.resourceId);
       if (status.status === "ready") return status;
       if (status.status === "failed") throw new Error("媒体处理失败。");
-      await delay(250);
     }
     throw new Error("媒体处理超时，请稍后重试。");
+  }
+
+  private waitForResource(resourceId: string, timeoutMs: number) {
+    if (!this.runtime) return Promise.resolve(null);
+    return new Promise<import("@echoo/shared").MediaResourceStatus | null>(
+      (resolve) => {
+        let settled = false;
+        const finish = (
+          value: import("@echoo/shared").MediaResourceStatus | null,
+        ) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timer);
+          unsubscribe();
+          resolve(value);
+        };
+        const unsubscribe = this.runtime!.onSyncChange((change) => {
+          if (
+            change.entityType !== "resource" ||
+            change.entityId !== resourceId ||
+            change.entity?.entityType !== "resource"
+          )
+            return;
+          if (
+            change.entity.value.status === "ready" ||
+            change.entity.value.status === "failed"
+          )
+            finish(change.entity.value);
+        });
+        const timer = window.setTimeout(() => finish(null), timeoutMs);
+      },
+    );
   }
   resolveTransfer(input: import("@echoo/shared").ResolveTransferInput) {
     return this.api.resolveTransfer(input);

@@ -501,13 +501,12 @@ export class PrimeDecisionStreamSession {
 
   private pushAudioChunk(state: StreamedActionState, chunk: Buffer) {
     const voice = ensureVoiceState(state);
-    this.appPush.pushToUser(this.input.ownerUserId, {
+    this.appPush.pushBinaryToUser(this.input.ownerUserId, {
       type: "message.audio.chunk",
       messageId: state.id,
       conversationId: this.input.conversationId,
       sequence: voice.audioSequence++,
-      dataBase64: chunk.toString("base64"),
-    });
+    }, chunk);
   }
 
   private startAudioDelivery(state: StreamedActionState) {
@@ -730,9 +729,13 @@ export class PrimeDecisionStreamSession {
     )
       state.kind.tts?.write(delta);
     state.text.pending += delta;
+    if (state.text.pending.length >= 1_024) {
+      this.flushTextDelta(state);
+      return;
+    }
     if (state.text.flushScheduled) return;
     state.text.flushScheduled = true;
-    queueMicrotask(() => this.flushTextDelta(state));
+    setTimeout(() => this.flushTextDelta(state), 40).unref();
   }
 
   private flushTextDelta(state: StreamedActionState) {

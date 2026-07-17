@@ -7,8 +7,14 @@ import type {
 } from "@echoo/shared";
 import type { RowDataPacket } from "mysql2";
 import { calculateStableContextEvictionStep } from "../../infra/config/context-window-config.js";
-import { execute, queryOne, queryRows } from "../../infra/database/mysql.js";
+import {
+  execute,
+  queryOne,
+  queryRows,
+  withTransaction,
+} from "../../infra/database/mysql.js";
 import { MessageCache } from "../../infra/redis/message-cache.js";
+import { ChangeEventRepository } from "../sync/change-event.repository.js";
 
 interface MessageRow extends RowDataPacket {
   seq: number;
@@ -33,7 +39,10 @@ interface SliceFigureContextRow extends MessageRow {
 export type SaveMessageInput = Message & { ownerUserId: string };
 
 export class MessageRepository {
-  constructor(private readonly cache = new MessageCache()) {}
+  constructor(
+    private readonly cache = new MessageCache(),
+    private readonly events = new ChangeEventRepository(),
+  ) {}
 
   async listAfter(
     ownerUserId: string,
@@ -253,7 +262,8 @@ export class MessageRepository {
     model: string;
     updatedAt: number;
   }) {
-    const result = await execute(
+    const result = await withTransaction(async (connection) => {
+      const result = await execute(
       `UPDATE messages SET content = JSON_SET(content, '$.text', ?), status = 'delivered',
         run_metadata = JSON_SET(COALESCE(run_metadata, JSON_OBJECT()), '$.providerId', ?, '$.model', ?), updated_at = ?
        WHERE owner_user_id = ? AND conversation_id = ? AND id = ? AND status = 'pending'`,
@@ -265,8 +275,23 @@ export class MessageRepository {
         input.ownerUserId,
         input.conversationId,
         input.messageId,
-      ],
-    );
+        ],
+        connection,
+      );
+      if (result.affectedRows)
+        await this.events.append(
+          {
+            ownerUserId: input.ownerUserId,
+            entityType: "message",
+            entityId: input.messageId,
+            conversationId: input.conversationId,
+            operation: "upsert",
+            createdAt: input.updatedAt,
+          },
+          connection,
+        );
+      return result;
+    });
     if (!result.affectedRows) return null;
     await this.invalidateCache(input.ownerUserId, input.conversationId);
     return this.findByIdInConversation(
@@ -362,11 +387,32 @@ export class MessageRepository {
     conversationId: string,
     retainedThrough: Message,
   ) {
-    const result = await execute(
-      `DELETE messages FROM messages JOIN messages cursor_message ON cursor_message.id = ?
-       WHERE messages.owner_user_id = ? AND messages.conversation_id = ? AND messages.seq > cursor_message.seq`,
-      [retainedThrough.id, ownerUserId, conversationId],
-    );
+    const result = await withTransaction(async (connection) => {
+      const deleted = await queryRows<MessageRow>(
+        `SELECT messages.* FROM messages JOIN messages cursor_message ON cursor_message.id = ?
+         WHERE messages.owner_user_id = ? AND messages.conversation_id = ? AND messages.seq > cursor_message.seq`,
+        [retainedThrough.id, ownerUserId, conversationId],
+        connection,
+      );
+      const result = await execute(
+        `DELETE messages FROM messages JOIN messages cursor_message ON cursor_message.id = ?
+         WHERE messages.owner_user_id = ? AND messages.conversation_id = ? AND messages.seq > cursor_message.seq`,
+        [retainedThrough.id, ownerUserId, conversationId],
+        connection,
+      );
+      for (const row of deleted)
+        await this.events.append(
+          {
+            ownerUserId,
+            entityType: "message",
+            entityId: row.id,
+            conversationId,
+            operation: "delete",
+          },
+          connection,
+        );
+      return result;
+    });
     await this.invalidateCache(ownerUserId, conversationId);
     return result.affectedRows;
   }
@@ -377,8 +423,9 @@ export class MessageRepository {
       ...(input.providerId ? { providerId: input.providerId } : {}),
       ...(input.model ? { model: input.model } : {}),
     };
-    const result = await execute(
-      `INSERT INTO messages
+    const { result, saved } = await withTransaction(async (connection) => {
+      const result = await execute(
+        `INSERT INTO messages
        (id, owner_user_id, conversation_id, client_message_id, role, content_type,
         content, status, run_metadata, read_at, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -397,18 +444,35 @@ export class MessageRepository {
         input.readAt ?? null,
         input.createdAt,
         input.updatedAt,
-      ],
-    );
-    const { ownerUserId: _ownerUserId, ...message } = input;
-    const saved = { ...message, sequence: result.insertId };
-    await execute("DELETE FROM message_resources WHERE message_id = ?", [
-      input.id,
-    ]);
-    if (input.content.resourceId)
-      await execute(
-        "INSERT IGNORE INTO message_resources (message_id, resource_id, created_at) VALUES (?, ?, ?)",
-        [input.id, input.content.resourceId, Date.now()],
+        ],
+        connection,
       );
+      const { ownerUserId: _ownerUserId, ...message } = input;
+      const saved = { ...message, sequence: result.insertId };
+      await execute(
+        "DELETE FROM message_resources WHERE message_id = ?",
+        [input.id],
+        connection,
+      );
+      if (input.content.resourceId)
+        await execute(
+          "INSERT IGNORE INTO message_resources (message_id, resource_id, created_at) VALUES (?, ?, ?)",
+          [input.id, input.content.resourceId, Date.now()],
+          connection,
+        );
+      await this.events.append(
+        {
+          ownerUserId: input.ownerUserId,
+          entityType: "message",
+          entityId: input.id,
+          conversationId: input.conversationId,
+          operation: "upsert",
+          createdAt: input.updatedAt,
+        },
+        connection,
+      );
+      return { result, saved };
+    });
     await this.upsertCache(input.ownerUserId, input.conversationId, {
       sequence: result.insertId,
       message: saved,
@@ -417,15 +481,32 @@ export class MessageRepository {
   }
 
   async markRead(ownerUserId: string, messageId: string, readAt: number) {
-    const result = await execute(
-      "UPDATE messages SET status = 'read', read_at = ?, updated_at = ? WHERE owner_user_id = ? AND id = ?",
-      [readAt, readAt, ownerUserId, messageId],
-    );
-    if (!result.affectedRows) return null;
-    const row = await queryOne<MessageRow>(
-      "SELECT * FROM messages WHERE owner_user_id = ? AND id = ?",
-      [ownerUserId, messageId],
-    );
+    const row = await withTransaction(async (connection) => {
+      const result = await execute(
+        "UPDATE messages SET status = 'read', read_at = ?, updated_at = ? WHERE owner_user_id = ? AND id = ?",
+        [readAt, readAt, ownerUserId, messageId],
+        connection,
+      );
+      if (!result.affectedRows) return null;
+      const row = await queryOne<MessageRow>(
+        "SELECT * FROM messages WHERE owner_user_id = ? AND id = ?",
+        [ownerUserId, messageId],
+        connection,
+      );
+      if (row)
+        await this.events.append(
+          {
+            ownerUserId,
+            entityType: "message",
+            entityId: messageId,
+            conversationId: row.conversation_id,
+            operation: "upsert",
+            createdAt: readAt,
+          },
+          connection,
+        );
+      return row;
+    });
     if (!row) return null;
     const message = rowToMessage(row);
     await this.upsertCache(ownerUserId, row.conversation_id, {
@@ -442,11 +523,27 @@ export class MessageRepository {
     text: string,
     updatedAt: number,
   ) {
-    const result = await execute(
-      `UPDATE messages SET content = JSON_SET(content, '$.text', ?), updated_at = ?
-       WHERE owner_user_id = ? AND conversation_id = ? AND id = ?`,
-      [text, updatedAt, ownerUserId, conversationId, messageId],
-    );
+    const result = await withTransaction(async (connection) => {
+      const result = await execute(
+        `UPDATE messages SET content = JSON_SET(content, '$.text', ?), updated_at = ?
+         WHERE owner_user_id = ? AND conversation_id = ? AND id = ?`,
+        [text, updatedAt, ownerUserId, conversationId, messageId],
+        connection,
+      );
+      if (result.affectedRows)
+        await this.events.append(
+          {
+            ownerUserId,
+            entityType: "message",
+            entityId: messageId,
+            conversationId,
+            operation: "upsert",
+            createdAt: updatedAt,
+          },
+          connection,
+        );
+      return result;
+    });
     if (!result.affectedRows) return null;
     await this.invalidateCache(ownerUserId, conversationId);
     return this.findByIdInConversation(ownerUserId, conversationId, messageId);
@@ -460,8 +557,9 @@ export class MessageRepository {
     resolution: "accepted" | "rejected";
     resolvedAtMs: number;
   }) {
-    const result = await execute(
-      `UPDATE messages SET
+    const result = await withTransaction(async (connection) => {
+      const result = await execute(
+        `UPDATE messages SET
          run_metadata = JSON_SET(COALESCE(run_metadata, JSON_OBJECT()),
            '$.primeContent.status', ?,
            '$.primeContent.resolvedAtMs', ?,
@@ -471,17 +569,32 @@ export class MessageRepository {
          AND JSON_UNQUOTE(JSON_EXTRACT(run_metadata, '$.primeContent.type')) = 'transfer'
          AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(run_metadata, '$.primeContent.event')), 'offer') = 'offer'
          AND JSON_UNQUOTE(JSON_EXTRACT(run_metadata, '$.primeContent.status')) = 'pending'`,
-      [
-        input.resolution,
-        input.resolvedAtMs,
-        new Date(input.resolvedAtMs).toISOString(),
-        input.resolvedAtMs,
-        input.ownerUserId,
-        input.conversationId,
-        input.messageId,
-        input.expectedRole,
-      ],
-    );
+        [
+          input.resolution,
+          input.resolvedAtMs,
+          new Date(input.resolvedAtMs).toISOString(),
+          input.resolvedAtMs,
+          input.ownerUserId,
+          input.conversationId,
+          input.messageId,
+          input.expectedRole,
+        ],
+        connection,
+      );
+      if (result.affectedRows)
+        await this.events.append(
+          {
+            ownerUserId: input.ownerUserId,
+            entityType: "message",
+            entityId: input.messageId,
+            conversationId: input.conversationId,
+            operation: "upsert",
+            createdAt: input.resolvedAtMs,
+          },
+          connection,
+        );
+      return result;
+    });
     if (!result.affectedRows) return null;
     await this.invalidateCache(input.ownerUserId, input.conversationId);
     return this.findByIdInConversation(

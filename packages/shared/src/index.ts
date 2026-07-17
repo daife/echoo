@@ -2,7 +2,6 @@ export * from "./constants/interfaceTypes.js";
 export * from "./constants/messageStatus.js";
 export * from "./constants/storageKeys.js";
 export * from "./constants/syncKeys.js";
-export * from "./protocol/ack-payload.js";
 export * from "./protocol/app-ws-events.js";
 export * from "./protocol/notification-payload.js";
 export * from "./prompts/figure-system-prompt.js";

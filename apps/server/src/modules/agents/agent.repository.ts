@@ -25,6 +25,9 @@ import {
 } from "../../infra/database/mysql.js";
 import { createId } from "../../shared/utils/id.js";
 import { ResourceRepository } from "../resources/resource.repository.js";
+import { ChangeEventRepository } from "../sync/change-event.repository.js";
+import { syncScheduledRuns } from "./kinds/prime-figure/scheduled-run.repository.js";
+import type { PoolConnection } from "mysql2/promise";
 
 interface AgentRow extends RowDataPacket {
   id: string;
@@ -44,7 +47,10 @@ type CreateAgentInput = CreateSliceFigureRequest | CreatePrimeFigureRequest;
 type UpdateAgentInput = UpdateSliceFigureRequest | UpdatePrimeFigureRequest;
 
 export class AgentRepository {
-  constructor(private readonly resources = new ResourceRepository()) {}
+  constructor(
+    private readonly resources = new ResourceRepository(),
+    private readonly events = new ChangeEventRepository(),
+  ) {}
 
   async listByOwner(ownerUserId: string) {
     const rows = await queryRows<AgentRow>(
@@ -143,8 +149,8 @@ export class AgentRepository {
         await execute(
           `INSERT INTO conversations
          (id, owner_user_id, agent_id, type, title, last_message_preview,
-          unread_count, pinned_at, runtime_state, next_run_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, NULL, ?, ?)`,
+          unread_count, pinned_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)`,
           [
             conversationId,
             ownerUserId,
@@ -152,11 +158,18 @@ export class AgentRepository {
             input.type,
             input.name,
             preview,
-            JSON.stringify(runtimeState),
             now,
             now,
           ],
           connection,
+        );
+        await saveRuntimeStateRecord(
+          connection,
+          ownerUserId,
+          id,
+          conversationId,
+          runtimeState,
+          now,
         );
         if (input.type === "slice-figure" && input.openingLine?.trim()) {
           await execute(
@@ -176,6 +189,17 @@ export class AgentRepository {
             connection,
           );
         }
+        await this.events.append(
+          {
+            ownerUserId,
+            entityType: "agent",
+            entityId: id,
+            conversationId,
+            operation: "upsert",
+            createdAt: now,
+          },
+          connection,
+        );
       });
       await this.resources.replaceAgentReferences(id, [
         ...(avatar ? [{ resourceId: avatar.id, usageKind: "avatar" }] : []),
@@ -338,15 +362,17 @@ export class AgentRepository {
             [input.name, JSON.stringify(definition), now, agentId, ownerUserId],
             connection,
           );
+          await saveRuntimeStateRecord(
+            connection,
+            ownerUserId,
+            agentId,
+            existing.conversationId,
+            nextRuntimeState,
+            now,
+          );
           await execute(
-            "UPDATE conversations SET runtime_state = ?, title = ?, updated_at = ? WHERE agent_id = ? AND owner_user_id = ?",
-            [
-              JSON.stringify(nextRuntimeState),
-              input.name,
-              now,
-              agentId,
-              ownerUserId,
-            ],
+            "UPDATE conversations SET title = ?, updated_at = ? WHERE agent_id = ? AND owner_user_id = ?",
+            [input.name, now, agentId, ownerUserId],
             connection,
           );
         } else {
@@ -362,6 +388,17 @@ export class AgentRepository {
             [input.name, now, agentId, ownerUserId],
             connection,
           );
+        await this.events.append(
+          {
+            ownerUserId,
+            entityType: "agent",
+            entityId: agentId,
+            conversationId: existing.conversationId,
+            operation: "upsert",
+            createdAt: now,
+          },
+          connection,
+        );
       });
     } catch (error) {
       await Promise.all([
@@ -496,6 +533,15 @@ export class AgentRepository {
           [agentId, sticker.resourceId, Date.now()],
           connection,
         );
+        await this.events.append(
+          {
+            ownerUserId,
+            entityType: "agent",
+            entityId: agentId,
+            operation: "upsert",
+          },
+          connection,
+        );
       });
       return this.findById(ownerUserId, agentId);
     } catch (error) {
@@ -536,6 +582,15 @@ export class AgentRepository {
       await execute(
         "DELETE FROM message_resources WHERE resource_id = ?",
         [stickerId],
+        connection,
+      );
+      await this.events.append(
+        {
+          ownerUserId,
+          entityType: "agent",
+          entityId: agentId,
+          operation: "upsert",
+        },
         connection,
       );
     });
@@ -668,12 +723,43 @@ export class AgentRepository {
 
   async getRuntimeState<T>(ownerUserId: string, agentId: string) {
     const row = await queryOne<AgentRow>(
-      `SELECT conversations.runtime_state AS conversation_runtime_state
-       FROM agents JOIN conversations ON conversations.agent_id = agents.id
+      `SELECT runtime.state_json AS conversation_runtime_state
+       FROM agents JOIN agent_runtime_states runtime ON runtime.agent_id = agents.id
        WHERE agents.owner_user_id = ? AND agents.id = ?`,
       [ownerUserId, agentId],
     );
-    return row ? parseJson<T>(row.conversation_runtime_state, {} as T) : null;
+    if (!row) return null;
+    const state = parseJson<Record<string, unknown>>(
+      row.conversation_runtime_state,
+      {},
+    );
+    const memories = await queryRows<
+      RowDataPacket & {
+        id: string;
+        content: string;
+        event_at: number;
+        recorded_at: number;
+      }
+    >(
+      `SELECT id, content, event_at, recorded_at FROM prime_memories
+       WHERE owner_user_id = ? AND agent_id = ? ORDER BY event_at ASC, recorded_at ASC`,
+      [ownerUserId, agentId],
+    );
+    return {
+      ...state,
+      ...(memories.length
+        ? {
+            memories: memories.map((memory) => ({
+              id: memory.id,
+              content: memory.content,
+              eventAtMs: memory.event_at,
+              recordedAtMs: memory.recorded_at,
+            })),
+          }
+        : "memories" in state
+          ? {}
+          : { memories: [] }),
+    } as T;
   }
 
   async saveRuntimeState(
@@ -682,18 +768,32 @@ export class AgentRepository {
     state: unknown,
     nextRunAt?: number | null,
   ) {
-    await execute(
-      `UPDATE conversations JOIN agents ON agents.id = conversations.agent_id
-       SET conversations.runtime_state = ?, conversations.next_run_at = ?, conversations.updated_at = ?
-       WHERE agents.owner_user_id = ? AND agents.id = ?`,
-      [
-        JSON.stringify(state),
-        nextRunAt ?? null,
-        Date.now(),
+    void nextRunAt;
+    const conversation = await queryOne<RowDataPacket & { id: string }>(
+      "SELECT id FROM conversations WHERE owner_user_id = ? AND agent_id = ?",
+      [ownerUserId, agentId],
+    );
+    if (!conversation) return;
+    await withTransaction(async (connection) => {
+      await saveRuntimeStateRecord(
+        connection,
         ownerUserId,
         agentId,
-      ],
-    );
+        conversation.id,
+        state,
+        Date.now(),
+      );
+      await this.events.append(
+        {
+          ownerUserId,
+          entityType: "agent",
+          entityId: agentId,
+          conversationId: conversation.id,
+          operation: "upsert",
+        },
+        connection,
+      );
+    });
   }
 
   private async resolveReferenceImages(
@@ -864,12 +964,68 @@ export class AgentRepository {
   }
 }
 
+async function saveRuntimeStateRecord(
+  connection: PoolConnection,
+  ownerUserId: string,
+  agentId: string,
+  conversationId: string,
+  state: unknown,
+  now: number,
+) {
+  const value = (state && typeof state === "object" ? state : {}) as Record<
+    string,
+    unknown
+  >;
+  const memories = Array.isArray(value.memories)
+    ? (value.memories as PrimeFigureState["memories"])
+    : undefined;
+  const { memories: _memories, ...storedState } = value;
+  await execute(
+    `INSERT INTO agent_runtime_states
+     (agent_id, owner_user_id, conversation_id, state_json, version, updated_at)
+     VALUES (?, ?, ?, ?, 1, ?)
+     ON DUPLICATE KEY UPDATE state_json = VALUES(state_json),
+       version = version + 1, updated_at = VALUES(updated_at)`,
+    [agentId, ownerUserId, conversationId, JSON.stringify(storedState), now],
+    connection,
+  );
+  if (memories) {
+    await execute(
+      "DELETE FROM prime_memories WHERE owner_user_id = ? AND agent_id = ?",
+      [ownerUserId, agentId],
+      connection,
+    );
+    for (const memory of memories)
+      await execute(
+        `INSERT INTO prime_memories
+         (id, agent_id, owner_user_id, content, event_at, recorded_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          memory.id,
+          agentId,
+          ownerUserId,
+          memory.content,
+          memory.eventAtMs,
+          memory.recordedAtMs,
+        ],
+        connection,
+      );
+  }
+  await syncScheduledRuns(connection, {
+    ownerUserId,
+    conversationId,
+    state: value,
+    now,
+  });
+}
+
 const SELECT_AGENT = `SELECT agents.*, conversations.id AS conversation_id,
-  conversations.runtime_state AS conversation_runtime_state,
+  runtime.state_json AS conversation_runtime_state,
   (published_assets.status = 'published') AS is_public,
   published_assets.id AS published_asset_id
   FROM agents
   LEFT JOIN conversations ON conversations.agent_id = agents.id
+  LEFT JOIN agent_runtime_states runtime ON runtime.agent_id = agents.id
   LEFT JOIN character_assets published_assets
     ON published_assets.source_agent_id = agents.id`;
 
@@ -889,20 +1045,6 @@ function rowToAgent(row: AgentRow): Agent {
       : null;
   return {
     ...stored,
-    ...(row.type === "prime-figure"
-      ? {
-          detail: {
-            ...(stored as Extract<Agent, { type: "prime-figure" }>).detail,
-            // Definitions created before reference-image support omitted this key.
-            referenceImages:
-              (stored as Extract<Agent, { type: "prime-figure" }>).detail
-                ?.referenceImages ?? [],
-            stickers:
-              (stored as Extract<Agent, { type: "prime-figure" }>).detail
-                ?.stickers ?? [],
-          },
-        }
-      : {}),
     id: row.id,
     ownerUserId: row.owner_user_id,
     type: row.type,

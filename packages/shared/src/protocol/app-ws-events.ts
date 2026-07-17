@@ -1,6 +1,11 @@
 import type { Message } from "../types/message.js";
+import type { SyncChange, SyncCursor } from "../types/sync.js";
 
 export type AppWsServerEvent =
+  | {
+      type: "sync.change";
+      change: SyncChange;
+    }
   | {
       type: "conversation.agent_activity";
       conversationId: string;
@@ -40,13 +45,6 @@ export type AppWsServerEvent =
       mimeType: string;
     }
   | {
-      type: "message.audio.chunk";
-      messageId: string;
-      conversationId: string;
-      sequence: number;
-      dataBase64: string;
-    }
-  | {
       type: "message.audio.completed";
       messageId: string;
       conversationId: string;
@@ -67,14 +65,17 @@ export type AppWsServerEvent =
   | {
       type: "realtime.ready";
       connectionId: string;
+      protocolVersion: 2;
+      headCursor: SyncCursor;
     };
 
-export type AppWsClientEvent =
-  | {
-      type: "ack";
-      messageId: string;
-    }
-  | {
-      type: "ping";
-      sentAt: number;
-    };
+export type AppWsClientEvent = { type: "ping"; sentAt: number };
+
+export type DurableWsEvent = Extract<AppWsServerEvent, { type: "sync.change" }>;
+
+export interface BinaryWsFrameHeader {
+  type: "message.audio.chunk";
+  messageId: string;
+  conversationId: string;
+  sequence: number;
+}
