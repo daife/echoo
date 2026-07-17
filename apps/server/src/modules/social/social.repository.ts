@@ -30,7 +30,7 @@ interface CommentRow extends RowDataPacket {
 }
 
 export class SocialRepository {
-  async findObject(objectId: string, viewerUserId: string) {
+  async findObject(objectId: string, viewerUserId: string | null) {
     return queryOne<SocialObjectRow>(
       `SELECT social.id, social.object_type, assets.status AS asset_status,
               assets.author_user_id AS owner_user_id,
@@ -95,7 +95,7 @@ export class SocialRepository {
 
   async listComments(input: {
     objectId: string;
-    viewerUserId: string;
+    viewerUserId: string | null;
     before?: number;
     limit: number;
   }): Promise<SocialCommentPage> {
@@ -245,7 +245,7 @@ export class SocialRepository {
   }
 }
 
-export function rowToComment(row: CommentRow, viewerUserId: string) {
+export function rowToComment(row: CommentRow, viewerUserId: string | null) {
   return {
     id: row.id,
     objectId: row.object_id,

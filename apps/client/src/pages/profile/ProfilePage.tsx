@@ -8,7 +8,7 @@ import {
   UploadSimple,
   Archive,
 } from "@phosphor-icons/react";
-import type { Agent } from "@echoo/shared";
+import type { Agent, CharacterAssetDraft } from "@echoo/shared";
 import { CharacterCard } from "../../features/conversations/components/CharacterCard";
 import { useState } from "react";
 
@@ -32,20 +32,20 @@ export function ProfilePage({
   isLoadingAgents,
   onOpenAgent,
   onOpenSettings,
-  onPublishAgent,
+  publicAssets,
+  onCreatePublicDraft,
+  onManagePublicAsset,
   onUnlistAsset,
 }: {
   agents: Agent[];
   isLoadingAgents: boolean;
   onOpenAgent: (agent: Agent) => void;
   onOpenSettings: () => void;
-  onPublishAgent: (
-    agentId: string,
-    includeRecommendedRuntimeConfig: boolean,
-  ) => Promise<{ warning?: "CUSTOM_RUNTIME_CONFIG_REMOVED" }>;
+  publicAssets: CharacterAssetDraft[];
+  onCreatePublicDraft: (agentId: string) => Promise<void>;
+  onManagePublicAsset: (asset: CharacterAssetDraft) => void;
   onUnlistAsset: (agentId: string, assetId: string) => Promise<void>;
 }) {
-  const [includeRecommendation, setIncludeRecommendation] = useState(false);
   const [busyAgentId, setBusyAgentId] = useState<string | null>(null);
   const [publishNotice, setPublishNotice] = useState<string | null>(null);
   const cards = agents.map((agent) => ({
@@ -135,17 +135,6 @@ export function ProfilePage({
             <h2 className="text-2xl font-semibold text-white">我的角色</h2>
             <span className="text-sm text-white/40">本初角色与切片角色</span>
           </div>
-          <label className="mb-5 flex items-center gap-3 rounded-xl border border-white/8 bg-white/[0.025] px-4 py-3 text-xs text-white/50">
-            <input
-              type="checkbox"
-              checked={includeRecommendation}
-              onChange={(event) =>
-                setIncludeRecommendation(event.target.checked)
-              }
-              className="accent-white"
-            />
-            发布时附带当前会话的推荐运行配置
-          </label>
           {publishNotice ? (
             <p className="mb-4 rounded-xl border border-white/8 bg-white/[0.025] px-4 py-3 text-xs text-white/55">
               {publishNotice}
@@ -171,17 +160,7 @@ export function ProfilePage({
                         setBusyAgentId(agent.id);
                         setPublishNotice(null);
                         try {
-                          const result = await onPublishAgent(
-                            agent.id,
-                            includeRecommendation,
-                          );
-                          setPublishNotice(
-                            result.warning === "CUSTOM_RUNTIME_CONFIG_REMOVED"
-                              ? "已发布新版本。检测到自定义 API，推荐运行配置已自动移除。"
-                              : agent.source.isPublic
-                                ? "新版本已发布。"
-                                : "角色已发布。",
-                          );
+                          await onCreatePublicDraft(agent.id);
                         } catch (error) {
                           setPublishNotice(
                             error instanceof Error
@@ -195,7 +174,11 @@ export function ProfilePage({
                       className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] py-2.5 text-xs text-white/65 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-40"
                     >
                       <UploadSimple size={15} />
-                      {agent.source.isPublic ? "发布新版本" : "发布角色"}
+                      {publicAssets.some(
+                        (asset) => asset.sourceAgentId === agent.id,
+                      )
+                        ? "管理公共版本"
+                        : "创建公共版本"}
                     </button>
                     {agent.source.isPublic && agent.source.publishedAssetId ? (
                       <button
@@ -234,6 +217,45 @@ export function ProfilePage({
           ) : (
             <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-6 text-sm leading-6 text-white/50">
               你还没有创建任何角色。创建一个切片角色即可开始新的会话。
+            </div>
+          )}
+
+          <div className="mb-5 mt-12 flex items-center justify-between">
+            <h2 className="text-2xl font-semibold text-white">我的公共角色</h2>
+            <span className="text-sm text-white/40">独立草稿与公开版本</span>
+          </div>
+          {publicAssets.length ? (
+            <div className="space-y-3">
+              {publicAssets.map((asset) => (
+                <button
+                  key={asset.id}
+                  type="button"
+                  onClick={() => onManagePublicAsset(asset)}
+                  className="flex w-full items-center gap-4 rounded-2xl border border-white/8 bg-white/[0.025] p-4 text-left transition hover:bg-white/[0.05]"
+                >
+                  <div className="grid h-12 w-12 place-items-center rounded-full bg-white/[0.06] text-sm font-semibold text-white/75">
+                    {asset.snapshot.name.slice(0, 1)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-white">
+                      {asset.snapshot.name}
+                    </p>
+                    <p className="mt-1 text-xs text-white/38">
+                      {asset.status === "published"
+                        ? `已发布 · v${asset.latestVersionNumber}`
+                        : asset.status === "unlisted"
+                          ? "已下架"
+                          : "未发布草稿"}
+                      {asset.hasUnpublishedChanges ? " · 有未发布修改" : ""}
+                    </p>
+                  </div>
+                  <NotePencil size={18} className="text-white/35" />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm text-white/42">
+              从上方任一本地角色创建公共版本后，会先进入独立草稿编辑器。
             </div>
           )}
         </div>

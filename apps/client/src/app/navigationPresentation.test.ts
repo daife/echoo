@@ -32,6 +32,13 @@ describe("responsive navigation presentation", () => {
     expect(shouldShowMobileConversationList("settings", false)).toBe(false);
   });
 
+  it("keeps the independent public editor focused", () => {
+    expect(shouldShowDesktopConversationRail("public-editor", true)).toBe(
+      false,
+    );
+    expect(shouldShowMobileBottomNav("public-editor", false, true)).toBe(false);
+  });
+
   it("shows the mobile navigation on regular top-level views", () => {
     expect(shouldShowMobileBottomNav("home", false, true)).toBe(true);
     expect(shouldShowMobileBottomNav("profile", false, true)).toBe(true);
@@ -66,9 +73,7 @@ describe("responsive navigation presentation", () => {
   });
 
   it("keeps profile active in settings", () => {
-    expect(getActivePrimaryNavigationView("settings", "home")).toBe(
-      "profile",
-    );
+    expect(getActivePrimaryNavigationView("settings", "home")).toBe("profile");
   });
 
   it("keeps the binding source navigation item active", () => {

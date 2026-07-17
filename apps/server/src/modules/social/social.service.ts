@@ -15,7 +15,7 @@ export class SocialService {
 
   async listComments(
     objectId: string,
-    viewerUserId: string,
+    viewerUserId: string | null,
     before: number | undefined,
     limit: number,
   ) {
@@ -77,7 +77,7 @@ export class SocialService {
       throw new SocialActionForbiddenError("无权隐藏该评论。");
   }
 
-  private async requireObject(objectId: string, viewerUserId: string) {
+  private async requireObject(objectId: string, viewerUserId: string | null) {
     const object = await this.social.findObject(objectId, viewerUserId);
     if (!object || object.object_type !== "character_asset")
       throw new SocialObjectNotFoundError("社交对象不存在。");

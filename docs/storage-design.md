@@ -144,7 +144,6 @@ IndexedDB 在这里不是媒体主体存储，也不保存角色、会话或消�
 | `resource_variants`            | original/thumb/display 的对象 key 与元数据              | 资源删除时级联删除                       |
 | `message_resources`            | 消息引用哪些资源                                        | 防止仍被消息引用的资源被删除             |
 | `agent_resources`              | 角色头像、封面、参考图、表情引用                        | 防止仍被角色引用的资源被删除             |
-| `schema_migrations`            | 已执行的数据库迁移                                      | 逐条记录 migration ID                    |
 
 `agents.definition` 保存相对稳定的角色定义；`agents.runtime_state` 保存本初角色的变量、记忆、情绪、关系、沉默与唤醒计划。`conversations.runtime_state` 保存会话级运行进度，例如本初角色已处理到哪条用户消息。消息的 `run_metadata` 保存模型、媒体语义、转账状态、记忆摘要等扩展数据。
 
@@ -414,7 +413,7 @@ README 描述了 Telegram/微信/QQ 与角色会话绑定的目标流程，但�
 
 11. **provider 切换不是在线迁移。** 每条资源记录保存 `local` 或 `s3`，而 repository 要求记录 provider 与当前全局配置一致。直接改环境变量会让旧资源报错，必须先设计对象复制和数据库迁移。
 
-12. **迁移不是原子执行。** 一个 migration 内的多条 DDL 逐条执行，最后才写 `schema_migrations`。中途失败后重跑可能遇到“列已存在/表已存在”，需要更健壮的幂等迁移工具或修复脚本。
+12. **当前数据库初始化只适用于开发阶段。** 服务启动时直接执行最终版 `schema.sql`，不保留旧结构的升级迁移；结构发生不兼容变化时需要重置开发数据库。进入需要保留数据的环境前，应先引入带事务边界与失败恢复策略的正式迁移工具。
 
 ### 客户端与功能完整性
 
@@ -439,7 +438,7 @@ README 描述了 Telegram/微信/QQ 与角色会话绑定的目标流程，但�
 ## 9. 关键代码索引
 
 - 服务启动与依赖装配：[`apps/server/src/app.ts`](../apps/server/src/app.ts)
-- MySQL schema 与迁移：[`schema.sql`](../apps/server/src/infra/database/schema.sql)、[`migrations.ts`](../apps/server/src/infra/database/migrations.ts)
+- MySQL 开发基线 schema：[`schema.sql`](../apps/server/src/infra/database/schema.sql)
 - Redis 消息缓存与运行队列：[`message-cache.ts`](../apps/server/src/infra/redis/message-cache.ts)、[`run-queue.ts`](../apps/server/src/infra/redis/run-queue.ts)
 - 注册登录：[`auth.service.ts`](../apps/server/src/modules/auth/auth.service.ts)、[`user.repository.ts`](../apps/server/src/modules/auth/user.repository.ts)
 - 角色创建：[`agent.repository.ts`](../apps/server/src/modules/agents/agent.repository.ts)

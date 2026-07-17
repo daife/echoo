@@ -195,11 +195,20 @@ export async function registerResourceRoutes(app: FastifyInstance) {
     if (!resource || resource.status !== "ready")
       return reply.code(404).send({ error: "RESOURCE_NOT_FOUND" });
 
-    const tokenUserId = verifyMediaToken(app, request.query.token, resource.id);
-    const userId = tokenUserId ?? (await request.requireUserId(reply));
-    if (!userId) return;
-    if (!(await resources.canUserAccess(userId, resource.id)))
-      return reply.code(403).send({ error: "RESOURCE_FORBIDDEN" });
+    const publiclyAccessible = await resources.isPubliclyAccessible(
+      resource.id,
+    );
+    if (!publiclyAccessible) {
+      const tokenUserId = verifyMediaToken(
+        app,
+        request.query.token,
+        resource.id,
+      );
+      const userId = tokenUserId ?? (await request.requireUserId(reply));
+      if (!userId) return;
+      if (!(await resources.canUserAccess(userId, resource.id)))
+        return reply.code(403).send({ error: "RESOURCE_FORBIDDEN" });
+    }
 
     const variant = variantSchema
       .catch("original")
@@ -214,7 +223,12 @@ export async function registerResourceRoutes(app: FastifyInstance) {
     reply.header("Content-Type", selected.mimeType);
     reply.header("Content-Length", opened.size);
     reply.header("Accept-Ranges", "bytes");
-    reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    reply.header(
+      "Cache-Control",
+      publiclyAccessible
+        ? "public, max-age=31536000, immutable"
+        : "private, max-age=31536000, immutable",
+    );
     if (opened.contentRange) reply.header("Content-Range", opened.contentRange);
     if (opened.etag) reply.header("ETag", `"${opened.etag}"`);
     return reply.send(opened.stream);

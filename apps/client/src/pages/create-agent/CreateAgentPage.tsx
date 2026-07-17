@@ -602,7 +602,7 @@ export function PrimeFigureForm({
 
       <FormSection
         title="展示与关系数据 · 不进入上下文"
-        description="名字、图片、属性、标签、介绍、序引、链接 ID、解锁条件和公开状态不会发送给模型。"
+        description="名字、图片、属性、标签、介绍、序引、链接 ID 和解锁条件不会发送给模型。"
       >
         <DisplayFields
           form={form}
@@ -949,23 +949,6 @@ function DisplayFields<T extends DisplayForm>({
         placeholder='{"minimumLevel": 3}'
         onChange={onUnlockTextChange}
       />
-      <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.025] p-4">
-        <span>
-          <span className="block text-sm font-medium text-white/78">
-            是否公开
-          </span>
-          <span className="mt-1 block text-xs text-white/40">
-            仅用于展示与发现，不进入上下文。
-          </span>
-        </span>
-        <input
-          checked={form.isPublic}
-          type="checkbox"
-          onChange={(event) =>
-            set("isPublic", event.target.checked as T[keyof T])
-          }
-        />
-      </label>
     </>
   );
 }

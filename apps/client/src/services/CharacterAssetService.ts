@@ -3,14 +3,11 @@ import type { CharacterAssetsApi } from "@echoo/api-client";
 export class CharacterAssetService {
   constructor(private readonly api: CharacterAssetsApi) {}
 
-  list(limit?: number) {
-    return this.api.list(limit);
+  list(input?: Parameters<CharacterAssetsApi["list"]>[0]) {
+    return this.api.list(input);
   }
   get(assetId: string) {
     return this.api.get(assetId);
-  }
-  publish(agentId: string, includeRecommendedRuntimeConfig: boolean) {
-    return this.api.publish(agentId, { includeRecommendedRuntimeConfig });
   }
   unlist(assetId: string) {
     return this.api.unlist(assetId);
@@ -18,8 +15,34 @@ export class CharacterAssetService {
   install(assetId: string, applyRecommendedRuntimeConfig: boolean) {
     return this.api.install(assetId, { applyRecommendedRuntimeConfig });
   }
-  updateInstallation(assetId: string) {
-    return this.api.updateInstallation(assetId);
+  updateInstallation(assetId: string, applyRecommendedRuntimeConfig: boolean) {
+    return this.api.updateInstallation(assetId, {
+      applyRecommendedRuntimeConfig,
+    });
+  }
+  createDraft(agentId: string) {
+    return this.api.createDraft(agentId);
+  }
+  listMine() {
+    return this.api.listMine();
+  }
+  getDraft(assetId: string) {
+    return this.api.getDraft(assetId);
+  }
+  saveDraftCharacter(
+    assetId: string,
+    input: Parameters<CharacterAssetsApi["saveDraftCharacter"]>[1],
+  ) {
+    return this.api.saveDraftCharacter(assetId, input);
+  }
+  saveDraftRecommendation(
+    assetId: string,
+    input: Parameters<CharacterAssetsApi["saveDraftRecommendation"]>[1],
+  ) {
+    return this.api.saveDraftRecommendation(assetId, input);
+  }
+  publishDraft(assetId: string) {
+    return this.api.publishDraft(assetId);
   }
   setLiked(objectId: string, liked: boolean) {
     return liked ? this.api.like(objectId) : this.api.unlike(objectId);

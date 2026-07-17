@@ -16,18 +16,20 @@ import { useEffect, useMemo, useState } from "react";
 import { MediaAsset } from "../../features/media/MediaAsset";
 import type { CharacterAssetService } from "../../services/CharacterAssetService";
 
-export function ExplorePage({
+export function CharacterCatalog({
   service,
   isAuthenticated,
   onAgentInstalled,
+  onRequireAuth,
 }: {
   service: CharacterAssetService;
   isAuthenticated: boolean;
   onAgentInstalled: (agent: Agent) => void;
+  onRequireAuth: () => void;
 }) {
   const [assets, setAssets] = useState<CharacterAssetSummary[]>([]);
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(isAuthenticated);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeComments, setActiveComments] = useState<string | null>(null);
   const [comments, setComments] = useState<Record<string, SocialComment[]>>({});
@@ -36,15 +38,18 @@ export function ExplorePage({
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | undefined>();
 
   useEffect(() => {
-    if (!isAuthenticated) return;
     let cancelled = false;
     setLoading(true);
     void service
-      .list()
-      .then((items) => {
-        if (!cancelled) setAssets(items);
+      .list({ sort: "latest", limit: 24, q: query.trim() || undefined })
+      .then((page) => {
+        if (!cancelled) {
+          setAssets(page.items);
+          setNextCursor(page.nextCursor);
+        }
       })
       .catch((reason) => {
         if (!cancelled)
@@ -58,7 +63,7 @@ export function ExplorePage({
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, service]);
+  }, [query, service]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
@@ -75,6 +80,7 @@ export function ExplorePage({
   }, [assets, query]);
 
   const toggleLike = async (asset: CharacterAssetSummary) => {
+    if (!isAuthenticated) return onRequireAuth();
     const nextLiked = !asset.viewerHasLiked;
     setAssets((current) =>
       current.map((item) =>
@@ -124,6 +130,7 @@ export function ExplorePage({
   };
 
   const submitComment = async (assetId: string) => {
+    if (!isAuthenticated) return onRequireAuth();
     const body = commentDraft.trim();
     if (!body) return;
     setBusyId(assetId);
@@ -213,10 +220,17 @@ export function ExplorePage({
   };
 
   const installOrUpdate = async (asset: CharacterAssetSummary) => {
+    if (!isAuthenticated) return onRequireAuth();
     setBusyId(asset.id);
     try {
       const result = asset.installedVersionId
-        ? await service.updateInstallation(asset.id)
+        ? await service.updateInstallation(
+            asset.id,
+            asset.hasRecommendedRuntimeConfig &&
+              window.confirm(
+                "新版本附带了作者更新的推荐运行配置。是否同时应用？这会覆盖当前会话配置。",
+              ),
+          )
         : await service.install(
             asset.id,
             asset.hasRecommendedRuntimeConfig &&
@@ -269,9 +283,7 @@ export function ExplorePage({
         </label>
       </header>
 
-      {!isAuthenticated ? (
-        <EmptyState text="登录后即可浏览、添加和评价公共角色资产。" />
-      ) : loading ? (
+      {loading ? (
         <EmptyState text="正在整理公共角色档案……" />
       ) : error && !assets.length ? (
         <EmptyState text={error} />
@@ -552,6 +564,120 @@ export function ExplorePage({
           {error}
         </div>
       ) : null}
+      {nextCursor ? (
+        <div className="flex justify-center pt-4">
+          <button
+            type="button"
+            disabled={Boolean(busyId)}
+            onClick={async () => {
+              setBusyId("catalog-more");
+              try {
+                const page = await service.list({
+                  sort: "latest",
+                  limit: 24,
+                  cursor: nextCursor,
+                  q: query.trim() || undefined,
+                });
+                setAssets((current) => [
+                  ...current,
+                  ...page.items.filter(
+                    (item) =>
+                      !current.some((existing) => existing.id === item.id),
+                  ),
+                ]);
+                setNextCursor(page.nextCursor);
+              } finally {
+                setBusyId(null);
+              }
+            }}
+            className="rounded-full border border-white/10 px-6 py-3 text-xs text-white/55 transition hover:bg-white/[0.05] hover:text-white disabled:opacity-30"
+          >
+            加载更多角色
+          </button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+const placeholderPosts = [
+  {
+    author: "Lumen",
+    time: "刚刚",
+    body: "给角色写日程时，我开始把‘空白’也当成一种行动。不是每个时刻都需要回复。",
+    topic: "创作札记",
+  },
+  {
+    author: "纸月档案室",
+    time: "18 分钟前",
+    body: "今天完成了一组冬夜车站的参考图。下一步会让角色对同一地点形成不同时间层的记忆。",
+    topic: "世界与图像",
+  },
+  {
+    author: "Mori",
+    time: "1 小时前",
+    body: "切片角色不一定短暂。它更像把关系切到一个准确的横截面，然后允许人反复回到那里。",
+    topic: "角色讨论",
+  },
+];
+
+export function ExplorePage() {
+  return (
+    <section className="mx-auto max-w-4xl pb-20">
+      <header className="border-b border-white/10 pb-8">
+        <p className="text-[10px] uppercase tracking-[0.32em] text-[#aaa0c7]">
+          FIELD NOTES
+        </p>
+        <h1 className="mt-4 text-4xl font-semibold tracking-[-0.045em] text-white md:text-6xl">
+          人们正在留下什么
+        </h1>
+        <p className="mt-4 max-w-2xl text-sm leading-6 text-white/48">
+          这里会成为创作者与使用者的动态流。当前先展示内容形态，发布与互动稍后开放。
+        </p>
+      </header>
+
+      <div className="mt-7 rounded-2xl border border-dashed border-[#aaa0c7]/25 bg-[#aaa0c7]/[0.045] p-5">
+        <textarea
+          disabled
+          placeholder="分享一次角色变化、一段创作笔记或一张世界切片……"
+          className="h-24 w-full resize-none bg-transparent text-sm text-white outline-none placeholder:text-white/28 disabled:cursor-not-allowed"
+        />
+        <div className="flex items-center justify-between border-t border-white/8 pt-4">
+          <span className="text-xs text-white/30">动态发布正在准备中</span>
+          <button
+            disabled
+            className="rounded-full bg-white/10 px-5 py-2 text-xs text-white/35"
+          >
+            发布
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-10 space-y-0 border-t border-white/10">
+        {placeholderPosts.map((post) => (
+          <article
+            key={`${post.author}-${post.time}`}
+            className="grid gap-4 border-b border-white/10 py-8 md:grid-cols-[150px_1fr]"
+          >
+            <div>
+              <p className="text-sm font-medium text-white/78">{post.author}</p>
+              <p className="mt-1 text-xs text-white/28">{post.time}</p>
+            </div>
+            <div>
+              <span className="text-[10px] uppercase tracking-[0.2em] text-[#aaa0c7]">
+                {post.topic}
+              </span>
+              <p className="mt-3 text-lg leading-8 text-white/72">
+                {post.body}
+              </p>
+              <div className="mt-5 flex gap-5 text-xs text-white/25">
+                <span>喜欢 · —</span>
+                <span>回应 · —</span>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
     </section>
   );
 }

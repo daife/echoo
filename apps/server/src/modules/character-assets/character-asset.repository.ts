@@ -1,5 +1,7 @@
 import type {
+  CharacterAssetDraft,
   CharacterAssetDetail,
+  CharacterAssetPage,
   CharacterAssetSnapshot,
   CharacterAssetSummary,
   PublishedRuntimeRecommendation,
@@ -33,6 +35,21 @@ interface AssetRow extends RowDataPacket {
   updated_at: number;
 }
 
+interface DraftRow extends RowDataPacket {
+  id: string;
+  author_user_id: string;
+  display_name: string;
+  source_agent_id: string | null;
+  status: "draft" | "published" | "unlisted";
+  latest_version_id: string | null;
+  latest_version_number: number | null;
+  draft_snapshot: unknown;
+  draft_recommended_runtime_config: unknown | null;
+  draft_dirty: number;
+  created_at: number;
+  updated_at: number;
+}
+
 interface VersionRow extends RowDataPacket {
   id: string;
   asset_id: string;
@@ -48,7 +65,7 @@ export interface AssetResourceReference {
 }
 
 export class CharacterAssetRepository {
-  async publish(input: {
+  async createDraft(input: {
     authorUserId: string;
     sourceAgentId: string;
     snapshot: CharacterAssetSnapshot;
@@ -62,35 +79,134 @@ export class CharacterAssetRepository {
         [input.authorUserId, input.sourceAgentId],
         connection,
       );
-      const assetId = existing?.id ?? createId("asset");
-      const versionId = createId("aver");
-      const latest = existing
-        ? await queryOne<RowDataPacket & { latest_number: number | null }>(
-            `SELECT MAX(version_number) AS latest_number
-             FROM character_asset_versions WHERE asset_id = ?`,
-            [assetId],
-            connection,
-          )
-        : null;
-      const versionNumber = (latest?.latest_number ?? 0) + 1;
+      if (existing) return existing.id;
+      const assetId = createId("asset");
       const now = Date.now();
-      if (!existing) {
+      await execute(
+        `INSERT INTO social_objects
+         (id, object_type, like_count, comment_count, created_at, updated_at)
+         VALUES (?, 'character_asset', 0, 0, ?, ?)`,
+        [assetId, now, now],
+        connection,
+      );
+      await execute(
+        `INSERT INTO character_assets
+         (id, author_user_id, source_agent_id, status, latest_version_id,
+          draft_snapshot, draft_recommended_runtime_config, draft_dirty,
+          published_at, unlisted_at, created_at, updated_at)
+         VALUES (?, ?, ?, 'draft', NULL, ?, ?, TRUE, ?, NULL, ?, ?)`,
+        [
+          assetId,
+          input.authorUserId,
+          input.sourceAgentId,
+          JSON.stringify(input.snapshot),
+          input.recommendedRuntimeConfig
+            ? JSON.stringify(input.recommendedRuntimeConfig)
+            : null,
+          now,
+          now,
+          now,
+        ],
+        connection,
+      );
+      await replaceDraftResources(connection, assetId, input.resources, now);
+      return assetId;
+    });
+  }
+
+  async findDraftForAuthor(ownerUserId: string, assetId: string) {
+    const row = await queryOne<DraftRow>(
+      `${DRAFT_SELECT} WHERE assets.id = ? AND assets.author_user_id = ?`,
+      [assetId, ownerUserId],
+    );
+    return row ? rowToDraft(row) : null;
+  }
+
+  async listMine(ownerUserId: string) {
+    const rows = await queryRows<DraftRow>(
+      `${DRAFT_SELECT} WHERE assets.author_user_id = ?
+       ORDER BY assets.updated_at DESC`,
+      [ownerUserId],
+    );
+    return rows.map(rowToDraft);
+  }
+
+  async saveDraft(input: {
+    ownerUserId: string;
+    assetId: string;
+    snapshot: CharacterAssetSnapshot;
+    recommendedRuntimeConfig: PublishedRuntimeRecommendation | null;
+    resources: AssetResourceReference[];
+  }) {
+    return withTransaction(async (connection) => {
+      const now = Date.now();
+      const result = await execute(
+        `UPDATE character_assets
+            SET draft_snapshot = ?, draft_recommended_runtime_config = ?,
+                draft_dirty = TRUE, updated_at = ?
+          WHERE id = ? AND author_user_id = ?`,
+        [
+          JSON.stringify(input.snapshot),
+          input.recommendedRuntimeConfig
+            ? JSON.stringify(input.recommendedRuntimeConfig)
+            : null,
+          now,
+          input.assetId,
+          input.ownerUserId,
+        ],
+        connection,
+      );
+      if (!result.affectedRows) return false;
+      await replaceDraftResources(
+        connection,
+        input.assetId,
+        input.resources,
+        now,
+      );
+      return true;
+    });
+  }
+
+  async publishDraft(ownerUserId: string, assetId: string) {
+    return withTransaction(async (connection) => {
+      const row = await queryOne<
+        RowDataPacket & {
+          status: "draft" | "published" | "unlisted";
+          latest_version_id: string | null;
+          draft_snapshot: unknown;
+          draft_recommended_runtime_config: unknown | null;
+          draft_dirty: number;
+        }
+      >(
+        `SELECT status, latest_version_id, draft_snapshot,
+                draft_recommended_runtime_config, draft_dirty
+           FROM character_assets
+          WHERE id = ? AND author_user_id = ? FOR UPDATE`,
+        [assetId, ownerUserId],
+        connection,
+      );
+      if (!row?.draft_snapshot) return null;
+      const now = Date.now();
+      if (row.status === "unlisted" && !row.draft_dirty) {
         await execute(
-          `INSERT INTO social_objects
-           (id, object_type, like_count, comment_count, created_at, updated_at)
-           VALUES (?, 'character_asset', 0, 0, ?, ?)`,
-          [assetId, now, now],
+          `UPDATE character_assets SET status = 'published', unlisted_at = NULL,
+                  published_at = ?, updated_at = ? WHERE id = ?`,
+          [now, now, assetId],
           connection,
         );
-        await execute(
-          `INSERT INTO character_assets
-           (id, author_user_id, source_agent_id, status, latest_version_id,
-            published_at, unlisted_at, created_at, updated_at)
-           VALUES (?, ?, ?, 'published', NULL, ?, NULL, ?, ?)`,
-          [assetId, input.authorUserId, input.sourceAgentId, now, now, now],
-          connection,
-        );
+        return { assetId, versionId: row.latest_version_id!, relisted: true };
       }
+      if (row.status === "published" && !row.draft_dirty) return null;
+      const latest = await queryOne<
+        RowDataPacket & { latest_number: number | null }
+      >(
+        `SELECT MAX(version_number) AS latest_number
+           FROM character_asset_versions WHERE asset_id = ?`,
+        [assetId],
+        connection,
+      );
+      const versionNumber = (latest?.latest_number ?? 0) + 1;
+      const versionId = createId("aver");
       await execute(
         `INSERT INTO character_asset_versions
          (id, asset_id, version_number, snapshot, recommended_runtime_config, created_at)
@@ -99,26 +215,29 @@ export class CharacterAssetRepository {
           versionId,
           assetId,
           versionNumber,
-          JSON.stringify(input.snapshot),
-          input.recommendedRuntimeConfig
-            ? JSON.stringify(input.recommendedRuntimeConfig)
+          JSON.stringify(parseJson(row.draft_snapshot, {})),
+          row.draft_recommended_runtime_config
+            ? JSON.stringify(
+                parseJson(row.draft_recommended_runtime_config, {}),
+              )
             : null,
           now,
         ],
         connection,
       );
-      for (const resource of input.resources)
-        await execute(
-          `INSERT INTO character_asset_version_resources
-           (version_id, resource_id, usage_kind, created_at)
-           VALUES (?, ?, ?, ?)`,
-          [versionId, resource.resourceId, resource.usageKind, now],
-          connection,
-        );
+      await execute(
+        `INSERT INTO character_asset_version_resources
+         (version_id, resource_id, usage_kind, created_at)
+         SELECT ?, resource_id, usage_kind, ?
+           FROM character_asset_draft_resources WHERE asset_id = ?`,
+        [versionId, now, assetId],
+        connection,
+      );
       await execute(
         `UPDATE character_assets
-         SET status = 'published', latest_version_id = ?, published_at = ?,
-             unlisted_at = NULL, updated_at = ? WHERE id = ?`,
+            SET status = 'published', latest_version_id = ?, draft_dirty = FALSE,
+                published_at = ?, unlisted_at = NULL, updated_at = ?
+          WHERE id = ?`,
         [versionId, now, now, assetId],
         connection,
       );
@@ -127,21 +246,53 @@ export class CharacterAssetRepository {
         [now, assetId],
         connection,
       );
-      return { assetId, versionId, versionNumber };
+      return { assetId, versionId, versionNumber, relisted: false };
     });
   }
 
-  async listPublished(viewerUserId: string, limit = 50) {
+  async listPublished(
+    viewerUserId: string | null,
+    input: {
+      limit?: number;
+      cursor?: string;
+      query?: string;
+      sort?: "quality" | "latest";
+    } = {},
+  ): Promise<CharacterAssetPage> {
+    const limit = Math.min(Math.max(input.limit ?? 24, 1), 100);
+    const offset = Math.max(Number(input.cursor) || 0, 0);
+    const query = input.query?.trim() ?? "";
+    const needle = `%${query}%`;
+    const order =
+      input.sort === "quality"
+        ? "social.like_count DESC, assets.published_at DESC, assets.id DESC"
+        : "assets.published_at DESC, assets.id DESC";
     const rows = await queryRows<AssetRow>(
       `${ASSET_SELECT}
        WHERE assets.status = 'published'
-       ORDER BY assets.published_at DESC LIMIT ?`,
-      [viewerUserId, viewerUserId, Math.min(Math.max(limit, 1), 100)],
+         AND (? = '' OR users.display_name LIKE ?
+              OR JSON_UNQUOTE(JSON_EXTRACT(versions.snapshot, '$.name')) LIKE ?
+              OR CAST(JSON_EXTRACT(versions.snapshot, '$.tags') AS CHAR) LIKE ?)
+       ORDER BY ${order} LIMIT ? OFFSET ?`,
+      [
+        viewerUserId,
+        viewerUserId,
+        query,
+        needle,
+        needle,
+        needle,
+        limit + 1,
+        offset,
+      ],
     );
-    return rows.map(rowToSummary);
+    const hasMore = rows.length > limit;
+    return {
+      items: rows.slice(0, limit).map(rowToSummary),
+      ...(hasMore ? { nextCursor: String(offset + limit) } : {}),
+    };
   }
 
-  async findVisible(viewerUserId: string, assetId: string) {
+  async findVisible(viewerUserId: string | null, assetId: string) {
     const row = await queryOne<AssetRow>(
       `${ASSET_SELECT}
        WHERE assets.id = ? AND (
@@ -335,6 +486,15 @@ export class CharacterAssetRepository {
   }
 }
 
+const DRAFT_SELECT = `SELECT assets.id, assets.author_user_id,
+  users.display_name, assets.source_agent_id, assets.status,
+  assets.latest_version_id, latest.version_number AS latest_version_number,
+  assets.draft_snapshot, assets.draft_recommended_runtime_config,
+  assets.draft_dirty, assets.created_at, assets.updated_at
+ FROM character_assets assets
+ JOIN users ON users.id = assets.author_user_id
+ LEFT JOIN character_asset_versions latest ON latest.id = assets.latest_version_id`;
+
 const ASSET_SELECT = `SELECT assets.id, assets.author_user_id,
   users.display_name, assets.status, assets.latest_version_id,
   versions.version_number, versions.snapshot, versions.recommended_runtime_config,
@@ -403,6 +563,56 @@ function rowToDetail(row: AssetRow): CharacterAssetDetail {
       createdAt: row.version_created_at,
     },
   };
+}
+
+function rowToDraft(row: DraftRow): CharacterAssetDraft {
+  return {
+    id: row.id,
+    author: { id: row.author_user_id, displayName: row.display_name },
+    ...(row.source_agent_id ? { sourceAgentId: row.source_agent_id } : {}),
+    status: row.status,
+    snapshot: parseJson<CharacterAssetSnapshot>(
+      row.draft_snapshot,
+      null as never,
+    ),
+    ...(row.draft_recommended_runtime_config
+      ? {
+          recommendedRuntimeConfig: parseJson<PublishedRuntimeRecommendation>(
+            row.draft_recommended_runtime_config,
+            null as never,
+          ),
+        }
+      : {}),
+    ...(row.latest_version_id
+      ? {
+          latestVersionId: row.latest_version_id,
+          latestVersionNumber: row.latest_version_number ?? undefined,
+        }
+      : {}),
+    hasUnpublishedChanges: Boolean(row.draft_dirty),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function replaceDraftResources(
+  connection: PoolConnection,
+  assetId: string,
+  resources: AssetResourceReference[],
+  now: number,
+) {
+  await execute(
+    "DELETE FROM character_asset_draft_resources WHERE asset_id = ?",
+    [assetId],
+    connection,
+  );
+  for (const resource of resources)
+    await execute(
+      `INSERT INTO character_asset_draft_resources
+       (asset_id, resource_id, usage_kind, created_at) VALUES (?, ?, ?, ?)`,
+      [assetId, resource.resourceId, resource.usageKind, now],
+      connection,
+    );
 }
 
 function rowToVersion(row: VersionRow) {

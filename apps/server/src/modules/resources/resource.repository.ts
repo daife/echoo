@@ -354,11 +354,17 @@ export class ResourceRepository {
       `SELECT resources.* FROM resources
        LEFT JOIN message_resources ON message_resources.resource_id = resources.id
        LEFT JOIN agent_resources ON agent_resources.resource_id = resources.id
+       LEFT JOIN character_asset_version_resources asset_versions
+         ON asset_versions.resource_id = resources.id
+       LEFT JOIN character_asset_draft_resources asset_drafts
+         ON asset_drafts.resource_id = resources.id
        WHERE resources.status IN ('ready', 'failed', 'pending')
          AND resources.created_at < ?
          AND (resources.status != 'ready' OR resources.storage_key LIKE '%/original.%')
          AND message_resources.resource_id IS NULL
          AND agent_resources.resource_id IS NULL
+         AND asset_versions.resource_id IS NULL
+         AND asset_drafts.resource_id IS NULL
        ORDER BY resources.created_at ASC LIMIT ?`,
       [cutoff, limit],
     );
@@ -378,6 +384,10 @@ export class ResourceRepository {
          SELECT 1 FROM message_resources WHERE resource_id = resources.id
        ) AND NOT EXISTS (
          SELECT 1 FROM agent_resources WHERE resource_id = resources.id
+       ) AND NOT EXISTS (
+         SELECT 1 FROM character_asset_version_resources WHERE resource_id = resources.id
+       ) AND NOT EXISTS (
+         SELECT 1 FROM character_asset_draft_resources WHERE resource_id = resources.id
        )`,
       [Date.now(), id],
     );
@@ -452,6 +462,22 @@ export class ResourceRepository {
          )
        ) LIMIT 1`,
       [resourceId, userId, userId],
+    );
+    return Boolean(row);
+  }
+
+  async isPubliclyAccessible(resourceId: string) {
+    const row = await queryOne<RowDataPacket>(
+      `SELECT resources.id FROM resources
+       WHERE resources.id = ? AND EXISTS (
+         SELECT 1 FROM character_asset_version_resources version_resources
+         JOIN character_asset_versions versions
+           ON versions.id = version_resources.version_id
+         JOIN character_assets assets ON assets.id = versions.asset_id
+         WHERE version_resources.resource_id = resources.id
+           AND assets.status = 'published'
+       ) LIMIT 1`,
+      [resourceId],
     );
     return Boolean(row);
   }

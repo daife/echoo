@@ -7,7 +7,7 @@ import type {
 } from "./agent.js";
 
 export type CharacterAssetType = Exclude<AgentType, "prime-world">;
-export type CharacterAssetStatus = "published" | "unlisted";
+export type CharacterAssetStatus = "draft" | "published" | "unlisted";
 
 export interface CharacterAssetSnapshotBase {
   type: CharacterAssetType;
@@ -69,13 +69,32 @@ export interface CharacterAssetDetail extends CharacterAssetSummary {
   latestVersion: CharacterAssetVersion;
 }
 
-export interface PublishCharacterAssetRequest {
-  includeRecommendedRuntimeConfig: boolean;
+export interface CharacterAssetPage {
+  items: CharacterAssetSummary[];
+  nextCursor?: string;
+}
+
+export interface CharacterAssetDraft {
+  id: string;
+  author: { id: string; displayName: string };
+  sourceAgentId?: string;
+  status: CharacterAssetStatus;
+  snapshot: CharacterAssetSnapshot;
+  recommendedRuntimeConfig?: PublishedRuntimeRecommendation;
+  latestVersionId?: string;
+  latestVersionNumber?: number;
+  hasUnpublishedChanges: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SaveCharacterAssetRecommendationRequest {
+  enabled: boolean;
+  config?: Record<string, unknown>;
 }
 
 export interface PublishCharacterAssetResponse {
   asset: CharacterAssetDetail;
-  warning?: "CUSTOM_RUNTIME_CONFIG_REMOVED";
 }
 
 export interface InstallCharacterAssetResponse {

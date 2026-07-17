@@ -1,11 +1,15 @@
 import type {
   CharacterAssetDetail,
+  CharacterAssetDraft,
+  CharacterAssetPage,
   CharacterAssetSnapshot,
   CharacterAssetSummary,
   InstallCharacterAssetResponse,
   InstallCharacterAssetRequest,
-  PublishCharacterAssetRequest,
   PublishCharacterAssetResponse,
+  SaveCharacterAssetRecommendationRequest,
+  CreatePrimeFigureRequest,
+  CreateSliceFigureRequest,
   SocialComment,
   SocialCommentPage,
 } from "@echoo/shared";
@@ -15,28 +19,26 @@ import type { ApiClient } from "./client";
 export class CharacterAssetsApi {
   constructor(private readonly client: ApiClient) {}
 
-  list(limit = 50): Promise<CharacterAssetSummary[]> {
+  list(
+    input: {
+      limit?: number;
+      cursor?: string;
+      q?: string;
+      sort?: "quality" | "latest";
+    } = {},
+  ): Promise<CharacterAssetPage> {
     return this.client
-      .get<CharacterAssetSummary[]>("/character-assets", { limit })
-      .then((assets) => assets.map((asset) => this.normalizeAsset(asset)));
+      .get<CharacterAssetPage>("/character-assets", input)
+      .then((page) => ({
+        ...page,
+        items: page.items.map((asset) => this.normalizeAsset(asset)),
+      }));
   }
 
   get(assetId: string): Promise<CharacterAssetDetail> {
     return this.client
       .get<CharacterAssetDetail>(`/character-assets/${assetId}`)
       .then((asset) => this.normalizeAsset(asset));
-  }
-
-  publish(
-    agentId: string,
-    input: PublishCharacterAssetRequest,
-  ): Promise<PublishCharacterAssetResponse> {
-    return this.client
-      .post<PublishCharacterAssetResponse>(`/agents/${agentId}/publish`, input)
-      .then((response) => ({
-        ...response,
-        asset: this.normalizeAsset(response.asset),
-      }));
   }
 
   unlist(assetId: string) {
@@ -60,14 +62,71 @@ export class CharacterAssetsApi {
       }));
   }
 
-  updateInstallation(assetId: string): Promise<InstallCharacterAssetResponse> {
+  updateInstallation(
+    assetId: string,
+    input: InstallCharacterAssetRequest,
+  ): Promise<InstallCharacterAssetResponse> {
     return this.client
       .post<InstallCharacterAssetResponse>(
         `/character-assets/${assetId}/install/update`,
+        input,
       )
       .then((response) => ({
         ...response,
         agent: normalizeAgentResources(this.client, response.agent),
+      }));
+  }
+
+  createDraft(agentId: string): Promise<CharacterAssetDraft> {
+    return this.client
+      .post<CharacterAssetDraft>(`/agents/${agentId}/character-asset-draft`)
+      .then((draft) => this.normalizeDraft(draft));
+  }
+
+  listMine(): Promise<CharacterAssetDraft[]> {
+    return this.client
+      .get<CharacterAssetDraft[]>("/users/me/character-assets")
+      .then((drafts) => drafts.map((draft) => this.normalizeDraft(draft)));
+  }
+
+  getDraft(assetId: string): Promise<CharacterAssetDraft> {
+    return this.client
+      .get<CharacterAssetDraft>(`/character-assets/${assetId}/draft`)
+      .then((draft) => this.normalizeDraft(draft));
+  }
+
+  saveDraftCharacter(
+    assetId: string,
+    input: CreateSliceFigureRequest | CreatePrimeFigureRequest,
+  ): Promise<CharacterAssetDraft> {
+    return this.client
+      .patch<CharacterAssetDraft>(
+        `/character-assets/${assetId}/draft/character`,
+        input,
+      )
+      .then((draft) => this.normalizeDraft(draft));
+  }
+
+  saveDraftRecommendation(
+    assetId: string,
+    input: SaveCharacterAssetRecommendationRequest,
+  ): Promise<CharacterAssetDraft> {
+    return this.client
+      .patch<CharacterAssetDraft>(
+        `/character-assets/${assetId}/draft/recommendation`,
+        input,
+      )
+      .then((draft) => this.normalizeDraft(draft));
+  }
+
+  publishDraft(assetId: string): Promise<PublishCharacterAssetResponse> {
+    return this.client
+      .post<PublishCharacterAssetResponse>(
+        `/character-assets/${assetId}/publish`,
+      )
+      .then((response) => ({
+        ...response,
+        asset: this.normalizeAsset(response.asset),
       }));
   }
 
@@ -126,6 +185,13 @@ export class CharacterAssetsApi {
           }
         : {}),
     } as T;
+  }
+
+  private normalizeDraft(draft: CharacterAssetDraft): CharacterAssetDraft {
+    return {
+      ...draft,
+      snapshot: normalizeSnapshot(this.client, draft.snapshot),
+    };
   }
 }
 

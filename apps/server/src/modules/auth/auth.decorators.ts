@@ -2,12 +2,21 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 declare module "fastify" {
   interface FastifyRequest {
+    optionalUserId(): Promise<string | null>;
     requireUserId(reply: FastifyReply): Promise<string | null>;
     requireAdmin(reply: FastifyReply): Promise<boolean>;
   }
 }
 
 export function registerAuthDecorators(app: FastifyInstance) {
+  app.decorateRequest("optionalUserId", async function (this: FastifyRequest) {
+    try {
+      const payload = await this.jwtVerify<{ sub: string }>();
+      return payload.sub;
+    } catch {
+      return null;
+    }
+  });
   app.decorateRequest(
     "requireUserId",
     async function (this: FastifyRequest, reply: FastifyReply) {

@@ -6,6 +6,7 @@ import {
 } from "@phosphor-icons/react";
 import type {
   Agent,
+  CharacterAssetDraft,
   AddPrimeFigureStickerRequest,
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
@@ -25,6 +26,7 @@ import { HomePage } from "../pages/home/HomePage";
 import { MessagesPage } from "../pages/messages/MessagesPage";
 import { ProfilePage } from "../pages/profile/ProfilePage";
 import { SettingsPage } from "../pages/settings/SettingsPage";
+import { PublicAssetEditorPage } from "../pages/public-asset/PublicAssetEditorPage";
 import {
   getActivePrimaryNavigationView,
   PRIMARY_NAVIGATION_VIEWS,
@@ -42,6 +44,7 @@ type AppView =
   | "explore"
   | "profile"
   | "create"
+  | "public-editor"
   | "auth";
 
 const navItemPresentation = {
@@ -69,12 +72,16 @@ export function App() {
   const [myAgents, setMyAgents] = useState<Agent[]>([]);
   const [isLoadingAgents, setIsLoadingAgents] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+  const [publicAssets, setPublicAssets] = useState<CharacterAssetDraft[]>([]);
+  const [editingPublicAsset, setEditingPublicAsset] =
+    useState<CharacterAssetDraft | null>(null);
   const protectedView =
     view === "messages" ||
     view === "bindings" ||
     view === "settings" ||
     view === "profile" ||
-    view === "create";
+    view === "create" ||
+    view === "public-editor";
   const showConversationRail = shouldShowDesktopConversationRail(
     view,
     !!auth.user,
@@ -105,6 +112,8 @@ export function App() {
     if (!auth.user) {
       setMyAgents([]);
       setSelectedAgent(null);
+      setPublicAssets([]);
+      setEditingPublicAsset(null);
       return;
     }
 
@@ -125,6 +134,12 @@ export function App() {
       .finally(() => {
         if (!cancelled) setIsLoadingAgents(false);
       });
+    void services.characterAssetService
+      .listMine()
+      .then((assets) => {
+        if (!cancelled) setPublicAssets(assets);
+      })
+      .catch(() => undefined);
 
     return () => {
       cancelled = true;
@@ -206,18 +221,7 @@ export function App() {
   const createSliceFigure = async (input: CreateSliceFigureRequest) => {
     try {
       const created = await services.agentService.createSliceFigure(input);
-      let agent = created.agent;
-      if (input.isPublic) {
-        const published = await services.characterAssetService.publish(
-          agent.id,
-          false,
-        );
-        agent = {
-          ...agent,
-          isPublic: true,
-          publishedAssetId: published.asset.id,
-        };
-      }
+      const agent = created.agent;
       setMyAgents((current) => [
         agent,
         ...current.filter((item) => item.id !== agent.id),
@@ -236,18 +240,7 @@ export function App() {
   const createPrimeFigure = async (input: CreatePrimeFigureRequest) => {
     try {
       const created = await services.agentService.createPrimeFigure(input);
-      let agent = created.agent;
-      if (input.isPublic) {
-        const published = await services.characterAssetService.publish(
-          agent.id,
-          false,
-        );
-        agent = {
-          ...agent,
-          isPublic: true,
-          publishedAssetId: published.asset.id,
-        };
-      }
+      const agent = created.agent;
       setMyAgents((current) => [
         agent,
         ...current.filter((item) => item.id !== agent.id),
@@ -272,26 +265,7 @@ export function App() {
         agentId,
         input,
       );
-      let agent = updated.agent;
-      const previous = myAgents.find((item) => item.id === agentId);
-      if (input.isPublic) {
-        const published = await services.characterAssetService.publish(
-          agentId,
-          false,
-        );
-        agent = {
-          ...agent,
-          isPublic: true,
-          publishedAssetId: published.asset.id,
-        };
-      } else if (previous?.isPublic && previous.publishedAssetId) {
-        await services.characterAssetService.unlist(previous.publishedAssetId);
-        agent = {
-          ...agent,
-          isPublic: false,
-          publishedAssetId: previous.publishedAssetId,
-        };
-      }
+      const agent = updated.agent;
       setMyAgents((current) =>
         current.map((item) => (item.id === agent.id ? agent : item)),
       );
@@ -317,26 +291,7 @@ export function App() {
         agentId,
         input,
       );
-      let agent = updated.agent;
-      const previous = myAgents.find((item) => item.id === agentId);
-      if (input.isPublic) {
-        const published = await services.characterAssetService.publish(
-          agentId,
-          false,
-        );
-        agent = {
-          ...agent,
-          isPublic: true,
-          publishedAssetId: published.asset.id,
-        };
-      } else if (previous?.isPublic && previous.publishedAssetId) {
-        await services.characterAssetService.unlist(previous.publishedAssetId);
-        agent = {
-          ...agent,
-          isPublic: false,
-          publishedAssetId: previous.publishedAssetId,
-        };
-      }
+      const agent = updated.agent;
       setMyAgents((current) =>
         current.map((item) => (item.id === agent.id ? agent : item)),
       );
@@ -383,26 +338,14 @@ export function App() {
     return agent;
   };
 
-  const publishAgent = async (
-    agentId: string,
-    includeRecommendedRuntimeConfig: boolean,
-  ) => {
-    const response = await services.characterAssetService.publish(
-      agentId,
-      includeRecommendedRuntimeConfig,
-    );
-    setMyAgents((current) =>
-      current.map((agent) =>
-        agent.id === agentId
-          ? {
-              ...agent,
-              isPublic: true,
-              publishedAssetId: response.asset.id,
-            }
-          : agent,
-      ),
-    );
-    return response;
+  const createOrOpenPublicDraft = async (agentId: string) => {
+    const draft = await services.characterAssetService.createDraft(agentId);
+    setPublicAssets((current) => [
+      draft,
+      ...current.filter((item) => item.id !== draft.id),
+    ]);
+    setEditingPublicAsset(draft);
+    setView("public-editor");
   };
 
   const unlistAgentAsset = async (agentId: string, assetId: string) => {
@@ -411,6 +354,10 @@ export function App() {
       current.map((agent) =>
         agent.id === agentId ? { ...agent, isPublic: false } : agent,
       ),
+    );
+    const next = await services.characterAssetService.getDraft(assetId);
+    setPublicAssets((current) =>
+      current.map((asset) => (asset.id === assetId ? next : asset)),
     );
   };
 
@@ -431,12 +378,19 @@ export function App() {
         />
       );
     }
-    if (view === "explore")
+    if (view === "explore") return <ExplorePage />;
+    if (view === "public-editor" && editingPublicAsset)
       return (
-        <ExplorePage
+        <PublicAssetEditorPage
+          draft={editingPublicAsset}
           service={services.characterAssetService}
-          isAuthenticated={Boolean(auth.user)}
-          onAgentInstalled={handleAgentInstalled}
+          onBack={() => setView("profile")}
+          onDraftChange={(next) => {
+            setEditingPublicAsset(next);
+            setPublicAssets((current) =>
+              current.map((asset) => (asset.id === next.id ? next : asset)),
+            );
+          }}
         />
       );
     if (view === "profile")
@@ -446,7 +400,12 @@ export function App() {
           isLoadingAgents={isLoadingAgents}
           onOpenAgent={openAgent}
           onOpenSettings={openSettings}
-          onPublishAgent={publishAgent}
+          publicAssets={publicAssets}
+          onCreatePublicDraft={createOrOpenPublicDraft}
+          onManagePublicAsset={(asset) => {
+            setEditingPublicAsset(asset);
+            setView("public-editor");
+          }}
           onUnlistAsset={unlistAgentAsset}
         />
       );
@@ -497,8 +456,11 @@ export function App() {
       );
     return (
       <HomePage
+        service={services.characterAssetService}
+        isAuthenticated={Boolean(auth.user)}
         onCreateAgent={() => setView("create")}
-        onOpenChat={openConversationList}
+        onAgentInstalled={handleAgentInstalled}
+        onRequireAuth={() => setView("auth")}
       />
     );
   }, [
@@ -511,6 +473,8 @@ export function App() {
     handleAgentInstalled,
     isLoadingAgents,
     myAgents,
+    publicAssets,
+    editingPublicAsset,
     openConversationList,
     openSettings,
     protectedView,

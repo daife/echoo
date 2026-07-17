@@ -8,7 +8,6 @@ import mysql, {
   type RowDataPacket,
 } from "mysql2/promise";
 import { environment } from "../config/environment.js";
-import { runDatabaseMigrations } from "./migrations.js";
 
 let pool: Pool | null = null;
 
@@ -41,7 +40,6 @@ export async function initializeDatabase() {
     for (const statement of schema.split(/;\s*(?:\r?\n|$)/)) {
       if (statement.trim()) await connection.query(statement);
     }
-    await runDatabaseMigrations(connection);
   } finally {
     connection.release();
   }

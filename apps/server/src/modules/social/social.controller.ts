@@ -43,8 +43,7 @@ export async function registerSocialRoutes(app: FastifyInstance) {
     Params: { objectId: string };
     Querystring: { before?: string; limit?: string };
   }>("/social/objects/:objectId/comments", async (request, reply) => {
-    const userId = await request.requireUserId(reply);
-    if (!userId) return;
+    const userId = await request.optionalUserId();
     try {
       return await social.listComments(
         request.params.objectId,

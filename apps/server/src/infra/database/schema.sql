@@ -25,11 +25,32 @@ CREATE TABLE IF NOT EXISTS resources (
   kind VARCHAR(48) NOT NULL,
   mime_type VARCHAR(160) NOT NULL,
   original_file_name VARCHAR(255) NOT NULL,
-  storage_path VARCHAR(1024) NOT NULL,
+  storage_provider ENUM('local', 's3') NOT NULL DEFAULT 'local',
+  storage_key VARCHAR(1024) NOT NULL,
   public_path VARCHAR(1024) NOT NULL,
+  byte_size BIGINT UNSIGNED NULL,
+  sha256 CHAR(64) NULL,
+  duration_ms INT UNSIGNED NULL,
+  status ENUM('pending', 'processing', 'ready', 'failed', 'deleting') NOT NULL DEFAULT 'ready',
   created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
   INDEX idx_resources_owner_created (owner_user_id, created_at),
+  INDEX idx_resources_owner_status_created (owner_user_id, status, created_at),
   CONSTRAINT fk_resources_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS resource_variants (
+  resource_id VARCHAR(64) NOT NULL,
+  variant ENUM('original', 'thumb', 'display') NOT NULL,
+  storage_provider ENUM('local', 's3') NOT NULL,
+  storage_key VARCHAR(1024) NOT NULL,
+  mime_type VARCHAR(160) NOT NULL,
+  byte_size BIGINT UNSIGNED NOT NULL,
+  etag VARCHAR(255) NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  PRIMARY KEY (resource_id, variant),
+  CONSTRAINT fk_resource_variants_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS agents (
@@ -42,6 +63,17 @@ CREATE TABLE IF NOT EXISTS agents (
   updated_at BIGINT NOT NULL,
   INDEX idx_agents_owner_created (owner_user_id, created_at DESC),
   CONSTRAINT fk_agents_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS agent_resources (
+  agent_id VARCHAR(64) NOT NULL,
+  resource_id VARCHAR(64) NOT NULL,
+  usage_kind VARCHAR(48) NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (agent_id, resource_id, usage_kind),
+  INDEX idx_agent_resources_resource (resource_id),
+  CONSTRAINT fk_agent_resources_agent FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+  CONSTRAINT fk_agent_resources_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS conversations (
@@ -78,8 +110,11 @@ CREATE TABLE IF NOT EXISTS character_assets (
   id VARCHAR(64) PRIMARY KEY,
   author_user_id VARCHAR(64) NOT NULL,
   source_agent_id VARCHAR(64) NULL UNIQUE,
-  status ENUM('published', 'unlisted') NOT NULL DEFAULT 'published',
+  status ENUM('draft', 'published', 'unlisted') NOT NULL DEFAULT 'draft',
   latest_version_id VARCHAR(64) NULL,
+  draft_snapshot JSON NULL,
+  draft_recommended_runtime_config JSON NULL,
+  draft_dirty BOOLEAN NOT NULL DEFAULT FALSE,
   published_at BIGINT NOT NULL,
   unlisted_at BIGINT NULL,
   created_at BIGINT NOT NULL,
@@ -112,6 +147,17 @@ CREATE TABLE IF NOT EXISTS character_asset_version_resources (
   INDEX idx_character_asset_version_resources_resource (resource_id),
   CONSTRAINT fk_character_asset_version_resources_version FOREIGN KEY (version_id) REFERENCES character_asset_versions(id) ON DELETE CASCADE,
   CONSTRAINT fk_character_asset_version_resources_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS character_asset_draft_resources (
+  asset_id VARCHAR(64) NOT NULL,
+  resource_id VARCHAR(64) NOT NULL,
+  usage_kind VARCHAR(48) NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (asset_id, resource_id, usage_kind),
+  INDEX idx_character_asset_draft_resources_resource (resource_id),
+  CONSTRAINT fk_character_asset_draft_resources_asset FOREIGN KEY (asset_id) REFERENCES character_assets(id) ON DELETE CASCADE,
+  CONSTRAINT fk_character_asset_draft_resources_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS character_asset_installations (
@@ -273,4 +319,14 @@ CREATE TABLE IF NOT EXISTS messages (
   FULLTEXT INDEX ftx_messages_content (search_text),
   CONSTRAINT fk_messages_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_messages_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS message_resources (
+  message_id VARCHAR(64) NOT NULL,
+  resource_id VARCHAR(64) NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (message_id, resource_id),
+  INDEX idx_message_resources_resource (resource_id),
+  CONSTRAINT fk_message_resources_message FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  CONSTRAINT fk_message_resources_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

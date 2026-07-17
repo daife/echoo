@@ -57,6 +57,30 @@ export class RuntimeConfigService {
     await this.repository.insertUserConfigIfAbsent(ownerUserId, defaults);
   }
 
+  async getPlatformFigureDefaults(type: "slice-figure" | "prime-figure") {
+    const defaults = await this.readNewUserDefaults();
+    return structuredClone(
+      type === "slice-figure" ? defaults.sliceFigure : defaults.primeFigure,
+    ) as StoredFigureRuntimeConfig;
+  }
+
+  async validatePlatformFigureConfig(
+    type: "slice-figure" | "prime-figure",
+    config: unknown,
+  ) {
+    const normalized = forcePlatformPreset(
+      type,
+      config as StoredSliceFigureRuntimeConfig | StoredPrimeFigureRuntimeConfig,
+    );
+    validateFigureConfig(
+      type,
+      normalized as
+        StoredSliceFigureRuntimeConfig | StoredPrimeFigureRuntimeConfig,
+    );
+    await this.validateCatalogFigure(type, normalized);
+    return normalized;
+  }
+
   async getAdminRuntimeDefaults() {
     const [stored, presets] = await Promise.all([
       this.platformSettings.getNewUserRuntimeDefaults(),

@@ -1,5 +1,9 @@
 import type {
   CharacterAssetSnapshot,
+  CreatePrimeFigureRequest,
+  CreateSliceFigureRequest,
+  PrimeFigureReferenceImage,
+  PrimeFigureSticker,
   PublishedRuntimeRecommendation,
 } from "@echoo/shared";
 import { AgentRepository } from "../agents/agent.repository.js";
@@ -29,51 +33,121 @@ export class CharacterAssetService {
     private readonly runtimeConfigs = new RuntimeConfigService(),
   ) {}
 
-  listPublished(viewerUserId: string, limit?: number) {
-    return this.assets.listPublished(viewerUserId, limit);
+  listPublished(
+    viewerUserId: string | null,
+    input?: Parameters<CharacterAssetRepository["listPublished"]>[1],
+  ) {
+    return this.assets.listPublished(viewerUserId, input);
   }
 
-  async getVisible(viewerUserId: string, assetId: string) {
+  async getVisible(viewerUserId: string | null, assetId: string) {
     const asset = await this.assets.findVisible(viewerUserId, assetId);
     if (!asset) throw new CharacterAssetNotFoundError("未找到角色资产。");
     return asset;
   }
 
-  async publish(
-    ownerUserId: string,
-    agentId: string,
-    includeRecommendedRuntimeConfig: boolean,
-  ) {
+  listMine(ownerUserId: string) {
+    return this.assets.listMine(ownerUserId);
+  }
+
+  async getDraft(ownerUserId: string, assetId: string) {
+    const draft = await this.assets.findDraftForAuthor(ownerUserId, assetId);
+    if (!draft) throw new CharacterAssetNotFoundError("未找到公共角色草稿。");
+    return draft;
+  }
+
+  async createDraft(ownerUserId: string, agentId: string) {
     const agent = await this.agents.findById(ownerUserId, agentId);
     if (!agent || agent.type === "prime-world")
       throw new CharacterAssetNotFoundError("未找到可发布的角色。");
+    const existingId = await this.assets.findBySourceAgent(
+      ownerUserId,
+      agentId,
+    );
+    if (existingId) return this.getDraft(ownerUserId, existingId);
     const { snapshot, resources } = await this.buildSnapshot(
       ownerUserId,
       agent,
     );
-    let recommendation: PublishedRuntimeRecommendation | null = null;
-    let warning: "CUSTOM_RUNTIME_CONFIG_REMOVED" | undefined;
-    if (includeRecommendedRuntimeConfig) {
-      const resolved = await this.runtimeConfigs.resolveConversationConfig(
-        ownerUserId,
-        agent.conversationId,
-      );
-      recommendation = sanitizeRuntimeRecommendation(
-        agent.type,
-        resolved.config,
-      );
-      if (!recommendation) warning = "CUSTOM_RUNTIME_CONFIG_REMOVED";
-    }
-    const published = await this.assets.publish({
+    const defaults = await this.runtimeConfigs.getPlatformFigureDefaults(
+      agent.type,
+    );
+    const recommendation = sanitizeRuntimeRecommendation(agent.type, defaults);
+    const assetId = await this.assets.createDraft({
       authorUserId: ownerUserId,
       sourceAgentId: agentId,
       snapshot,
       recommendedRuntimeConfig: recommendation,
       resources,
     });
-    const asset = await this.assets.findVisible(ownerUserId, published.assetId);
-    if (!asset) throw new Error("角色资产发布后读取失败。");
-    return { asset, ...(warning ? { warning } : {}) };
+    return this.getDraft(ownerUserId, assetId);
+  }
+
+  async saveDraftCharacter(
+    ownerUserId: string,
+    assetId: string,
+    input: CreateSliceFigureRequest | CreatePrimeFigureRequest,
+  ) {
+    const draft = await this.getDraft(ownerUserId, assetId);
+    if (draft.snapshot.type !== input.type)
+      throw new CharacterAssetForbiddenError("公共角色类型不能修改。");
+    const { snapshot, resources } = await this.buildDraftSnapshot(
+      ownerUserId,
+      draft.snapshot,
+      input,
+    );
+    await this.assets.saveDraft({
+      ownerUserId,
+      assetId,
+      snapshot,
+      recommendedRuntimeConfig: draft.recommendedRuntimeConfig ?? null,
+      resources,
+    });
+    return this.getDraft(ownerUserId, assetId);
+  }
+
+  async saveDraftRecommendation(
+    ownerUserId: string,
+    assetId: string,
+    input: { enabled: boolean; config?: Record<string, unknown> },
+  ) {
+    const draft = await this.getDraft(ownerUserId, assetId);
+    let recommendation: PublishedRuntimeRecommendation | null = null;
+    if (input.enabled) {
+      const raw =
+        input.config ??
+        (await this.runtimeConfigs.getPlatformFigureDefaults(
+          draft.snapshot.type,
+        ));
+      const validated = await this.runtimeConfigs.validatePlatformFigureConfig(
+        draft.snapshot.type,
+        raw,
+      );
+      recommendation = sanitizeRuntimeRecommendation(
+        draft.snapshot.type,
+        validated,
+      );
+      if (!recommendation)
+        throw new CharacterAssetForbiddenError("推荐配置只能使用平台模型。");
+    }
+    const resources = await this.snapshotResources(ownerUserId, draft.snapshot);
+    await this.assets.saveDraft({
+      ownerUserId,
+      assetId,
+      snapshot: draft.snapshot,
+      recommendedRuntimeConfig: recommendation,
+      resources,
+    });
+    return this.getDraft(ownerUserId, assetId);
+  }
+
+  async publishDraft(ownerUserId: string, assetId: string) {
+    const published = await this.assets.publishDraft(ownerUserId, assetId);
+    if (!published)
+      throw new CharacterAssetForbiddenError("草稿没有可发布的修改。");
+    const asset = await this.assets.findVisible(ownerUserId, assetId);
+    if (!asset) throw new Error("公共角色发布后读取失败。");
+    return { asset };
   }
 
   async unlist(ownerUserId: string, assetId: string) {
@@ -121,7 +195,11 @@ export class CharacterAssetService {
     };
   }
 
-  async updateInstallation(ownerUserId: string, assetId: string) {
+  async updateInstallation(
+    ownerUserId: string,
+    assetId: string,
+    applyRecommendedRuntimeConfig = false,
+  ) {
     const [asset, installation] = await Promise.all([
       this.assets.findVisible(ownerUserId, assetId),
       this.assets.findInstallation(ownerUserId, assetId),
@@ -139,6 +217,18 @@ export class CharacterAssetService {
       throw new CharacterAssetNotFoundError("未找到已添加的角色资产。");
     const agent = await this.agents.findById(ownerUserId, agentId);
     if (!agent) throw new Error("角色资产更新后读取失败。");
+    if (
+      applyRecommendedRuntimeConfig &&
+      asset.latestVersion.recommendedRuntimeConfig
+    )
+      await this.runtimeConfigs.updateConversationConfig(
+        ownerUserId,
+        agent.conversationId,
+        {
+          mode: "custom",
+          config: asset.latestVersion.recommendedRuntimeConfig.config,
+        },
+      );
     return {
       agent,
       installationId: installation.id,
@@ -203,6 +293,174 @@ export class CharacterAssetService {
       detail: structuredClone(agent.detail),
     } as CharacterAssetSnapshot;
     return { snapshot, resources: deduplicateReferences(references) };
+  }
+
+  private async snapshotResources(
+    ownerUserId: string,
+    snapshot: CharacterAssetSnapshot,
+  ) {
+    const resources: AssetResourceReference[] = [];
+    const add = async (resourceId: string | undefined, usageKind: string) => {
+      if (!resourceId) return;
+      const resource = await this.resources.findById(resourceId);
+      if (!resource || resource.ownerUserId !== ownerUserId)
+        throw new CharacterAssetForbiddenError(
+          "公共角色包含不可用的媒体资源。",
+        );
+      resources.push({ resourceId, usageKind });
+    };
+    await add(snapshot.avatarResourceId, "avatar");
+    await add(snapshot.coverResourceId, "cover");
+    if (snapshot.type === "prime-figure") {
+      for (const image of snapshot.detail.referenceImages)
+        await add(image.resourceId, "reference");
+      for (const sticker of snapshot.detail.stickers ?? [])
+        await add(sticker.resourceId, "sticker");
+    }
+    return deduplicateReferences(resources);
+  }
+
+  private async buildDraftSnapshot(
+    ownerUserId: string,
+    current: CharacterAssetSnapshot,
+    input: CreateSliceFigureRequest | CreatePrimeFigureRequest,
+  ) {
+    const resolveCover = async (
+      kind: "agent_avatar" | "agent_cover",
+      upload: CreateSliceFigureRequest["avatar"],
+      resourceId: string | undefined,
+      resourcePath: string | undefined,
+    ) => {
+      if (upload === undefined)
+        return resourceId && resourcePath ? { resourceId, resourcePath } : null;
+      if (upload === null) return null;
+      const saved = await this.resources.saveImage(ownerUserId, kind, upload);
+      return { resourceId: saved.id, resourcePath: saved.publicPath };
+    };
+    const avatar = await resolveCover(
+      "agent_avatar",
+      input.avatar,
+      current.avatarResourceId,
+      current.avatarResourcePath,
+    );
+    const cover = await resolveCover(
+      "agent_cover",
+      input.cover,
+      current.coverResourceId,
+      current.coverResourcePath,
+    );
+    const resolveMedia = async (
+      items: Array<{
+        resourceId?: string;
+        upload?: CreatePrimeFigureRequest["avatar"];
+        description: string;
+      }>,
+      kind: "prime_figure_reference" | "prime_figure_sticker",
+    ) => {
+      const resolved: Array<PrimeFigureReferenceImage | PrimeFigureSticker> =
+        [];
+      for (const item of items) {
+        const record = item.upload
+          ? await this.resources.saveImage(ownerUserId, kind, item.upload)
+          : item.resourceId
+            ? await this.resources.findById(item.resourceId)
+            : null;
+        if (!record || record.ownerUserId !== ownerUserId)
+          throw new CharacterAssetForbiddenError(
+            "公共角色包含不可用的媒体资源。",
+          );
+        resolved.push({
+          resourceId: record.id,
+          resourcePath: record.publicPath,
+          description: item.description,
+        });
+      }
+      return resolved;
+    };
+    const base = {
+      type: input.type,
+      name: input.name,
+      ...(avatar
+        ? {
+            avatarResourceId: avatar.resourceId,
+            avatarResourcePath: avatar.resourcePath,
+          }
+        : {}),
+      ...(cover
+        ? {
+            coverResourceId: cover.resourceId,
+            coverResourcePath: cover.resourcePath,
+          }
+        : {}),
+      attributes: structuredClone(input.attributes ?? []),
+      tags: [...(input.tags ?? [])],
+      introduction: input.introduction ?? "",
+    };
+    let snapshot: CharacterAssetSnapshot;
+    if (input.type === "slice-figure") {
+      snapshot = {
+        ...base,
+        type: "slice-figure",
+        detail: {
+          prologueHtml: input.prologueHtml ?? "",
+          currentSituation: input.currentSituation ?? "",
+          openingLine: input.openingLine ?? "",
+          linkedAgentIds: input.linkedAgentIds ?? [],
+          ...(input.unlockConditions
+            ? { unlockConditions: input.unlockConditions }
+            : {}),
+          persona: input.persona,
+          background: input.background,
+          personality: input.personality,
+          responseStyle: input.responseStyle,
+          systemPrompt: input.systemPrompt,
+          memorySummaryPrompt: input.memorySummaryPrompt,
+        },
+      };
+    } else {
+      const currentPrime = current as Extract<
+        CharacterAssetSnapshot,
+        { type: "prime-figure" }
+      >;
+      const referenceImages = (await resolveMedia(
+        input.referenceImages ?? currentPrime.detail.referenceImages,
+        "prime_figure_reference",
+      )) as PrimeFigureReferenceImage[];
+      const stickers = (await resolveMedia(
+        input.stickers ?? currentPrime.detail.stickers ?? [],
+        "prime_figure_sticker",
+      )) as PrimeFigureSticker[];
+      snapshot = {
+        ...base,
+        type: "prime-figure",
+        detail: {
+          prologueHtml: input.prologueHtml ?? "",
+          linkedAgentIds: input.linkedAgentIds ?? [],
+          ...(input.unlockConditions
+            ? { unlockConditions: input.unlockConditions }
+            : {}),
+          persona: input.persona,
+          background: input.background,
+          personality: input.personality,
+          responseStyle: input.responseStyle,
+          decisionStyle: input.decisionStyle ?? "",
+          currentSituation: input.currentSituation ?? "",
+          schedule: input.schedule ?? { segments: [] },
+          itinerary: input.itinerary ?? "",
+          variableDefinitions: input.variableDefinitions ?? [],
+          referenceImages,
+          stickers,
+          initialMood: input.initialMood ?? currentPrime.detail.initialMood,
+          initialRelationshipStatus:
+            input.initialRelationshipStatus ??
+            currentPrime.detail.initialRelationshipStatus,
+        },
+      };
+    }
+    return {
+      snapshot,
+      resources: await this.snapshotResources(ownerUserId, snapshot),
+    };
   }
 }
 
