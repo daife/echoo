@@ -21,10 +21,10 @@ export async function startMp3Recorder(
 
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
-      channelCount: 1,
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
+      channelCount: { ideal: 1 },
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
     },
   });
   const AudioContextClass =
@@ -38,6 +38,14 @@ export async function startMp3Recorder(
 
   const context = new AudioContextClass();
   await context.resume();
+  if (typeof MediaRecorder !== "undefined") {
+    try {
+      return startNativeMediaRecorder(stream, context, onLevel);
+    } catch {
+      // Older WebViews may expose MediaRecorder without a usable audio codec.
+      // Keep the Web Audio recorder below as a compatibility fallback.
+    }
+  }
   const source = context.createMediaStreamSource(stream);
   const silentGain = context.createGain();
   silentGain.gain.value = 0;
@@ -65,16 +73,7 @@ export async function startMp3Recorder(
   if (context.audioWorklet && typeof AudioWorkletNode !== "undefined") {
     workletUrl = URL.createObjectURL(
       new Blob(
-        [
-          `class EchooPcmCapture extends AudioWorkletProcessor {
-            process(inputs) {
-              const channel = inputs[0] && inputs[0][0];
-              if (channel) this.port.postMessage(channel.slice());
-              return true;
-            }
-          }
-          registerProcessor("echoo-pcm-capture", EchooPcmCapture);`,
-        ],
+        [createPcmCaptureWorkletSource()],
         { type: "text/javascript" },
       ),
     );
@@ -118,6 +117,157 @@ export async function startMp3Recorder(
     },
     cancel: cleanup,
   };
+}
+
+function startNativeMediaRecorder(
+  stream: MediaStream,
+  context: AudioContext,
+  onLevel?: (level: number) => void,
+): ActiveMp3Recorder {
+  const mimeType = resolveNativeRecorderMimeType();
+  const recorder = mimeType
+    ? new MediaRecorder(stream, { mimeType })
+    : new MediaRecorder(stream);
+  const chunks: Blob[] = [];
+  const source = context.createMediaStreamSource(stream);
+  const analyser = context.createAnalyser();
+  const silentGain = context.createGain();
+  const levelSamples = new Float32Array(analyser.fftSize);
+  silentGain.gain.value = 0;
+  source.connect(analyser);
+  analyser.connect(silentGain);
+  silentGain.connect(context.destination);
+
+  let cleanedUp = false;
+  let startedAt = performance.now();
+  let stoppedAt: number | undefined;
+  let resolveStopped!: (blob: Blob) => void;
+  let rejectStopped!: (error: Error) => void;
+  const stopped = new Promise<Blob>((resolve, reject) => {
+    resolveStopped = resolve;
+    rejectStopped = reject;
+  });
+  recorder.ondataavailable = (event) => {
+    if (event.data.size) chunks.push(event.data);
+  };
+  recorder.onerror = (event) => {
+    const recorderError = (event as Event & { error?: Error }).error;
+    rejectStopped(recorderError ?? new Error("浏览器原生录音失败。"));
+  };
+  recorder.onstop = () => {
+    resolveStopped(
+      new Blob(chunks, {
+        type: recorder.mimeType || mimeType || chunks[0]?.type,
+      }),
+    );
+  };
+
+  const levelTimer = window.setInterval(() => {
+    analyser.getFloatTimeDomainData(levelSamples);
+    let sum = 0;
+    for (let index = 0; index < levelSamples.length; index += 1) {
+      const sample = levelSamples[index] ?? 0;
+      sum += sample * sample;
+    }
+    onLevel?.(
+      Math.min(1, Math.sqrt(sum / Math.max(1, levelSamples.length)) * 4.5),
+    );
+  }, 50);
+
+  const cleanup = async () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    window.clearInterval(levelTimer);
+    source.disconnect();
+    analyser.disconnect();
+    silentGain.disconnect();
+    stream.getTracks().forEach((track) => track.stop());
+    await context.close().catch(() => undefined);
+    onLevel?.(0);
+  };
+
+  recorder.start(250);
+  startedAt = performance.now();
+
+  return {
+    getDurationSeconds: () =>
+      ((stoppedAt ?? performance.now()) - startedAt) / 1_000,
+    async stop() {
+      stoppedAt = performance.now();
+      recorder.stop();
+      try {
+        const nativeBlob = await stopped;
+        if (!nativeBlob.size) throw new Error("浏览器没有生成录音数据。");
+        const audioBuffer = await context.decodeAudioData(
+          await nativeBlob.arrayBuffer(),
+        );
+        const samples = downmixAudioBuffer(audioBuffer);
+        return {
+          blob: await encodeMp3([samples], audioBuffer.sampleRate),
+          durationSeconds: audioBuffer.duration,
+        };
+      } finally {
+        await cleanup();
+      }
+    },
+    async cancel() {
+      stoppedAt = performance.now();
+      if (recorder.state !== "inactive") recorder.stop();
+      await stopped.catch(() => undefined);
+      await cleanup();
+    },
+  };
+}
+
+function resolveNativeRecorderMimeType() {
+  if (typeof MediaRecorder.isTypeSupported !== "function") return undefined;
+  return [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+  ].find((value) => MediaRecorder.isTypeSupported(value));
+}
+
+function downmixAudioBuffer(buffer: AudioBuffer) {
+  const output = new Float32Array(buffer.length);
+  for (
+    let channelIndex = 0;
+    channelIndex < buffer.numberOfChannels;
+    channelIndex += 1
+  ) {
+    const channel = buffer.getChannelData(channelIndex);
+    for (let index = 0; index < output.length; index += 1)
+      output[index] += (channel[index] ?? 0) / buffer.numberOfChannels;
+  }
+  return output;
+}
+
+/**
+ * A requested mono track is only an ideal constraint and Chromium may still
+ * expose a multi-channel microphone. Capture every channel instead of silently
+ * discarding all but channel zero (some microphone arrays carry speech on a
+ * different channel).
+ */
+export function createPcmCaptureWorkletSource() {
+  return `class EchooPcmCapture extends AudioWorkletProcessor {
+    process(inputs) {
+      const channels = inputs[0];
+      const firstChannel = channels && channels[0];
+      if (!firstChannel) return true;
+
+      const mono = new Float32Array(firstChannel.length);
+      for (const channel of channels) {
+        const frameCount = Math.min(mono.length, channel.length);
+        for (let index = 0; index < frameCount; index += 1) {
+          mono[index] += channel[index] / channels.length;
+        }
+      }
+      this.port.postMessage(mono, [mono.buffer]);
+      return true;
+    }
+  }
+  registerProcessor("echoo-pcm-capture", EchooPcmCapture);`;
 }
 
 export async function encodeMp3(
