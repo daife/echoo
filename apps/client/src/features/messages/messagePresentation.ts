@@ -39,7 +39,7 @@ export function getPrimePresencePhaseDuration(
 }
 
 export function isVisibleConversationMessage(message: LocalMessage) {
-  if (getPrimeRuntimeErrorText(message)) return false;
+  if (getRuntimeErrorText(message)) return false;
   if (
     message.contentType === "image" ||
     message.contentType === "voice" ||
@@ -60,13 +60,14 @@ export function isVisibleConversationMessage(message: LocalMessage) {
   return Boolean(message.content.text?.trim());
 }
 
-export function getPrimeRuntimeErrorText(
+export function getRuntimeErrorText(
   message: Pick<Message, "content" | "contentType" | "metadata" | "role">,
 ) {
   if (
-    message.role !== "system" ||
-    message.contentType !== "system" ||
-    message.metadata?.kind !== "prime_runtime_error"
+    (message.metadata?.kind !== "prime_runtime_error" &&
+      message.metadata?.kind !== "slice_runtime_error" &&
+      message.metadata?.kind !== "ai_error") ||
+    (message.role !== "system" && message.role !== "assistant")
   )
     return null;
   return message.content.text?.trim() || null;

@@ -429,7 +429,7 @@ export class MessageRepository {
        (id, owner_user_id, conversation_id, client_message_id, role, content_type,
         content, status, run_metadata, read_at, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE seq = LAST_INSERT_ID(seq), content = VALUES(content), status = VALUES(status),
+       ON DUPLICATE KEY UPDATE seq = LAST_INSERT_ID(seq), role = VALUES(role), content_type = VALUES(content_type), content = VALUES(content), status = VALUES(status),
         run_metadata = VALUES(run_metadata), read_at = VALUES(read_at), updated_at = VALUES(updated_at)`,
       [
         input.id,

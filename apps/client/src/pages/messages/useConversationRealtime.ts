@@ -12,7 +12,7 @@ import {
   activityAfterMessageCreated,
 } from "../../features/messages/conversationActivity";
 import {
-  getPrimeRuntimeErrorText,
+  getRuntimeErrorText,
   type RuntimeErrorNotice,
 } from "../../features/messages/messagePresentation";
 import { mediaCache } from "../../services/mediaCache";
@@ -192,8 +192,9 @@ export function useConversationRealtime(input: {
       }),
       input.runtime.onMessageCreated((message) => {
         if (message.conversationId !== conversationId) return;
-        const runtimeErrorText = getPrimeRuntimeErrorText(message);
+        const runtimeErrorText = getRuntimeErrorText(message);
         if (runtimeErrorText) {
+          input.setIsAgentActive(false);
           input.onRuntimeError({ id: message.id, text: runtimeErrorText });
           return;
         }
@@ -210,6 +211,12 @@ export function useConversationRealtime(input: {
       }),
       input.runtime.onMessageCompleted((message) => {
         if (message.conversationId !== conversationId) return;
+        const runtimeErrorText = getRuntimeErrorText(message);
+        if (runtimeErrorText) {
+          input.setIsAgentActive(false);
+          input.onRuntimeError({ id: message.id, text: runtimeErrorText });
+          return;
+        }
         input.setIsAgentActive((current) =>
           activityAfterMessageCompleted(current, message),
         );
@@ -233,6 +240,12 @@ export function useConversationRealtime(input: {
         }
       }),
       input.runtime.onMessageUpdated((message) => {
+        if (message.conversationId !== conversationId) return;
+        const runtimeErrorText = getRuntimeErrorText(message);
+        if (runtimeErrorText) {
+          input.onRuntimeError({ id: message.id, text: runtimeErrorText });
+          return;
+        }
         if (message.conversationId === conversationId)
           input.setMessages((current) =>
             mergeLocalMessage(current, { ...message, syncStatus: "synced" }),

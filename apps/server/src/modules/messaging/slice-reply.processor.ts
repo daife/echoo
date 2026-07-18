@@ -170,15 +170,14 @@ export class SliceReplyProcessor {
         ownerUserId,
         id: pendingMessage.id,
         conversationId,
-        role: "assistant",
-        contentType: "text",
+        role: "system",
+        contentType: "system",
         content: {
           text:
-            streamedText ||
             "AI reply is temporarily unavailable. Check the server provider configuration and try again.",
         },
-        status: "failed",
-        metadata: { kind: "ai_error" },
+        status: "delivered",
+        metadata: { kind: "slice_runtime_error" },
         createdAt: pendingMessage.createdAt,
         updatedAt: now,
       });

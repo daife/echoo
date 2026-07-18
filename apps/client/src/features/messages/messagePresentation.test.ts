@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   getConversationPresenceLabel,
   getPrimePresencePhaseDuration,
-  getPrimeRuntimeErrorText,
+  getRuntimeErrorText,
   isVisibleConversationMessage,
 } from "./messagePresentation";
 
@@ -22,15 +22,26 @@ const runtimeErrorMessage: LocalMessage = {
   syncStatus: "synced",
 };
 
-describe("prime runtime error presentation", () => {
-  it("extracts the persisted provider error for realtime notification", () => {
-    expect(getPrimeRuntimeErrorText(runtimeErrorMessage)).toBe(
+describe("figure runtime error presentation", () => {
+  it("extracts persisted runtime errors for realtime notification", () => {
+    expect(getRuntimeErrorText(runtimeErrorMessage)).toBe(
       "openrouter chat completion failed: No endpoints available.",
     );
   });
 
   it("keeps persisted runtime errors out of conversation history", () => {
     expect(isVisibleConversationMessage(runtimeErrorMessage)).toBe(false);
+  });
+
+  it("also hides legacy slice errors that were saved as assistant messages", () => {
+    expect(
+      isVisibleConversationMessage({
+        ...runtimeErrorMessage,
+        role: "assistant",
+        contentType: "text",
+        metadata: { kind: "ai_error" },
+      }),
+    ).toBe(false);
   });
 });
 
