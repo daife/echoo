@@ -239,8 +239,8 @@ export function MessageBubble({
     return (
       <>
         <div
-          className={`relative flex max-w-[85%] gap-2 md:max-w-[70%] ${
-            mine ? "items-end self-end" : "items-start self-start"
+          className={`relative -mx-3 flex w-[calc(100%+1.5rem)] items-start gap-2 md:-mx-5 md:w-[calc(100%+2.5rem)] ${
+            mine ? "justify-end" : "justify-start"
           }`}
           {...longPressProps}
         >
@@ -281,7 +281,9 @@ export function MessageBubble({
     return (
       <>
         <div
-          className={`relative flex max-w-[55%] items-end gap-2 ${mine ? "self-end" : "self-start"}`}
+          className={`relative -mx-3 flex w-[calc(100%+1.5rem)] items-start gap-2 md:-mx-5 md:w-[calc(100%+2.5rem)] ${
+            mine ? "justify-end" : "justify-start"
+          }`}
         >
           {!mine ? (
             <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} />
@@ -304,10 +306,12 @@ export function MessageBubble({
     const canResolve = !mine && pending && message.transferDirection === "paid";
     return (
       <div
-        className={`relative flex w-[min(82%,320px)] items-end gap-2 ${mine ? "self-end" : "self-start"}`}
+        className={`relative -mx-3 flex w-[calc(100%+1.5rem)] items-start gap-2 md:-mx-5 md:w-[calc(100%+2.5rem)] ${
+          mine ? "justify-end" : "justify-start"
+        }`}
       >
         {!mine ? <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} /> : null}
-        <div className="min-w-0 flex-1 overflow-hidden rounded-2xl border border-amber-200/10 bg-gradient-to-br from-[#7a4b16] to-[#4b2b10] shadow-[0_14px_32px_rgba(0,0,0,0.22)]">
+        <div className="w-[min(82%,320px)] flex-none overflow-hidden rounded-2xl border border-amber-200/10 bg-gradient-to-br from-[#7a4b16] to-[#4b2b10] shadow-[0_14px_32px_rgba(0,0,0,0.22)]">
           <div className="flex items-center gap-3 px-4 py-4">
             <span className="grid h-11 w-11 flex-none place-items-center rounded-full bg-white/14 text-white">
               <Money size={23} weight="duotone" />
@@ -357,8 +361,8 @@ export function MessageBubble({
   if (message.kind === "voice") {
     return (
       <div
-        className={`relative flex max-w-[85%] gap-2 md:max-w-[70%] ${
-          mine ? "items-end self-end" : "items-start self-start"
+        className={`relative -mx-3 flex w-[calc(100%+1.5rem)] items-start gap-2 md:-mx-5 md:w-[calc(100%+2.5rem)] ${
+          mine ? "justify-end" : "justify-start"
         }`}
         {...longPressProps}
       >
@@ -385,8 +389,8 @@ export function MessageBubble({
 
   return (
     <div
-      className={`relative flex max-w-[85%] items-end gap-2 md:max-w-[70%] ${
-        mine ? "self-end" : "self-start"
+      className={`relative -mx-3 flex w-[calc(100%+1.5rem)] items-start gap-2 md:-mx-5 md:w-[calc(100%+2.5rem)] ${
+        mine ? "justify-end" : "justify-start"
       }`}
       {...longPressProps}
     >
@@ -401,7 +405,7 @@ export function MessageBubble({
         <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} />
       )}
       <div
-        className={`rounded-xl px-4 py-3 text-sm leading-6 ${
+        className={`max-w-[85%] whitespace-pre-wrap break-words rounded-xl px-4 py-3 text-sm leading-6 md:max-w-[70%] ${
           mine
             ? message.deliveryState === "failed"
               ? "border border-red-300/20 bg-red-400/[0.08] text-red-50"
