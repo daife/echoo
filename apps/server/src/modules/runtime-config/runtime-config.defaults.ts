@@ -3,6 +3,7 @@ import type { StoredUserRuntimeConfig } from "./runtime-config.types.js";
 export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
   const sharedEndpoint = {
     source: "platform" as const,
+    routingProvider: "google-ai-studio",
     baseUrl: "https://openrouter.ai/api/v1",
     apiKey: "",
   };
@@ -12,8 +13,8 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
       version: 3,
       llm: {
         ...sharedEndpoint,
-        model: "openai/gpt-4o-mini",
-        temperature: 0.8,
+        model: "google/gemini-3.1-flash-lite",
+        temperature: 0.9,
         maxTokens: 1200,
       },
       replyAutoSegment: false,
@@ -27,8 +28,8 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
       version: 7,
       decisionModel: {
         ...sharedEndpoint,
-        model: "google/gemini-2.5-flash-lite",
-        temperature: 0.4,
+        model: "google/gemini-3.1-flash-lite",
+        temperature: 0.9,
         maxTokens: 1600,
       },
       outputs: {
@@ -48,7 +49,7 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
           tts: {
             source: "platform",
             apiKey: "",
-            referenceId: "",
+            referenceId: "5671e9d40d7a48e1b81e78ff58359903",
             model: "s2.1-pro-free",
             httpUrl: "https://api.fish.audio/v1/tts",
             wsUrl: "wss://api.fish.audio/v1/tts/live",
@@ -69,8 +70,8 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
           level: "advanced",
           model: {
             ...sharedEndpoint,
-            model: "openai/gpt-4o-mini",
-            temperature: 0.2,
+            model: "google/gemini-3.1-flash-lite",
+            temperature: 0.9,
             maxTokens: 2400,
           },
         },
@@ -79,8 +80,8 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
           level: "advanced",
           model: {
             ...sharedEndpoint,
-            model: "openai/gpt-4o-mini",
-            temperature: 0.2,
+            model: "google/gemini-3.1-flash-lite",
+            temperature: 0.9,
             maxTokens: 1600,
           },
         },
@@ -90,8 +91,8 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
           mode: "native",
           model: {
             ...sharedEndpoint,
-            model: "openai/gpt-4o-mini",
-            temperature: 0.1,
+            model: "google/gemini-3.1-flash-lite",
+            temperature: 0.9,
             maxTokens: 2400,
           },
         },
@@ -99,8 +100,8 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
           mode: "native",
           model: {
             ...sharedEndpoint,
-            model: "google/gemini-2.5-flash-lite",
-            temperature: 0.1,
+            model: "google/gemini-3.1-flash-lite",
+            temperature: 0.9,
             maxTokens: 2400,
           },
         },

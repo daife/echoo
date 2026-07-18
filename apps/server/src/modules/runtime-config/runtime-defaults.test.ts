@@ -42,6 +42,37 @@ test("administrator defaults are forced to platform sources without secrets", ()
   );
 });
 
+test("built-in new-user defaults use the configured Google AI Studio models", () => {
+  const defaults = buildRuntimeConfigDefaults();
+  const expectedTextModel = "google/gemini-3.1-flash-lite";
+  const textModels = [
+    defaults.sliceFigure.llm,
+    defaults.primeFigure.decisionModel,
+    defaults.primeFigure.optimization.image.model,
+    defaults.primeFigure.optimization.voice.model,
+    defaults.primeFigure.understanding.visual.model,
+    defaults.primeFigure.understanding.audio.model,
+  ];
+
+  for (const model of textModels) {
+    assert.equal(model.model, expectedTextModel);
+    assert.equal(model.temperature, 0.9);
+    assert.equal(model.routingProvider, "google-ai-studio");
+  }
+  assert.equal(
+    defaults.primeFigure.outputs.image.generator.model,
+    "google/gemini-3.1-flash-lite-image",
+  );
+  assert.equal(
+    defaults.primeFigure.outputs.image.generator.routingProvider,
+    "google-ai-studio",
+  );
+  assert.equal(
+    defaults.primeFigure.outputs.voice.tts.referenceId,
+    "5671e9d40d7a48e1b81e78ff58359903",
+  );
+});
+
 test("platform DeepSeek routes use the official endpoint and dedicated key", () => {
   const result = resolvePlatformTextEndpoint({
     source: "platform" as const,
