@@ -1,7 +1,5 @@
 import {
-  ChatCircleDots,
   GearSix,
-  Heart,
   NotePencil,
   PencilSimple,
   Plus,
@@ -16,27 +14,16 @@ import type {
   CreateCharacterAssetDraftRequest,
   UpdateUserProfileRequest,
   UserProfile,
+  SocialPostSummary,
 } from "@echoo/shared";
 import { CharacterCard } from "../../features/conversations/components/CharacterCard";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
 import { imageFileToUpload } from "../../shared/utils/imageCompression";
-
-const posts = [
-  {
-    title: "关于本初角色记忆的三条边界",
-    body: "长期记忆应该服务于关系，而不是复制聊天记录。",
-    likes: "812",
-    replies: "34",
-  },
-  {
-    title: "我为什么喜欢切片角色",
-    body: "它像一段短促但准确的共鸣，不需要承担完整人格。",
-    likes: "509",
-    replies: "21",
-  },
-];
+import { useServices } from "../../app/providers/ServicesProvider";
+import { PostComposer } from "../social/PostComposer";
+import { PostCard } from "../social/PostCard";
 
 export function ProfilePage({
   agents,
@@ -46,6 +33,8 @@ export function ProfilePage({
   publicAssets,
   onCreatePublicDraft,
   onManagePublicAsset,
+  onOpenPost,
+  onOpenUser,
 }: {
   agents: Agent[];
   isLoadingAgents: boolean;
@@ -56,8 +45,15 @@ export function ProfilePage({
     input: CreateCharacterAssetDraftRequest,
   ) => Promise<void>;
   onManagePublicAsset: (asset: CharacterAssetDraft) => void;
+  onOpenPost: (postId: string) => void;
+  onOpenUser: (userId: string) => void;
 }) {
   const auth = useAuth();
+  const { socialService } = useServices();
+  const [activeTab, setActiveTab] = useState<"creations" | "posts">(
+    "creations",
+  );
+  const [userPosts, setUserPosts] = useState<SocialPostSummary[]>([]);
   const [publishNotice, setPublishNotice] = useState<string | null>(null);
   const [isPublicCreateOpen, setIsPublicCreateOpen] = useState(false);
   const [isProfileEditorOpen, setIsProfileEditorOpen] = useState(false);
@@ -73,6 +69,17 @@ export function ProfilePage({
     tags: agent.tags,
     source: agent,
   }));
+
+  useEffect(() => {
+    if (!auth.user || activeTab !== "posts") return;
+    let cancelled = false;
+    void socialService.listUserPosts(auth.user.id).then((page) => {
+      if (!cancelled) setUserPosts(page.items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, auth.user, socialService]);
 
   return (
     <section className="space-y-8">
@@ -140,16 +147,26 @@ export function ProfilePage({
 
       <div className="glass-panel rounded-full p-1.5">
         <div className="grid grid-cols-2 gap-2">
-          <button className="rounded-full bg-white py-3 text-sm font-medium text-[#09090b]">
+          <button
+            type="button"
+            onClick={() => setActiveTab("creations")}
+            className={`rounded-full py-3 text-sm font-medium ${activeTab === "creations" ? "bg-white text-[#09090b]" : "text-white/55"}`}
+          >
             创作
           </button>
-          <button className="rounded-full py-3 text-sm font-medium text-white/55 transition hover:text-white">
+          <button
+            type="button"
+            onClick={() => setActiveTab("posts")}
+            className={`rounded-full py-3 text-sm font-medium ${activeTab === "posts" ? "bg-white text-[#09090b]" : "text-white/55"}`}
+          >
             动态
           </button>
         </div>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+      <div
+        className={`${activeTab === "creations" ? "grid" : "hidden"} gap-5 lg:grid-cols-[1fr_320px]`}
+      >
         <div>
           <div className="mb-5 flex items-center justify-between">
             <h2 className="text-2xl font-semibold text-white">我的角色</h2>
@@ -242,37 +259,55 @@ export function ProfilePage({
               <NotePencil size={21} weight="duotone" />
             </div>
             <div>
-              <h2 className="font-semibold text-white">近期动态</h2>
-              <p className="text-xs text-white/40">创作笔记与思考</p>
+              <h2 className="font-semibold text-white">动态</h2>
+              <p className="text-xs text-white/40">
+                在上方切换到动态即可发布与管理
+              </p>
             </div>
           </div>
-          <div className="mt-5 space-y-4">
-            {posts.map((post) => (
-              <article
-                key={post.title}
-                className="rounded-xl border border-white/8 bg-white/[0.025] p-4"
-              >
-                <h3 className="text-sm font-medium leading-5 text-white">
-                  {post.title}
-                </h3>
-                <p className="mt-2 text-xs leading-5 text-white/45">
-                  {post.body}
-                </p>
-                <div className="mt-3 flex items-center gap-4 text-xs text-white/38">
-                  <span className="flex items-center gap-1.5">
-                    <Heart size={14} />
-                    {post.likes}
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <ChatCircleDots size={14} />
-                    {post.replies}
-                  </span>
-                </div>
-              </article>
-            ))}
-          </div>
+          <p className="mt-5 text-sm leading-6 text-white/42">
+            列表卡片只显示评论数量。进入动态详情后才会加载评论内容，避免主页过长。
+          </p>
         </aside>
       </div>
+      {activeTab === "posts" ? (
+        <div className="mx-auto max-w-3xl space-y-5">
+          <PostComposer
+            service={socialService}
+            onSaved={(post) =>
+              setUserPosts((current) => [
+                post,
+                ...current.filter((item) => item.id !== post.id),
+              ])
+            }
+          />
+          {userPosts.length ? (
+            userPosts.map((post) => (
+              <PostCard
+                key={post.id}
+                post={post}
+                onOpen={() => onOpenPost(post.id)}
+                onOpenUser={onOpenUser}
+                onToggleLike={async () => {
+                  const result = await socialService.setLiked(
+                    post.id,
+                    !post.viewerHasLiked,
+                  );
+                  setUserPosts((current) =>
+                    current.map((item) =>
+                      item.id === post.id ? { ...item, ...result } : item,
+                    ),
+                  );
+                }}
+              />
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 py-16 text-center text-sm text-white/35">
+              还没有发布动态。
+            </div>
+          )}
+        </div>
+      ) : null}
       {isProfileEditorOpen && auth.user ? (
         <ProfileEditorDialog
           user={auth.user}

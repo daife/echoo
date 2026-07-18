@@ -23,6 +23,8 @@ import { registerBillingRoutes } from "./modules/billing/billing.controller.js";
 import { registerPlatformCatalogRoutes } from "./modules/platform-catalog/platform-catalog.controller.js";
 import { registerCharacterAssetRoutes } from "./modules/character-assets/character-assets.controller.js";
 import { registerSocialRoutes } from "./modules/social/social.controller.js";
+import { registerSocialPostRoutes } from "./modules/posts/social-post.controller.js";
+import { registerUsersRoutes } from "./modules/users/users.controller.js";
 import { registerSyncRoutes } from "./modules/sync/sync.controller.js";
 import { ChangeEventDispatcher } from "./modules/sync/change-event.dispatcher.js";
 import { ChangeEventRepository } from "./modules/sync/change-event.repository.js";
@@ -68,12 +70,13 @@ export async function buildApp() {
   registerAuthDecorators(app);
 
   app.get("/health", async () => {
-    const [outbox, agentRuns, resourceProcessing, scheduler] = await Promise.all([
-      changeEvents.outboxMetrics(),
-      runQueue.metrics(),
-      resourceQueue.metrics(),
-      primeWakeupScheduler.metrics(),
-    ]);
+    const [outbox, agentRuns, resourceProcessing, scheduler] =
+      await Promise.all([
+        changeEvents.outboxMetrics(),
+        runQueue.metrics(),
+        resourceQueue.metrics(),
+        primeWakeupScheduler.metrics(),
+      ]);
     return {
       ok: true,
       name: "echoo-server",
@@ -101,6 +104,8 @@ export async function buildApp() {
   await app.register(registerPlatformCatalogRoutes, { prefix: "/api" });
   await app.register(registerCharacterAssetRoutes, { prefix: "/api" });
   await app.register(registerSocialRoutes, { prefix: "/api" });
+  await app.register(registerSocialPostRoutes, { prefix: "/api" });
+  await app.register(registerUsersRoutes, { prefix: "/api" });
   await app.register(registerSyncRoutes, { prefix: "/api" });
   await app.register(registerAdminRoutes, { prefix: "/api/admin" });
   await app.register(registerRealtimeGateway);
@@ -108,12 +113,14 @@ export async function buildApp() {
     await startRealtimeEventBus().catch((error) => {
       app.log.warn(error, "Redis realtime fan-out unavailable");
     });
-    await changeEventDispatcher.start().catch((error) =>
-      app.log.error(error, "Change event dispatcher stopped"),
-    );
-    await primeWakeupScheduler.start().catch((error) =>
-      app.log.error(error, "Prime wakeup scheduler stopped"),
-    );
+    await changeEventDispatcher
+      .start()
+      .catch((error) =>
+        app.log.error(error, "Change event dispatcher stopped"),
+      );
+    await primeWakeupScheduler
+      .start()
+      .catch((error) => app.log.error(error, "Prime wakeup scheduler stopped"));
     void runQueue
       .start(
         (job) => runService.processQueuedRun(job),

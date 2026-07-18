@@ -202,23 +202,23 @@ export class ResourceRepository {
     const now = Date.now();
     await withTransaction(async (connection) => {
       await execute(
-      `INSERT INTO resources (
+        `INSERT INTO resources (
         id, owner_user_id, kind, mime_type, original_file_name,
         storage_provider, storage_key, public_path,
         byte_size, status, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
-      [
-        id,
-        input.ownerUserId,
-        input.kind,
-        input.mimeType,
-        input.fileName,
-        this.storage.provider,
-        storageKey,
-        `/api/resources/${id}/file`,
-        input.byteSize,
-        now,
-        now,
+        [
+          id,
+          input.ownerUserId,
+          input.kind,
+          input.mimeType,
+          input.fileName,
+          this.storage.provider,
+          storageKey,
+          `/api/resources/${id}/file`,
+          input.byteSize,
+          now,
+          now,
         ],
         connection,
       );
@@ -284,7 +284,12 @@ export class ResourceRepository {
         connection,
       );
       await this.events.append(
-        { ownerUserId, entityType: "resource", entityId: id, operation: "upsert" },
+        {
+          ownerUserId,
+          entityType: "resource",
+          entityId: id,
+          operation: "upsert",
+        },
         connection,
       );
     });
@@ -353,16 +358,16 @@ export class ResourceRepository {
       }
       await withTransaction(async (connection) => {
         await execute(
-        `UPDATE resources SET byte_size = ?, sha256 = ?, duration_ms = ?,
+          `UPDATE resources SET byte_size = ?, sha256 = ?, duration_ms = ?,
           status = 'ready', updated_at = ? WHERE id = ?`,
-        [
-          data.length,
-          sha256,
-          durationSeconds === undefined
-            ? null
-            : Math.round(durationSeconds * 1000),
-          Date.now(),
-          id,
+          [
+            data.length,
+            sha256,
+            durationSeconds === undefined
+              ? null
+              : Math.round(durationSeconds * 1000),
+            Date.now(),
+            id,
           ],
           connection,
         );
@@ -413,6 +418,8 @@ export class ResourceRepository {
          ON asset_versions.resource_id = resources.id
        LEFT JOIN character_asset_draft_resources asset_drafts
          ON asset_drafts.resource_id = resources.id
+       LEFT JOIN social_post_resources post_resources
+         ON post_resources.resource_id = resources.id
        WHERE resources.status IN ('ready', 'failed', 'pending')
          AND resources.created_at < ?
          AND (resources.status != 'ready' OR resources.storage_key LIKE '%/original.%')
@@ -421,6 +428,7 @@ export class ResourceRepository {
          AND user_resources.resource_id IS NULL
          AND asset_versions.resource_id IS NULL
          AND asset_drafts.resource_id IS NULL
+         AND post_resources.resource_id IS NULL
        ORDER BY resources.created_at ASC LIMIT ?`,
       [cutoff, limit],
     );
@@ -446,6 +454,8 @@ export class ResourceRepository {
          SELECT 1 FROM character_asset_version_resources WHERE resource_id = resources.id
        ) AND NOT EXISTS (
          SELECT 1 FROM character_asset_draft_resources WHERE resource_id = resources.id
+       ) AND NOT EXISTS (
+         SELECT 1 FROM social_post_resources WHERE resource_id = resources.id
        )`,
       [Date.now(), id],
     );
@@ -529,6 +539,13 @@ export class ResourceRepository {
               AND installations.owner_user_id = ?
            WHERE version_resources.resource_id = resources.id
              AND (assets.status = 'published' OR installations.id IS NOT NULL)
+         ) OR EXISTS (
+           SELECT 1 FROM social_post_resources post_resources
+           WHERE post_resources.resource_id = resources.id
+         ) OR EXISTS (
+           SELECT 1 FROM user_resources public_users
+           WHERE public_users.resource_id = resources.id
+             AND public_users.usage_kind = 'avatar'
          )
        ) LIMIT 1`,
       [resourceId, userId, userId],
@@ -539,13 +556,22 @@ export class ResourceRepository {
   async isPubliclyAccessible(resourceId: string) {
     const row = await queryOne<RowDataPacket>(
       `SELECT resources.id FROM resources
-       WHERE resources.id = ? AND EXISTS (
-         SELECT 1 FROM character_asset_version_resources version_resources
-         JOIN character_asset_versions versions
-           ON versions.id = version_resources.version_id
-         JOIN character_assets assets ON assets.id = versions.asset_id
-         WHERE version_resources.resource_id = resources.id
-           AND assets.status = 'published'
+       WHERE resources.id = ? AND (
+         EXISTS (
+           SELECT 1 FROM character_asset_version_resources version_resources
+           JOIN character_asset_versions versions
+             ON versions.id = version_resources.version_id
+           JOIN character_assets assets ON assets.id = versions.asset_id
+           WHERE version_resources.resource_id = resources.id
+             AND assets.status = 'published'
+         ) OR EXISTS (
+           SELECT 1 FROM social_post_resources post_resources
+           WHERE post_resources.resource_id = resources.id
+         ) OR EXISTS (
+           SELECT 1 FROM user_resources public_users
+           WHERE public_users.resource_id = resources.id
+             AND public_users.usage_kind = 'avatar'
+         )
        ) LIMIT 1`,
       [resourceId],
     );
@@ -663,22 +689,22 @@ export class ResourceRepository {
           storage_provider, storage_key, public_path, byte_size,
           sha256, duration_ms, status, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?)`,
-        [
-          id,
-          input.ownerUserId,
-          input.kind,
-          input.mimeType,
-          input.fileName,
-          this.storage.provider,
-          storageKey,
-          publicPath,
-          input.data.length,
-          digest(input.data),
-          input.durationSeconds === undefined
-            ? null
-            : Math.round(input.durationSeconds * 1000),
-          now,
-          now,
+          [
+            id,
+            input.ownerUserId,
+            input.kind,
+            input.mimeType,
+            input.fileName,
+            this.storage.provider,
+            storageKey,
+            publicPath,
+            input.data.length,
+            digest(input.data),
+            input.durationSeconds === undefined
+              ? null
+              : Math.round(input.durationSeconds * 1000),
+            now,
+            now,
           ],
           connection,
         );
@@ -687,15 +713,15 @@ export class ResourceRepository {
           resource_id, variant, storage_provider, storage_key, mime_type,
           byte_size, etag, created_at, updated_at
         ) VALUES (?, 'original', ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          this.storage.provider,
-          storageKey,
-          input.mimeType,
-          input.data.length,
-          stored.etag ?? null,
-          now,
-          now,
+          [
+            id,
+            this.storage.provider,
+            storageKey,
+            input.mimeType,
+            input.data.length,
+            stored.etag ?? null,
+            now,
+            now,
           ],
           connection,
         );

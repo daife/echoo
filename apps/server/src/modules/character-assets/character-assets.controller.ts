@@ -48,6 +48,32 @@ export async function registerCharacterAssetRoutes(app: FastifyInstance) {
     return assets.listMine(userId);
   });
 
+  app.get<{
+    Params: { userId: string };
+    Querystring: { limit?: string; cursor?: string };
+  }>("/users/:userId/character-assets", async (request) =>
+    assets.listPublishedByAuthor(
+      await request.optionalUserId(),
+      request.params.userId,
+      {
+        limit: Number(request.query.limit) || 24,
+        cursor: request.query.cursor,
+      },
+    ),
+  );
+
+  app.get<{ Querystring: { limit?: string; cursor?: string } }>(
+    "/feeds/following/character-assets",
+    async (request, reply) => {
+      const userId = await request.requireUserId(reply);
+      if (!userId) return;
+      return assets.listFollowing(userId, {
+        limit: Number(request.query.limit) || 24,
+        cursor: request.query.cursor,
+      });
+    },
+  );
+
   app.get<{ Params: { assetId: string } }>(
     "/character-assets/:assetId",
     async (request, reply) => {

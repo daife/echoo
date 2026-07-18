@@ -1,0 +1,98 @@
+import { ChatCircleDots, Heart } from "@phosphor-icons/react";
+import type { SocialPostSummary } from "@echoo/shared";
+import { MediaAsset } from "../../features/media/MediaAsset";
+import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
+
+export function PostCard({
+  post,
+  onOpen,
+  onOpenUser,
+  onToggleLike,
+}: {
+  post: SocialPostSummary;
+  onOpen: () => void;
+  onOpenUser?: (userId: string) => void;
+  onToggleLike?: () => void;
+}) {
+  return (
+    <article className="overflow-hidden rounded-2xl border border-white/8 bg-[#111114]">
+      <div className="p-5 md:p-6">
+        <button
+          type="button"
+          onClick={() => onOpenUser?.(post.author.id)}
+          className="flex items-center gap-3 text-left"
+        >
+          <IdentityAvatar
+            mediaUrl={post.author.avatarUrl}
+            alt=""
+            className="h-10 w-10"
+          />
+          <span>
+            <span className="block text-sm font-medium text-white/82">
+              {post.author.displayName}
+            </span>
+            <span className="mt-0.5 block text-[11px] text-white/30">
+              {formatDate(post.createdAt)}
+            </span>
+          </span>
+        </button>
+        {post.body ? (
+          <button
+            type="button"
+            onClick={onOpen}
+            className="mt-4 block w-full whitespace-pre-wrap text-left text-sm leading-7 text-white/67 line-clamp-6"
+          >
+            {post.body}
+          </button>
+        ) : null}
+      </div>
+      {post.images.length ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className={`grid w-full gap-px bg-white/5 ${post.images.length === 1 ? "grid-cols-1" : post.images.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}
+        >
+          {post.images.map((image) => (
+            <MediaAsset
+              key={image.resourceId}
+              mediaUrl={image.resourcePath}
+              variant="display"
+              alt="动态图片"
+              containerClassName="aspect-square bg-black/20"
+              className="h-full w-full object-cover"
+            />
+          ))}
+        </button>
+      ) : null}
+      <div className="flex items-center gap-6 border-t border-white/8 px-5 py-4 text-sm text-white/42">
+        <button
+          type="button"
+          onClick={onToggleLike}
+          className={`flex items-center gap-2 transition hover:text-white ${post.viewerHasLiked ? "text-[#c7b9ed]" : ""}`}
+        >
+          <Heart size={18} weight={post.viewerHasLiked ? "fill" : "regular"} />{" "}
+          {post.likeCount}
+        </button>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex items-center gap-2 transition hover:text-white"
+        >
+          <ChatCircleDots size={18} /> {post.commentCount}
+        </button>
+        <span className="ml-auto text-[11px] text-white/24">
+          进入动态查看评论
+        </span>
+      </div>
+    </article>
+  );
+}
+
+export function formatDate(value: number) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(value);
+}

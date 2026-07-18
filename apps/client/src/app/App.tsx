@@ -35,6 +35,9 @@ import { MessagesPage } from "../pages/messages/MessagesPage";
 import { ProfilePage } from "../pages/profile/ProfilePage";
 import { SettingsPage } from "../pages/settings/SettingsPage";
 import { PublicAssetEditorPage } from "../pages/public-asset/PublicAssetEditorPage";
+import { PostDetailPage } from "../pages/social/PostDetailPage";
+import { CharacterDetailPage } from "../pages/social/CharacterDetailPage";
+import { PublicProfilePage } from "../pages/social/PublicProfilePage";
 import {
   getActivePrimaryNavigationView,
   PRIMARY_NAVIGATION_VIEWS,
@@ -53,7 +56,17 @@ type AppView =
   | "profile"
   | "create"
   | "public-editor"
+  | "post-detail"
+  | "character-detail"
+  | "public-profile"
   | "auth";
+
+interface ViewLocation {
+  view: AppView;
+  postId: string | null;
+  assetId: string | null;
+  userId: string | null;
+}
 
 const navItemPresentation = {
   home: { label: "首页", icon: House },
@@ -81,6 +94,10 @@ export function App() {
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [editingPublicAsset, setEditingPublicAsset] =
     useState<CharacterAssetDraft | null>(null);
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [detailHistory, setDetailHistory] = useState<ViewLocation[]>([]);
   const agentQueryKey = useMemo(
     () => ["agents", "mine", auth.user?.id ?? "anonymous"] as const,
     [auth.user?.id],
@@ -410,6 +427,47 @@ export function App() {
     setView("public-editor");
   };
 
+  const openPost = (postId: string) => {
+    rememberCurrentLocation();
+    setSelectedPostId(postId);
+    setView("post-detail");
+  };
+  const openAsset = (assetId: string) => {
+    rememberCurrentLocation();
+    setSelectedAssetId(assetId);
+    setView("character-detail");
+  };
+  const openPublicProfile = (userId: string) => {
+    rememberCurrentLocation();
+    setSelectedUserId(userId);
+    setView("public-profile");
+  };
+  function rememberCurrentLocation() {
+    setDetailHistory((current) => [
+      ...current,
+      {
+        view,
+        postId: selectedPostId,
+        assetId: selectedAssetId,
+        userId: selectedUserId,
+      },
+    ]);
+  }
+  const closeDetail = () => {
+    setDetailHistory((current) => {
+      const previous = current.at(-1);
+      if (!previous) {
+        setView("home");
+        return current;
+      }
+      setSelectedPostId(previous.postId);
+      setSelectedAssetId(previous.assetId);
+      setSelectedUserId(previous.userId);
+      setView(previous.view);
+      return current.slice(0, -1);
+    });
+  };
+
   const ActivePage = useMemo(() => {
     if (auth.isLoading) {
       return (
@@ -427,7 +485,52 @@ export function App() {
         />
       );
     }
-    if (view === "explore") return <ExplorePage />;
+    if (view === "post-detail" && selectedPostId)
+      return (
+        <PostDetailPage
+          postId={selectedPostId}
+          service={services.socialService}
+          isAuthenticated={Boolean(auth.user)}
+          onRequireAuth={() => setView("auth")}
+          onBack={closeDetail}
+          onOpenUser={openPublicProfile}
+          onDeleted={closeDetail}
+        />
+      );
+    if (view === "character-detail" && selectedAssetId)
+      return (
+        <CharacterDetailPage
+          assetId={selectedAssetId}
+          characterService={services.characterAssetService}
+          socialService={services.socialService}
+          isAuthenticated={Boolean(auth.user)}
+          onRequireAuth={() => setView("auth")}
+          onBack={closeDetail}
+          onOpenUser={openPublicProfile}
+          onAgentInstalled={handleAgentInstalled}
+        />
+      );
+    if (view === "public-profile" && selectedUserId)
+      return (
+        <PublicProfilePage
+          userId={selectedUserId}
+          onBack={closeDetail}
+          onOpenPost={openPost}
+          onOpenAsset={openAsset}
+          onOpenUser={openPublicProfile}
+          onRequireAuth={() => setView("auth")}
+        />
+      );
+    if (view === "explore")
+      return (
+        <ExplorePage
+          onOpenPost={openPost}
+          onOpenAsset={openAsset}
+          onOpenUser={openPublicProfile}
+          onAgentInstalled={handleAgentInstalled}
+          onRequireAuth={() => setView("auth")}
+        />
+      );
     if (view === "public-editor" && editingPublicAsset)
       return (
         <PublicAssetEditorPage
@@ -462,6 +565,8 @@ export function App() {
             setEditingPublicAsset(asset);
             setView("public-editor");
           }}
+          onOpenPost={openPost}
+          onOpenUser={openPublicProfile}
         />
       );
     if (view === "create")
@@ -516,6 +621,8 @@ export function App() {
         onCreateAgent={() => setView("create")}
         onAgentInstalled={handleAgentInstalled}
         onRequireAuth={() => setView("auth")}
+        onOpenAsset={openAsset}
+        onOpenUser={openPublicProfile}
       />
     );
   }, [
@@ -534,6 +641,10 @@ export function App() {
     openSettings,
     protectedView,
     selectedAgent,
+    selectedPostId,
+    selectedAssetId,
+    selectedUserId,
+    detailHistory,
     view,
   ]);
 

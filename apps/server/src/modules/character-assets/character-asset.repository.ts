@@ -308,6 +308,78 @@ export class CharacterAssetRepository {
     };
   }
 
+  async listPublishedByAuthor(
+    viewerUserId: string | null,
+    authorUserId: string,
+    input: { limit?: number; cursor?: string } = {},
+  ): Promise<CharacterAssetPage> {
+    const limit = Math.min(Math.max(input.limit ?? 24, 1), 100);
+    const cursor = decodeAssetCursor(input.cursor);
+    const rows = await queryRows<AssetRow>(
+      `${ASSET_SELECT}
+       WHERE assets.status = 'published' AND assets.author_user_id = ?
+         AND (? IS NULL OR assets.published_at < ? OR
+              (assets.published_at = ? AND assets.id < ?))
+       ORDER BY assets.published_at DESC, assets.id DESC LIMIT ?`,
+      [
+        viewerUserId,
+        viewerUserId,
+        authorUserId,
+        cursor?.publishedAt ?? null,
+        cursor?.publishedAt ?? null,
+        cursor?.publishedAt ?? null,
+        cursor?.id ?? null,
+        limit + 1,
+      ],
+    );
+    const visible = rows.slice(0, limit);
+    return {
+      items: visible.map(rowToSummary),
+      ...(rows.length > limit && visible.length
+        ? { nextCursor: encodeAssetCursor(visible.at(-1)!) }
+        : {}),
+    };
+  }
+
+  async listFollowing(
+    viewerUserId: string,
+    input: { limit?: number; cursor?: string } = {},
+  ): Promise<CharacterAssetPage> {
+    const limit = Math.min(Math.max(input.limit ?? 24, 1), 100);
+    const cursor = decodeAssetCursor(input.cursor);
+    const rows = await queryRows<AssetRow>(
+      `${ASSET_SELECT}
+       WHERE assets.status = 'published' AND (
+         assets.author_user_id = ? OR EXISTS (
+           SELECT 1 FROM user_follows follows
+           WHERE follows.follower_user_id = ?
+             AND follows.followed_user_id = assets.author_user_id
+         )
+       )
+       AND (? IS NULL OR assets.published_at < ? OR
+            (assets.published_at = ? AND assets.id < ?))
+       ORDER BY assets.published_at DESC, assets.id DESC LIMIT ?`,
+      [
+        viewerUserId,
+        viewerUserId,
+        viewerUserId,
+        viewerUserId,
+        cursor?.publishedAt ?? null,
+        cursor?.publishedAt ?? null,
+        cursor?.publishedAt ?? null,
+        cursor?.id ?? null,
+        limit + 1,
+      ],
+    );
+    const visible = rows.slice(0, limit);
+    return {
+      items: visible.map(rowToSummary),
+      ...(rows.length > limit && visible.length
+        ? { nextCursor: encodeAssetCursor(visible.at(-1)!) }
+        : {}),
+    };
+  }
+
   async findVisible(viewerUserId: string | null, assetId: string) {
     const row = await queryOne<AssetRow>(
       `${ASSET_SELECT}
@@ -655,6 +727,28 @@ function rowToSummary(row: AssetRow): CharacterAssetSummary {
     publishedAt: row.published_at,
     updatedAt: row.updated_at,
   };
+}
+
+function encodeAssetCursor(row: { published_at: number; id: string }) {
+  return Buffer.from(JSON.stringify([row.published_at, row.id])).toString(
+    "base64url",
+  );
+}
+
+function decodeAssetCursor(value?: string) {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+    if (
+      !Array.isArray(parsed) ||
+      !Number.isFinite(parsed[0]) ||
+      typeof parsed[1] !== "string"
+    )
+      return null;
+    return { publishedAt: Number(parsed[0]), id: parsed[1] };
+  } catch {
+    return null;
+  }
 }
 
 function rowToDetail(row: AssetRow): CharacterAssetDetail {

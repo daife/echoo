@@ -109,22 +109,3 @@ export interface InstallCharacterAssetResponse {
 export interface InstallCharacterAssetRequest {
   applyRecommendedRuntimeConfig: boolean;
 }
-
-export interface SocialComment {
-  id: string;
-  objectId: string;
-  author: { id: string; displayName: string };
-  parentCommentId?: string;
-  body: string;
-  status: "visible" | "deleted" | "hidden";
-  canEdit: boolean;
-  canDelete: boolean;
-  canHide: boolean;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface SocialCommentPage {
-  items: SocialComment[];
-  nextCursor?: string;
-}

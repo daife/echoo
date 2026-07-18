@@ -191,6 +191,42 @@ CREATE TABLE IF NOT EXISTS social_objects (
   INDEX idx_social_objects_type_created (object_type, created_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS user_follows (
+  follower_user_id VARCHAR(64) NOT NULL,
+  followed_user_id VARCHAR(64) NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (follower_user_id, followed_user_id),
+  INDEX idx_user_follows_followed_created (followed_user_id, created_at DESC),
+  INDEX idx_user_follows_follower_created (follower_user_id, created_at DESC),
+  CONSTRAINT fk_user_follows_follower FOREIGN KEY (follower_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_user_follows_followed FOREIGN KEY (followed_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT chk_user_follows_not_self CHECK (follower_user_id <> followed_user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS social_posts (
+  id VARCHAR(64) PRIMARY KEY,
+  author_user_id VARCHAR(64) NOT NULL,
+  body TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  INDEX idx_social_posts_author_created (author_user_id, created_at DESC, id DESC),
+  INDEX idx_social_posts_created (created_at DESC, id DESC),
+  CONSTRAINT fk_social_posts_social FOREIGN KEY (id) REFERENCES social_objects(id) ON DELETE CASCADE,
+  CONSTRAINT fk_social_posts_author FOREIGN KEY (author_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS social_post_resources (
+  post_id VARCHAR(64) NOT NULL,
+  resource_id VARCHAR(64) NOT NULL,
+  position TINYINT UNSIGNED NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (post_id, resource_id),
+  UNIQUE KEY uq_social_post_position (post_id, position),
+  INDEX idx_social_post_resources_resource (resource_id),
+  CONSTRAINT fk_social_post_resources_post FOREIGN KEY (post_id) REFERENCES social_posts(id) ON DELETE CASCADE,
+  CONSTRAINT fk_social_post_resources_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS character_assets (
   id VARCHAR(64) PRIMARY KEY,
   author_user_id VARCHAR(64) NOT NULL,

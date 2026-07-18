@@ -8,6 +8,7 @@ export * from "./prompts/figure-system-prompt.js";
 export * from "./types/auth.js";
 export * from "./types/agent.js";
 export * from "./types/character-asset.js";
+export * from "./types/social.js";
 export * from "./types/interfaceBinding.js";
 export * from "./types/conversation.js";
 export * from "./types/message.js";

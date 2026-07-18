@@ -44,6 +44,21 @@ export class CharacterAssetService {
     return this.assets.listPublished(viewerUserId, input);
   }
 
+  listPublishedByAuthor(
+    viewerUserId: string | null,
+    authorUserId: string,
+    input?: { limit?: number; cursor?: string },
+  ) {
+    return this.assets.listPublishedByAuthor(viewerUserId, authorUserId, input);
+  }
+
+  listFollowing(
+    viewerUserId: string,
+    input?: { limit?: number; cursor?: string },
+  ) {
+    return this.assets.listFollowing(viewerUserId, input);
+  }
+
   async getVisible(viewerUserId: string | null, assetId: string) {
     const asset = await this.assets.findVisible(viewerUserId, assetId);
     if (!asset) throw new CharacterAssetNotFoundError("未找到角色资产。");

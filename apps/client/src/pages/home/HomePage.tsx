@@ -11,12 +11,16 @@ export function HomePage({
   onCreateAgent,
   onAgentInstalled,
   onRequireAuth,
+  onOpenAsset,
+  onOpenUser,
 }: {
   service: CharacterAssetService;
   isAuthenticated: boolean;
   onCreateAgent: () => void;
   onAgentInstalled: (agent: Agent) => void;
   onRequireAuth: () => void;
+  onOpenAsset: (assetId: string) => void;
+  onOpenUser: (userId: string) => void;
 }) {
   const [featured, setFeatured] = useState<CharacterAssetSummary[]>([]);
 
@@ -69,8 +73,10 @@ export function HomePage({
         {featured.length ? (
           <div className="grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 md:grid-cols-3">
             {featured.map((asset, index) => (
-              <article
+              <button
                 key={asset.id}
+                type="button"
+                onClick={() => onOpenAsset(asset.id)}
                 className={`group relative min-h-72 overflow-hidden bg-[#101014] p-6 ${index === 0 ? "md:col-span-2" : ""}`}
               >
                 {asset.snapshot.coverResourcePath ? (
@@ -100,7 +106,7 @@ export function HomePage({
                     </p>
                   </div>
                 </div>
-              </article>
+              </button>
             ))}
           </div>
         ) : (
@@ -115,6 +121,8 @@ export function HomePage({
         isAuthenticated={isAuthenticated}
         onAgentInstalled={onAgentInstalled}
         onRequireAuth={onRequireAuth}
+        onOpenAsset={onOpenAsset}
+        onOpenUser={onOpenUser}
       />
 
       <button

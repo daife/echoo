@@ -6,6 +6,9 @@ import {
   MessageApi,
   RuntimeConfigApi,
   ResourcesApi,
+  PostsApi,
+  SocialApi,
+  UsersApi,
 } from "@echoo/api-client";
 import { AgentService } from "../../services/AgentService";
 import { AuthService } from "../../services/AuthService";
@@ -13,10 +16,12 @@ import { MessageService } from "../../services/MessageService";
 import type { RuntimeBundle } from "../../runtimes/factory/RuntimeBundle";
 import { RuntimeConfigService } from "../../services/RuntimeConfigService";
 import { CharacterAssetService } from "../../services/CharacterAssetService";
+import { SocialService } from "../../services/SocialService";
 
 export function initApp(runtime: RuntimeBundle) {
   let refreshPromise: Promise<string | null> | null = null;
-  const baseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787/api";
+  const baseUrl =
+    import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787/api";
   const api = new ApiClient({
     baseUrl,
     getAccessToken: () => runtime.auth.getAccessToken(),
@@ -45,6 +50,12 @@ export function initApp(runtime: RuntimeBundle) {
       runtime.message,
     ),
     runtimeConfigService: new RuntimeConfigService(new RuntimeConfigApi(api)),
+    socialService: new SocialService(
+      new PostsApi(api),
+      new UsersApi(api),
+      new SocialApi(api),
+      new ResourcesApi(api),
+    ),
   };
 }
 
@@ -62,7 +73,8 @@ async function refreshSession(runtime: RuntimeBundle, baseUrl: string) {
     await runtime.auth.clearTokens();
     return null;
   }
-  const session = (await response.json()) as import("@echoo/shared").AuthSession;
+  const session =
+    (await response.json()) as import("@echoo/shared").AuthSession;
   await runtime.auth.saveTokens(session.tokens);
   return session.tokens.accessToken;
 }

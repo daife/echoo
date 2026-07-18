@@ -11,8 +11,6 @@ import type {
   SaveCharacterAssetRecommendationRequest,
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
-  SocialComment,
-  SocialCommentPage,
 } from "@echoo/shared";
 import { normalizeAgentResources } from "./agents";
 import type { ApiClient } from "./client";
@@ -30,6 +28,24 @@ export class CharacterAssetsApi {
   ): Promise<CharacterAssetPage> {
     return this.client
       .get<CharacterAssetPage>("/character-assets", input)
+      .then((page) => ({
+        ...page,
+        items: page.items.map((asset) => this.normalizeAsset(asset)),
+      }));
+  }
+
+  listByUser(userId: string, input: { limit?: number; cursor?: string } = {}) {
+    return this.client
+      .get<CharacterAssetPage>(`/users/${userId}/character-assets`, input)
+      .then((page) => ({
+        ...page,
+        items: page.items.map((asset) => this.normalizeAsset(asset)),
+      }));
+  }
+
+  listFollowing(input: { limit?: number; cursor?: string } = {}) {
+    return this.client
+      .get<CharacterAssetPage>("/feeds/following/character-assets", input)
       .then((page) => ({
         ...page,
         items: page.items.map((asset) => this.normalizeAsset(asset)),
@@ -135,47 +151,6 @@ export class CharacterAssetsApi {
         ...response,
         asset: this.normalizeAsset(response.asset),
       }));
-  }
-
-  like(objectId: string) {
-    return this.client.put<{ likeCount: number; viewerHasLiked: boolean }>(
-      `/social/objects/${objectId}/like`,
-    );
-  }
-
-  unlike(objectId: string) {
-    return this.client.delete<{
-      likeCount: number;
-      viewerHasLiked: boolean;
-    }>(`/social/objects/${objectId}/like`);
-  }
-
-  listComments(objectId: string, before?: string, limit = 30) {
-    return this.client.get<SocialCommentPage>(
-      `/social/objects/${objectId}/comments`,
-      { before, limit },
-    );
-  }
-
-  createComment(objectId: string, body: string, parentCommentId?: string) {
-    return this.client.post<SocialComment>(
-      `/social/objects/${objectId}/comments`,
-      { body, ...(parentCommentId ? { parentCommentId } : {}) },
-    );
-  }
-
-  updateComment(commentId: string, body: string) {
-    return this.client.patch<SocialComment>(`/social/comments/${commentId}`, {
-      body,
-    });
-  }
-
-  deleteComment(commentId: string) {
-    return this.client.delete<{ ok: true }>(`/social/comments/${commentId}`);
-  }
-
-  hideComment(commentId: string) {
-    return this.client.post<{ ok: true }>(`/social/comments/${commentId}/hide`);
   }
 
   private normalizeAsset<T extends CharacterAssetSummary>(asset: T): T {

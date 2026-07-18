@@ -7,6 +7,9 @@ export type ResponsiveNavigationView =
   | "profile"
   | "create"
   | "public-editor"
+  | "post-detail"
+  | "character-detail"
+  | "public-profile"
   | "auth";
 
 export const PRIMARY_NAVIGATION_VIEWS = [
@@ -22,7 +25,14 @@ export function shouldShowDesktopConversationRail(
   view: ResponsiveNavigationView,
   isAuthenticated: boolean,
 ) {
-  if (view === "auth" || view === "create" || view === "public-editor")
+  if (
+    view === "auth" ||
+    view === "create" ||
+    view === "public-editor" ||
+    view === "post-detail" ||
+    view === "character-detail" ||
+    view === "public-profile"
+  )
     return false;
   if (view === "home" || view === "explore") return true;
   return isAuthenticated;
@@ -48,7 +58,13 @@ export function shouldShowMobileBottomNav(
 ) {
   if (!isAuthenticated && (view === "settings" || view === "messages"))
     return true;
-  if (view === "public-editor") return false;
+  if (
+    view === "public-editor" ||
+    view === "post-detail" ||
+    view === "character-detail" ||
+    view === "public-profile"
+  )
+    return false;
   return view !== "settings" && !(view === "messages" && hasSelectedAgent);
 }
 

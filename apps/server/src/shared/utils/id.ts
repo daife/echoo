@@ -11,6 +11,7 @@ export type EntityPrefix =
   | "asset"
   | "aver"
   | "inst"
+  | "post"
   | "comment";
 
 export function createId(prefix: EntityPrefix) {

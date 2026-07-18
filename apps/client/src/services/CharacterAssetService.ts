@@ -6,6 +6,12 @@ export class CharacterAssetService {
   list(input?: Parameters<CharacterAssetsApi["list"]>[0]) {
     return this.api.list(input);
   }
+  listByUser(userId: string, input?: { limit?: number; cursor?: string }) {
+    return this.api.listByUser(userId, input);
+  }
+  listFollowing(input?: { limit?: number; cursor?: string }) {
+    return this.api.listFollowing(input);
+  }
   get(assetId: string) {
     return this.api.get(assetId);
   }
@@ -46,23 +52,5 @@ export class CharacterAssetService {
   }
   publishDraft(assetId: string) {
     return this.api.publishDraft(assetId);
-  }
-  setLiked(objectId: string, liked: boolean) {
-    return liked ? this.api.like(objectId) : this.api.unlike(objectId);
-  }
-  listComments(objectId: string, before?: string) {
-    return this.api.listComments(objectId, before);
-  }
-  createComment(objectId: string, body: string, parentCommentId?: string) {
-    return this.api.createComment(objectId, body, parentCommentId);
-  }
-  updateComment(commentId: string, body: string) {
-    return this.api.updateComment(commentId, body);
-  }
-  deleteComment(commentId: string) {
-    return this.api.deleteComment(commentId);
-  }
-  hideComment(commentId: string) {
-    return this.api.hideComment(commentId);
   }
 }
