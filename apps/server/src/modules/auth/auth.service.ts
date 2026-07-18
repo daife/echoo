@@ -26,6 +26,7 @@ import { BillingService } from "../billing/billing.service.js";
 import { ResourceRepository } from "../resources/resource.repository.js";
 import { AuthSessionRepository } from "./auth-session.repository.js";
 import { RewardsService } from "../rewards/rewards.service.js";
+import { CaptchaService } from "./captcha.service.js";
 
 export class AuthService {
   private readonly tokenService: TokenService;
@@ -40,6 +41,7 @@ export class AuthService {
     private readonly resources = new ResourceRepository(),
     private readonly sessions = new AuthSessionRepository(),
     private readonly rewards = new RewardsService(),
+    private readonly captcha = new CaptchaService(),
   ) {
     this.tokenService = new TokenService(app);
   }
@@ -86,6 +88,12 @@ export class AuthService {
 
   async login(input: LoginBody): Promise<AuthSession> {
     const body = loginSchema.parse(input);
+    if (!this.captcha.consume(body.captchaId, body.captchaAnswer))
+      throw new AuthError(
+        "CAPTCHA_INVALID",
+        "人机验证答案不正确或已过期。",
+        400,
+      );
     const user = await this.users.findByEmail(body.email);
     if (
       !user ||
@@ -150,6 +158,12 @@ export class AuthService {
 
   async forgotPassword(input: ForgotPasswordBody) {
     const body = forgotPasswordSchema.parse(input);
+    if (!this.captcha.consume(body.captchaId, body.captchaAnswer))
+      throw new AuthError(
+        "CAPTCHA_INVALID",
+        "人机验证答案不正确或已过期。",
+        400,
+      );
     const user = await this.users.findByEmail(body.email);
     if (!user) return { ok: true as const };
 

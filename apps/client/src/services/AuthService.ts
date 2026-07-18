@@ -1,5 +1,6 @@
 import type {
   AuthSession,
+  CaptchaChallenge,
   ForgotPasswordRequest,
   LoginRequest,
   RegisterResponse,
@@ -23,6 +24,10 @@ export class AuthService {
 
   register(body: RegisterRequest): Promise<RegisterResponse> {
     return this.api.register(body);
+  }
+
+  getCaptchaChallenge(): Promise<CaptchaChallenge> {
+    return this.api.getCaptchaChallenge();
   }
 
   async login(body: LoginRequest) {
@@ -69,7 +74,8 @@ export class AuthService {
 
   async signOut() {
     const refreshToken = await this.auth.getRefreshToken();
-    if (refreshToken) await this.api.logout(refreshToken).catch(() => undefined);
+    if (refreshToken)
+      await this.api.logout(refreshToken).catch(() => undefined);
     await this.auth.clearTokens();
     await this.storage.removeSetting(currentUserKey);
   }

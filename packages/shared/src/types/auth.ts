@@ -42,10 +42,19 @@ export interface RegisterResponse {
 export interface LoginRequest {
   email: string;
   password: string;
+  captchaId: string;
+  captchaAnswer: string;
+}
+
+export interface CaptchaChallenge {
+  id: string;
+  question: string;
 }
 
 export interface ForgotPasswordRequest {
   email: string;
+  captchaId: string;
+  captchaAnswer: string;
 }
 
 export interface ForgotPasswordResponse {

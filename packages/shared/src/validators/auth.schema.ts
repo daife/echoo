@@ -54,10 +54,14 @@ export const updateUserProfileSchema = z
 export const loginSchema = z.object({
   email: emailSchema,
   password: z.string().min(1, "密码不能为空。"),
+  captchaId: z.string().min(1, "请完成人机验证。"),
+  captchaAnswer: z.string().trim().min(1, "请输入人机验证答案。"),
 });
 
 export const forgotPasswordSchema = z.object({
   email: emailSchema,
+  captchaId: z.string().min(1, "请完成人机验证。"),
+  captchaAnswer: z.string().trim().min(1, "请输入人机验证答案。"),
 });
 
 export const resetPasswordSchema = z.object({

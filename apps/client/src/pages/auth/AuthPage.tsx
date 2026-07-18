@@ -6,8 +6,9 @@ import {
   Sparkle,
   UserCircle,
 } from "@phosphor-icons/react";
+import type { CaptchaChallenge } from "@echoo/shared";
 import type { FormEvent } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 
 export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
@@ -29,6 +30,28 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
     string | null
   >(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [captcha, setCaptcha] = useState<CaptchaChallenge | null>(null);
+  const [captchaAnswer, setCaptchaAnswer] = useState("");
+
+  useEffect(() => {
+    if (auth.authMode !== "login" && auth.authMode !== "forgot") {
+      setCaptcha(null);
+      setCaptchaAnswer("");
+      return;
+    }
+    let cancelled = false;
+    setCaptcha(null);
+    setCaptchaAnswer("");
+    void auth
+      .getCaptchaChallenge()
+      .then((challenge) => {
+        if (!cancelled) setCaptcha(challenge);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.authMode]);
 
   const copy = useMemo(() => {
     if (auth.authMode === "register") {
@@ -90,7 +113,11 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
         auth.setAuthMode("login");
         setNotice("账户已创建，请先验证邮箱再登录。");
       } else if (auth.authMode === "forgot") {
-        const response = await auth.forgotPassword({ email });
+        const response = await auth.forgotPassword({
+          email,
+          captchaId: captcha?.id ?? "",
+          captchaAnswer,
+        });
         setDevResetToken(response.resetToken ?? null);
         setNotice("如果该邮箱已注册，重置链接正在发送。");
       } else if (auth.authMode === "reset") {
@@ -106,11 +133,24 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
         });
         setNotice("邮箱验证完成，现在可以登录。");
       } else {
-        await auth.login({ email, password });
+        await auth.login({
+          email,
+          password,
+          captchaId: captcha?.id ?? "",
+          captchaAnswer,
+        });
         onAuthenticated();
       }
     } catch {
       // AuthProvider owns the user-facing error state.
+      if (auth.authMode === "login" || auth.authMode === "forgot") {
+        setCaptcha(null);
+        setCaptchaAnswer("");
+        void auth
+          .getCaptchaChallenge()
+          .then(setCaptcha)
+          .catch(() => undefined);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -213,6 +253,28 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
                   required
                 />
               </div>
+            </label>
+          ) : null}
+
+          {auth.authMode === "login" || auth.authMode === "forgot" ? (
+            <label className="block">
+              <span className="mb-2 block text-sm text-white/55">人机验证</span>
+              <div className="flex items-center gap-3">
+                <div className="grid h-12 min-w-32 place-items-center rounded-2xl border border-white/10 bg-white/[0.03] px-4 text-sm tracking-widest text-white/75">
+                  {captcha?.question ?? "加载中……"}
+                </div>
+                <input
+                  className="h-12 min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-4 text-sm text-white outline-none placeholder:text-white/30"
+                  placeholder="答案"
+                  inputMode="numeric"
+                  value={captchaAnswer}
+                  onChange={(event) => setCaptchaAnswer(event.target.value)}
+                  required
+                />
+              </div>
+              <span className="mt-2 block text-xs text-white/35">
+                请计算上面的算式
+              </span>
             </label>
           ) : null}
 

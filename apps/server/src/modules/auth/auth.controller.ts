@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { ZodError } from "zod";
 import { AuthError, AuthService } from "./auth.service.js";
+import { CaptchaService } from "./captcha.service.js";
 import { InvalidMediaUploadError } from "../resources/resource.repository.js";
 import type {
   ForgotPasswordBody,
@@ -12,7 +13,19 @@ import type {
 } from "./auth.types.js";
 
 export async function registerAuthRoutes(app: FastifyInstance) {
-  const authService = new AuthService(app);
+  const captcha = new CaptchaService();
+  const authService = new AuthService(
+    app,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    captcha,
+  );
+
+  app.get("/captcha", async () => captcha.create());
 
   app.post<{ Body: RegisterBody }>("/register", async (request, reply) => {
     try {

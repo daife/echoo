@@ -1,5 +1,6 @@
 import type {
   AuthSession,
+  CaptchaChallenge,
   ForgotPasswordRequest,
   ForgotPasswordResponse,
   LoginRequest,
@@ -17,6 +18,10 @@ export class AuthApi {
 
   register(body: RegisterRequest): Promise<RegisterResponse> {
     return this.client.post<RegisterResponse>("/auth/register", body);
+  }
+
+  getCaptchaChallenge(): Promise<CaptchaChallenge> {
+    return this.client.get<CaptchaChallenge>("/auth/captcha");
   }
 
   login(body: LoginRequest): Promise<AuthSession> {

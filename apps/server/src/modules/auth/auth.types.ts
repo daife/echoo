@@ -7,10 +7,14 @@ export interface RegisterBody {
 export interface LoginBody {
   email: string;
   password: string;
+  captchaId: string;
+  captchaAnswer: string;
 }
 
 export interface ForgotPasswordBody {
   email: string;
+  captchaId: string;
+  captchaAnswer: string;
 }
 
 export interface ResetPasswordBody {

@@ -21,8 +21,14 @@ interface AuthContextValue {
   authMode: AuthMode;
   authError: string | null;
   authLinkParams: AuthLinkParams;
+  getCaptchaChallenge: () => Promise<{ id: string; question: string }>;
   requireAuth: (mode?: AuthMode) => void;
-  login: (input: { email: string; password: string }) => Promise<void>;
+  login: (input: {
+    email: string;
+    password: string;
+    captchaId: string;
+    captchaAnswer: string;
+  }) => Promise<void>;
   register: (input: {
     email: string;
     password: string;
@@ -30,6 +36,8 @@ interface AuthContextValue {
   }) => Promise<{ verificationToken?: string }>;
   forgotPassword: (input: {
     email: string;
+    captchaId: string;
+    captchaAnswer: string;
   }) => Promise<{ resetToken?: string }>;
   resetPassword: (input: { token: string; password: string }) => Promise<void>;
   verifyEmail: (input: { token: string }) => Promise<void>;
@@ -121,6 +129,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       authMode,
       authError,
       authLinkParams,
+      getCaptchaChallenge: () => services.authService.getCaptchaChallenge(),
       requireAuth: (mode = "login") => {
         setAuthMode(mode);
         setAuthError(null);
