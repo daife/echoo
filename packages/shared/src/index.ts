@@ -14,6 +14,7 @@ export * from "./types/conversation.js";
 export * from "./types/message.js";
 export * from "./types/runtime-config.js";
 export * from "./types/rewards.js";
+export * from "./types/payments.js";
 export * from "./types/sync.js";
 export * from "./utils/mp3-duration.js";
 export * from "./validators/agent.schema.js";

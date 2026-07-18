@@ -463,6 +463,8 @@ function BillingPanel({ token, onExpired }: PanelProps) {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [status, setStatus] = useState("");
+  const [usdToCnyRate, setUsdToCnyRate] = useState("");
+  const [paymentConfigured, setPaymentConfigured] = useState(false);
 
   const loadUsers = async () => {
     try {
@@ -478,7 +480,29 @@ function BillingPanel({ token, onExpired }: PanelProps) {
   };
   useEffect(() => {
     void loadUsers();
+    void authed<AdminPlatformSettingsView>(token, "/settings")
+      .then((settings) => {
+        setUsdToCnyRate(settings.recharge.usdToCnyRate ?? "");
+        setPaymentConfigured(settings.recharge.paymentConfigured);
+      })
+      .catch((error) => handlePanelError(error, setStatus, onExpired));
   }, []);
+
+  const saveRechargeSettings = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      const settings = await authed<AdminPlatformSettingsView>(
+        token,
+        "/settings",
+        { method: "PATCH", body: { usdToCnyRate } },
+      );
+      setUsdToCnyRate(settings.recharge.usdToCnyRate ?? "");
+      setPaymentConfigured(settings.recharge.paymentConfigured);
+      setStatus("充值汇率已保存，仅影响新创建的订单。");
+    } catch (error) {
+      handlePanelError(error, setStatus, onExpired);
+    }
+  };
 
   const openUser = async (user: AdminUser) => {
     setSelected(user);
@@ -505,7 +529,42 @@ function BillingPanel({ token, onExpired }: PanelProps) {
     }
   };
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.1fr_.9fr]">
+    <div className="space-y-6">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold">在线充值设置</h2>
+            <p className="mt-2 text-sm leading-6 text-white/40">
+              用户购买美元额度，订单按创建时的汇率快照计算人民币实付金额。
+            </p>
+          </div>
+          <span
+            className={`rounded-full px-3 py-1 text-xs ${paymentConfigured ? "bg-emerald-300/10 text-emerald-100/70" : "bg-amber-300/10 text-amber-100/70"}`}
+          >
+            {paymentConfigured ? "易支付环境已配置" : "易支付环境未配置"}
+          </span>
+        </div>
+        <form
+          onSubmit={saveRechargeSettings}
+          className="mt-5 flex max-w-xl flex-col gap-3 sm:flex-row sm:items-end"
+        >
+          <label className="flex-1 text-sm text-white/58">
+            1 USD = 多少 CNY
+            <input
+              required
+              inputMode="decimal"
+              value={usdToCnyRate}
+              onChange={(event) => setUsdToCnyRate(event.target.value)}
+              placeholder="例如 7.2"
+              className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2.5"
+            />
+          </label>
+          <button className="rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-black">
+            保存充值汇率
+          </button>
+        </form>
+      </section>
+      <div className="grid gap-6 lg:grid-cols-[1.1fr_.9fr]">
       <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
         <div className="mb-4 flex gap-2">
           <input
@@ -594,6 +653,7 @@ function BillingPanel({ token, onExpired }: PanelProps) {
         )}
         {status ? <p className="mt-4 text-sm text-white/55">{status}</p> : null}
       </section>
+      </div>
     </div>
   );
 }

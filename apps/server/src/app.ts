@@ -30,6 +30,7 @@ import { ChangeEventDispatcher } from "./modules/sync/change-event.dispatcher.js
 import { ChangeEventRepository } from "./modules/sync/change-event.repository.js";
 import { wsSessionManager } from "./modules/realtime/ws-session-manager.js";
 import { registerRewardsRoutes } from "./modules/rewards/rewards.controller.js";
+import { registerRechargeRoutes } from "./modules/payments/recharge.controller.js";
 
 export async function buildApp() {
   await initializeDatabase();
@@ -102,6 +103,7 @@ export async function buildApp() {
   await app.register(registerResourceRoutes, { prefix: "/api/resources" });
   await app.register(registerRuntimeConfigRoutes, { prefix: "/api" });
   await app.register(registerBillingRoutes, { prefix: "/api" });
+  await app.register(registerRechargeRoutes, { prefix: "/api" });
   await app.register(registerRewardsRoutes, { prefix: "/api" });
   await app.register(registerPlatformCatalogRoutes, { prefix: "/api" });
   await app.register(registerCharacterAssetRoutes, { prefix: "/api" });

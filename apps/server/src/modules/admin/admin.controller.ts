@@ -15,6 +15,7 @@ import { isRecommendationCategory } from "../platform-catalog/platform-catalog.c
 import { PlatformCatalogService } from "../platform-catalog/platform-catalog.service.js";
 import { RuntimeConfigService } from "../runtime-config/runtime-config.service.js";
 import { PlatformSettingsService } from "../platform-settings/platform-settings.service.js";
+import { RechargeService } from "../payments/recharge.service.js";
 
 interface AdminUserRow extends RowDataPacket {
   id: string;
@@ -50,6 +51,7 @@ const presetNameSchema = z.object({
 
 const adminSettingsSchema = z.object({
   billingMultiplier: z.number().optional(),
+  usdToCnyRate: z.string().trim().min(1).max(40).optional(),
   invitation: z
     .object({
       inviterRewardUsd: z.string().trim().min(1).max(40),
@@ -70,6 +72,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   const catalog = new PlatformCatalogService();
   const runtimeConfigs = new RuntimeConfigService();
   const platformSettings = new PlatformSettingsService();
+  const recharge = new RechargeService({ settings: platformSettings });
 
   app.post<{ Body: { password?: string } }>(
     "/login",
@@ -143,6 +146,10 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     if (!(await request.requireAdmin(reply))) return;
     return {
       billingMultiplier: await billing.getMultiplier(),
+      recharge: {
+        usdToCnyRate: await platformSettings.getUsdToCnyRate(),
+        paymentConfigured: recharge.isPaymentConfigured(),
+      },
       ...(await platformSettings.getRewardSettings()),
     };
   });
@@ -155,6 +162,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         const body = adminSettingsSchema.parse(request.body);
         if (body.billingMultiplier !== undefined)
           await billing.setMultiplier(body.billingMultiplier);
+        if (body.usdToCnyRate !== undefined)
+          await platformSettings.setUsdToCnyRate(body.usdToCnyRate);
         if (body.invitation || body.promotion)
           await platformSettings.setRewardSettings({
             ...(body.invitation ? { invitation: body.invitation } : {}),
@@ -162,6 +171,10 @@ export async function registerAdminRoutes(app: FastifyInstance) {
           });
         return {
           billingMultiplier: await billing.getMultiplier(),
+          recharge: {
+            usdToCnyRate: await platformSettings.getUsdToCnyRate(),
+            paymentConfigured: recharge.isPaymentConfigured(),
+          },
           ...(await platformSettings.getRewardSettings()),
         };
       } catch (error) {

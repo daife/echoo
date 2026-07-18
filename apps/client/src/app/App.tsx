@@ -88,7 +88,11 @@ export function App() {
   const runtime = useRuntime();
   const services = useServices();
   const queryClient = useQueryClient();
-  const [view, setView] = useState<AppView>("home");
+  const [view, setView] = useState<AppView>(() =>
+    new URLSearchParams(window.location.search).has("rechargeOrder")
+      ? "settings"
+      : "home",
+  );
   const [bindingsReturnView, setBindingsReturnView] =
     useState<AppView>("messages");
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
@@ -612,6 +616,7 @@ export function App() {
         <SettingsPage
           runtimeConfigService={services.runtimeConfigService}
           rewardsService={services.rewardsService}
+          rechargeService={services.rechargeService}
           onBack={closeSettings}
         />
       );

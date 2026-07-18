@@ -304,7 +304,8 @@ export interface WalletView {
       | "invite_referrer_reward"
       | "invite_redeemer_reward"
       | "promotion_reward"
-      | "creator_reward";
+      | "creator_reward"
+      | "recharge";
     amountUsd: string;
     balanceAfterUsd: string;
     service?: string;

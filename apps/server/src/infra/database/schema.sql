@@ -367,6 +367,27 @@ CREATE TABLE IF NOT EXISTS billing_ledger (
   CONSTRAINT fk_billing_ledger_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS recharge_orders (
+  out_trade_no VARCHAR(32) PRIMARY KEY,
+  owner_user_id VARCHAR(64) NOT NULL,
+  payment_type VARCHAR(16) NOT NULL,
+  product_name VARCHAR(100) NOT NULL,
+  credit_micro_usd BIGINT NOT NULL,
+  usd_to_cny_rate_micro BIGINT NOT NULL,
+  pay_amount_fen BIGINT NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'pending',
+  provider_trade_no VARCHAR(64) NULL,
+  credited_ledger_id VARCHAR(64) NULL,
+  last_provider_query_at BIGINT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  paid_at BIGINT NULL,
+  UNIQUE KEY uq_recharge_provider_trade (provider_trade_no),
+  UNIQUE KEY uq_recharge_ledger (credited_ledger_id),
+  INDEX idx_recharge_owner_created (owner_user_id, created_at DESC),
+  CONSTRAINT fk_recharge_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS invite_codes (
   owner_user_id VARCHAR(64) PRIMARY KEY,
   code VARCHAR(16) NOT NULL UNIQUE,

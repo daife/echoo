@@ -68,4 +68,8 @@ export interface AdminRewardSettingsRequest {
 
 export interface AdminPlatformSettingsView extends RewardSettingsView {
   billingMultiplier: number;
+  recharge: {
+    usdToCnyRate: string | null;
+    paymentConfigured: boolean;
+  };
 }

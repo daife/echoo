@@ -21,8 +21,32 @@ const BILLING_MULTIPLIER = "billing_multiplier";
 const NEW_USER_RUNTIME_DEFAULTS = "new_user_runtime_defaults";
 const RUNTIME_CONFIG_PRESETS = "runtime_config_presets";
 const REWARD_SETTINGS = "reward_settings";
+const USD_TO_CNY_RATE = "usd_to_cny_rate";
 
 export class PlatformSettingsService {
+  async getUsdToCnyRate(): Promise<string | null> {
+    const row = await this.find(USD_TO_CNY_RATE);
+    const parsed = parseJson(row?.value_json);
+    const value =
+      typeof parsed === "string"
+        ? parsed
+        : typeof (parsed as { value?: unknown } | null)?.value === "string"
+          ? (parsed as { value: string }).value
+          : null;
+    if (!value) return null;
+    try {
+      return normalizeUsdToCnyRate(value);
+    } catch {
+      return null;
+    }
+  }
+
+  async setUsdToCnyRate(value: string) {
+    const normalized = normalizeUsdToCnyRate(value);
+    await this.save(USD_TO_CNY_RATE, normalized);
+    return normalized;
+  }
+
   async getBillingMultiplier() {
     const row = await this.find(BILLING_MULTIPLIER);
     const parsed = parseJson(row?.value_json);
@@ -197,6 +221,18 @@ export class PlatformSettingsService {
       [key, JSON.stringify(value), updatedAt],
     );
   }
+}
+
+export function normalizeUsdToCnyRate(value: string) {
+  const trimmed = value.trim();
+  if (!/^\d+(?:\.\d{1,6})?$/.test(trimmed))
+    throw new Error("美元兑人民币汇率必须是最多 6 位小数的正数。");
+  const [whole, fraction = ""] = trimmed.split(".");
+  const micro = BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, "0"));
+  if (micro < 10_000n || micro > 100_000_000n)
+    throw new Error("美元兑人民币汇率必须在 0.01 到 100 之间。");
+  const normalizedFraction = fraction.replace(/0+$/, "");
+  return `${BigInt(whole)}${normalizedFraction ? `.${normalizedFraction}` : ""}`;
 }
 
 function parseJson(value: unknown) {

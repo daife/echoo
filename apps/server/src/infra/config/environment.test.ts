@@ -10,6 +10,11 @@ const managedKeys = [
   "PLATFORM_OPENROUTER_API_KEY",
   "PLATFORM_DEEPSEEK_API_KEY",
   "OPENROUTER_API_KEY",
+  "PUBLIC_SERVER_URL",
+  "ZPAY_PID",
+  "ZPAY_KEY",
+  "ZPAY_CID",
+  "ZPAY_BASE_URL",
 ] as const;
 
 function withEnvironment(
@@ -70,5 +75,32 @@ test("reads the platform DeepSeek key from its dedicated environment variable", 
         buildEnvironment().platformDeepSeekApiKey,
         "deepseek-secret",
       ),
+  );
+});
+
+test("rejects a partially configured ZPAY integration", () => {
+  withEnvironment(
+    {
+      RESOURCE_STORAGE_PROVIDER: "local",
+      PUBLIC_SERVER_URL: "https://api.example.com",
+      ZPAY_PID: "1001",
+      ZPAY_KEY: undefined,
+    },
+    () => assert.throws(buildEnvironment, /ZPAY_KEY/),
+  );
+});
+
+test("requires an HTTPS public callback origin in production", () => {
+  withEnvironment(
+    {
+      NODE_ENV: "production",
+      JWT_SECRET: "secret",
+      MYSQL_URL: "mysql://user:pass@localhost/echoo",
+      RESOURCE_STORAGE_PROVIDER: "local",
+      PUBLIC_SERVER_URL: "http://api.example.com",
+      ZPAY_PID: "1001",
+      ZPAY_KEY: "merchant-key",
+    },
+    () => assert.throws(buildEnvironment, /HTTPS/),
   );
 });

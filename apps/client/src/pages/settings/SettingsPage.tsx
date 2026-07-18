@@ -5,7 +5,7 @@ import type {
   WalletView,
 } from "@echoo/shared";
 import { ArrowLeft } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import {
   PrimeRuntimeConfigForm,
@@ -13,15 +13,19 @@ import {
 } from "../../features/runtime-config/RuntimeConfigForms";
 import type { RuntimeConfigService } from "../../services/RuntimeConfigService";
 import type { RewardsService } from "../../services/RewardsService";
+import type { RechargeService } from "../../services/RechargeService";
 import { RewardCenter } from "./RewardCenter";
+import { RechargePanel } from "./RechargePanel";
 
 export function SettingsPage({
   runtimeConfigService,
   rewardsService,
+  rechargeService,
   onBack,
 }: {
   runtimeConfigService: RuntimeConfigService;
   rewardsService: RewardsService;
+  rechargeService: RechargeService;
   onBack: () => void;
 }) {
   const auth = useAuth();
@@ -33,8 +37,9 @@ export function SettingsPage({
   const [notice, setNotice] = useState<string | null>(null);
   const [wallet, setWallet] = useState<WalletView | null>(null);
 
-  const refreshWallet = async () =>
+  const refreshWallet = useCallback(async () => {
     setWallet(await runtimeConfigService.getWallet());
+  }, [runtimeConfigService]);
 
   useEffect(() => {
     let cancelled = false;
@@ -164,6 +169,10 @@ export function SettingsPage({
           </details>
         ) : null}
       </div>
+      <RechargePanel
+        service={rechargeService}
+        onWalletChanged={refreshWallet}
+      />
       <RewardCenter
         service={rewardsService}
         onWalletChanged={refreshWallet}

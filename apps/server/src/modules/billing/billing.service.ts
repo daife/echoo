@@ -31,7 +31,8 @@ interface LedgerRow extends RowDataPacket {
     | "invite_referrer_reward"
     | "invite_redeemer_reward"
     | "promotion_reward"
-    | "creator_reward";
+    | "creator_reward"
+    | "recharge";
   amount_micro_usd: number;
   balance_after_micro_usd: number;
   service: string | null;

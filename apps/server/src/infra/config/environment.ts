@@ -47,6 +47,14 @@ export function buildEnvironment() {
   const s3Bucket = optional("RESOURCE_S3_BUCKET");
   const s3AccessKeyId = optional("RESOURCE_S3_ACCESS_KEY_ID");
   const s3SecretAccessKey = optional("RESOURCE_S3_SECRET_ACCESS_KEY");
+  const publicServerUrl = optional("PUBLIC_SERVER_URL");
+  const zpayPid = optional("ZPAY_PID");
+  const zpayKey = optional("ZPAY_KEY");
+  const zpayCid = optional("ZPAY_CID");
+  const zpayConfiguredPartially = Boolean(
+    publicServerUrl || zpayPid || zpayKey || zpayCid,
+  );
+  const zpayEnabled = Boolean(publicServerUrl && zpayPid && zpayKey);
 
   if (production) {
     required("JWT_SECRET", jwtSecret);
@@ -57,6 +65,23 @@ export function buildEnvironment() {
     required("RESOURCE_S3_ACCESS_KEY_ID", s3AccessKeyId);
     required("RESOURCE_S3_SECRET_ACCESS_KEY", s3SecretAccessKey);
   }
+  if (zpayConfiguredPartially && !zpayEnabled)
+    throw new Error(
+      "启用易支付时必须同时配置 PUBLIC_SERVER_URL、ZPAY_PID 和 ZPAY_KEY。",
+    );
+  if (zpayEnabled) {
+    const publicUrl = parseHttpUrl("PUBLIC_SERVER_URL", publicServerUrl!);
+    if (publicUrl.search || publicUrl.hash)
+      throw new Error("PUBLIC_SERVER_URL 不支持查询参数或片段。");
+    if (publicUrl.pathname !== "/")
+      throw new Error("PUBLIC_SERVER_URL 只能配置服务器 origin，不能包含路径。");
+    if (production && publicUrl.protocol !== "https:")
+      throw new Error("生产环境的 PUBLIC_SERVER_URL 必须使用 HTTPS。");
+  }
+  const zpayBaseUrl = parseHttpUrl(
+    "ZPAY_BASE_URL",
+    optional("ZPAY_BASE_URL") ?? "https://zpayz.cn",
+  );
 
   return Object.freeze({
     nodeEnv,
@@ -65,6 +90,7 @@ export function buildEnvironment() {
     serverPort: numberValue("SERVER_PORT", 8787, { integer: true, minimum: 1 }),
     jwtSecret: jwtSecret ?? "dev-secret",
     clientUrl: optional("CLIENT_URL") ?? "http://localhost:5173",
+    publicServerUrl,
     mysqlUrl: mysqlUrl ?? "mysql://echoo:echoo@127.0.0.1:3306/echoo",
     mysqlPoolSize: numberValue("MYSQL_POOL_SIZE", 20, {
       integer: true,
@@ -120,11 +146,28 @@ export function buildEnvironment() {
       "wss://api.fish.audio/v1/tts/live",
     platformFishAudioApiKey: optional("PLATFORM_FISH_AUDIO_API_KEY") ?? "",
     adminPassword: optional("ADMIN_PASSWORD"),
+    zpayEnabled,
+    zpayPid,
+    zpayKey,
+    zpayCid,
+    zpayBaseUrl: zpayBaseUrl.toString().replace(/\/+$/, ""),
     primeSilencePollMs: numberValue("PRIME_SILENCE_POLL_MS", 1_000, {
       integer: true,
       minimum: 100,
     }),
   });
+}
+
+function parseHttpUrl(name: string, value: string) {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`环境变量 ${name} 必须是有效 URL。`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:")
+    throw new Error(`环境变量 ${name} 只支持 HTTP 或 HTTPS。`);
+  return url;
 }
 
 export const environment = buildEnvironment();

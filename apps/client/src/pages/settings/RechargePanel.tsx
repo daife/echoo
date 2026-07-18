@@ -1,0 +1,258 @@
+import type {
+  RechargeConfigView,
+  RechargeOrderView,
+  RechargePaymentType,
+} from "@echoo/shared";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { isTauri } from "../../runtimes/factory/detectPlatform";
+import type { RechargeService } from "../../services/RechargeService";
+
+export function RechargePanel({
+  service,
+  onWalletChanged,
+}: {
+  service: RechargeService;
+  onWalletChanged: () => Promise<void>;
+}) {
+  const [config, setConfig] = useState<RechargeConfigView | null>(null);
+  const [creditUsd, setCreditUsd] = useState("10");
+  const [paymentType, setPaymentType] =
+    useState<RechargePaymentType>("alipay");
+  const [pendingOrder, setPendingOrder] = useState<RechargeOrderView | null>(
+    null,
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const nativeShell = isTauri();
+
+  useEffect(() => {
+    let cancelled = false;
+    void service
+      .getConfig()
+      .then((value) => {
+        if (!cancelled) setConfig(value);
+      })
+      .catch((caught) => {
+        if (!cancelled) setError(messageOf(caught));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [service]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const outTradeNo = url.searchParams.get("rechargeOrder");
+    if (!outTradeNo || !/^\d{1,32}$/.test(outTradeNo)) return;
+    let cancelled = false;
+    setStatus("正在确认充值结果…");
+    void confirmOrder(service, outTradeNo)
+      .then(async (order) => {
+        if (cancelled) return;
+        setPendingOrder(order.status === "pending" ? order : null);
+        if (order.status === "paid") {
+          await onWalletChanged();
+          if (!cancelled) setStatus(`充值成功，已到账 ${order.creditUsd} USD。`);
+        } else if (!cancelled) {
+          setStatus("支付结果尚未确认，可稍后手动刷新。");
+        }
+      })
+      .catch((caught) => {
+        if (!cancelled) setError(messageOf(caught));
+      })
+      .finally(() => {
+        url.searchParams.delete("rechargeOrder");
+        url.searchParams.delete("rechargeResult");
+        window.history.replaceState({}, "", url);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [service, onWalletChanged]);
+
+  const moneyCny = useMemo(() => {
+    return calculatePreviewMoneyCny(creditUsd, config?.usdToCnyRate ?? null);
+  }, [config?.usdToCnyRate, creditUsd]);
+
+  const createOrder = async (event: FormEvent) => {
+    event.preventDefault();
+    setError("");
+    setStatus("");
+    setSubmitting(true);
+    try {
+      const checkout = await service.createOrder({ creditUsd, paymentType });
+      setPendingOrder(checkout.order);
+      service.submitCheckout(checkout);
+    } catch (caught) {
+      setError(messageOf(caught));
+      setSubmitting(false);
+    }
+  };
+
+  const refreshPending = async () => {
+    if (!pendingOrder) return;
+    setError("");
+    setStatus("正在查询支付平台…");
+    try {
+      const order = await service.reconcile(pendingOrder.outTradeNo);
+      setPendingOrder(order.status === "pending" ? order : null);
+      if (order.status === "paid") {
+        await onWalletChanged();
+        setStatus(`充值成功，已到账 ${order.creditUsd} USD。`);
+      } else {
+        setStatus("支付结果尚未确认，请稍后再试。");
+      }
+    } catch (caught) {
+      setError(messageOf(caught));
+      setStatus("");
+    }
+  };
+
+  return (
+    <section className="glass-panel rounded-2xl p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] text-white/35">
+            Recharge
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-white">充值额度</h2>
+          <p className="mt-2 text-sm leading-6 text-white/42">
+            购买美元额度，人民币实付按下单时汇率锁定。
+          </p>
+        </div>
+        {config?.usdToCnyRate ? (
+          <span className="rounded-full bg-white/[0.05] px-3 py-1 text-xs text-white/50">
+            1 USD = {config.usdToCnyRate} CNY
+          </span>
+        ) : null}
+      </div>
+
+      {nativeShell ? (
+        <p className="mt-5 rounded-xl border border-amber-200/10 bg-amber-200/[0.04] p-4 text-sm text-amber-100/65">
+          当前原生客户端暂不跳转第三方收银台，请登录网页版完成充值。
+        </p>
+      ) : (
+        <form onSubmit={createOrder} className="mt-5 space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {(config?.quickAmountsUsd ?? ["5", "10", "20", "50", "100"]).map(
+              (amount) => (
+                <button
+                  key={amount}
+                  type="button"
+                  onClick={() => setCreditUsd(amount)}
+                  className={`rounded-lg border px-3 py-2 text-sm ${creditUsd === amount ? "border-white/25 bg-white text-black" : "border-white/10 text-white/60"}`}
+                >
+                  ${amount}
+                </button>
+              ),
+            )}
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="text-sm text-white/55">
+              充值美元额度
+              <input
+                required
+                type="number"
+                min="1"
+                max="1000"
+                step="0.01"
+                inputMode="decimal"
+                value={creditUsd}
+                onChange={(event) => setCreditUsd(event.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2.5"
+              />
+            </label>
+            <div>
+              <span className="text-sm text-white/55">支付方式</span>
+              <div className="mt-1.5 grid grid-cols-2 gap-2">
+                {(
+                  [
+                    ["alipay", "支付宝"],
+                    ["wxpay", "微信支付"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setPaymentType(value)}
+                    className={`rounded-lg border px-3 py-2.5 text-sm ${paymentType === value ? "border-white/25 bg-white/[0.08] text-white" : "border-white/10 text-white/45"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-black/15 p-4">
+            <p className="text-sm text-white/50">
+              ${creditUsd || "0"} × {config?.usdToCnyRate ?? "—"} =
+              <strong className="ml-2 font-mono text-lg text-white/85">
+                ¥{moneyCny ?? "—"}
+              </strong>
+            </p>
+            <button
+              disabled={!config?.enabled || submitting || !moneyCny}
+              className="rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              {submitting ? "正在创建订单…" : "前往支付"}
+            </button>
+          </div>
+          {!config?.enabled ? (
+            <p className="text-xs text-amber-100/55">
+              在线充值尚未完成商户配置或管理员尚未设置汇率。
+            </p>
+          ) : null}
+        </form>
+      )}
+
+      {pendingOrder ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/8 pt-4 text-sm">
+          <span className="text-white/45">
+            待确认订单 {pendingOrder.outTradeNo} · ¥{pendingOrder.moneyCny}
+          </span>
+          <button
+            type="button"
+            onClick={() => void refreshPending()}
+            className="rounded-lg border border-white/10 px-3 py-2 text-white/65"
+          >
+            刷新支付结果
+          </button>
+        </div>
+      ) : null}
+      {status ? <p className="mt-4 text-sm text-emerald-100/65">{status}</p> : null}
+      {error ? <p className="mt-4 text-sm text-red-200/75">{error}</p> : null}
+    </section>
+  );
+}
+
+async function confirmOrder(service: RechargeService, outTradeNo: string) {
+  const order = await service.getOrder(outTradeNo);
+  return order.status === "paid" ? order : service.reconcile(outTradeNo);
+}
+
+function messageOf(error: unknown) {
+  return error instanceof Error ? error.message : "充值操作失败。";
+}
+
+export function calculatePreviewMoneyCny(
+  creditUsd: string,
+  usdToCnyRate: string | null,
+) {
+  if (
+    !/^\d+(?:\.\d{1,2})?$/.test(creditUsd) ||
+    !usdToCnyRate ||
+    !/^\d+(?:\.\d{1,6})?$/.test(usdToCnyRate)
+  )
+    return null;
+  const [usdWhole, usdFraction = ""] = creditUsd.split(".");
+  const [rateWhole, rateFraction = ""] = usdToCnyRate.split(".");
+  const creditMicro =
+    BigInt(usdWhole) * 1_000_000n +
+    BigInt(usdFraction.padEnd(2, "0")) * 10_000n;
+  const rateMicro =
+    BigInt(rateWhole) * 1_000_000n +
+    BigInt(rateFraction.padEnd(6, "0"));
+  const fen = (creditMicro * rateMicro + 5_000_000_000n) / 10_000_000_000n;
+  return `${fen / 100n}.${String(fen % 100n).padStart(2, "0")}`;
+}

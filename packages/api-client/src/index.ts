@@ -10,3 +10,4 @@ export * from "./social";
 export * from "./posts";
 export * from "./users";
 export * from "./rewards";
+export * from "./payments";
