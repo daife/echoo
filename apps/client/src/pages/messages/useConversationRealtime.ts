@@ -182,11 +182,20 @@ export function useConversationRealtime(input: {
         }
         if (change.entity?.entityType === "message") {
           const message = change.entity.value;
+          const syncedMessage = { ...message, syncStatus: "synced" as const };
+          if (shouldHidePrimePendingPlaceholder(input.isPrimeFigure, message))
+            return;
+          if (
+            shouldBufferCompletedAssistantMessage(
+              input.isPrimeFigure,
+              message,
+            )
+          ) {
+            completeStreamedMessage(syncedMessage);
+            return;
+          }
           input.setMessages((current) =>
-            mergeLocalMessage(current, {
-              ...message,
-              syncStatus: "synced",
-            }),
+            mergeIncomingMessage(current, syncedMessage),
           );
         }
       }),
@@ -198,6 +207,8 @@ export function useConversationRealtime(input: {
           input.onRuntimeError({ id: message.id, text: runtimeErrorText });
           return;
         }
+        if (shouldHidePrimePendingPlaceholder(input.isPrimeFigure, message))
+          return;
         input.setIsAgentActive((current) =>
           activityAfterMessageCreated(current, message, !input.isPrimeFigure),
         );
@@ -206,8 +217,12 @@ export function useConversationRealtime(input: {
         );
       }),
       input.runtime.onMessageDelta((event) => {
-        if (event.conversationId === conversationId)
-          enqueueDisplayDelta(event.messageId, event.delta);
+        if (event.conversationId !== conversationId) return;
+        const message = input.messagesRef.current.find(
+          (item) => item.id === event.messageId,
+        );
+        if (!shouldDisplayMessageDelta(input.isPrimeFigure, message)) return;
+        enqueueDisplayDelta(event.messageId, event.delta);
       }),
       input.runtime.onMessageCompleted((message) => {
         if (message.conversationId !== conversationId) return;
@@ -344,6 +359,37 @@ function getStreamDrainDelay(buffer: StreamDisplayBuffer) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+export function shouldHidePrimePendingPlaceholder(
+  isPrimeFigure: boolean,
+  message: Pick<LocalMessage, "role" | "contentType" | "content" | "status">,
+) {
+  return (
+    isPrimeFigure &&
+    message.role === "assistant" &&
+    message.contentType !== "voice" &&
+    message.status === "pending" &&
+    !(message.content.text ?? "").trim()
+  );
+}
+
+export function shouldDisplayMessageDelta(
+  isPrimeFigure: boolean,
+  message: Pick<LocalMessage, "contentType"> | undefined,
+) {
+  return !isPrimeFigure || message?.contentType === "voice";
+}
+
+export function shouldBufferCompletedAssistantMessage(
+  isPrimeFigure: boolean,
+  message: Pick<LocalMessage, "role" | "status">,
+) {
+  return (
+    !isPrimeFigure &&
+    message.role === "assistant" &&
+    message.status !== "pending"
+  );
 }
 
 function updateAudioMessage(

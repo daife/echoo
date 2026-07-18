@@ -148,10 +148,13 @@ export class PrimeDecisionStreamSession {
           return;
         }
         setActionKind(state, state.typeBuffer);
-        if (!(
-          state.typeBuffer === "voice" &&
-          this.input.runtimeConfig.optimization.voice.enabled
-        ))
+        if (
+          state.typeBuffer !== "text" &&
+          !(
+            state.typeBuffer === "voice" &&
+            this.input.runtimeConfig.optimization.voice.enabled
+          )
+        )
           this.ensureCreated(state);
       }
       return;
@@ -198,6 +201,7 @@ export class PrimeDecisionStreamSession {
     }
     if (
       state.created &&
+      messageType(state) !== "text" &&
       event.delta &&
       event.field === visibleField(messageType(state))
     ) {
@@ -209,8 +213,10 @@ export class PrimeDecisionStreamSession {
         (messageType(state) === "voice" && event.field === "transcript"))
     ) {
       this.resolveTextComplete(state);
-      if (messageType(state) === "text")
+      if (messageType(state) === "text") {
+        this.ensureCreated(state);
         void this.completeTextDelivery(state).catch(() => undefined);
+      }
     }
     if (
       this.input.voiceRequestStreaming &&
@@ -242,16 +248,18 @@ export class PrimeDecisionStreamSession {
         !ensureVoiceState(state).optimizedTranscriptReady
       )
         state.fields.transcript = "";
-      this.ensureCreated(state);
       const finalText = getVisibleText(action.message);
       const streamedText = state.fields[visibleField(messageType(state))] ?? "";
-      if (finalText.startsWith(streamedText)) {
+      if (action.message.type === "text") {
+        state.fields.text = finalText;
+      } else if (finalText.startsWith(streamedText)) {
         const missing = finalText.slice(streamedText.length);
         if (missing) {
           state.fields[visibleField(messageType(state))] = finalText;
           this.queueTextDelta(state, missing);
         }
       }
+      this.ensureCreated(state);
       if (action.message.type === "image") {
         const image = ensureImageState(state);
         state.fields.generationPrompt = action.message.generationPrompt;
@@ -479,6 +487,8 @@ export class PrimeDecisionStreamSession {
       const placeholder = this.buildPlaceholder(state, now, "pending", {
         kind: "prime_figure",
       });
+      if (type === "text")
+        placeholder.content = { text: state.fields.text ?? "" };
       await this.messages.save({
         ownerUserId: this.input.ownerUserId,
         ...placeholder,
@@ -494,7 +504,7 @@ export class PrimeDecisionStreamSession {
         state.kind.tts
       )
         this.startAudioDelivery(state);
-      this.flushTextDelta(state);
+      if (type !== "text") this.flushTextDelta(state);
     })();
     this.deliveryTail = state.delivery.promise;
   }
@@ -681,7 +691,7 @@ export class PrimeDecisionStreamSession {
 
   private async completeTextDelivery(state: StreamedActionState) {
     await state.revealPromise;
-    this.flushTextDelta(state);
+    if (messageType(state) !== "text") this.flushTextDelta(state);
     this.resolveDelivery(state);
   }
 
@@ -740,6 +750,10 @@ export class PrimeDecisionStreamSession {
 
   private flushTextDelta(state: StreamedActionState) {
     state.text.flushScheduled = false;
+    if (messageType(state) === "text") {
+      state.text.pending = "";
+      return;
+    }
     if (!state.revealed) return;
     const delta = state.text.pending;
     if (!delta) return;

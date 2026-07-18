@@ -356,9 +356,9 @@ flowchart LR
 
 1. [`PrimeDecisionStreamParser`](../apps/server/src/modules/agents/kinds/prime-figure/prime-decision-stream-parser.ts#L40) 增量识别 `actions[i].message` 中的 type、text、transcript、generationPrompt 和 referenceMediaIds；
 2. [`PrimeDecisionStreamSession`](../apps/server/src/modules/agents/kinds/prime-figure/prime-decision-stream-session.ts#L135) 为每个 action 建立流式状态；
-3. 文本 delta 可以实时写缓存并推送；
+3. 普通文本在单条 `message.text` 完整后一次性写入并推送，不在气泡内展示 delta；同一轮后续文本仍按 `typingCharsPerMinute` 依次延迟发布；
 4. 图片的 generation prompt 与参考 ID 完整后即可提前启动生图；
-5. 语音可把 transcript delta 送入流式 TTS；如果语音优化开启，则先等待优化后的 transcript，避免把原稿提前合成；
+5. 语音是可见流式行为的例外，可把 transcript delta 送入流式 TTS；如果语音优化开启，则先等待优化后的 transcript，避免把原稿提前合成；
 6. `finalize` 用最终解析后的 decision 补齐增量阶段遗漏的字段，并等待图片/TTS promise，返回 message ID 与媒体结果映射。
 
 当表情或转账开启时，session 会使用 deferred delivery，因为这两类 action 不能像 text/image/voice 一样从 `message` 字段流中完整执行；最终由 executor 统一按 action 顺序发布，防止消息乱序。
