@@ -8,14 +8,30 @@ import {
 } from "../../infra/database/mysql.js";
 import { BillingContext, type BillingRunContext } from "./billing-context.js";
 import { PlatformSettingsService } from "../platform-settings/platform-settings.service.js";
+import { formatMicroUsd, parseUsdToMicro } from "./money.js";
+
+export { formatMicroUsd } from "./money.js";
 
 interface AccountRow extends RowDataPacket {
+  owner_user_id: string;
   balance_micro_usd: number;
+}
+
+interface CreatorAttributionRow extends RowDataPacket {
+  author_user_id: string;
+  asset_id: string;
 }
 
 interface LedgerRow extends RowDataPacket {
   id: string;
-  kind: "admin_credit" | "admin_debit" | "usage";
+  kind:
+    | "admin_credit"
+    | "admin_debit"
+    | "usage"
+    | "invite_referrer_reward"
+    | "invite_redeemer_reward"
+    | "promotion_reward"
+    | "creator_reward";
   amount_micro_usd: number;
   balance_after_micro_usd: number;
   service: string | null;
@@ -82,21 +98,47 @@ export class BillingService {
   ) {
     try {
       await withTransaction(async (connection) => {
-        let account = await queryOne<AccountRow>(
-          "SELECT balance_micro_usd FROM billing_accounts WHERE owner_user_id = ? FOR UPDATE",
-          [context.ownerUserId],
+        const creator = context.conversationId
+          ? await queryOne<CreatorAttributionRow>(
+              `SELECT assets.author_user_id, assets.id asset_id
+                 FROM conversations conversations
+                 JOIN character_asset_installations installations
+                   ON installations.agent_id = conversations.agent_id
+                 JOIN character_assets assets
+                   ON assets.id = installations.asset_id
+                  AND assets.status = 'published'
+                WHERE conversations.id = ? AND conversations.owner_user_id = ?
+                LIMIT 1`,
+              [context.conversationId, context.ownerUserId],
+              connection,
+            )
+          : null;
+        const accountIds = Array.from(
+          new Set(
+            [context.ownerUserId, creator?.author_user_id].filter(
+              (value): value is string => Boolean(value),
+            ),
+          ),
+        ).sort();
+        for (const ownerUserId of accountIds)
+          await this.insertAccountIfAbsent(ownerUserId, connection);
+        const accounts = await queryRows<AccountRow>(
+          `SELECT owner_user_id, balance_micro_usd FROM billing_accounts
+            WHERE owner_user_id IN (${accountIds.map(() => "?").join(",")})
+            ORDER BY owner_user_id FOR UPDATE`,
+          accountIds,
           connection,
         );
-        if (!account) {
-          await this.insertAccountIfAbsent(context.ownerUserId, connection);
-          account = await queryOne<AccountRow>(
-            "SELECT balance_micro_usd FROM billing_accounts WHERE owner_user_id = ? FOR UPDATE",
-            [context.ownerUserId],
-            connection,
-          );
-        }
-        const nextBalance = (account?.balance_micro_usd ?? 0) - chargeMicroUsd;
+        const balances = new Map(
+          accounts.map((account) => [
+            account.owner_user_id,
+            account.balance_micro_usd,
+          ]),
+        );
+        const nextBalance =
+          (balances.get(context.ownerUserId) ?? 0) - chargeMicroUsd;
         const now = Date.now();
+        const usageLedgerId = `bill_${randomUUID()}`;
         await execute(
           "UPDATE billing_accounts SET balance_micro_usd = ?, updated_at = ? WHERE owner_user_id = ?",
           [nextBalance, now, context.ownerUserId],
@@ -108,7 +150,7 @@ export class BillingService {
             service, model, upstream_request_id, metadata, created_at)
            VALUES (?, ?, 'usage', ?, ?, ?, ?, ?, ?, ?)`,
           [
-            `bill_${randomUUID()}`,
+            usageLedgerId,
             context.ownerUserId,
             -chargeMicroUsd,
             nextBalance,
@@ -125,6 +167,44 @@ export class BillingService {
           ],
           connection,
         );
+        const creatorRewardMicroUsd = creator
+          ? calculateCreatorRewardMicroUsd(chargeMicroUsd)
+          : 0;
+        if (creator && creatorRewardMicroUsd > 0) {
+          const creatorBalanceBefore =
+            creator.author_user_id === context.ownerUserId
+              ? nextBalance
+              : (balances.get(creator.author_user_id) ?? 0);
+          const creatorBalanceAfter =
+            creatorBalanceBefore + creatorRewardMicroUsd;
+          await execute(
+            "UPDATE billing_accounts SET balance_micro_usd = ?, updated_at = ? WHERE owner_user_id = ?",
+            [creatorBalanceAfter, now, creator.author_user_id],
+            connection,
+          );
+          await execute(
+            `INSERT INTO billing_ledger
+             (id, owner_user_id, kind, amount_micro_usd,
+              balance_after_micro_usd, note, metadata, created_at)
+             VALUES (?, ?, 'creator_reward', ?, ?, ?, ?, ?)`,
+            [
+              `bill_${randomUUID()}`,
+              creator.author_user_id,
+              creatorRewardMicroUsd,
+              creatorBalanceAfter,
+              "公开作品创作激励",
+              JSON.stringify({
+                rewardPercent: 1,
+                assetId: creator.asset_id,
+                payerUserId: context.ownerUserId,
+                conversationId: context.conversationId,
+                sourceUsageLedgerId: usageLedgerId,
+              }),
+              now,
+            ],
+            connection,
+          );
+        }
       });
     } catch (error) {
       if (isDuplicateEntry(error)) return;
@@ -241,19 +321,9 @@ export class BillingService {
   }
 }
 
-export function formatMicroUsd(value: number) {
-  return (value / 1_000_000).toFixed(6).replace(/\.?0+$/, "") || "0";
-}
-
-function parseUsdToMicro(value: string) {
-  if (!/^-?\d+(?:\.\d{1,6})?$/.test(value.trim()))
-    throw new Error("金额必须是最多 6 位小数的美元数值。");
-  const negative = value.trim().startsWith("-");
-  const unsigned = value.trim().replace(/^-/, "");
-  const [whole, fraction = ""] = unsigned.split(".");
-  const micro = Number(whole) * 1_000_000 + Number(fraction.padEnd(6, "0"));
-  if (!Number.isSafeInteger(micro)) throw new Error("金额超出支持范围。");
-  return negative ? -micro : micro;
+export function calculateCreatorRewardMicroUsd(chargeMicroUsd: number) {
+  if (!Number.isSafeInteger(chargeMicroUsd) || chargeMicroUsd <= 0) return 0;
+  return Math.floor(chargeMicroUsd / 100);
 }
 
 function isDuplicateEntry(error: unknown) {

@@ -4,6 +4,7 @@ import type { PoolConnection } from "mysql2/promise";
 import { BillingContext, type BillingRunContext } from "./billing-context.js";
 import {
   BillingService,
+  calculateCreatorRewardMicroUsd,
   InsufficientPlatformBalanceError,
 } from "./billing.service.js";
 
@@ -95,4 +96,11 @@ test("zero-cost usage skips multiplier reads and settlement", async () => {
   );
   assert.equal(settings.reads, 0);
   assert.equal(service.settlements.length, 0);
+});
+
+test("creator reward is one percent rounded down to micro USD", () => {
+  assert.equal(calculateCreatorRewardMicroUsd(99), 0);
+  assert.equal(calculateCreatorRewardMicroUsd(100), 1);
+  assert.equal(calculateCreatorRewardMicroUsd(123_456), 1_234);
+  assert.equal(calculateCreatorRewardMicroUsd(0), 0);
 });

@@ -353,7 +353,7 @@ CREATE TABLE IF NOT EXISTS billing_accounts (
 CREATE TABLE IF NOT EXISTS billing_ledger (
   id VARCHAR(64) PRIMARY KEY,
   owner_user_id VARCHAR(64) NOT NULL,
-  kind ENUM('admin_credit', 'admin_debit', 'usage') NOT NULL,
+  kind VARCHAR(48) NOT NULL,
   amount_micro_usd BIGINT NOT NULL,
   balance_after_micro_usd BIGINT NOT NULL,
   service VARCHAR(48) NULL,
@@ -365,6 +365,53 @@ CREATE TABLE IF NOT EXISTS billing_ledger (
   UNIQUE KEY uq_billing_upstream (service, upstream_request_id),
   INDEX idx_billing_ledger_owner_created (owner_user_id, created_at DESC),
   CONSTRAINT fk_billing_ledger_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS invite_codes (
+  owner_user_id VARCHAR(64) PRIMARY KEY,
+  code VARCHAR(16) NOT NULL UNIQUE,
+  created_at BIGINT NOT NULL,
+  CONSTRAINT fk_invite_codes_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS invite_redemptions (
+  invitee_user_id VARCHAR(64) PRIMARY KEY,
+  inviter_user_id VARCHAR(64) NOT NULL,
+  invite_code VARCHAR(16) NOT NULL,
+  inviter_reward_micro_usd BIGINT NOT NULL,
+  invitee_reward_micro_usd BIGINT NOT NULL,
+  redeemed_at BIGINT NOT NULL,
+  INDEX idx_invite_redemptions_inviter (inviter_user_id, redeemed_at DESC),
+  CONSTRAINT fk_invite_redemptions_invitee FOREIGN KEY (invitee_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_invite_redemptions_inviter FOREIGN KEY (inviter_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS promotion_bindings (
+  id VARCHAR(64) PRIMARY KEY,
+  owner_user_id VARCHAR(64) NOT NULL,
+  platform VARCHAR(32) NOT NULL,
+  work_type VARCHAR(32) NOT NULL,
+  external_content_id VARCHAR(160) NOT NULL,
+  external_author_id VARCHAR(255) NULL,
+  source_url VARCHAR(2048) NOT NULL,
+  initial_like_count BIGINT UNSIGNED NOT NULL,
+  initial_tags JSON NOT NULL,
+  last_checked_like_count BIGINT UNSIGNED NULL,
+  last_checked_tags JSON NULL,
+  last_checked_at BIGINT NULL,
+  quote_id VARCHAR(64) NULL,
+  quote_like_count BIGINT UNSIGNED NULL,
+  quote_reward_micro_usd BIGINT NULL,
+  quote_config JSON NULL,
+  quote_expires_at BIGINT NULL,
+  settled_like_count BIGINT UNSIGNED NULL,
+  settled_reward_micro_usd BIGINT NULL,
+  settled_at BIGINT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  UNIQUE KEY uq_promotion_external_content (platform, external_content_id),
+  INDEX idx_promotion_bindings_owner_created (owner_user_id, created_at DESC),
+  CONSTRAINT fk_promotion_bindings_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS platform_models (

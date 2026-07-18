@@ -40,6 +40,15 @@ export async function initializeDatabase() {
     for (const statement of schema.split(/;\s*(?:\r?\n|$)/)) {
       if (statement.trim()) await connection.query(statement);
     }
+    const [billingKindColumns] = await connection.query<RowDataPacket[]>(
+      `SELECT data_type FROM information_schema.columns
+       WHERE table_schema = DATABASE() AND table_name = 'billing_ledger'
+         AND column_name = 'kind'`,
+    );
+    if (billingKindColumns[0]?.data_type === "enum")
+      await connection.query(
+        "ALTER TABLE billing_ledger MODIFY kind VARCHAR(48) NOT NULL",
+      );
     const [legacyColumns] = await connection.query<RowDataPacket[]>(
       `SELECT column_name FROM information_schema.columns
        WHERE table_schema = DATABASE() AND table_name = 'conversations'

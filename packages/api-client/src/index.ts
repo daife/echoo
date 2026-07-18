@@ -9,3 +9,4 @@ export * from "./sync";
 export * from "./social";
 export * from "./posts";
 export * from "./users";
+export * from "./rewards";

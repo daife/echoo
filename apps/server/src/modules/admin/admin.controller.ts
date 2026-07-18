@@ -14,6 +14,7 @@ import { BillingService, formatMicroUsd } from "../billing/billing.service.js";
 import { isRecommendationCategory } from "../platform-catalog/platform-catalog.controller.js";
 import { PlatformCatalogService } from "../platform-catalog/platform-catalog.service.js";
 import { RuntimeConfigService } from "../runtime-config/runtime-config.service.js";
+import { PlatformSettingsService } from "../platform-settings/platform-settings.service.js";
 
 interface AdminUserRow extends RowDataPacket {
   id: string;
@@ -47,10 +48,28 @@ const presetNameSchema = z.object({
   name: z.string().trim().min(1).max(80),
 });
 
+const adminSettingsSchema = z.object({
+  billingMultiplier: z.number().optional(),
+  invitation: z
+    .object({
+      inviterRewardUsd: z.string().trim().min(1).max(40),
+      inviteeRewardUsd: z.string().trim().min(1).max(40),
+    })
+    .optional(),
+  promotion: z
+    .object({
+      minimumLikes: z.number().int().nonnegative(),
+      usdPerLike: z.string().trim().min(1).max(40),
+      maxRewardUsd: z.string().trim().min(1).max(40),
+    })
+    .optional(),
+});
+
 export async function registerAdminRoutes(app: FastifyInstance) {
   const billing = new BillingService();
   const catalog = new PlatformCatalogService();
   const runtimeConfigs = new RuntimeConfigService();
+  const platformSettings = new PlatformSettingsService();
 
   app.post<{ Body: { password?: string } }>(
     "/login",
@@ -122,17 +141,29 @@ export async function registerAdminRoutes(app: FastifyInstance) {
 
   app.get("/settings", async (request, reply) => {
     if (!(await request.requireAdmin(reply))) return;
-    return { billingMultiplier: await billing.getMultiplier() };
+    return {
+      billingMultiplier: await billing.getMultiplier(),
+      ...(await platformSettings.getRewardSettings()),
+    };
   });
 
-  app.patch<{ Body: { billingMultiplier?: number } }>(
+  app.patch<{ Body: unknown }>(
     "/settings",
     async (request, reply) => {
       if (!(await request.requireAdmin(reply))) return;
       try {
-        return await billing.setMultiplier(
-          Number(request.body?.billingMultiplier),
-        );
+        const body = adminSettingsSchema.parse(request.body);
+        if (body.billingMultiplier !== undefined)
+          await billing.setMultiplier(body.billingMultiplier);
+        if (body.invitation || body.promotion)
+          await platformSettings.setRewardSettings({
+            ...(body.invitation ? { invitation: body.invitation } : {}),
+            ...(body.promotion ? { promotion: body.promotion } : {}),
+          });
+        return {
+          billingMultiplier: await billing.getMultiplier(),
+          ...(await platformSettings.getRewardSettings()),
+        };
       } catch (error) {
         return reply
           .code(400)

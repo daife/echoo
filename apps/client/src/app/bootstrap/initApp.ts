@@ -9,6 +9,7 @@ import {
   PostsApi,
   SocialApi,
   UsersApi,
+  RewardsApi,
 } from "@echoo/api-client";
 import { AgentService } from "../../services/AgentService";
 import { AuthService } from "../../services/AuthService";
@@ -17,6 +18,7 @@ import type { RuntimeBundle } from "../../runtimes/factory/RuntimeBundle";
 import { RuntimeConfigService } from "../../services/RuntimeConfigService";
 import { CharacterAssetService } from "../../services/CharacterAssetService";
 import { SocialService } from "../../services/SocialService";
+import { RewardsService } from "../../services/RewardsService";
 
 export function initApp(runtime: RuntimeBundle) {
   let refreshPromise: Promise<string | null> | null = null;
@@ -50,6 +52,7 @@ export function initApp(runtime: RuntimeBundle) {
       runtime.message,
     ),
     runtimeConfigService: new RuntimeConfigService(new RuntimeConfigApi(api)),
+    rewardsService: new RewardsService(new RewardsApi(api)),
     socialService: new SocialService(
       new PostsApi(api),
       new UsersApi(api),

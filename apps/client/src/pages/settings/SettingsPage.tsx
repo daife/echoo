@@ -12,12 +12,16 @@ import {
   SliceRuntimeConfigForm,
 } from "../../features/runtime-config/RuntimeConfigForms";
 import type { RuntimeConfigService } from "../../services/RuntimeConfigService";
+import type { RewardsService } from "../../services/RewardsService";
+import { RewardCenter } from "./RewardCenter";
 
 export function SettingsPage({
   runtimeConfigService,
+  rewardsService,
   onBack,
 }: {
   runtimeConfigService: RuntimeConfigService;
+  rewardsService: RewardsService;
   onBack: () => void;
 }) {
   const auth = useAuth();
@@ -28,6 +32,9 @@ export function SettingsPage({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [wallet, setWallet] = useState<WalletView | null>(null);
+
+  const refreshWallet = async () =>
+    setWallet(await runtimeConfigService.getWallet());
 
   useEffect(() => {
     let cancelled = false;
@@ -157,6 +164,10 @@ export function SettingsPage({
           </details>
         ) : null}
       </div>
+      <RewardCenter
+        service={rewardsService}
+        onWalletChanged={refreshWallet}
+      />
       <div className="glass-panel rounded-2xl p-5 md:p-6">
         <div className="mb-6">
           <h2 className="text-xl font-semibold text-white">用户全局运行配置</h2>

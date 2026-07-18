@@ -25,6 +25,7 @@ import { RuntimeConfigService } from "../runtime-config/runtime-config.service.j
 import { BillingService } from "../billing/billing.service.js";
 import { ResourceRepository } from "../resources/resource.repository.js";
 import { AuthSessionRepository } from "./auth-session.repository.js";
+import { RewardsService } from "../rewards/rewards.service.js";
 
 export class AuthService {
   private readonly tokenService: TokenService;
@@ -38,6 +39,7 @@ export class AuthService {
     private readonly billing = new BillingService(),
     private readonly resources = new ResourceRepository(),
     private readonly sessions = new AuthSessionRepository(),
+    private readonly rewards = new RewardsService(),
   ) {
     this.tokenService = new TokenService(app);
   }
@@ -62,6 +64,7 @@ export class AuthService {
     // INSERT IGNORE preserves any config already created during an earlier attempt.
     await this.runtimeConfigs.initializeUserConfig(user.id);
     await this.billing.initializeAccount(user.id);
+    await this.rewards.initializeInviteCode(user.id);
 
     const verificationToken = await this.users.createEmailVerificationToken(
       user.id,

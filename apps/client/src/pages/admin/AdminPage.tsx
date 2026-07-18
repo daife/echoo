@@ -6,6 +6,7 @@ import type {
   SliceFigureRuntimeConfigPatch,
   RuntimeConfigPresetsView,
   WalletView,
+  AdminPlatformSettingsView,
 } from "@echoo/shared";
 import { ApiClient } from "@echoo/api-client";
 import { useEffect, useState, type FormEvent } from "react";
@@ -123,7 +124,11 @@ function AdminConsole({
   onExpired: () => void;
 }) {
   const [section, setSection] = useState<
-    "billing" | "models" | "recommendations" | "runtime-defaults"
+    | "billing"
+    | "rewards"
+    | "models"
+    | "recommendations"
+    | "runtime-defaults"
   >("billing");
   return (
     <main className="min-h-screen bg-[#09090b] p-5 text-[#e5e2e1] md:p-10">
@@ -146,6 +151,7 @@ function AdminConsole({
           {(
             [
               ["billing", "用户与余额"],
+              ["rewards", "奖励配置"],
               ["models", "OpenRouter 模型"],
               ["recommendations", "推荐与计费"],
               ["runtime-defaults", "新用户默认配置"],
@@ -162,6 +168,9 @@ function AdminConsole({
         </nav>
         {section === "billing" ? (
           <BillingPanel token={token} onExpired={onExpired} />
+        ) : null}
+        {section === "rewards" ? (
+          <RewardSettingsPanel token={token} onExpired={onExpired} />
         ) : null}
         {section === "models" ? (
           <ModelsPanel token={token} onExpired={onExpired} />
@@ -586,6 +595,200 @@ function BillingPanel({ token, onExpired }: PanelProps) {
         {status ? <p className="mt-4 text-sm text-white/55">{status}</p> : null}
       </section>
     </div>
+  );
+}
+
+function RewardSettingsPanel({ token, onExpired }: PanelProps) {
+  const [value, setValue] = useState<AdminPlatformSettingsView | null>(null);
+  const [status, setStatus] = useState("");
+
+  const load = async () => {
+    try {
+      setValue(await authed<AdminPlatformSettingsView>(token, "/settings"));
+      setStatus("");
+    } catch (error) {
+      handlePanelError(error, setStatus, onExpired);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!value) return;
+    try {
+      const next = await authed<AdminPlatformSettingsView>(token, "/settings", {
+        method: "PATCH",
+        body: {
+          invitation: {
+            inviterRewardUsd: value.invitation.inviterRewardUsd,
+            inviteeRewardUsd: value.invitation.inviteeRewardUsd,
+          },
+          promotion: {
+            minimumLikes: value.promotion.minimumLikes,
+            usdPerLike: value.promotion.usdPerLike,
+            maxRewardUsd: value.promotion.maxRewardUsd,
+          },
+        },
+      });
+      setValue(next);
+      setStatus("奖励配置已保存。新兑换和新报价将使用最新参数。");
+    } catch (error) {
+      handlePanelError(error, setStatus, onExpired);
+    }
+  };
+
+  if (!value)
+    return (
+      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+        <p className="text-sm text-white/50">{status || "正在加载奖励配置…"}</p>
+      </section>
+    );
+
+  return (
+    <form onSubmit={save} className="space-y-6">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold">邀请注册奖励</h2>
+            <p className="mt-2 text-sm leading-6 text-white/42">
+              两项都大于 0 时开放。修改只影响之后发生的兑换。
+            </p>
+          </div>
+          <span
+            className={`rounded-full px-3 py-1 text-xs ${value.invitation.enabled ? "bg-emerald-200/10 text-emerald-100/75" : "bg-white/[0.05] text-white/40"}`}
+          >
+            {value.invitation.enabled ? "已开放" : "已关闭"}
+          </span>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <label className="text-sm text-white/58">
+            邀请人奖励（USD）
+            <input
+              required
+              inputMode="decimal"
+              value={value.invitation.inviterRewardUsd}
+              onChange={(event) =>
+                setValue({
+                  ...value,
+                  invitation: {
+                    ...value.invitation,
+                    inviterRewardUsd: event.target.value,
+                  },
+                })
+              }
+              className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2.5"
+            />
+          </label>
+          <label className="text-sm text-white/58">
+            新用户奖励（USD）
+            <input
+              required
+              inputMode="decimal"
+              value={value.invitation.inviteeRewardUsd}
+              onChange={(event) =>
+                setValue({
+                  ...value,
+                  invitation: {
+                    ...value.invitation,
+                    inviteeRewardUsd: event.target.value,
+                  },
+                })
+              }
+              className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2.5"
+            />
+          </label>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold">推广结算</h2>
+            <p className="mt-2 text-sm leading-6 text-white/42">
+              三个平台共用：min(上限, max(0, 点赞 - 门槛) × 每赞金额)。每赞金额和上限都大于 0 时开放结算。
+            </p>
+          </div>
+          <span
+            className={`rounded-full px-3 py-1 text-xs ${value.promotion.enabled ? "bg-emerald-200/10 text-emerald-100/75" : "bg-white/[0.05] text-white/40"}`}
+          >
+            {value.promotion.enabled ? "已开放" : "已关闭"}
+          </span>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          <label className="text-sm text-white/58">
+            有效点赞门槛
+            <input
+              required
+              type="number"
+              min="0"
+              step="1"
+              value={value.promotion.minimumLikes}
+              onChange={(event) =>
+                setValue({
+                  ...value,
+                  promotion: {
+                    ...value.promotion,
+                    minimumLikes: Number(event.target.value),
+                  },
+                })
+              }
+              className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2.5"
+            />
+          </label>
+          <label className="text-sm text-white/58">
+            每赞金额（USD）
+            <input
+              required
+              inputMode="decimal"
+              value={value.promotion.usdPerLike}
+              onChange={(event) =>
+                setValue({
+                  ...value,
+                  promotion: {
+                    ...value.promotion,
+                    usdPerLike: event.target.value,
+                  },
+                })
+              }
+              className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2.5"
+            />
+          </label>
+          <label className="text-sm text-white/58">
+            单作品上限（USD）
+            <input
+              required
+              inputMode="decimal"
+              value={value.promotion.maxRewardUsd}
+              onChange={(event) =>
+                setValue({
+                  ...value,
+                  promotion: {
+                    ...value.promotion,
+                    maxRewardUsd: event.target.value,
+                  },
+                })
+              }
+              className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2.5"
+            />
+          </label>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+        <h2 className="text-xl font-semibold">创作激励</h2>
+        <p className="mt-2 text-sm leading-6 text-white/45">
+          固定返还 {value.creator.rewardPercent}%：仅公开作品处于上架状态且使用平台服务 API 时触发，暂不支持修改。
+        </p>
+      </section>
+
+      <button className="rounded-lg bg-white px-5 py-2.5 text-sm font-medium text-black">
+        保存奖励配置
+      </button>
+      {status ? <p className="text-sm text-white/55">{status}</p> : null}
+    </form>
   );
 }
 

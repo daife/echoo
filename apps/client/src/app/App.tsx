@@ -611,6 +611,7 @@ export function App() {
       return (
         <SettingsPage
           runtimeConfigService={services.runtimeConfigService}
+          rewardsService={services.rewardsService}
           onBack={closeSettings}
         />
       );

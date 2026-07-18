@@ -1,5 +1,13 @@
 import type { RowDataPacket } from "mysql2";
+import type {
+  AdminRewardSettingsRequest,
+  RewardSettingsView,
+} from "@echoo/shared";
 import { execute, queryOne } from "../../infra/database/mysql.js";
+import {
+  normalizeNonNegativeUsd,
+  parseUsdToMicro,
+} from "../billing/money.js";
 import { buildRuntimeConfigDefaults } from "../runtime-config/runtime-config.defaults.js";
 import type { StoredUserRuntimeConfig } from "../runtime-config/runtime-config.types.js";
 import type { StoredRuntimeConfigPresets } from "../runtime-config/runtime-config.types.js";
@@ -12,6 +20,7 @@ interface SettingRow extends RowDataPacket {
 const BILLING_MULTIPLIER = "billing_multiplier";
 const NEW_USER_RUNTIME_DEFAULTS = "new_user_runtime_defaults";
 const RUNTIME_CONFIG_PRESETS = "runtime_config_presets";
+const REWARD_SETTINGS = "reward_settings";
 
 export class PlatformSettingsService {
   async getBillingMultiplier() {
@@ -31,6 +40,87 @@ export class PlatformSettingsService {
       throw new Error("计费倍率必须大于 0 且不超过 100。");
     await this.save(BILLING_MULTIPLIER, value);
     return value;
+  }
+
+  async getRewardSettings(): Promise<RewardSettingsView> {
+    const row = await this.find(REWARD_SETTINGS);
+    const parsed = parseJson(row?.value_json) as
+      | {
+          invitation?: {
+            inviterRewardUsd?: unknown;
+            inviteeRewardUsd?: unknown;
+          };
+          promotion?: {
+            minimumLikes?: unknown;
+            usdPerLike?: unknown;
+            maxRewardUsd?: unknown;
+          };
+        }
+      | null;
+    const inviterRewardUsd = safeUsd(parsed?.invitation?.inviterRewardUsd);
+    const inviteeRewardUsd = safeUsd(parsed?.invitation?.inviteeRewardUsd);
+    const usdPerLike = safeUsd(parsed?.promotion?.usdPerLike);
+    const maxRewardUsd = safeUsd(parsed?.promotion?.maxRewardUsd);
+    const minimumLikes =
+      Number.isSafeInteger(parsed?.promotion?.minimumLikes) &&
+      Number(parsed?.promotion?.minimumLikes) >= 0
+        ? Number(parsed?.promotion?.minimumLikes)
+        : 0;
+    return {
+      invitation: {
+        inviterRewardUsd,
+        inviteeRewardUsd,
+        enabled:
+          parseUsdToMicro(inviterRewardUsd) > 0 &&
+          parseUsdToMicro(inviteeRewardUsd) > 0,
+      },
+      promotion: {
+        minimumLikes,
+        usdPerLike,
+        maxRewardUsd,
+        enabled:
+          parseUsdToMicro(usdPerLike) > 0 &&
+          parseUsdToMicro(maxRewardUsd) > 0,
+        requiredTag: "echoo",
+      },
+      creator: { rewardPercent: 1 },
+    };
+  }
+
+  async setRewardSettings(input: AdminRewardSettingsRequest) {
+    const current = await this.getRewardSettings();
+    const next = {
+      invitation: input.invitation
+        ? {
+            inviterRewardUsd: normalizeNonNegativeUsd(
+              input.invitation.inviterRewardUsd,
+            ),
+            inviteeRewardUsd: normalizeNonNegativeUsd(
+              input.invitation.inviteeRewardUsd,
+            ),
+          }
+        : {
+            inviterRewardUsd: current.invitation.inviterRewardUsd,
+            inviteeRewardUsd: current.invitation.inviteeRewardUsd,
+          },
+      promotion: input.promotion
+        ? {
+            minimumLikes: validateMinimumLikes(
+              input.promotion.minimumLikes,
+            ),
+            usdPerLike: normalizeNonNegativeUsd(input.promotion.usdPerLike),
+            maxRewardUsd: normalizeNonNegativeUsd(
+              input.promotion.maxRewardUsd,
+            ),
+          }
+        : {
+            minimumLikes: current.promotion.minimumLikes,
+            usdPerLike: current.promotion.usdPerLike,
+            maxRewardUsd: current.promotion.maxRewardUsd,
+          },
+    };
+    await this.save(REWARD_SETTINGS, next);
+    return this.getRewardSettings();
   }
 
   async getNewUserRuntimeDefaults(): Promise<{
@@ -116,4 +206,19 @@ function parseJson(value: unknown) {
   } catch {
     return null;
   }
+}
+
+function safeUsd(value: unknown) {
+  if (typeof value !== "string") return "0";
+  try {
+    return normalizeNonNegativeUsd(value);
+  } catch {
+    return "0";
+  }
+}
+
+function validateMinimumLikes(value: number) {
+  if (!Number.isSafeInteger(value) || value < 0)
+    throw new Error("推广点赞门槛必须是非负整数。");
+  return value;
 }

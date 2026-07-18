@@ -297,7 +297,14 @@ export interface WalletView {
   balanceUsd: string;
   entries: Array<{
     id: string;
-    kind: "admin_credit" | "admin_debit" | "usage";
+    kind:
+      | "admin_credit"
+      | "admin_debit"
+      | "usage"
+      | "invite_referrer_reward"
+      | "invite_redeemer_reward"
+      | "promotion_reward"
+      | "creator_reward";
     amountUsd: string;
     balanceAfterUsd: string;
     service?: string;
