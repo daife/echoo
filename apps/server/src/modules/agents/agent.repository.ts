@@ -35,9 +35,8 @@ interface AgentRow extends RowDataPacket {
   type: Agent["type"];
   name: string;
   definition: unknown;
+  public_asset_publishable: number | boolean;
   conversation_runtime_state: unknown;
-  is_public?: number | boolean;
-  published_asset_id?: string | null;
   conversation_id: string | null;
   created_at: number;
   updated_at: number;
@@ -1020,14 +1019,10 @@ async function saveRuntimeStateRecord(
 }
 
 const SELECT_AGENT = `SELECT agents.*, conversations.id AS conversation_id,
-  runtime.state_json AS conversation_runtime_state,
-  (published_assets.status = 'published') AS is_public,
-  published_assets.id AS published_asset_id
+  runtime.state_json AS conversation_runtime_state
   FROM agents
   LEFT JOIN conversations ON conversations.agent_id = agents.id
-  LEFT JOIN agent_runtime_states runtime ON runtime.agent_id = agents.id
-  LEFT JOIN character_assets published_assets
-    ON published_assets.source_agent_id = agents.id`;
+  LEFT JOIN agent_runtime_states runtime ON runtime.agent_id = agents.id`;
 
 function rowToAgent(row: AgentRow): Agent {
   const stored = parseJson<
@@ -1049,10 +1044,8 @@ function rowToAgent(row: AgentRow): Agent {
     ownerUserId: row.owner_user_id,
     type: row.type,
     name: row.name,
-    isPublic: Boolean(row.is_public),
-    ...(row.published_asset_id
-      ? { publishedAssetId: row.published_asset_id }
-      : {}),
+    isPublic: false,
+    canPublishAsPublicAsset: Boolean(row.public_asset_publishable),
     conversationId: row.conversation_id ?? "",
     createdAt: row.created_at,
     updatedAt: row.updated_at,

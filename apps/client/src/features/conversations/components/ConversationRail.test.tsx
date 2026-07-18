@@ -14,6 +14,7 @@ const agent = {
   tags: [],
   linkedAgentIds: [],
   isPublic: false,
+  canPublishAsPublicAsset: true,
   conversationId: "conversation_1",
   createdAt: 1,
   updatedAt: 1,

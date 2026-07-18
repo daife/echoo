@@ -7,6 +7,7 @@ import {
 import type {
   Agent,
   CharacterAssetDraft,
+  CreateCharacterAssetDraftRequest,
   AddPrimeFigureStickerRequest,
   CreatePrimeFigureRequest,
   CreateSliceFigureRequest,
@@ -397,29 +398,16 @@ export function App() {
     return agent;
   };
 
-  const createOrOpenPublicDraft = async (agentId: string) => {
-    const draft = await services.characterAssetService.createDraft(agentId);
+  const createOrOpenPublicDraft = async (
+    input: CreateCharacterAssetDraftRequest,
+  ) => {
+    const draft = await services.characterAssetService.createDraft(input);
     setPublicAssets((current) => [
       draft,
       ...current.filter((item) => item.id !== draft.id),
     ]);
     setEditingPublicAsset(draft);
     setView("public-editor");
-  };
-
-  const unlistAgentAsset = async (agentId: string, assetId: string) => {
-    await services.characterAssetService.unlist(assetId);
-    setMyAgents((current) =>
-      current.map((agent) =>
-        agent.id === agentId
-          ? { ...agent, isPublic: false, publishedAssetId: undefined }
-          : agent,
-      ),
-    );
-    const next = await services.characterAssetService.getDraft(assetId);
-    setPublicAssets((current) =>
-      current.map((asset) => (asset.id === assetId ? next : asset)),
-    );
   };
 
   const ActivePage = useMemo(() => {
@@ -450,19 +438,6 @@ export function App() {
             setPublicAssets((current) =>
               current.filter((asset) => asset.id !== editingPublicAsset.id),
             );
-            if (editingPublicAsset.sourceAgentId) {
-              setMyAgents((current) =>
-                current.map((agent) =>
-                  agent.id === editingPublicAsset.sourceAgentId
-                    ? {
-                        ...agent,
-                        isPublic: false,
-                        publishedAssetId: undefined,
-                      }
-                    : agent,
-                ),
-              );
-            }
             setEditingPublicAsset(null);
             setView("profile");
           }}
@@ -471,19 +446,6 @@ export function App() {
             setPublicAssets((current) =>
               current.map((asset) => (asset.id === next.id ? next : asset)),
             );
-            if (next.sourceAgentId)
-              setMyAgents((current) =>
-                current.map((agent) =>
-                  agent.id === next.sourceAgentId
-                    ? {
-                        ...agent,
-                        isPublic: next.status === "published",
-                        publishedAssetId:
-                          next.status === "published" ? next.id : undefined,
-                      }
-                    : agent,
-                ),
-              );
           }}
         />
       );
@@ -500,7 +462,6 @@ export function App() {
             setEditingPublicAsset(asset);
             setView("public-editor");
           }}
-          onUnlistAsset={unlistAgentAsset}
         />
       );
     if (view === "create")

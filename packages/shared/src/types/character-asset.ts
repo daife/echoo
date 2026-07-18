@@ -9,6 +9,10 @@ import type {
 export type CharacterAssetType = Exclude<AgentType, "prime-world">;
 export type CharacterAssetStatus = "draft" | "published" | "unlisted";
 
+export type CreateCharacterAssetDraftRequest =
+  | { type: CharacterAssetType; copyFromAgentId?: never }
+  | { copyFromAgentId: string; type?: never };
+
 export interface CharacterAssetSnapshotBase {
   type: CharacterAssetType;
   name: string;
@@ -77,7 +81,6 @@ export interface CharacterAssetPage {
 export interface CharacterAssetDraft {
   id: string;
   author: { id: string; displayName: string };
-  sourceAgentId?: string;
   status: CharacterAssetStatus;
   snapshot: CharacterAssetSnapshot;
   recommendedRuntimeConfig?: PublishedRuntimeRecommendation;

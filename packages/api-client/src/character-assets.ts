@@ -4,6 +4,7 @@ import type {
   CharacterAssetPage,
   CharacterAssetSnapshot,
   CharacterAssetSummary,
+  CreateCharacterAssetDraftRequest,
   InstallCharacterAssetResponse,
   InstallCharacterAssetRequest,
   PublishCharacterAssetResponse,
@@ -81,9 +82,11 @@ export class CharacterAssetsApi {
       }));
   }
 
-  createDraft(agentId: string): Promise<CharacterAssetDraft> {
+  createDraft(
+    input: CreateCharacterAssetDraftRequest,
+  ): Promise<CharacterAssetDraft> {
     return this.client
-      .post<CharacterAssetDraft>(`/agents/${agentId}/character-asset-draft`)
+      .post<CharacterAssetDraft>("/character-assets/drafts", input)
       .then((draft) => this.normalizeDraft(draft));
   }
 

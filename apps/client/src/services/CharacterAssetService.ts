@@ -23,8 +23,8 @@ export class CharacterAssetService {
       applyRecommendedRuntimeConfig,
     });
   }
-  createDraft(agentId: string) {
-    return this.api.createDraft(agentId);
+  createDraft(input: Parameters<CharacterAssetsApi["createDraft"]>[0]) {
+    return this.api.createDraft(input);
   }
   listMine() {
     return this.api.listMine();

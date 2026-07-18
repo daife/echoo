@@ -41,7 +41,6 @@ interface DraftRow extends RowDataPacket {
   id: string;
   author_user_id: string;
   display_name: string;
-  source_agent_id: string | null;
   status: "draft" | "published" | "unlisted";
   latest_version_id: string | null;
   latest_version_number: number | null;
@@ -71,19 +70,11 @@ export class CharacterAssetRepository {
 
   async createDraft(input: {
     authorUserId: string;
-    sourceAgentId: string;
     snapshot: CharacterAssetSnapshot;
     recommendedRuntimeConfig: PublishedRuntimeRecommendation | null;
     resources: AssetResourceReference[];
   }) {
     return withTransaction(async (connection) => {
-      const existing = await queryOne<RowDataPacket & { id: string }>(
-        `SELECT id FROM character_assets
-         WHERE author_user_id = ? AND source_agent_id = ? FOR UPDATE`,
-        [input.authorUserId, input.sourceAgentId],
-        connection,
-      );
-      if (existing) return existing.id;
       const assetId = createId("asset");
       const now = Date.now();
       await execute(
@@ -95,14 +86,13 @@ export class CharacterAssetRepository {
       );
       await execute(
         `INSERT INTO character_assets
-         (id, author_user_id, source_agent_id, status, latest_version_id,
+         (id, author_user_id, status, latest_version_id,
           draft_snapshot, draft_recommended_runtime_config, draft_dirty,
           published_at, unlisted_at, created_at, updated_at)
-         VALUES (?, ?, ?, 'draft', NULL, ?, ?, TRUE, ?, NULL, ?, ?)`,
+         VALUES (?, ?, 'draft', NULL, ?, ?, TRUE, ?, NULL, ?, ?)`,
         [
           assetId,
           input.authorUserId,
-          input.sourceAgentId,
           JSON.stringify(input.snapshot),
           input.recommendedRuntimeConfig
             ? JSON.stringify(input.recommendedRuntimeConfig)
@@ -200,10 +190,9 @@ export class CharacterAssetRepository {
           draft_snapshot: unknown;
           draft_recommended_runtime_config: unknown | null;
           draft_dirty: number;
-          source_agent_id: string | null;
         }
       >(
-        `SELECT status, latest_version_id, draft_snapshot, source_agent_id,
+        `SELECT status, latest_version_id, draft_snapshot,
                 draft_recommended_runtime_config, draft_dirty
            FROM character_assets
           WHERE id = ? AND author_user_id = ? FOR UPDATE`,
@@ -219,13 +208,7 @@ export class CharacterAssetRepository {
           [now, now, assetId],
           connection,
         );
-        await this.appendAssetAndSourceAgentEvents(
-          connection,
-          ownerUserId,
-          assetId,
-          row.source_agent_id,
-          now,
-        );
+        await this.appendAssetEvent(connection, ownerUserId, assetId, now);
         return { assetId, versionId: row.latest_version_id!, relisted: true };
       }
       if (row.status === "published" && !row.draft_dirty) return null;
@@ -278,13 +261,7 @@ export class CharacterAssetRepository {
         [now, assetId],
         connection,
       );
-      await this.appendAssetAndSourceAgentEvents(
-        connection,
-        ownerUserId,
-        assetId,
-        row.source_agent_id,
-        now,
-      );
+      await this.appendAssetEvent(connection, ownerUserId, assetId, now);
       return { assetId, versionId, versionNumber, relisted: false };
     });
   }
@@ -345,19 +322,10 @@ export class CharacterAssetRepository {
     return row ? rowToDetail(row) : null;
   }
 
-  async findBySourceAgent(ownerUserId: string, agentId: string) {
-    const row = await queryOne<RowDataPacket & { id: string }>(
-      `SELECT id FROM character_assets
-       WHERE author_user_id = ? AND source_agent_id = ?`,
-      [ownerUserId, agentId],
-    );
-    return row?.id ?? null;
-  }
-
   async unlist(ownerUserId: string, assetId: string) {
     return withTransaction(async (connection) => {
-      const asset = await queryOne<RowDataPacket & { source_agent_id: string | null }>(
-        "SELECT source_agent_id FROM character_assets WHERE id = ? AND author_user_id = ? FOR UPDATE",
+      const asset = await queryOne<RowDataPacket & { id: string }>(
+        "SELECT id FROM character_assets WHERE id = ? AND author_user_id = ? FOR UPDATE",
         [assetId, ownerUserId],
         connection,
       );
@@ -370,18 +338,12 @@ export class CharacterAssetRepository {
         connection,
       );
       if (result.affectedRows)
-        await this.appendAssetAndSourceAgentEvents(
-          connection,
-          ownerUserId,
-          assetId,
-          asset.source_agent_id,
-          now,
-        );
+        await this.appendAssetEvent(connection, ownerUserId, assetId, now);
       return result.affectedRows > 0;
     });
   }
 
-  async deleteUnlisted(ownerUserId: string, assetId: string) {
+  async deleteDeletable(ownerUserId: string, assetId: string) {
     return withTransaction(async (connection) => {
       const asset = await queryOne<
         RowDataPacket & { status: "draft" | "published" | "unlisted" }
@@ -392,7 +354,8 @@ export class CharacterAssetRepository {
         connection,
       );
       if (!asset) return "not-found" as const;
-      if (asset.status !== "unlisted") return "not-unlisted" as const;
+      if (!isDeletableCharacterAssetStatus(asset.status))
+        return "not-deletable" as const;
 
       // An installation is only the update link. Removing it leaves the copied
       // agent, conversation, messages, runtime state and resource references intact.
@@ -445,6 +408,7 @@ export class CharacterAssetRepository {
     assetId: string;
     versionId: string;
     snapshot: CharacterAssetSnapshot;
+    publicAssetPublishable: boolean;
   }) {
     return withTransaction(async (connection) => {
       const existing = await queryOne<
@@ -472,6 +436,7 @@ export class CharacterAssetRepository {
         agentId,
         conversationId,
         input.snapshot,
+        input.publicAssetPublishable,
         now,
       );
       await execute(
@@ -569,12 +534,7 @@ export class CharacterAssetRepository {
       await execute(
         `UPDATE conversations SET type = ?, title = ?, updated_at = ?
          WHERE id = ?`,
-        [
-          input.snapshot.type,
-          input.snapshot.name,
-          now,
-          conversation.id,
-        ],
+        [input.snapshot.type, input.snapshot.name, now, conversation.id],
         connection,
       );
       await execute(
@@ -621,11 +581,10 @@ export class CharacterAssetRepository {
     });
   }
 
-  private async appendAssetAndSourceAgentEvents(
+  private async appendAssetEvent(
     connection: PoolConnection,
     ownerUserId: string,
     assetId: string,
-    sourceAgentId: string | null,
     now: number,
   ) {
     await this.events.append(
@@ -638,22 +597,11 @@ export class CharacterAssetRepository {
       },
       connection,
     );
-    if (sourceAgentId)
-      await this.events.append(
-        {
-          ownerUserId,
-          entityType: "agent",
-          entityId: sourceAgentId,
-          operation: "upsert",
-          createdAt: now,
-        },
-        connection,
-      );
   }
 }
 
 const DRAFT_SELECT = `SELECT assets.id, assets.author_user_id,
-  users.display_name, assets.source_agent_id, assets.status,
+  users.display_name, assets.status,
   assets.latest_version_id, latest.version_number AS latest_version_number,
   assets.draft_snapshot, assets.draft_recommended_runtime_config,
   assets.draft_dirty, assets.created_at, assets.updated_at
@@ -735,7 +683,6 @@ function rowToDraft(row: DraftRow): CharacterAssetDraft {
   return {
     id: row.id,
     author: { id: row.author_user_id, displayName: row.display_name },
-    ...(row.source_agent_id ? { sourceAgentId: row.source_agent_id } : {}),
     status: row.status,
     snapshot: parseJson<CharacterAssetSnapshot>(
       row.draft_snapshot,
@@ -803,18 +750,20 @@ async function insertSnapshotAgent(
   agentId: string,
   conversationId: string,
   snapshot: CharacterAssetSnapshot,
+  publicAssetPublishable: boolean,
   now: number,
 ) {
   await execute(
     `INSERT INTO agents
-     (id, owner_user_id, type, name, definition, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+     (id, owner_user_id, type, name, definition, public_asset_publishable, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       agentId,
       ownerUserId,
       snapshot.type,
       snapshot.name,
       JSON.stringify(snapshotToDefinition(snapshot)),
+      publicAssetPublishable,
       now,
       now,
     ],
@@ -944,4 +893,10 @@ function parseJson<T>(value: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+export function isDeletableCharacterAssetStatus(
+  status: "draft" | "published" | "unlisted",
+) {
+  return status === "draft" || status === "unlisted";
 }

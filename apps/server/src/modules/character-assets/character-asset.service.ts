@@ -1,10 +1,14 @@
-import type {
-  CharacterAssetSnapshot,
-  CreatePrimeFigureRequest,
-  CreateSliceFigureRequest,
-  PrimeFigureReferenceImage,
-  PrimeFigureSticker,
-  PublishedRuntimeRecommendation,
+import {
+  DEFAULT_SLICE_FIGURE_MEMORY_SUMMARY_PROMPT,
+  DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT,
+  type CharacterAssetType,
+  type CharacterAssetSnapshot,
+  type CreateCharacterAssetDraftRequest,
+  type CreatePrimeFigureRequest,
+  type CreateSliceFigureRequest,
+  type PrimeFigureReferenceImage,
+  type PrimeFigureSticker,
+  type PublishedRuntimeRecommendation,
 } from "@echoo/shared";
 import { AgentRepository } from "../agents/agent.repository.js";
 import { ResourceRepository } from "../resources/resource.repository.js";
@@ -56,26 +60,36 @@ export class CharacterAssetService {
     return draft;
   }
 
-  async createDraft(ownerUserId: string, agentId: string) {
-    const agent = await this.agents.findById(ownerUserId, agentId);
-    if (!agent || agent.type === "prime-world")
-      throw new CharacterAssetNotFoundError("未找到可发布的角色。");
-    const existingId = await this.assets.findBySourceAgent(
-      ownerUserId,
-      agentId,
-    );
-    if (existingId) return this.getDraft(ownerUserId, existingId);
-    const { snapshot, resources } = await this.buildSnapshot(
-      ownerUserId,
-      agent,
-    );
+  async createDraft(
+    ownerUserId: string,
+    input: CreateCharacterAssetDraftRequest,
+  ) {
+    let snapshot: CharacterAssetSnapshot;
+    let resources: AssetResourceReference[] = [];
+    if (typeof input.copyFromAgentId === "string") {
+      const agent = await this.agents.findById(
+        ownerUserId,
+        input.copyFromAgentId,
+      );
+      if (!agent || agent.type === "prime-world")
+        throw new CharacterAssetNotFoundError("未找到可拷贝的个人会话。");
+      if (!agent.canPublishAsPublicAsset)
+        throw new CharacterAssetForbiddenError(
+          "从其他创作者的公共角色添加的会话不能再次发布。",
+        );
+      ({ snapshot, resources } = await this.buildSnapshot(ownerUserId, agent));
+    } else {
+      snapshot = createEmptySnapshot(input.type);
+    }
     const defaults = await this.runtimeConfigs.getPlatformFigureDefaults(
-      agent.type,
+      snapshot.type,
     );
-    const recommendation = sanitizeRuntimeRecommendation(agent.type, defaults);
+    const recommendation = sanitizeRuntimeRecommendation(
+      snapshot.type,
+      defaults,
+    );
     const assetId = await this.assets.createDraft({
       authorUserId: ownerUserId,
-      sourceAgentId: agentId,
       snapshot,
       recommendedRuntimeConfig: recommendation,
       resources,
@@ -155,11 +169,11 @@ export class CharacterAssetService {
       throw new CharacterAssetNotFoundError("未找到可下架的角色资产。");
   }
 
-  async deleteUnlisted(ownerUserId: string, assetId: string) {
-    const result = await this.assets.deleteUnlisted(ownerUserId, assetId);
+  async deleteAsset(ownerUserId: string, assetId: string) {
+    const result = await this.assets.deleteDeletable(ownerUserId, assetId);
     if (result === "not-found")
       throw new CharacterAssetNotFoundError("未找到要删除的公共角色。");
-    if (result === "not-unlisted")
+    if (result === "not-deletable")
       throw new CharacterAssetForbiddenError("请先下架公共角色，再彻底删除。");
   }
 
@@ -176,6 +190,7 @@ export class CharacterAssetService {
       assetId,
       versionId: asset.latestVersion.id,
       snapshot: asset.latestVersion.snapshot,
+      publicAssetPublishable: asset.author.id === ownerUserId,
     });
     if (!installation)
       throw new CharacterAssetNotFoundError("角色资产不存在或已下架。");
@@ -576,6 +591,54 @@ function containsCustomSource(value: unknown): boolean {
   const record = value as Record<string, unknown>;
   if (record.source === "custom") return true;
   return Object.values(record).some(containsCustomSource);
+}
+
+function createEmptySnapshot(type: CharacterAssetType): CharacterAssetSnapshot {
+  const base = {
+    type,
+    name: "未命名公共角色",
+    attributes: [],
+    tags: [],
+    introduction: "",
+  };
+  if (type === "slice-figure")
+    return {
+      ...base,
+      type,
+      detail: {
+        prologueHtml: "",
+        currentSituation: "",
+        openingLine: "",
+        linkedAgentIds: [],
+        persona: "",
+        background: "",
+        personality: "",
+        responseStyle: "",
+        systemPrompt: DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT,
+        memorySummaryPrompt: DEFAULT_SLICE_FIGURE_MEMORY_SUMMARY_PROMPT,
+      },
+    };
+  return {
+    ...base,
+    type,
+    detail: {
+      prologueHtml: "",
+      linkedAgentIds: [],
+      persona: "",
+      background: "",
+      personality: "",
+      responseStyle: "",
+      decisionStyle: "",
+      currentSituation: "",
+      schedule: { segments: [] },
+      itinerary: "",
+      variableDefinitions: [],
+      referenceImages: [],
+      stickers: [],
+      initialMood: "",
+      initialRelationshipStatus: "",
+    },
+  };
 }
 
 function deduplicateReferences(references: AssetResourceReference[]) {

@@ -4,16 +4,16 @@ import {
   Heart,
   NotePencil,
   PencilSimple,
+  Plus,
   SpinnerGap,
   Trash,
-  UploadSimple,
-  Archive,
   X,
 } from "@phosphor-icons/react";
 import type {
   Agent,
   AgentResourceUpload,
   CharacterAssetDraft,
+  CreateCharacterAssetDraftRequest,
   UpdateUserProfileRequest,
   UserProfile,
 } from "@echoo/shared";
@@ -46,20 +46,20 @@ export function ProfilePage({
   publicAssets,
   onCreatePublicDraft,
   onManagePublicAsset,
-  onUnlistAsset,
 }: {
   agents: Agent[];
   isLoadingAgents: boolean;
   onOpenAgent: (agent: Agent) => void;
   onOpenSettings: () => void;
   publicAssets: CharacterAssetDraft[];
-  onCreatePublicDraft: (agentId: string) => Promise<void>;
+  onCreatePublicDraft: (
+    input: CreateCharacterAssetDraftRequest,
+  ) => Promise<void>;
   onManagePublicAsset: (asset: CharacterAssetDraft) => void;
-  onUnlistAsset: (agentId: string, assetId: string) => Promise<void>;
 }) {
   const auth = useAuth();
-  const [busyAgentId, setBusyAgentId] = useState<string | null>(null);
   const [publishNotice, setPublishNotice] = useState<string | null>(null);
+  const [isPublicCreateOpen, setIsPublicCreateOpen] = useState(false);
   const [isProfileEditorOpen, setIsProfileEditorOpen] = useState(false);
   const cards = agents.map((agent) => ({
     id: agent.id,
@@ -167,71 +167,11 @@ export function ProfilePage({
           ) : cards.length > 0 ? (
             <div className="grid gap-5 md:grid-cols-2">
               {cards.map((agent) => (
-                <div key={agent.id} className="space-y-2">
-                  <CharacterCard
-                    agent={agent}
-                    onOpenChat={() => onOpenAgent(agent.source)}
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      disabled={busyAgentId === agent.id}
-                      onClick={async () => {
-                        setBusyAgentId(agent.id);
-                        setPublishNotice(null);
-                        try {
-                          await onCreatePublicDraft(agent.id);
-                        } catch (error) {
-                          setPublishNotice(
-                            error instanceof Error
-                              ? error.message
-                              : "发布失败。",
-                          );
-                        } finally {
-                          setBusyAgentId(null);
-                        }
-                      }}
-                      className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] py-2.5 text-xs text-white/65 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-40"
-                    >
-                      <UploadSimple size={15} />
-                      {publicAssets.some(
-                        (asset) => asset.sourceAgentId === agent.id,
-                      )
-                        ? "管理公共版本"
-                        : "创建公共版本"}
-                    </button>
-                    {agent.source.isPublic && agent.source.publishedAssetId ? (
-                      <button
-                        type="button"
-                        disabled={busyAgentId === agent.id}
-                        onClick={async () => {
-                          setBusyAgentId(agent.id);
-                          try {
-                            await onUnlistAsset(
-                              agent.id,
-                              agent.source.publishedAssetId!,
-                            );
-                            setPublishNotice(
-                              "角色资产已下架，已有添加不受影响。",
-                            );
-                          } catch (error) {
-                            setPublishNotice(
-                              error instanceof Error
-                                ? error.message
-                                : "下架失败。",
-                            );
-                          } finally {
-                            setBusyAgentId(null);
-                          }
-                        }}
-                        className="grid w-11 place-items-center rounded-xl border border-white/10 text-white/42 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-40"
-                        aria-label="下架角色资产"
-                      >
-                        <Archive size={16} />
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
+                <CharacterCard
+                  key={agent.id}
+                  agent={agent}
+                  onOpenChat={() => onOpenAgent(agent.source)}
+                />
               ))}
             </div>
           ) : (
@@ -240,9 +180,26 @@ export function ProfilePage({
             </div>
           )}
 
-          <div className="mb-5 mt-12 flex items-center justify-between">
-            <h2 className="text-2xl font-semibold text-white">我的公共角色</h2>
-            <span className="text-sm text-white/40">独立草稿与公开版本</span>
+          <div className="mb-5 mt-12 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-semibold text-white">
+                我的公共角色
+              </h2>
+              <span className="mt-1 block text-sm text-white/40">
+                独立草稿与公开版本
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setPublishNotice(null);
+                setIsPublicCreateOpen(true);
+              }}
+              className="flex shrink-0 items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-medium text-[#09090b] transition active:scale-95"
+            >
+              <Plus size={16} weight="bold" />
+              创建公共角色
+            </button>
           </div>
           {publicAssets.length ? (
             <div className="space-y-3">
@@ -275,7 +232,7 @@ export function ProfilePage({
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm text-white/42">
-              从上方任一本地角色创建公共版本后，会先进入独立草稿编辑器。
+              还没有公共角色。你可以从空白开始，也可以拷贝自己的个人会话作为初始模板。
             </div>
           )}
         </div>
@@ -326,7 +283,178 @@ export function ProfilePage({
           }}
         />
       ) : null}
+      {isPublicCreateOpen ? (
+        <PublicAssetCreateDialog
+          agents={agents}
+          onClose={() => setIsPublicCreateOpen(false)}
+          onCreate={async (input) => {
+            try {
+              await onCreatePublicDraft(input);
+              setIsPublicCreateOpen(false);
+            } catch (error) {
+              setPublishNotice(
+                error instanceof Error ? error.message : "公共角色创建失败。",
+              );
+              throw error;
+            }
+          }}
+        />
+      ) : null}
     </section>
+  );
+}
+
+export function PublicAssetCreateDialog({
+  agents,
+  onClose,
+  onCreate,
+}: {
+  agents: Agent[];
+  onClose: () => void;
+  onCreate: (input: CreateCharacterAssetDraftRequest) => Promise<void>;
+}) {
+  const eligibleAgents = agents.filter(
+    (agent) => agent.type !== "prime-world" && agent.canPublishAsPublicAsset,
+  );
+  const [mode, setMode] = useState<"blank" | "copy">("blank");
+  const [type, setType] = useState<"slice-figure" | "prime-figure">(
+    "slice-figure",
+  );
+  const [copyFromAgentId, setCopyFromAgentId] = useState(
+    eligibleAgents[0]?.id ?? "",
+  );
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/65 px-4 py-8 backdrop-blur-sm"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !isSubmitting) onClose();
+      }}
+    >
+      <form
+        aria-label="创建公共角色"
+        className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#101014] p-6 shadow-[0_28px_100px_rgba(0,0,0,0.58)]"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (mode === "copy" && !copyFromAgentId) return;
+          setIsSubmitting(true);
+          setError(null);
+          try {
+            await onCreate(mode === "blank" ? { type } : { copyFromAgentId });
+          } catch (reason) {
+            setError(
+              reason instanceof Error ? reason.message : "公共角色创建失败。",
+            );
+          } finally {
+            setIsSubmitting(false);
+          }
+        }}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold text-white">创建公共角色</h2>
+            <p className="mt-1 text-sm leading-6 text-white/42">
+              公共角色是独立资产，拷贝完成后不会与个人会话联动。
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="关闭公共角色创建"
+            disabled={isSubmitting}
+            onClick={onClose}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-white/45 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-40"
+          >
+            <X size={17} />
+          </button>
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 gap-2 rounded-full border border-white/8 bg-white/[0.025] p-1.5">
+          {(
+            [
+              ["blank", "从空白创建"],
+              ["copy", "从个人会话拷贝"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setMode(value)}
+              className={`rounded-full px-3 py-2.5 text-sm transition ${mode === value ? "bg-white text-black" : "text-white/48 hover:text-white"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {mode === "blank" ? (
+          <fieldset className="mt-6">
+            <legend className="text-sm font-medium text-white/72">
+              角色类型
+            </legend>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              {(
+                [
+                  ["slice-figure", "切片角色"],
+                  ["prime-figure", "本初角色"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setType(value)}
+                  className={`rounded-xl border px-4 py-4 text-left text-sm transition ${type === value ? "border-white/24 bg-white/[0.09] text-white" : "border-white/8 text-white/48 hover:border-white/16"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+        ) : (
+          <div className="mt-6">
+            <label
+              className="text-sm font-medium text-white/72"
+              htmlFor="public-copy-agent"
+            >
+              选择个人会话
+            </label>
+            {eligibleAgents.length ? (
+              <select
+                id="public-copy-agent"
+                value={copyFromAgentId}
+                onChange={(event) => setCopyFromAgentId(event.target.value)}
+                className="mt-3 w-full rounded-xl border border-white/10 bg-[#17171c] px-4 py-3 text-sm text-white outline-none focus:border-white/25"
+              >
+                {eligibleAgents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name} ·{" "}
+                    {agent.type === "prime-figure" ? "本初角色" : "切片角色"}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="mt-3 rounded-xl border border-dashed border-white/10 p-4 text-sm leading-6 text-white/42">
+                暂无可拷贝的个人会话。从其他创作者公共角色添加的会话不能再次发布。
+              </p>
+            )}
+            <p className="mt-3 text-xs leading-5 text-white/38">
+              只复制角色设定、日程、创作者参数和媒体素材；不会复制消息、记忆、当前状态、密钥或会话运行配置。
+            </p>
+          </div>
+        )}
+
+        {error ? <p className="mt-4 text-sm text-red-200/75">{error}</p> : null}
+        <button
+          type="submit"
+          disabled={isSubmitting || (mode === "copy" && !copyFromAgentId)}
+          className="mt-6 flex w-full items-center justify-center rounded-full bg-white py-3 text-sm font-medium text-black disabled:opacity-35"
+        >
+          {isSubmitting ? "正在创建……" : "创建并进入草稿编辑器"}
+        </button>
+      </form>
+    </div>
   );
 }
 

@@ -17,6 +17,10 @@ const recommendationSchema = z.object({
   enabled: z.boolean(),
   config: z.record(z.string(), z.unknown()).optional(),
 });
+const createDraftSchema = z.union([
+  z.object({ type: z.enum(["slice-figure", "prime-figure"]) }).strict(),
+  z.object({ copyFromAgentId: z.string().trim().min(1).max(120) }).strict(),
+]);
 
 export async function registerCharacterAssetRoutes(app: FastifyInstance) {
   const assets = new CharacterAssetService();
@@ -56,13 +60,16 @@ export async function registerCharacterAssetRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post<{ Params: { agentId: string } }>(
-    "/agents/:agentId/character-asset-draft",
+  app.post<{ Body: unknown }>(
+    "/character-assets/drafts",
     async (request, reply) => {
       const userId = await request.requireUserId(reply);
       if (!userId) return;
+      const parsed = createDraftSchema.safeParse(request.body);
+      if (!parsed.success)
+        return reply.code(400).send({ error: "VALIDATION_ERROR" });
       try {
-        return await assets.createDraft(userId, request.params.agentId);
+        return await assets.createDraft(userId, parsed.data);
       } catch (error) {
         return assetError(reply, error);
       }
@@ -161,7 +168,7 @@ export async function registerCharacterAssetRoutes(app: FastifyInstance) {
       const userId = await request.requireUserId(reply);
       if (!userId) return;
       try {
-        await assets.deleteUnlisted(userId, request.params.assetId);
+        await assets.deleteAsset(userId, request.params.assetId);
         return { ok: true };
       } catch (error) {
         return assetError(reply, error);

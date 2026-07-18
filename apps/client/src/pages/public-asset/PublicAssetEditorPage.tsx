@@ -75,7 +75,9 @@ export function PublicAssetEditorPage({
 
   const deletePermanently = async () => {
     const confirmed = window.confirm(
-      "确定彻底删除这个公共作品吗？作品、历史版本、点赞和评论将无法恢复；其他用户已经添加的角色不会被删除，但之后无法再从该作品更新。",
+      draft.status === "draft"
+        ? "确定删除这个未发布草稿吗？草稿内容将无法恢复。"
+        : "确定彻底删除这个公共作品吗？作品、历史版本、点赞和评论将无法恢复；其他用户已经添加的角色不会被删除，但之后无法再从该作品更新。",
     );
     if (!confirmed) return;
     setBusy(true);
@@ -126,14 +128,15 @@ export function PublicAssetEditorPage({
               <Archive size={15} /> 下架
             </button>
           ) : null}
-          {draft.status === "unlisted" ? (
+          {draft.status === "draft" || draft.status === "unlisted" ? (
             <button
               type="button"
               disabled={busy}
               onClick={() => void deletePermanently()}
               className="flex items-center gap-2 rounded-full px-4 py-2 text-xs text-red-200/65 hover:bg-red-400/10 hover:text-red-100 disabled:opacity-40"
             >
-              <Trash size={15} /> 彻底删除
+              <Trash size={15} />
+              {draft.status === "draft" ? "删除草稿" : "彻底删除"}
             </button>
           ) : null}
           <button
