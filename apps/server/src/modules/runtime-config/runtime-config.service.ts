@@ -635,7 +635,7 @@ function patchPrimeConfig(
   );
   return {
     ...current,
-    version: 8,
+    version: 9,
     decisionModel: patch.decisionModel
       ? patchTextModel(current.decisionModel, patch.decisionModel)
       : current.decisionModel,

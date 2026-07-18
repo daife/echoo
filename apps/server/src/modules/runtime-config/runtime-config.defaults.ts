@@ -25,7 +25,7 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
       },
     },
     primeFigure: {
-      version: 8,
+      version: 9,
       decisionModel: {
         ...sharedEndpoint,
         model: "google/gemini-3.1-flash-lite",
@@ -45,6 +45,7 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
         voice: {
           enabled: true,
           requestStreaming: false,
+          autoPlay: false,
           guidanceLevel: "medium",
           tts: {
             source: "platform",

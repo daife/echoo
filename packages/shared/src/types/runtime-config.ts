@@ -68,6 +68,7 @@ export interface PrimeFigureOutputConfigView {
   voice: {
     enabled: boolean;
     requestStreaming: boolean;
+    autoPlay: boolean;
     guidanceLevel: PrimeFigureGuidanceLevel;
     tts: FishAudioConfigView;
   };
@@ -105,7 +106,7 @@ export interface PrimeFigureUnderstandingConfigView {
 }
 
 export interface PrimeFigureRuntimeConfigView {
-  version: 8;
+  version: 9;
   decisionModel: TextModelConfigView;
   outputs: PrimeFigureOutputConfigView;
   optimization: PrimeFigureOptimizationConfigView;
@@ -211,6 +212,7 @@ export interface PrimeFigureRuntimeConfigPatch {
     voice?: {
       enabled?: boolean;
       requestStreaming?: boolean;
+      autoPlay?: boolean;
       guidanceLevel?: PrimeFigureGuidanceLevel;
       tts?: FishAudioConfigPatch;
     };

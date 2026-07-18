@@ -270,7 +270,11 @@ export function PrimeRuntimeConfigForm({
               setDraft({ ...draft, voiceRequestStreaming })
             }
           />
-          <div className="hidden md:block" />
+          <ToggleInput
+            label="收到语音自动播放"
+            checked={draft.voiceAutoPlay}
+            onChange={(voiceAutoPlay) => setDraft({ ...draft, voiceAutoPlay })}
+          />
           <TtsFields
             draft={draft.tts}
             onChange={(tts) => setDraft({ ...draft, tts })}
@@ -581,14 +585,13 @@ function ModelFields({
     onChange({ ...draft, [key]: value });
   return (
     <>
-      {!platformOnly ? (
-        <SelectInput
-          label="费用承担方式"
-          value={draft.source}
-          options={CREDENTIAL_SOURCE_OPTIONS}
-          onChange={(value) => update("source", value)}
-        />
-      ) : null}
+      <SelectInput
+        label="费用承担方式"
+        value={draft.source}
+        options={CREDENTIAL_SOURCE_OPTIONS}
+        onChange={(value) => update("source", value)}
+        disabled={platformOnly}
+      />
       {draft.source === "platform" ? (
         <RecommendationChooser
           category={category}
@@ -667,14 +670,13 @@ function TtsFields({
     onChange({ ...draft, [key]: value });
   return (
     <>
-      {!platformOnly ? (
-        <SelectInput
-          label="费用承担方式"
-          value={draft.source}
-          options={CREDENTIAL_SOURCE_OPTIONS}
-          onChange={(value) => update("source", value)}
-        />
-      ) : null}
+      <SelectInput
+        label="费用承担方式"
+        value={draft.source}
+        options={CREDENTIAL_SOURCE_OPTIONS}
+        onChange={(value) => update("source", value)}
+        disabled={platformOnly}
+      />
       {draft.source === "platform" ? (
         <RecommendationChooser
           category="fish_tts"
@@ -749,14 +751,13 @@ function SttFields({
     onChange({ ...draft, [key]: value });
   return (
     <>
-      {!platformOnly ? (
-        <SelectInput
-          label="费用承担方式"
-          value={draft.source}
-          options={CREDENTIAL_SOURCE_OPTIONS}
-          onChange={(value) => update("source", value)}
-        />
-      ) : null}
+      <SelectInput
+        label="费用承担方式"
+        value={draft.source}
+        options={CREDENTIAL_SOURCE_OPTIONS}
+        onChange={(value) => update("source", value)}
+        disabled={platformOnly}
+      />
       {draft.source === "custom" ? (
         <TextInput
           label="ASR 地址"
@@ -974,19 +975,22 @@ function SelectInput<T extends string>({
   value,
   options,
   onChange,
+  disabled = false,
 }: {
   label: string;
   value: T;
   options: readonly { value: T; label: string }[];
   onChange: (value: T) => void;
+  disabled?: boolean;
 }) {
   return (
     <label className="space-y-1.5 text-sm text-white/58">
       <span>{label}</span>
       <select
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value as T)}
-        className="w-full rounded-lg border border-white/10 bg-[#15151a] px-3 py-2.5 text-white outline-none transition focus:border-white/25"
+        className="w-full rounded-lg border border-white/10 bg-[#15151a] px-3 py-2.5 text-white outline-none transition focus:border-white/25 disabled:cursor-not-allowed disabled:text-white/45"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -1229,6 +1233,7 @@ function primeDraft(value: PrimeFigureRuntimeConfigView) {
     ),
     voiceEnabled: value.outputs.voice.enabled,
     voiceRequestStreaming: value.outputs.voice.requestStreaming,
+    voiceAutoPlay: value.outputs.voice.autoPlay,
     stickerEnabled: value.outputs.sticker.enabled,
     transferEnabled: value.outputs.transfer.enabled,
     voiceGuidance: value.outputs.voice.guidanceLevel,
@@ -1275,6 +1280,7 @@ function primePatch(
       voice: {
         enabled: draft.voiceEnabled,
         requestStreaming: draft.voiceRequestStreaming,
+        autoPlay: draft.voiceAutoPlay,
         guidanceLevel: draft.voiceGuidance,
         tts: {
           ...draft.tts,

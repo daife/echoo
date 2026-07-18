@@ -36,8 +36,9 @@ test("administrator defaults are forced to platform sources without secrets", ()
   assert.equal(result.sliceFigure.llm.apiKey, "");
   assert.equal(result.sliceFigure.llm.baseUrl, "https://openrouter.ai/api/v1");
   assert.equal(result.primeFigure.outputs.voice.tts.source, "platform");
-  assert.equal(result.primeFigure.version, 8);
+  assert.equal(result.primeFigure.version, 9);
   assert.equal(result.primeFigure.outputs.voice.requestStreaming, false);
+  assert.equal(result.primeFigure.outputs.voice.autoPlay, false);
   assert.equal(result.primeFigure.outputs.voice.tts.apiKey, "");
   assert.deepEqual(result.primeFigure.outputs.image.parameters, {
     resolution: "1K",

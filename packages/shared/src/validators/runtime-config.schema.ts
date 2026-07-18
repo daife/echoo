@@ -65,6 +65,7 @@ export const primeFigureRuntimeConfigPatchSchema = z.object({
         .object({
           enabled: z.boolean().optional(),
           requestStreaming: z.boolean().optional(),
+          autoPlay: z.boolean().optional(),
           guidanceLevel: z.enum(["basic", "medium", "advanced"]).optional(),
           tts: fishAudioPatchSchema.optional(),
         })

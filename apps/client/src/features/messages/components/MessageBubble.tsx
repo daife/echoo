@@ -17,7 +17,6 @@ import type {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MediaAsset, useMediaDirectUrl } from "../../media/MediaAsset";
-import { mediaCache } from "../../../services/mediaCache";
 import {
   sanitizeVoiceTranscript,
   tokenizeParentheticalText,
@@ -41,6 +40,7 @@ export interface MessageBubbleModel {
   mediaUrl?: string;
   transcript?: string;
   durationSeconds?: number;
+  isAudioStreaming?: boolean;
   canRollback?: boolean;
   canEdit?: boolean;
   sourceMessageId?: string;
@@ -62,6 +62,10 @@ export function MessageBubble({
   onRollback,
   onEdit,
   onResolveTransfer,
+  playingVoiceMessageId,
+  isVoicePlaying = false,
+  blockedVoiceMessageId,
+  onToggleVoice,
 }: {
   message: MessageBubbleModel;
   avatarUrl?: string;
@@ -73,6 +77,10 @@ export function MessageBubble({
     messageId: string,
     resolution: "accepted" | "rejected",
   ) => void;
+  playingVoiceMessageId?: string;
+  isVoicePlaying?: boolean;
+  blockedVoiceMessageId?: string;
+  onToggleVoice?: (messageId: string, mediaUrl?: string) => void;
 }) {
   const mine = message.from === "me";
   const canRetry = mine && message.deliveryState === "failed" && onRetry;
@@ -379,8 +387,12 @@ export function MessageBubble({
         <VoiceBubble
           mediaUrl={message.mediaUrl}
           durationSeconds={message.durationSeconds}
+          isStreaming={message.isAudioStreaming === true}
+          isPlaying={playingVoiceMessageId === message.id && isVoicePlaying}
+          isBlocked={blockedVoiceMessageId === message.id}
           transcript={isTranscriptOpen ? cleanTranscript : undefined}
           suppressNextClickRef={didLongPressRef}
+          onToggle={() => onToggleVoice?.(message.id, message.mediaUrl)}
         />
         {mine ? <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} /> : null}
       </div>
@@ -598,56 +610,34 @@ function MediaViewer({
 function VoiceBubble({
   mediaUrl,
   durationSeconds,
+  isStreaming,
+  isPlaying,
+  isBlocked,
   transcript,
   suppressNextClickRef,
+  onToggle,
 }: {
   mediaUrl?: string;
   durationSeconds?: number;
+  isStreaming: boolean;
+  isPlaying: boolean;
+  isBlocked: boolean;
   transcript?: string;
   suppressNextClickRef: React.MutableRefObject<boolean>;
+  onToggle: () => void;
 }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [duration, setDuration] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [shouldLoad, setShouldLoad] = useState(false);
-  const playWhenReadyRef = useRef(false);
-  const source = useMediaDirectUrl(mediaUrl, shouldLoad, "original");
-
-  useEffect(() => {
-    setDuration(0);
-    setIsPlaying(false);
-    setShouldLoad(false);
-    playWhenReadyRef.current = false;
-  }, [mediaUrl]);
-
-  useEffect(() => {
-    if (!source || !playWhenReadyRef.current) return;
-    playWhenReadyRef.current = false;
-    void audioRef.current?.play().catch(() => undefined);
-  }, [source]);
-
   const toggle = () => {
     if (suppressNextClickRef.current) {
       suppressNextClickRef.current = false;
       return;
     }
-    const audio = audioRef.current;
-    if (!audio) {
-      if (!mediaUrl) return;
-      playWhenReadyRef.current = true;
-      setShouldLoad(true);
-      return;
-    }
-    if (audio.paused) void audio.play().catch(() => undefined);
-    else audio.pause();
+    onToggle();
   };
 
   const resolvedDuration =
     typeof durationSeconds === "number" && Number.isFinite(durationSeconds)
       ? durationSeconds
-      : Number.isFinite(duration)
-        ? duration
-        : 0;
+      : 0;
   const seconds =
     resolvedDuration > 0 ? Math.max(1, Math.round(resolvedDuration)) : null;
   const width = Math.min(280, Math.max(148, 142 + (seconds ?? 0) * 3));
@@ -659,44 +649,28 @@ function VoiceBubble({
         style={{ width }}
         type="button"
         aria-label={
-          mediaUrl ? (isPlaying ? "暂停语音" : "播放语音") : "语音生成中"
+          isBlocked
+            ? "自动播放受限，点击播放语音"
+            : mediaUrl || isStreaming
+              ? isPlaying
+                ? "暂停语音"
+                : "播放语音"
+              : "语音生成中"
         }
         onClick={toggle}
-        disabled={!mediaUrl}
+        disabled={!mediaUrl && !isStreaming}
       >
         <Waveform
           size={23}
           weight={isPlaying ? "fill" : "duotone"}
           className={isPlaying ? "animate-pulse text-white" : "text-white/75"}
         />
-        {seconds || mediaUrl ? (
+        {seconds || mediaUrl || isStreaming ? (
           <span className="ml-auto text-xs tabular-nums text-white/48">
-            {seconds ? `${seconds}″` : "语音"}
+            {isBlocked ? "点击播放" : seconds ? `${seconds}″` : "语音"}
           </span>
         ) : null}
       </button>
-      {source ? (
-        <audio
-          ref={audioRef}
-          className="hidden"
-          preload="none"
-          src={source}
-          onLoadedMetadata={(event) => {
-            const next = event.currentTarget.duration;
-            if (Number.isFinite(next)) setDuration(next);
-          }}
-          onDurationChange={(event) => {
-            const next = event.currentTarget.duration;
-            if (Number.isFinite(next)) setDuration(next);
-          }}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-          onEnded={() => {
-            setIsPlaying(false);
-            if (mediaUrl) void mediaCache.get(mediaUrl, "original");
-          }}
-        />
-      ) : null}
       {transcript ? (
         <p className="mt-2 max-w-[320px] rounded-xl bg-white/[0.035] px-3.5 py-2.5 text-sm leading-6 text-white/72">
           <ParentheticalText value={transcript} />

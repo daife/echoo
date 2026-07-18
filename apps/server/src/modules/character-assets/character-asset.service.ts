@@ -538,6 +538,7 @@ function sanitizePrimeConfig(config: StoredPrimeFigureRuntimeConfig) {
       voice: {
         enabled: config.outputs.voice.enabled,
         requestStreaming: config.outputs.voice.requestStreaming,
+        autoPlay: config.outputs.voice.autoPlay,
         guidanceLevel: config.outputs.voice.guidanceLevel,
         tts: sanitizeFishAudio(config.outputs.voice.tts),
       },

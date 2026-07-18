@@ -116,6 +116,16 @@ export function MessagesPage({
   const [isRuntimeConfigOpen, setIsRuntimeConfigOpen] = useState(false);
   const [runtimeConfig, setRuntimeConfig] =
     useState<ConversationRuntimeConfigResponse | null>(null);
+  const [runtimeConfigConversationId, setRuntimeConfigConversationId] =
+    useState<string>();
+  const autoPlayVoice =
+    agent?.type === "prime-figure" &&
+    runtimeConfigConversationId === agent.conversationId &&
+    runtimeConfig?.conversationType === "prime-figure" &&
+    Boolean(
+      (runtimeConfig.config as PrimeFigureRuntimeConfigView | undefined)
+        ?.outputs.voice.autoPlay,
+    );
   const [isExporting, setIsExporting] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [messageBeingEdited, setMessageBeingEdited] = useState<{
@@ -156,7 +166,13 @@ export function MessagesPage({
     rollbackConversation,
     updateAssistantMessage,
     updatingMessageId,
-  } = useConversationMessages({ agent, onConversationDeleted });
+    voicePlayback,
+    toggleVoicePlayback,
+  } = useConversationMessages({
+    agent,
+    onConversationDeleted,
+    autoPlayVoice,
+  });
   const mainRef = useRef<HTMLElement | null>(null);
   const virtualListRef = useRef<HTMLDivElement | null>(null);
   const [virtualScrollMargin, setVirtualScrollMargin] = useState(0);
@@ -192,17 +208,25 @@ export function MessagesPage({
   useEffect(() => {
     if (!conversationId || agent?.type === "prime-world") {
       setRuntimeConfig(null);
+      setRuntimeConfigConversationId(undefined);
       return;
     }
     let cancelled = false;
     setRuntimeConfig(null);
+    setRuntimeConfigConversationId(undefined);
     void updateHandlers
       .getConversationRuntimeConfig(conversationId)
       .then((response) => {
-        if (!cancelled) setRuntimeConfig(response);
+        if (!cancelled) {
+          setRuntimeConfig(response);
+          setRuntimeConfigConversationId(conversationId);
+        }
       })
       .catch(() => {
-        if (!cancelled) setRuntimeConfig(null);
+        if (!cancelled) {
+          setRuntimeConfig(null);
+          setRuntimeConfigConversationId(undefined);
+        }
       });
     return () => {
       cancelled = true;
@@ -218,6 +242,7 @@ export function MessagesPage({
           message,
           canRollback,
           agent.type === "slice-figure" &&
+            runtimeConfigConversationId === agent.conversationId &&
             runtimeConfig?.conversationType === "slice-figure" &&
             Boolean(
               (runtimeConfig.config as SliceFigureRuntimeConfigView | undefined)
@@ -239,7 +264,13 @@ export function MessagesPage({
       ];
     }
     return [];
-  }, [agent, canRollback, messages, runtimeConfig]);
+  }, [
+    agent,
+    canRollback,
+    messages,
+    runtimeConfig,
+    runtimeConfigConversationId,
+  ]);
   const messageVirtualizer = useVirtualizer({
     count: visibleMessages.length,
     getScrollElement: () => mainRef.current,
@@ -573,6 +604,14 @@ export function MessagesPage({
                       setMessageBeingEdited({ id: messageId, text })
                     }
                     onResolveTransfer={resolveTransfer}
+                    playingVoiceMessageId={voicePlayback.currentMessageId}
+                    isVoicePlaying={voicePlayback.isPlaying}
+                    blockedVoiceMessageId={
+                      voicePlayback.blocked
+                        ? voicePlayback.currentMessageId
+                        : undefined
+                    }
+                    onToggleVoice={toggleVoicePlayback}
                   />
                 </div>
               );
@@ -1317,6 +1356,9 @@ function toBubbleMessages(
       message.contentType === "voice"
         ? getVoiceDurationSeconds(message.metadata)
         : undefined,
+    isAudioStreaming:
+      message.contentType === "voice" &&
+      message.metadata?.audioStreaming === true,
     transferAmount:
       isTransfer && typeof primeContent.amount === "number"
         ? primeContent.amount

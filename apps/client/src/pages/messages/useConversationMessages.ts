@@ -7,13 +7,16 @@ import { useConversationActions } from "./useConversationActions";
 import { useConversationRealtime } from "./useConversationRealtime";
 import { useConversationTimeline } from "./useConversationTimeline";
 import { useOutgoingMessages } from "./useOutgoingMessages";
+import { useVoicePlayback } from "./useVoicePlayback";
 
 export function useConversationMessages({
   agent,
   onConversationDeleted,
+  autoPlayVoice = false,
 }: {
   agent?: Agent;
   onConversationDeleted?: (conversationId: string) => void;
+  autoPlayVoice?: boolean;
 }) {
   const runtime = useRuntime();
   const services = useServices();
@@ -64,6 +67,10 @@ export function useConversationMessages({
     setIsAgentActive,
     setError,
   });
+  const voicePlayback = useVoicePlayback({
+    conversationId,
+    autoPlay: autoPlayVoice,
+  });
   const realtime = useConversationRealtime({
     runtime: runtime.message,
     conversationId,
@@ -73,6 +80,7 @@ export function useConversationMessages({
     setIsAgentActive,
     setMuteUntilMs,
     onRuntimeError: setRuntimeErrorNotice,
+    voicePlayback,
   });
   const outgoing = useOutgoingMessages({
     conversationId,
@@ -84,6 +92,10 @@ export function useConversationMessages({
     setIsAgentActive,
     setError,
   });
+  const clearStreams = useCallback(() => {
+    realtime.clearStreamBuffers();
+    voicePlayback.clear();
+  }, [realtime.clearStreamBuffers, voicePlayback.clear]);
   const actions = useConversationActions({
     conversationId,
     canRollback,
@@ -92,7 +104,7 @@ export function useConversationMessages({
     activeConversationIdRef: timeline.activeConversationIdRef,
     setMessages: timeline.setMessages,
     setError,
-    clearStreamBuffers: realtime.clearStreamBuffers,
+    clearStreamBuffers: clearStreams,
     refreshMessages: timeline.refreshMessages,
     onConversationDeleted,
   });
@@ -131,5 +143,7 @@ export function useConversationMessages({
     rollbackConversation: actions.rollbackConversation,
     updateAssistantMessage: actions.updateAssistantMessage,
     updatingMessageId: actions.updatingMessageId,
+    voicePlayback: voicePlayback.snapshot,
+    toggleVoicePlayback: voicePlayback.toggle,
   };
 }

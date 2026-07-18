@@ -46,7 +46,7 @@ describe("runtime config forms", () => {
     const html = renderToStaticMarkup(
       <PrimeRuntimeConfigForm
         value={{
-          version: 8,
+          version: 9,
           decisionModel: { ...endpoint, temperature: 0.4, maxTokens: 1600 },
           outputs: {
             image: {
@@ -58,6 +58,7 @@ describe("runtime config forms", () => {
             voice: {
               enabled: true,
               requestStreaming: false,
+              autoPlay: false,
               guidanceLevel: "medium",
               tts: {
                 source: "custom",
@@ -122,6 +123,7 @@ describe("runtime config forms", () => {
     expect(html).toContain("自定义生图参数（JSON）");
     expect(html).toContain("TTS 服务");
     expect(html).toContain("流式语音请求");
+    expect(html).toContain("收到语音自动播放");
     expect(html).toContain("媒体理解");
     expect(html).toContain("Fish Audio STT 预先理解");
     expect(html).toContain("语言代码（留空自动检测）");
@@ -133,5 +135,33 @@ describe("runtime config forms", () => {
     expect(html).toContain("允许 figure 主动设置定时唤醒");
     expect(html).toContain("第一次被动唤醒（累计分钟）");
     expect(html).toContain('value="1440"');
+  });
+
+  it("keeps the credential source visible but locked on platform-managed forms", () => {
+    const html = renderToStaticMarkup(
+      <SliceRuntimeConfigForm
+        platformOnly
+        value={{
+          version: 3,
+          replyAutoSegment: false,
+          llm: {
+            source: "custom",
+            baseUrl: "https://example.test/v1",
+            model: "text-model",
+            temperature: 0.8,
+            maxTokens: 1200,
+            apiKey: { configured: false },
+          },
+          context: {
+            minimumRounds: 100,
+            maximumRounds: 199,
+            memorySummaryRounds: 500,
+          },
+        }}
+        onSave={vi.fn()}
+      />,
+    );
+    expect(html).toContain("费用承担方式");
+    expect(html).toContain("disabled");
   });
 });

@@ -42,7 +42,7 @@ export interface StoredSliceFigureRuntimeConfig {
 }
 
 export interface StoredPrimeFigureRuntimeConfig {
-  version: 8;
+  version: 9;
   decisionModel: StoredTextModelConfig;
   outputs: {
     image: {
@@ -54,6 +54,7 @@ export interface StoredPrimeFigureRuntimeConfig {
     voice: {
       enabled: boolean;
       requestStreaming: boolean;
+      autoPlay: boolean;
       guidanceLevel: "basic" | "medium" | "advanced";
       tts: StoredFishAudioConfig;
     };

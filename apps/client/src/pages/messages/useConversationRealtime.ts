@@ -35,6 +35,12 @@ export function useConversationRealtime(input: {
   setIsAgentActive: Dispatch<SetStateAction<boolean>>;
   setMuteUntilMs: Dispatch<SetStateAction<number | undefined>>;
   onRuntimeError: (notice: RuntimeErrorNotice) => void;
+  voicePlayback: {
+    handleStarted: Parameters<MessageRuntime["onMessageAudioStarted"]>[0];
+    handleChunk: Parameters<MessageRuntime["onMessageAudioChunk"]>[0];
+    handleCompleted: Parameters<MessageRuntime["onMessageAudioCompleted"]>[0];
+    handleFailed: Parameters<MessageRuntime["onMessageAudioFailed"]>[0];
+  };
 }) {
   const streamBuffersRef = useRef(new Map<string, StreamDisplayBuffer>());
   const audioChunksRef = useRef(new Map<string, Uint8Array[]>());
@@ -186,10 +192,7 @@ export function useConversationRealtime(input: {
           if (shouldHidePrimePendingPlaceholder(input.isPrimeFigure, message))
             return;
           if (
-            shouldBufferCompletedAssistantMessage(
-              input.isPrimeFigure,
-              message,
-            )
+            shouldBufferCompletedAssistantMessage(input.isPrimeFigure, message)
           ) {
             completeStreamedMessage(syncedMessage);
             return;
@@ -280,6 +283,7 @@ export function useConversationRealtime(input: {
       }),
       input.runtime.onMessageAudioStarted((event) => {
         if (event.conversationId !== conversationId) return;
+        input.voicePlayback.handleStarted(event);
         audioChunksRef.current.set(event.messageId, []);
         audioByteCountsRef.current.set(event.messageId, 0);
         updateAudioMessage(input.setMessages, event.messageId, {
@@ -289,6 +293,7 @@ export function useConversationRealtime(input: {
       }),
       input.runtime.onMessageAudioChunk((event) => {
         if (event.conversationId !== conversationId) return;
+        input.voicePlayback.handleChunk(event);
         const chunks = audioChunksRef.current.get(event.messageId) ?? [];
         chunks.push(event.data);
         audioChunksRef.current.set(event.messageId, chunks);
@@ -303,6 +308,7 @@ export function useConversationRealtime(input: {
       }),
       input.runtime.onMessageAudioCompleted((event) => {
         if (event.conversationId !== conversationId) return;
+        input.voicePlayback.handleCompleted(event);
         const chunks = audioChunksRef.current.get(event.messageId);
         if (event.mediaUrl && chunks?.length)
           void mediaCache.put(
@@ -316,6 +322,7 @@ export function useConversationRealtime(input: {
       }),
       input.runtime.onMessageAudioFailed((event) => {
         if (event.conversationId !== conversationId) return;
+        input.voicePlayback.handleFailed(event);
         updateAudioMessage(input.setMessages, event.messageId, {
           audioStreaming: false,
         });
@@ -334,6 +341,10 @@ export function useConversationRealtime(input: {
     input.setIsAgentActive,
     input.setMessages,
     input.setMuteUntilMs,
+    input.voicePlayback.handleChunk,
+    input.voicePlayback.handleCompleted,
+    input.voicePlayback.handleFailed,
+    input.voicePlayback.handleStarted,
   ]);
 
   return { clearStreamBuffers };
