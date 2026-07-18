@@ -25,7 +25,7 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
       },
     },
     primeFigure: {
-      version: 7,
+      version: 8,
       decisionModel: {
         ...sharedEndpoint,
         model: "google/gemini-3.1-flash-lite",
@@ -103,6 +103,12 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
             model: "google/gemini-3.1-flash-lite",
             temperature: 0.9,
             maxTokens: 2400,
+          },
+          stt: {
+            source: "platform",
+            apiKey: "",
+            httpUrl: "https://api.fish.audio/v1/asr",
+            language: "",
           },
         },
       },

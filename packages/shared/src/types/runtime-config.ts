@@ -32,6 +32,14 @@ export interface FishAudioConfigView {
   chunkLength: number;
 }
 
+export interface FishAudioSttConfigView {
+  source: CredentialSource;
+  apiKey: RuntimeSecretView;
+  httpUrl?: string;
+  /** Empty or omitted lets Fish Audio detect the spoken language. */
+  language?: string;
+}
+
 export interface SliceFigureRuntimeConfigView {
   version: 3;
   llm: TextModelConfigView;
@@ -45,7 +53,9 @@ export interface SliceFigureRuntimeConfigView {
 
 export type PrimeFigureGuidanceLevel = "basic" | "medium" | "advanced";
 export type PrimeFigureOptimizationLevel = "advanced" | "top";
-export type PrimeFigureUnderstandingMode = "native" | "auxiliary";
+export type PrimeFigureVisualUnderstandingMode = "native" | "auxiliary";
+export type PrimeFigureAudioUnderstandingMode =
+  PrimeFigureVisualUnderstandingMode | "stt";
 
 export interface PrimeFigureOutputConfigView {
   image: {
@@ -84,17 +94,18 @@ export interface PrimeFigureOptimizationConfigView {
 
 export interface PrimeFigureUnderstandingConfigView {
   visual: {
-    mode: PrimeFigureUnderstandingMode;
+    mode: PrimeFigureVisualUnderstandingMode;
     model: TextModelConfigView;
   };
   audio: {
-    mode: PrimeFigureUnderstandingMode;
+    mode: PrimeFigureAudioUnderstandingMode;
     model: TextModelConfigView;
+    stt: FishAudioSttConfigView;
   };
 }
 
 export interface PrimeFigureRuntimeConfigView {
-  version: 7;
+  version: 8;
   decisionModel: TextModelConfigView;
   outputs: PrimeFigureOutputConfigView;
   optimization: PrimeFigureOptimizationConfigView;
@@ -174,6 +185,14 @@ export interface FishAudioConfigPatch {
   chunkLength?: number;
 }
 
+export interface FishAudioSttConfigPatch {
+  source?: CredentialSource;
+  apiKey?: string | null;
+  httpUrl?: string;
+  /** Null or an empty string restores automatic language detection. */
+  language?: string | null;
+}
+
 export interface SliceFigureRuntimeConfigPatch {
   llm?: TextModelConfigPatch;
   replyAutoSegment?: boolean;
@@ -216,12 +235,13 @@ export interface PrimeFigureRuntimeConfigPatch {
   };
   understanding?: {
     visual?: {
-      mode?: PrimeFigureUnderstandingMode;
+      mode?: PrimeFigureVisualUnderstandingMode;
       model?: TextModelConfigPatch;
     };
     audio?: {
-      mode?: PrimeFigureUnderstandingMode;
+      mode?: PrimeFigureAudioUnderstandingMode;
       model?: TextModelConfigPatch;
+      stt?: FishAudioSttConfigPatch;
     };
   };
   context?: Partial<PrimeFigureRuntimeConfigView["context"]>;

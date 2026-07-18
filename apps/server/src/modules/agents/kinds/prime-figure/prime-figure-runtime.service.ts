@@ -38,6 +38,7 @@ import {
   PrimeMediaAnnotationService,
   type PrimePendingMedia,
 } from "./prime-media-annotation.service.js";
+import { FishAudioSttService } from "../../../stt/fish-audio-stt.service.js";
 import { primeModelSessionId } from "./prime-model-session.js";
 import {
   buildDebugHint,
@@ -104,6 +105,7 @@ export class PrimeFigureRuntimeService {
     private readonly conversations = new ConversationRepository(),
     private readonly runtimeConfigs = new RuntimeConfigService(),
     private readonly mediaAnnotations = new PrimeMediaAnnotationService(),
+    private readonly stt = new FishAudioSttService(),
     private readonly contentOptimizer = new PrimeContentOptimizer(),
     private readonly failureNotifier = new PrimeRuntimeFailureNotifier(),
   ) {}
@@ -274,17 +276,24 @@ export class PrimeFigureRuntimeService {
       context.hasOmittedConversation,
       context.pendingEndUserTransfers,
     );
-    if (packet.auxiliaryMedia.length) {
-      const annotations = await this.mediaAnnotations.annotate(
-        input.ownerUserId,
-        input.conversationId,
-        packet.auxiliaryMedia,
-        input.runtimeConfig,
-      );
+    if (packet.auxiliaryMedia.length || packet.sttMedia.length) {
+      const [auxiliaryAnnotations, sttAnnotations] = await Promise.all([
+        this.mediaAnnotations.annotate(
+          input.ownerUserId,
+          input.conversationId,
+          packet.auxiliaryMedia,
+          input.runtimeConfig,
+        ),
+        this.stt.annotate(
+          input.ownerUserId,
+          packet.sttMedia,
+          input.runtimeConfig.understanding.audio.stt,
+        ),
+      ]);
       await this.persistMediaAnnotations(
         input,
-        packet.auxiliaryMedia,
-        annotations,
+        [...packet.auxiliaryMedia, ...packet.sttMedia],
+        [...auxiliaryAnnotations, ...sttAnnotations],
         true,
       );
       packet = await buildPrimeChatMessages(
@@ -767,6 +776,7 @@ export async function buildPrimeChatMessages(
   messages: ChatCompletionMessage[];
   pendingMedia: PendingMediaAnnotation[];
   auxiliaryMedia: PendingMediaAnnotation[];
+  sttMedia: PendingMediaAnnotation[];
   availableReferenceImages: Array<{ id: string; description: string }>;
   availableStickers: Array<{
     id: string;
@@ -895,6 +905,7 @@ export async function buildPrimeChatMessages(
   const content: ChatCompletionContentPart[] = [];
   const pendingMedia: PendingMediaAnnotation[] = [];
   const auxiliaryMedia: PendingMediaAnnotation[] = [];
+  const sttMedia: PendingMediaAnnotation[] = [];
   if (agent.coverResourcePath) {
     const cover = await resources.findByPublicPath(
       ownerUserId,
@@ -1044,8 +1055,10 @@ export async function buildPrimeChatMessages(
         type: "voice",
         resourceId: messageContent.resourceId as string,
       };
-      const auxiliary = runtimeConfig.understanding.audio.mode === "auxiliary";
-      (auxiliary ? auxiliaryMedia : pendingMedia).push(target);
+      const audioMode = runtimeConfig.understanding.audio.mode;
+      if (audioMode === "auxiliary") auxiliaryMedia.push(target);
+      else if (audioMode === "stt") sttMedia.push(target);
+      else pendingMedia.push(target);
       content.push({
         type: "text",
         text: JSON.stringify({
@@ -1057,7 +1070,7 @@ export async function buildPrimeChatMessages(
           transcript: null,
         }),
       });
-      if (!auxiliary)
+      if (audioMode === "native")
         content.push(
           await buildRawMediaPart(
             ownerUserId,
@@ -1199,6 +1212,7 @@ export async function buildPrimeChatMessages(
     ],
     pendingMedia,
     auxiliaryMedia,
+    sttMedia,
     availableReferenceImages,
     availableStickers,
     pendingEndUserTransfers: pendingTransferSummaries,

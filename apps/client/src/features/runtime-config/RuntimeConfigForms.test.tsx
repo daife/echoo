@@ -46,7 +46,7 @@ describe("runtime config forms", () => {
     const html = renderToStaticMarkup(
       <PrimeRuntimeConfigForm
         value={{
-          version: 7,
+          version: 8,
           decisionModel: { ...endpoint, temperature: 0.4, maxTokens: 1600 },
           outputs: {
             image: {
@@ -91,8 +91,14 @@ describe("runtime config forms", () => {
               model: { ...endpoint, temperature: 0.1, maxTokens: 2400 },
             },
             audio: {
-              mode: "native",
+              mode: "stt",
               model: { ...endpoint, temperature: 0.1, maxTokens: 2400 },
+              stt: {
+                source: "custom",
+                apiKey: { configured: true, masked: "••••5678" },
+                httpUrl: "https://fish.test/v1/asr",
+                language: "zh",
+              },
             },
           },
           context: { minimumMessages: 150, maximumMessages: 249 },
@@ -117,6 +123,9 @@ describe("runtime config forms", () => {
     expect(html).toContain("TTS 服务");
     expect(html).toContain("流式语音请求");
     expect(html).toContain("媒体理解");
+    expect(html).toContain("Fish Audio STT 预先理解");
+    expect(html).toContain("语言代码（留空自动检测）");
+    expect(html).toContain("https://fish.test/v1/asr");
     expect(html).toContain("连续消息合并间隔（毫秒）");
     expect(html).toContain("允许 figure 发送表情");
     expect(html).toContain("允许 figure 转账、收款或拒收");

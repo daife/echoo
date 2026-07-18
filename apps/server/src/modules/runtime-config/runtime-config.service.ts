@@ -4,6 +4,7 @@ import type {
   ConversationRuntimeConfigPatchRequest,
   ConversationRuntimeConfigResponse,
   FishAudioConfigPatch,
+  FishAudioSttConfigPatch,
   ModelEndpointConfigPatch,
   PrimeFigureRuntimeConfigPatch,
   SliceFigureRuntimeConfigPatch,
@@ -24,6 +25,7 @@ import {
 import type {
   StoredFigureRuntimeConfig,
   StoredFishAudioConfig,
+  StoredFishAudioSttConfig,
   StoredModelEndpointConfig,
   StoredPrimeFigureRuntimeConfig,
   StoredRuntimeConfigPresets,
@@ -295,9 +297,7 @@ export class RuntimeConfigService {
     let custom: StoredFigureRuntimeConfig | null = null;
     let previousConfig: StoredFigureRuntimeConfig = global;
     if (input.mode === "custom") {
-      custom = storedCustom
-        ? storedCustom
-        : structuredClone(global);
+      custom = storedCustom ? storedCustom : structuredClone(global);
       if (stored?.mode === "custom") previousConfig = custom;
       if (input.config)
         custom = patchFigureConfig(conversation.type, custom, input.config);
@@ -571,6 +571,12 @@ export function forcePlatformDefaults(
         audio: {
           ...prime.understanding.audio,
           model: endpoint(prime.understanding.audio.model),
+          stt: {
+            ...prime.understanding.audio.stt,
+            source: "platform",
+            apiKey: "",
+            httpUrl: "https://api.fish.audio/v1/asr",
+          },
         },
       },
     },
@@ -616,6 +622,7 @@ function patchPrimeConfig(
   current: StoredPrimeFigureRuntimeConfig,
   patch: PrimeFigureRuntimeConfigPatch,
 ): StoredPrimeFigureRuntimeConfig {
+  const audioUnderstanding = patch.understanding?.audio;
   const imageGenerator = patch.outputs?.image?.generator
     ? patchEndpoint(
         current.outputs.image.generator,
@@ -628,7 +635,7 @@ function patchPrimeConfig(
   );
   return {
     ...current,
-    version: 7,
+    version: 8,
     decisionModel: patch.decisionModel
       ? patchTextModel(current.decisionModel, patch.decisionModel)
       : current.decisionModel,
@@ -674,10 +681,22 @@ function patchPrimeConfig(
         current.understanding.visual,
         patch.understanding?.visual,
       ),
-      audio: patchPrimeModelFeature(
-        current.understanding.audio,
-        patch.understanding?.audio,
-      ),
+      audio: {
+        ...current.understanding.audio,
+        ...(audioUnderstanding?.mode ? { mode: audioUnderstanding.mode } : {}),
+        model: audioUnderstanding?.model
+          ? patchTextModel(
+              current.understanding.audio.model,
+              audioUnderstanding.model,
+            )
+          : current.understanding.audio.model,
+        stt: audioUnderstanding?.stt
+          ? patchFishAudioStt(
+              current.understanding.audio.stt,
+              audioUnderstanding.stt,
+            )
+          : current.understanding.audio.stt,
+      },
     },
     context: { ...current.context, ...patch.context },
     typingCharsPerMinute:
@@ -750,6 +769,21 @@ function patchFishAudio(
     ...current,
     ...patch,
     apiKey: patch.apiKey === undefined ? current.apiKey : (patch.apiKey ?? ""),
+  };
+}
+
+function patchFishAudioStt(
+  current: StoredFishAudioSttConfig,
+  patch: FishAudioSttConfigPatch,
+): StoredFishAudioSttConfig {
+  return {
+    ...current,
+    ...patch,
+    apiKey: patch.apiKey === undefined ? current.apiKey : (patch.apiKey ?? ""),
+    language:
+      patch.language === undefined
+        ? current.language
+        : (patch.language ?? "").trim(),
   };
 }
 
@@ -847,6 +881,7 @@ function redactFigureConfig(config: StoredFigureRuntimeConfig): any {
       audio: {
         ...config.understanding.audio,
         model: redactEndpoint(config.understanding.audio.model),
+        stt: redactFishAudioStt(config.understanding.audio.stt),
       },
     },
   };
@@ -875,6 +910,22 @@ function redactFishAudio(config: StoredFishAudioConfig) {
       : rest;
   return {
     ...visible,
+    apiKey:
+      config.source === "platform"
+        ? { configured: false }
+        : redactSecret(apiKey),
+  };
+}
+
+function redactFishAudioStt(config: StoredFishAudioSttConfig) {
+  const { apiKey, ...rest } = config;
+  const visible =
+    config.source === "platform"
+      ? (({ httpUrl: _httpUrl, ...value }) => value)(rest)
+      : rest;
+  return {
+    ...visible,
+    ...(visible.language ? {} : { language: undefined }),
     apiKey:
       config.source === "platform"
         ? { configured: false }
@@ -941,6 +992,14 @@ function validateFigureConfig(
       validateTextModel(value.understanding.visual.model);
     if (value.understanding.audio.mode === "auxiliary")
       validateTextModel(value.understanding.audio.model);
+    if (value.understanding.audio.mode === "stt") {
+      const stt = value.understanding.audio.stt;
+      if (
+        stt.source === "custom" &&
+        (!stt.httpUrl.trim() || !stt.apiKey.trim())
+      )
+        invalid("自定义 STT 必须配置地址和 API Key。");
+    }
     positiveInteger(value.context.minimumMessages, "最小上下文消息数");
     positiveInteger(value.context.maximumMessages, "最大上下文消息数");
     positiveNumber(value.typingCharsPerMinute, "每分钟打字字符数");
@@ -1075,6 +1134,14 @@ function resolvePlatformFigureConfig(
       audio: {
         ...config.understanding.audio,
         model: resolveText(config.understanding.audio.model),
+        stt:
+          config.understanding.audio.stt.source === "platform"
+            ? {
+                ...config.understanding.audio.stt,
+                httpUrl: environment.platformFishAudioAsrUrl,
+                apiKey: environment.platformFishAudioApiKey,
+              }
+            : config.understanding.audio.stt,
       },
     },
   };

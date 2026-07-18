@@ -367,13 +367,13 @@ export function PrimeRuntimeConfigForm({
         <SelectInput
           label="图片与视频理解"
           value={draft.visualMode}
-          options={UNDERSTANDING_OPTIONS}
+          options={VISUAL_UNDERSTANDING_OPTIONS}
           onChange={(visualMode) => setDraft({ ...draft, visualMode })}
         />
         <SelectInput
           label="语音理解"
           value={draft.audioMode}
-          options={UNDERSTANDING_OPTIONS}
+          options={AUDIO_UNDERSTANDING_OPTIONS}
           onChange={(audioMode) => setDraft({ ...draft, audioMode })}
         />
       </ConfigSection>
@@ -399,6 +399,18 @@ export function PrimeRuntimeConfigForm({
             status={value.understanding.audio.model.apiKey}
             secret={secrets.audioModel}
             onSecret={(patch) => updateSecret("audioModel", patch)}
+            platformOnly={platformOnly}
+          />
+        </ConfigSection>
+      ) : null}
+      {draft.audioMode === "stt" ? (
+        <ConfigSection title="Fish Audio STT 预先理解">
+          <SttFields
+            draft={draft.stt}
+            onChange={(stt) => setDraft({ ...draft, stt })}
+            status={value.understanding.audio.stt.apiKey}
+            secret={secrets.stt}
+            onSecret={(patch) => updateSecret("stt", patch)}
             platformOnly={platformOnly}
           />
         </ConfigSection>
@@ -514,7 +526,8 @@ type PrimeSecretKey =
   | "imageOptimizer"
   | "voiceOptimizer"
   | "visualModel"
-  | "audioModel";
+  | "audioModel"
+  | "stt";
 
 function PresetChooser<TConfig>({
   presets,
@@ -717,6 +730,59 @@ function TtsFields({
   );
 }
 
+function SttFields({
+  draft,
+  onChange,
+  status,
+  secret,
+  onSecret,
+  platformOnly = false,
+}: {
+  draft: ReturnType<typeof sttDraft>;
+  onChange: (value: ReturnType<typeof sttDraft>) => void;
+  status: RuntimeSecretView;
+  secret: SecretDraft;
+  onSecret: (patch: Partial<SecretDraft>) => void;
+  platformOnly?: boolean;
+}) {
+  const update = (key: keyof typeof draft, value: string) =>
+    onChange({ ...draft, [key]: value });
+  return (
+    <>
+      {!platformOnly ? (
+        <SelectInput
+          label="费用承担方式"
+          value={draft.source}
+          options={CREDENTIAL_SOURCE_OPTIONS}
+          onChange={(value) => update("source", value)}
+        />
+      ) : null}
+      {draft.source === "custom" ? (
+        <TextInput
+          label="ASR 地址"
+          value={draft.httpUrl}
+          onChange={(value) => update("httpUrl", value)}
+        />
+      ) : null}
+      <TextInput
+        required={false}
+        label="语言代码（留空自动检测）"
+        value={draft.language}
+        onChange={(value) => update("language", value)}
+      />
+      {draft.source === "custom" ? (
+        <SecretInput
+          status={status}
+          value={secret.value}
+          clear={secret.clear}
+          onValue={(value) => onSecret({ value })}
+          onClear={(clear) => onSecret({ clear })}
+        />
+      ) : null}
+    </>
+  );
+}
+
 function ImageParameterFields({
   endpoint,
   value,
@@ -795,7 +861,9 @@ function RecommendationChooser<
   const load = async () => {
     setError("");
     try {
-      setModels(await services.runtimeConfigService.getRecommendations(category));
+      setModels(
+        await services.runtimeConfigService.getRecommendations(category),
+      );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "获取推荐模型失败。");
     }
@@ -943,9 +1011,14 @@ const OPTIMIZATION_OPTIONS = [
   { value: "advanced", label: "高级" },
   { value: "top", label: "顶级" },
 ] as const;
-const UNDERSTANDING_OPTIONS = [
+const VISUAL_UNDERSTANDING_OPTIONS = [
   { value: "native", label: "决策模型原生理解" },
   { value: "auxiliary", label: "辅助模型预先理解" },
+] as const;
+
+const AUDIO_UNDERSTANDING_OPTIONS = [
+  ...VISUAL_UNDERSTANDING_OPTIONS,
+  { value: "stt", label: "STT 预先理解" },
 ] as const;
 const IMAGE_QUALITY_OPTIONS = [
   { value: "low", label: "低（默认，最节省）" },
@@ -1170,6 +1243,7 @@ function primeDraft(value: PrimeFigureRuntimeConfigView) {
     visualModel: textDraft(value.understanding.visual.model),
     audioMode: value.understanding.audio.mode,
     audioModel: textDraft(value.understanding.audio.model),
+    stt: sttDraft(value.understanding.audio.stt),
     minimumMessages: String(value.context.minimumMessages),
     maximumMessages: String(value.context.maximumMessages),
     typingCharsPerMinute: String(value.typingCharsPerMinute),
@@ -1231,6 +1305,11 @@ function primePatch(
       audio: {
         mode: draft.audioMode,
         model: textModelPatch(draft.audioModel, secrets.audioModel),
+        stt: {
+          ...draft.stt,
+          language: draft.stt.language || null,
+          ...secretChange(secrets.stt.value, secrets.stt.clear),
+        },
       },
     },
     context: {
@@ -1332,6 +1411,16 @@ function ttsDraft(
   };
 }
 
+function sttDraft(
+  value: PrimeFigureRuntimeConfigView["understanding"]["audio"]["stt"],
+) {
+  return {
+    source: value.source,
+    httpUrl: value.httpUrl ?? "",
+    language: value.language ?? "",
+  };
+}
+
 function emptyPrimeSecrets(): Record<PrimeSecretKey, SecretDraft> {
   return Object.fromEntries(
     [
@@ -1342,6 +1431,7 @@ function emptyPrimeSecrets(): Record<PrimeSecretKey, SecretDraft> {
       "voiceOptimizer",
       "visualModel",
       "audioModel",
+      "stt",
     ].map((key) => [key, { value: "", clear: false }]),
   ) as Record<PrimeSecretKey, SecretDraft>;
 }

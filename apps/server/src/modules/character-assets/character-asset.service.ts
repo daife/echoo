@@ -16,6 +16,7 @@ import { RuntimeConfigService } from "../runtime-config/runtime-config.service.j
 import type {
   StoredFigureRuntimeConfig,
   StoredFishAudioConfig,
+  StoredFishAudioSttConfig,
   StoredModelEndpointConfig,
   StoredPrimeFigureRuntimeConfig,
   StoredSliceFigureRuntimeConfig,
@@ -563,6 +564,7 @@ function sanitizePrimeConfig(config: StoredPrimeFigureRuntimeConfig) {
       audio: {
         mode: config.understanding.audio.mode,
         model: sanitizeTextModel(config.understanding.audio.model),
+        stt: sanitizeFishAudioStt(config.understanding.audio.stt),
       },
     },
     context: structuredClone(config.context),
@@ -597,6 +599,13 @@ function sanitizeFishAudio(config: StoredFishAudioConfig) {
     model: config.model,
     latency: config.latency,
     chunkLength: config.chunkLength,
+  };
+}
+
+function sanitizeFishAudioStt(config: StoredFishAudioSttConfig) {
+  return {
+    source: "platform" as const,
+    ...(config.language ? { language: config.language } : {}),
   };
 }
 

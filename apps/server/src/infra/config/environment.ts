@@ -74,7 +74,9 @@ export function buildEnvironment() {
     if (publicUrl.search || publicUrl.hash)
       throw new Error("PUBLIC_SERVER_URL 不支持查询参数或片段。");
     if (publicUrl.pathname !== "/")
-      throw new Error("PUBLIC_SERVER_URL 只能配置服务器 origin，不能包含路径。");
+      throw new Error(
+        "PUBLIC_SERVER_URL 只能配置服务器 origin，不能包含路径。",
+      );
     if (production && publicUrl.protocol !== "https:")
       throw new Error("生产环境的 PUBLIC_SERVER_URL 必须使用 HTTPS。");
   }
@@ -144,6 +146,9 @@ export function buildEnvironment() {
     platformFishAudioWsUrl:
       optional("PLATFORM_FISH_AUDIO_WS_URL") ??
       "wss://api.fish.audio/v1/tts/live",
+    platformFishAudioAsrUrl:
+      optional("PLATFORM_FISH_AUDIO_ASR_URL") ??
+      "https://api.fish.audio/v1/asr",
     platformFishAudioApiKey: optional("PLATFORM_FISH_AUDIO_API_KEY") ?? "",
     adminPassword: optional("ADMIN_PASSWORD"),
     zpayEnabled,

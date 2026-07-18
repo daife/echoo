@@ -22,6 +22,14 @@ export interface StoredFishAudioConfig {
   chunkLength: number;
 }
 
+export interface StoredFishAudioSttConfig {
+  source: "platform" | "custom";
+  apiKey: string;
+  httpUrl: string;
+  /** Empty string enables Fish Audio language auto-detection. */
+  language: string;
+}
+
 export interface StoredSliceFigureRuntimeConfig {
   version: 3;
   llm: StoredTextModelConfig;
@@ -34,7 +42,7 @@ export interface StoredSliceFigureRuntimeConfig {
 }
 
 export interface StoredPrimeFigureRuntimeConfig {
-  version: 7;
+  version: 8;
   decisionModel: StoredTextModelConfig;
   outputs: {
     image: {
@@ -74,8 +82,9 @@ export interface StoredPrimeFigureRuntimeConfig {
       model: StoredTextModelConfig;
     };
     audio: {
-      mode: "native" | "auxiliary";
+      mode: "native" | "auxiliary" | "stt";
       model: StoredTextModelConfig;
+      stt: StoredFishAudioSttConfig;
     };
   };
   context: {

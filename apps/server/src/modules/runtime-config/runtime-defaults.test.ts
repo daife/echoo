@@ -22,6 +22,12 @@ test("administrator defaults are forced to platform sources without secrets", ()
     httpUrl: "https://private.example/tts",
     wsUrl: "wss://private.example/tts",
   };
+  input.primeFigure.understanding.audio.stt = {
+    source: "custom",
+    apiKey: "stt-secret",
+    httpUrl: "https://private.example/asr",
+    language: "zh",
+  };
 
   const result = forcePlatformDefaults(input);
   assert.equal(result.sliceFigure.llm.source, "platform");
@@ -30,7 +36,7 @@ test("administrator defaults are forced to platform sources without secrets", ()
   assert.equal(result.sliceFigure.llm.apiKey, "");
   assert.equal(result.sliceFigure.llm.baseUrl, "https://openrouter.ai/api/v1");
   assert.equal(result.primeFigure.outputs.voice.tts.source, "platform");
-  assert.equal(result.primeFigure.version, 7);
+  assert.equal(result.primeFigure.version, 8);
   assert.equal(result.primeFigure.outputs.voice.requestStreaming, false);
   assert.equal(result.primeFigure.outputs.voice.tts.apiKey, "");
   assert.deepEqual(result.primeFigure.outputs.image.parameters, {
@@ -40,6 +46,12 @@ test("administrator defaults are forced to platform sources without secrets", ()
     result.primeFigure.outputs.voice.tts.httpUrl,
     "https://api.fish.audio/v1/tts",
   );
+  assert.deepEqual(result.primeFigure.understanding.audio.stt, {
+    source: "platform",
+    apiKey: "",
+    httpUrl: "https://api.fish.audio/v1/asr",
+    language: "zh",
+  });
 });
 
 test("built-in new-user defaults use the configured Google AI Studio models", () => {
