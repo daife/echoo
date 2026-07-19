@@ -41,6 +41,7 @@ export function shouldShowDesktopConversationRail(
 export function getActivePrimaryNavigationView(
   view: ResponsiveNavigationView,
   bindingsReturnView: ResponsiveNavigationView,
+  secondaryOriginView: PrimaryNavigationView,
 ): PrimaryNavigationView | null {
   if (view === "settings") return "profile";
   if (view === "bindings") {
@@ -48,6 +49,14 @@ export function getActivePrimaryNavigationView(
       ? "profile"
       : toPrimaryNavigationView(bindingsReturnView);
   }
+  if (
+    view === "create" ||
+    view === "public-editor" ||
+    view === "post-detail" ||
+    view === "character-detail" ||
+    view === "public-profile"
+  )
+    return secondaryOriginView;
   return toPrimaryNavigationView(view);
 }
 

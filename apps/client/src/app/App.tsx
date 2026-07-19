@@ -18,7 +18,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type SetStateAction,
 } from "react";
@@ -46,6 +48,13 @@ import {
   shouldShowMobileBottomNav,
   shouldShowMobileConversationList,
 } from "./navigationPresentation";
+import {
+  popNavigationSnapshot,
+  pushNavigationSnapshot,
+  takePrimaryOriginSnapshot,
+  type NavigationSnapshot,
+  type ScrollPosition,
+} from "./navigationHistory";
 
 type AppView =
   | "home"
@@ -95,13 +104,23 @@ export function App() {
   );
   const [bindingsReturnView, setBindingsReturnView] =
     useState<AppView>("messages");
+  const [activePrimaryView, setActivePrimaryView] =
+    useState<PrimaryNavigationView>(() =>
+      new URLSearchParams(window.location.search).has("rechargeOrder")
+        ? "profile"
+        : "home",
+    );
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [editingPublicAsset, setEditingPublicAsset] =
     useState<CharacterAssetDraft | null>(null);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [detailHistory, setDetailHistory] = useState<ViewLocation[]>([]);
+  const [navigationHistory, setNavigationHistory] = useState<
+    NavigationSnapshot<ViewLocation>[]
+  >([]);
+  const mainRef = useRef<HTMLElement>(null);
+  const pendingScrollPositionRef = useRef<ScrollPosition | null>(null);
   const agentQueryKey = useMemo(
     () => ["agents", "mine", auth.user?.id ?? "anonymous"] as const,
     [auth.user?.id],
@@ -154,6 +173,7 @@ export function App() {
   const activeNavView = getActivePrimaryNavigationView(
     view,
     bindingsReturnView,
+    activePrimaryView,
   );
   const isViewportPanel = view === "messages" || view === "bindings";
   const isMobileChatFullscreen = view === "messages" && !!selectedAgent;
@@ -164,6 +184,97 @@ export function App() {
   );
   const showMobileConversationList =
     !!auth.user && shouldShowMobileConversationList(view, !!selectedAgent);
+
+  useLayoutEffect(() => {
+    const position = pendingScrollPositionRef.current;
+    if (!position) return;
+    pendingScrollPositionRef.current = null;
+    let frame = 0;
+    let attempts = 0;
+    const restore = () => {
+      attempts += 1;
+      if (mainRef.current) mainRef.current.scrollTop = position.mainTop;
+      window.scrollTo({ top: position.windowTop, behavior: "instant" });
+      const mainTop = mainRef.current?.scrollTop ?? position.mainTop;
+      const mainRestored = Math.abs(mainTop - position.mainTop) <= 1;
+      const windowRestored = Math.abs(window.scrollY - position.windowTop) <= 1;
+      if ((!mainRestored || !windowRestored) && attempts < 180)
+        frame = window.requestAnimationFrame(restore);
+    };
+    frame = window.requestAnimationFrame(restore);
+    return () => window.cancelAnimationFrame(frame);
+  }, [view, selectedPostId, selectedAssetId, selectedUserId]);
+
+  const captureScrollPosition = useCallback(
+    (): ScrollPosition => ({
+      mainTop: mainRef.current?.scrollTop ?? 0,
+      windowTop: window.scrollY,
+    }),
+    [],
+  );
+
+  const currentLocation = useCallback(
+    (): ViewLocation => ({
+      view,
+      postId: selectedPostId,
+      assetId: selectedAssetId,
+      userId: selectedUserId,
+    }),
+    [selectedAssetId, selectedPostId, selectedUserId, view],
+  );
+
+  const createCurrentSnapshot = useCallback(
+    (): NavigationSnapshot<ViewLocation> => ({
+      location: currentLocation(),
+      primaryView: activePrimaryView,
+      scrollPosition: captureScrollPosition(),
+    }),
+    [activePrimaryView, captureScrollPosition, currentLocation],
+  );
+
+  const restoreSnapshot = useCallback(
+    (snapshot: NavigationSnapshot<ViewLocation>) => {
+      setSelectedPostId(snapshot.location.postId);
+      setSelectedAssetId(snapshot.location.assetId);
+      setSelectedUserId(snapshot.location.userId);
+      setActivePrimaryView(snapshot.primaryView);
+      pendingScrollPositionRef.current = snapshot.scrollPosition;
+      setView(snapshot.location.view);
+    },
+    [],
+  );
+
+  const closeSecondaryView = useCallback(() => {
+    const result = popNavigationSnapshot(navigationHistory);
+    setNavigationHistory(result.history);
+    if (result.snapshot) restoreSnapshot(result.snapshot);
+    else {
+      setActivePrimaryView("home");
+      pendingScrollPositionRef.current = { mainTop: 0, windowTop: 0 };
+      setView("home");
+    }
+  }, [navigationHistory, restoreSnapshot]);
+
+  const navigatePrimary = useCallback(
+    (target: PrimaryNavigationView) => {
+      if (target === activePrimaryView) {
+        const origin = takePrimaryOriginSnapshot(navigationHistory, target);
+        if (origin) {
+          setNavigationHistory([]);
+          restoreSnapshot(origin);
+          return;
+        }
+      }
+      setNavigationHistory([]);
+      setActivePrimaryView(target);
+      setSelectedPostId(null);
+      setSelectedAssetId(null);
+      setSelectedUserId(null);
+      pendingScrollPositionRef.current = { mainTop: 0, windowTop: 0 };
+      setView(target);
+    },
+    [activePrimaryView, navigationHistory, restoreSnapshot],
+  );
 
   useEffect(() => {
     if (
@@ -251,6 +362,8 @@ export function App() {
   }, [auth.user, runtime.message]);
 
   const openAgent = useCallback((agent: Agent) => {
+    setNavigationHistory([]);
+    setActivePrimaryView("messages");
     setSelectedAgent(agent);
     setView("messages");
   }, []);
@@ -263,6 +376,8 @@ export function App() {
   }, []);
 
   const openConversationList = useCallback(() => {
+    setNavigationHistory([]);
+    setActivePrimaryView("messages");
     setSelectedAgent(null);
     setView("messages");
   }, []);
@@ -273,12 +388,19 @@ export function App() {
   }, []);
 
   const openSettings = useCallback(() => {
+    setNavigationHistory((current) =>
+      pushNavigationSnapshot(current, createCurrentSnapshot()),
+    );
+    pendingScrollPositionRef.current = { mainTop: 0, windowTop: 0 };
     setView("settings");
-  }, []);
+  }, [createCurrentSnapshot]);
 
   const closeSettings = useCallback(() => {
-    setView("profile");
-  }, []);
+    const result = popNavigationSnapshot(navigationHistory);
+    setNavigationHistory(result.history);
+    if (result.snapshot) restoreSnapshot(result.snapshot);
+    else navigatePrimary("profile");
+  }, [navigatePrimary, navigationHistory, restoreSnapshot]);
 
   const openBindings = useCallback(() => {
     if (view === "bindings") return;
@@ -297,6 +419,8 @@ export function App() {
     setSelectedAgent((current) =>
       current?.conversationId === conversationId ? null : current,
     );
+    setNavigationHistory([]);
+    setActivePrimaryView("home");
     setView("home");
   }, []);
 
@@ -423,12 +547,17 @@ export function App() {
   const createOrOpenPublicDraft = async (
     input: CreateCharacterAssetDraftRequest,
   ) => {
+    const snapshot = createCurrentSnapshot();
     const draft = await services.characterAssetService.createDraft(input);
     setPublicAssets((current) => [
       draft,
       ...current.filter((item) => item.id !== draft.id),
     ]);
+    setNavigationHistory((current) =>
+      pushNavigationSnapshot(current, snapshot),
+    );
     setEditingPublicAsset(draft);
+    pendingScrollPositionRef.current = { mainTop: 0, windowTop: 0 };
     setView("public-editor");
   };
 
@@ -448,30 +577,12 @@ export function App() {
     setView("public-profile");
   };
   function rememberCurrentLocation() {
-    setDetailHistory((current) => [
-      ...current,
-      {
-        view,
-        postId: selectedPostId,
-        assetId: selectedAssetId,
-        userId: selectedUserId,
-      },
-    ]);
+    setNavigationHistory((current) =>
+      pushNavigationSnapshot(current, createCurrentSnapshot()),
+    );
+    pendingScrollPositionRef.current = { mainTop: 0, windowTop: 0 };
   }
-  const closeDetail = () => {
-    setDetailHistory((current) => {
-      const previous = current.at(-1);
-      if (!previous) {
-        setView("home");
-        return current;
-      }
-      setSelectedPostId(previous.postId);
-      setSelectedAssetId(previous.assetId);
-      setSelectedUserId(previous.userId);
-      setView(previous.view);
-      return current.slice(0, -1);
-    });
-  };
+  const closeDetail = closeSecondaryView;
 
   const ActivePage = useMemo(() => {
     if (auth.isLoading) {
@@ -541,13 +652,13 @@ export function App() {
         <PublicAssetEditorPage
           draft={editingPublicAsset}
           service={services.characterAssetService}
-          onBack={() => setView("profile")}
+          onBack={closeSecondaryView}
           onDeleted={() => {
             setPublicAssets((current) =>
               current.filter((asset) => asset.id !== editingPublicAsset.id),
             );
             setEditingPublicAsset(null);
-            setView("profile");
+            closeSecondaryView();
           }}
           onDraftChange={(next) => {
             setEditingPublicAsset(next);
@@ -567,7 +678,11 @@ export function App() {
           publicAssets={publicAssets}
           onCreatePublicDraft={createOrOpenPublicDraft}
           onManagePublicAsset={(asset) => {
+            setNavigationHistory((current) =>
+              pushNavigationSnapshot(current, createCurrentSnapshot()),
+            );
             setEditingPublicAsset(asset);
+            pendingScrollPositionRef.current = { mainTop: 0, windowTop: 0 };
             setView("public-editor");
           }}
           onOpenPost={openPost}
@@ -625,7 +740,13 @@ export function App() {
       <HomePage
         service={services.characterAssetService}
         isAuthenticated={Boolean(auth.user)}
-        onCreateAgent={() => setView("create")}
+        onCreateAgent={() => {
+          setNavigationHistory((current) =>
+            pushNavigationSnapshot(current, createCurrentSnapshot()),
+          );
+          pendingScrollPositionRef.current = { mainTop: 0, windowTop: 0 };
+          setView("create");
+        }}
         onAgentInstalled={handleAgentInstalled}
         onRequireAuth={() => setView("auth")}
         onOpenAsset={openAsset}
@@ -637,7 +758,9 @@ export function App() {
     auth.user,
     closeBindings,
     closeConversation,
+    closeSecondaryView,
     closeSettings,
+    createCurrentSnapshot,
     handleConversationDeleted,
     handleAgentInstalled,
     isLoadingAgents,
@@ -651,7 +774,7 @@ export function App() {
     selectedPostId,
     selectedAssetId,
     selectedUserId,
-    detailHistory,
+    navigationHistory,
     view,
   ]);
 
@@ -687,7 +810,7 @@ export function App() {
                       ? "bg-white text-[#09090b] luminous-ring"
                       : "text-white/50 hover:bg-white/[0.06] hover:text-white"
                   }`}
-                  onClick={() => setView(item.id)}
+                  onClick={() => navigatePrimary(item.id)}
                 >
                   <Icon size={22} weight={active ? "fill" : "regular"} />
                 </button>
@@ -699,6 +822,9 @@ export function App() {
         {showConversationRail ? (
           <ConversationRail
             agents={myAgents}
+            selectedAgentId={
+              view === "messages" ? selectedAgent?.id : undefined
+            }
             isBindingsActive={view === "bindings"}
             onOpenAgent={openAgent}
             onOpenBindings={openBindings}
@@ -709,6 +835,9 @@ export function App() {
         {showMobileConversationList ? (
           <ConversationRail
             agents={myAgents}
+            selectedAgentId={
+              view === "messages" ? selectedAgent?.id : undefined
+            }
             layout="mobile"
             isBindingsActive={view === "bindings"}
             onOpenAgent={openAgent}
@@ -718,6 +847,7 @@ export function App() {
         ) : null}
 
         <main
+          ref={mainRef}
           className={`w-full min-w-0 md:min-h-0 md:overflow-y-auto md:pr-4 ${isViewportPanel ? "min-h-0 overflow-hidden md:overflow-hidden" : ""} ${
             showMobileConversationList ? "hidden md:block" : ""
           }`}
@@ -743,7 +873,7 @@ export function App() {
                 onClick={() =>
                   item.id === "messages"
                     ? openConversationList()
-                    : setView(item.id)
+                    : navigatePrimary(item.id)
                 }
               >
                 <Icon size={22} weight={active ? "fill" : "regular"} />

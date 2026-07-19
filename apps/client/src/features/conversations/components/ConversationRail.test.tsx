@@ -57,4 +57,19 @@ describe("ConversationRail identity", () => {
     );
     expect(html).toContain('data-identity-avatar="empty"');
   });
+
+  it("marks the opened conversation with the white active treatment", () => {
+    const html = renderToStaticMarkup(
+      <ConversationRail
+        agents={[agent]}
+        selectedAgentId={agent.id}
+        onOpenAgent={vi.fn()}
+        onOpenBindings={vi.fn()}
+        onOpenChat={vi.fn()}
+      />,
+    );
+    expect(html).toContain('aria-current="page"');
+    expect(html).toContain("bg-white text-[#09090b]");
+    expect(html).toContain("text-black/55");
+  });
 });

@@ -4,6 +4,7 @@ import { IdentityAvatar } from "../../../shared/components/IdentityAvatar";
 
 export function ConversationRail({
   agents,
+  selectedAgentId,
   layout = "desktop",
   isBindingsActive = false,
   onOpenAgent,
@@ -11,6 +12,7 @@ export function ConversationRail({
   onOpenChat,
 }: {
   agents: Agent[];
+  selectedAgentId?: string;
   layout?: "desktop" | "mobile";
   isBindingsActive?: boolean;
   onOpenAgent: (agent: Agent) => void;
@@ -82,10 +84,16 @@ export function ConversationRail({
             </div>
           ) : null}
           {visibleConversations.map((conversation) => {
+            const active = conversation.agent.id === selectedAgentId;
             return (
               <button
                 key={conversation.agent.id}
-                className="flex w-full items-center gap-3 rounded-lg p-3 text-left transition hover:bg-white/[0.055] active:translate-y-px"
+                aria-current={active ? "page" : undefined}
+                className={`flex w-full items-center gap-3 rounded-lg p-3 text-left transition active:translate-y-px ${
+                  active
+                    ? "bg-white text-[#09090b]"
+                    : "text-white hover:bg-white/[0.055]"
+                }`}
                 onClick={() =>
                   conversation.agent
                     ? onOpenAgent(conversation.agent)
@@ -95,11 +103,13 @@ export function ConversationRail({
                 <IdentityAvatar
                   mediaUrl={conversation.agent.avatarResourcePath}
                   alt={`${conversation.name}的头像`}
-                  className="h-10 w-10"
+                  className={`h-10 w-10 ${active ? "border-black/15" : ""}`}
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="truncate text-sm font-medium text-white">
+                    <div
+                      className={`truncate text-sm font-medium ${active ? "text-[#09090b]" : "text-white"}`}
+                    >
                       {conversation.name}
                     </div>
                     {conversation.unread > 0 ? (
@@ -108,7 +118,9 @@ export function ConversationRail({
                       </span>
                     ) : null}
                   </div>
-                  <p className="mt-1 truncate text-xs text-white/42">
+                  <p
+                    className={`mt-1 truncate text-xs ${active ? "text-black/55" : "text-white/42"}`}
+                  >
                     {conversation.text}
                   </p>
                 </div>

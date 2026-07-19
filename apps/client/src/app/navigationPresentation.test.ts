@@ -73,15 +73,35 @@ describe("responsive navigation presentation", () => {
   });
 
   it("keeps profile active in settings", () => {
-    expect(getActivePrimaryNavigationView("settings", "home")).toBe("profile");
+    expect(getActivePrimaryNavigationView("settings", "home", "home")).toBe(
+      "profile",
+    );
   });
 
   it("keeps the binding source navigation item active", () => {
-    expect(getActivePrimaryNavigationView("bindings", "explore")).toBe(
+    expect(getActivePrimaryNavigationView("bindings", "explore", "home")).toBe(
       "explore",
     );
-    expect(getActivePrimaryNavigationView("bindings", "settings")).toBe(
+    expect(getActivePrimaryNavigationView("bindings", "settings", "home")).toBe(
       "profile",
     );
+  });
+
+  it("keeps the source navigation active on secondary pages", () => {
+    expect(getActivePrimaryNavigationView("create", "home", "home")).toBe(
+      "home",
+    );
+    expect(
+      getActivePrimaryNavigationView("character-detail", "home", "home"),
+    ).toBe("home");
+    expect(
+      getActivePrimaryNavigationView("character-detail", "home", "explore"),
+    ).toBe("explore");
+    expect(
+      getActivePrimaryNavigationView("public-editor", "home", "profile"),
+    ).toBe("profile");
+    expect(
+      getActivePrimaryNavigationView("public-profile", "home", "profile"),
+    ).toBe("profile");
   });
 });
