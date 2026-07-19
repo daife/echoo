@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   resolveTextSubmission,
+  shouldSuppressComposerActionClick,
   shouldSubmitTextBeforeInput,
   shouldSubmitTextInput,
 } from "./messageComposerSubmission";
@@ -32,6 +33,16 @@ describe("message composer keyboard submission", () => {
         keyCode: 229,
       }),
     ).toBe(false);
+  });
+});
+
+describe("message composer action click suppression", () => {
+  it("suppresses the click synthesized immediately after pointer submission", () => {
+    expect(shouldSuppressComposerActionClick(1_250, 1_000)).toBe(true);
+  });
+
+  it("allows a later intentional action click", () => {
+    expect(shouldSuppressComposerActionClick(1_250, 1_250)).toBe(false);
   });
 });
 

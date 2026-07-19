@@ -19,6 +19,13 @@ export function shouldSubmitTextBeforeInput(event: {
   );
 }
 
+export function shouldSuppressComposerActionClick(
+  suppressUntil: number,
+  now = Date.now(),
+) {
+  return now < suppressUntil;
+}
+
 export function resolveTextSubmission(
   liveInputValue: string | undefined,
   draft: string,

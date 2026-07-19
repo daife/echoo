@@ -19,6 +19,7 @@ import {
   useState,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { compressImageToJpeg } from "../../../shared/utils/imageCompression";
@@ -26,6 +27,7 @@ import { usePushToTalk } from "../usePushToTalk";
 import { MediaAsset } from "../../media/MediaAsset";
 import {
   resolveTextSubmission,
+  shouldSuppressComposerActionClick,
   shouldSubmitTextBeforeInput,
   shouldSubmitTextInput,
 } from "./messageComposerSubmission";
@@ -94,6 +96,7 @@ export function MessageComposer({
   );
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lastTextSubmissionAtRef = useRef(0);
+  const suppressComposerActionClickUntilRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
   const stickerFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -252,7 +255,41 @@ export function MessageComposer({
   ) => {
     if (!event.isPrimary || event.button !== 0) return;
     event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleSendPointerUp = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (!event.isPrimary || event.button !== 0) return;
+    event.preventDefault();
+    suppressComposerActionClickUntilRef.current = Date.now() + 250;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
     submitText();
+  };
+
+  const handleSendClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (
+      shouldSuppressComposerActionClick(
+        suppressComposerActionClickUntilRef.current,
+      )
+    ) {
+      event.preventDefault();
+      return;
+    }
+    submitText();
+  };
+
+  const handleMoreClick = () => {
+    if (
+      shouldSuppressComposerActionClick(
+        suppressComposerActionClickUntilRef.current,
+      )
+    )
+      return;
+    setPanel((current) => (current === "more" ? null : "more"));
+    setNotice(null);
   };
 
   return (
@@ -411,10 +448,7 @@ export function MessageComposer({
             type="button"
             aria-label="更多消息类型"
             aria-expanded={panel === "more"}
-            onClick={() => {
-              setPanel((current) => (current === "more" ? null : "more"));
-              setNotice(null);
-            }}
+            onClick={handleMoreClick}
           >
             <Plus
               className={`transition-transform ${panel === "more" ? "rotate-45" : ""}`}
@@ -429,7 +463,8 @@ export function MessageComposer({
             disabled={!draft.trim() || isSending}
             type="button"
             onPointerDown={handleSendPointerDown}
-            onClick={submitText}
+            onPointerUp={handleSendPointerUp}
+            onClick={handleSendClick}
           >
             <PaperPlaneRight size={18} weight="fill" />
           </button>
