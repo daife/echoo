@@ -258,8 +258,6 @@ export class ResourceRepository {
     )
       return null;
     this.assertStorageProvider(record.storageProvider);
-    if (this.storage.provider !== "local")
-      throw new InvalidMediaUploadError("该资源必须直接上传到对象存储。");
     if (record.byteSize !== undefined && data.length !== record.byteSize)
       throw new InvalidMediaUploadError("上传内容大小与声明不一致。");
     await this.storage.put(record.storageKey, data, record.mimeType);
