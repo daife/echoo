@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS agents (
   type ENUM('slice-figure', 'prime-figure', 'prime-world') NOT NULL,
   name VARCHAR(160) NOT NULL,
   definition JSON NOT NULL,
-  public_asset_publishable BOOLEAN NOT NULL DEFAULT TRUE,
+  source_public_asset_id VARCHAR(64) NULL,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   INDEX idx_agents_owner_created (owner_user_id, created_at DESC),

@@ -178,9 +178,8 @@ export interface AgentBase {
   tags: string[];
   introduction: string;
   isPublic: boolean;
-  publishedAssetId?: string;
-  /** Whether this personal conversation may be copied into a new public asset. */
-  canPublishAsPublicAsset: boolean;
+  /** Persistent provenance for this personal conversation. */
+  origin: { kind: "original" } | { kind: "public-asset"; assetId: string };
   /**
    * Persistent session id for this user's session with the figure.
    * Server-side storage currently uses conversations.id as the session id.

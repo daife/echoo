@@ -1,6 +1,66 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { ProfileEditorDialog, PublicAssetCreateDialog } from "./ProfilePage";
+import type { Agent } from "@echoo/shared";
+import {
+  ProfileEditorDialog,
+  ProfilePage,
+  PublicAssetCreateDialog,
+} from "./ProfilePage";
+
+vi.mock("../../app/providers/AuthProvider", () => ({
+  useAuth: () => ({
+    user: {
+      id: "user_1",
+      email: "aether@example.test",
+      displayName: "Aether",
+      signature: "安静地共创角色。",
+      createdAt: 1,
+    },
+  }),
+}));
+
+vi.mock("../../app/providers/ServicesProvider", () => ({
+  useServices: () => ({
+    socialService: { listUserPosts: vi.fn() },
+  }),
+}));
+
+const originalAgent: Agent = {
+  id: "agent_original",
+  ownerUserId: "user_1",
+  type: "slice-figure",
+  name: "原创小霁",
+  avatarResourcePath: "/api/resources/avatar/original",
+  coverResourcePath: "/api/resources/cover/original",
+  introduction: "由用户直接创建的会话。",
+  attributes: [{ key: "关系", value: "朋友" }],
+  tags: ["日常陪伴"],
+  isPublic: false,
+  origin: { kind: "original" },
+  conversationId: "conversation_original",
+  createdAt: 1,
+  updatedAt: 1,
+  detail: {
+    prologueHtml: "",
+    currentSituation: "",
+    openingLine: "",
+    linkedAgentIds: [],
+    persona: "安静的人",
+    background: "",
+    personality: "",
+    responseStyle: "",
+    systemPrompt: "",
+    memorySummaryPrompt: "",
+  },
+};
+
+const publicAssetAgent: Agent = {
+  ...originalAgent,
+  id: "agent_public",
+  name: "公共林晚",
+  origin: { kind: "public-asset", assetId: "asset_1" },
+  conversationId: "conversation_public",
+};
 
 describe("ProfileEditorDialog", () => {
   it("prefills persisted profile fields and exposes avatar controls", () => {
@@ -28,7 +88,7 @@ describe("ProfileEditorDialog", () => {
 });
 
 describe("PublicAssetCreateDialog", () => {
-  it("creates public assets independently and offers an optional personal-session copy", () => {
+  it("creates public assets independently and only imports original conversations", () => {
     const html = renderToStaticMarkup(
       <PublicAssetCreateDialog
         agents={[]}
@@ -38,8 +98,39 @@ describe("PublicAssetCreateDialog", () => {
     );
 
     expect(html).toContain("从空白创建");
-    expect(html).toContain("从个人会话拷贝");
+    expect(html).toContain("从原创会话导入");
     expect(html).toContain("公共角色是独立资产");
     expect(html).toContain("创建并进入草稿编辑器");
+  });
+});
+
+describe("ProfilePage personal conversations", () => {
+  it("groups conversations by origin and only links public-origin cards to details", () => {
+    const html = renderToStaticMarkup(
+      <ProfilePage
+        agents={[originalAgent, publicAssetAgent]}
+        isLoadingAgents={false}
+        onOpenAgent={vi.fn()}
+        onOpenSettings={vi.fn()}
+        publicAssets={[]}
+        onCreatePublicDraft={vi.fn()}
+        onManagePublicAsset={vi.fn()}
+        onOpenAsset={vi.fn()}
+        onOpenPost={vi.fn()}
+        onOpenUser={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("个人会话");
+    expect(html).toContain("原创会话");
+    expect(html).toContain("从公共角色添加的会话");
+    expect(html).toContain("查看 公共林晚 的公共角色详情");
+    expect(html).not.toContain("查看 原创小霁 的公共角色详情");
+    expect(html).toContain("进入与 原创小霁 的会话");
+    expect(html).toContain("进入与 公共林晚 的会话");
+    expect(html).toContain('data-identity-avatar="image"');
+    expect(html).toContain("关系: 朋友");
+    expect(html).toContain("#日常陪伴");
+    expect(html).toContain("@min-[760px]/profile:grid-cols-2");
   });
 });

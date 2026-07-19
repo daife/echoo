@@ -35,7 +35,7 @@ interface AgentRow extends RowDataPacket {
   type: Agent["type"];
   name: string;
   definition: unknown;
-  public_asset_publishable: number | boolean;
+  source_public_asset_id: string | null;
   conversation_runtime_state: unknown;
   conversation_id: string | null;
   created_at: number;
@@ -1045,7 +1045,9 @@ function rowToAgent(row: AgentRow): Agent {
     type: row.type,
     name: row.name,
     isPublic: false,
-    canPublishAsPublicAsset: Boolean(row.public_asset_publishable),
+    origin: row.source_public_asset_id
+      ? { kind: "public-asset", assetId: row.source_public_asset_id }
+      : { kind: "original" },
     conversationId: row.conversation_id ?? "",
     createdAt: row.created_at,
     updatedAt: row.updated_at,

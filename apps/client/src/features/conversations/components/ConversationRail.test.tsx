@@ -14,7 +14,7 @@ const agent = {
   tags: [],
   linkedAgentIds: [],
   isPublic: false,
-  canPublishAsPublicAsset: true,
+  origin: { kind: "original" },
   conversationId: "conversation_1",
   createdAt: 1,
   updatedAt: 1,
@@ -58,7 +58,7 @@ describe("ConversationRail identity", () => {
     expect(html).toContain('data-identity-avatar="empty"');
   });
 
-  it("marks the opened conversation with the white active treatment", () => {
+  it("marks the opened conversation with a white outline treatment", () => {
     const html = renderToStaticMarkup(
       <ConversationRail
         agents={[agent]}
@@ -69,7 +69,8 @@ describe("ConversationRail identity", () => {
       />,
     );
     expect(html).toContain('aria-current="page"');
-    expect(html).toContain("bg-white text-[#09090b]");
-    expect(html).toContain("text-black/55");
+    expect(html).toContain("border-white/70 bg-white/[0.035] text-white");
+    expect(html).toContain("text-white/62");
+    expect(html).not.toContain("bg-white text-[#09090b]");
   });
 });

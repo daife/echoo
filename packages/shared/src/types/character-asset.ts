@@ -10,8 +10,8 @@ export type CharacterAssetType = Exclude<AgentType, "prime-world">;
 export type CharacterAssetStatus = "draft" | "published" | "unlisted";
 
 export type CreateCharacterAssetDraftRequest =
-  | { type: CharacterAssetType; copyFromAgentId?: never }
-  | { copyFromAgentId: string; type?: never };
+  | { type: CharacterAssetType; importFromOriginalAgentId?: never }
+  | { importFromOriginalAgentId: string; type?: never };
 
 export interface CharacterAssetSnapshotBase {
   type: CharacterAssetType;

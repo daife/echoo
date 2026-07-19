@@ -56,9 +56,19 @@ export function CharacterDetailPage({
 
   if (!asset)
     return (
-      <div className="py-20 text-center text-sm text-white/40">
-        {error ?? "正在加载角色……"}
-      </div>
+      <section className="mx-auto max-w-4xl pb-24">
+        <button
+          type="button"
+          onClick={onBack}
+          className="mb-6 flex items-center gap-2 text-sm text-white/48 hover:text-white"
+        >
+          <ArrowLeft size={17} />
+          返回
+        </button>
+        <div className="rounded-2xl border border-white/8 bg-[#111114] py-20 text-center text-sm text-white/40">
+          {error ?? "正在加载角色……"}
+        </div>
+      </section>
     );
   const snapshot = asset.snapshot;
   return (

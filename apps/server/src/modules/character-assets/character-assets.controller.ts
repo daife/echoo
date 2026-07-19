@@ -19,7 +19,9 @@ const recommendationSchema = z.object({
 });
 const createDraftSchema = z.union([
   z.object({ type: z.enum(["slice-figure", "prime-figure"]) }).strict(),
-  z.object({ copyFromAgentId: z.string().trim().min(1).max(120) }).strict(),
+  z
+    .object({ importFromOriginalAgentId: z.string().trim().min(1).max(120) })
+    .strict(),
 ]);
 
 export async function registerCharacterAssetRoutes(app: FastifyInstance) {

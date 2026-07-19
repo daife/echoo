@@ -40,6 +40,15 @@ export async function initializeDatabase() {
     for (const statement of schema.split(/;\s*(?:\r?\n|$)/)) {
       if (statement.trim()) await connection.query(statement);
     }
+    const [agentOriginColumns] = await connection.query<RowDataPacket[]>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = DATABASE() AND table_name = 'agents'
+         AND column_name = 'source_public_asset_id'`,
+    );
+    if (!agentOriginColumns.length)
+      await connection.query(
+        "ALTER TABLE agents ADD COLUMN source_public_asset_id VARCHAR(64) NULL AFTER definition",
+      );
     const [billingKindColumns] = await connection.query<RowDataPacket[]>(
       `SELECT data_type FROM information_schema.columns
        WHERE table_schema = DATABASE() AND table_name = 'billing_ledger'

@@ -89,10 +89,10 @@ export function ConversationRail({
               <button
                 key={conversation.agent.id}
                 aria-current={active ? "page" : undefined}
-                className={`flex w-full items-center gap-3 rounded-lg p-3 text-left transition active:translate-y-px ${
+                className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition active:translate-y-px ${
                   active
-                    ? "bg-white text-[#09090b]"
-                    : "text-white hover:bg-white/[0.055]"
+                    ? "border-white/70 bg-white/[0.035] text-white"
+                    : "border-transparent text-white hover:bg-white/[0.055]"
                 }`}
                 onClick={() =>
                   conversation.agent
@@ -103,13 +103,11 @@ export function ConversationRail({
                 <IdentityAvatar
                   mediaUrl={conversation.agent.avatarResourcePath}
                   alt={`${conversation.name}的头像`}
-                  className={`h-10 w-10 ${active ? "border-black/15" : ""}`}
+                  className={`h-10 w-10 ${active ? "border-white/20" : ""}`}
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <div
-                      className={`truncate text-sm font-medium ${active ? "text-[#09090b]" : "text-white"}`}
-                    >
+                    <div className="truncate text-sm font-medium text-white">
                       {conversation.name}
                     </div>
                     {conversation.unread > 0 ? (
@@ -119,7 +117,7 @@ export function ConversationRail({
                     ) : null}
                   </div>
                   <p
-                    className={`mt-1 truncate text-xs ${active ? "text-black/55" : "text-white/42"}`}
+                    className={`mt-1 truncate text-xs ${active ? "text-white/62" : "text-white/42"}`}
                   >
                     {conversation.text}
                   </p>

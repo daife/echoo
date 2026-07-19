@@ -685,6 +685,7 @@ export function App() {
             pendingScrollPositionRef.current = { mainTop: 0, windowTop: 0 };
             setView("public-editor");
           }}
+          onOpenAsset={openAsset}
           onOpenPost={openPost}
           onOpenUser={openPublicProfile}
         />

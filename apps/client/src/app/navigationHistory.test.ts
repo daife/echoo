@@ -40,6 +40,20 @@ describe("navigation history", () => {
     );
   });
 
+  it("returns from a character detail to the profile origin and its scroll position", () => {
+    const profileSnapshot: NavigationSnapshot<TestLocation> = {
+      location: { view: "profile", assetId: null },
+      primaryView: "profile",
+      scrollPosition: { mainTop: 520, windowTop: 0 },
+    };
+    const result = popNavigationSnapshot(
+      pushNavigationSnapshot([], profileSnapshot),
+    );
+
+    expect(result.snapshot).toEqual(profileSnapshot);
+    expect(result.snapshot?.scrollPosition.mainTop).toBe(520);
+  });
+
   it("finds the original source when the active primary item is clicked", () => {
     const nestedSnapshot: NavigationSnapshot<TestLocation> = {
       location: { view: "public-profile", assetId: "asset-1" },

@@ -82,16 +82,16 @@ export class CharacterAssetService {
   ) {
     let snapshot: CharacterAssetSnapshot;
     let resources: AssetResourceReference[] = [];
-    if (typeof input.copyFromAgentId === "string") {
+    if (typeof input.importFromOriginalAgentId === "string") {
       const agent = await this.agents.findById(
         ownerUserId,
-        input.copyFromAgentId,
+        input.importFromOriginalAgentId,
       );
       if (!agent || agent.type === "prime-world")
-        throw new CharacterAssetNotFoundError("未找到可拷贝的个人会话。");
-      if (!agent.canPublishAsPublicAsset)
+        throw new CharacterAssetNotFoundError("未找到可导入的原创会话。");
+      if (agent.origin.kind !== "original")
         throw new CharacterAssetForbiddenError(
-          "从其他创作者的公共角色添加的会话不能再次发布。",
+          "从公共角色添加的会话不能再次发布，包括自己创建的公共角色。",
         );
       ({ snapshot, resources } = await this.buildSnapshot(ownerUserId, agent));
     } else {
@@ -206,7 +206,6 @@ export class CharacterAssetService {
       assetId,
       versionId: asset.latestVersion.id,
       snapshot: asset.latestVersion.snapshot,
-      publicAssetPublishable: asset.author.id === ownerUserId,
     });
     if (!installation)
       throw new CharacterAssetNotFoundError("角色资产不存在或已下架。");

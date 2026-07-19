@@ -33,6 +33,7 @@ export function ProfilePage({
   publicAssets,
   onCreatePublicDraft,
   onManagePublicAsset,
+  onOpenAsset,
   onOpenPost,
   onOpenUser,
 }: {
@@ -45,6 +46,7 @@ export function ProfilePage({
     input: CreateCharacterAssetDraftRequest,
   ) => Promise<void>;
   onManagePublicAsset: (asset: CharacterAssetDraft) => void;
+  onOpenAsset: (assetId: string) => void;
   onOpenPost: (postId: string) => void;
   onOpenUser: (userId: string) => void;
 }) {
@@ -67,8 +69,13 @@ export function ProfilePage({
     coverResourcePath: agent.coverResourcePath,
     attributes: agent.attributes,
     tags: agent.tags,
+    origin: agent.origin,
     source: agent,
   }));
+  const originalCards = cards.filter((card) => card.origin.kind === "original");
+  const publicAssetCards = cards.filter(
+    (card) => card.origin.kind === "public-asset",
+  );
 
   useEffect(() => {
     if (!auth.user || activeTab !== "posts") return;
@@ -108,21 +115,9 @@ export function ProfilePage({
           </p>
           <div className="mt-7 grid w-full max-w-2xl grid-cols-3 border-y border-white/10 py-5">
             {[
-              [String(agents.length), "角色"],
-              [
-                String(
-                  agents.filter((agent) => agent.type === "prime-figure")
-                    .length,
-                ),
-                "本初角色",
-              ],
-              [
-                String(
-                  agents.filter((agent) => agent.type === "slice-figure")
-                    .length,
-                ),
-                "切片角色",
-              ],
+              [String(agents.length), "个人会话"],
+              [String(originalCards.length), "原创会话"],
+              [String(publicAssetCards.length), "已添加会话"],
             ].map(([value, label]) => (
               <div key={label}>
                 <div className="text-2xl font-semibold text-white">{value}</div>
@@ -165,110 +160,156 @@ export function ProfilePage({
       </div>
 
       <div
-        className={`${activeTab === "creations" ? "grid" : "hidden"} gap-5 lg:grid-cols-[1fr_320px]`}
+        className={`${activeTab === "creations" ? "block" : "hidden"} @container/profile`}
       >
-        <div>
-          <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-2xl font-semibold text-white">我的角色</h2>
-            <span className="text-sm text-white/40">本初角色与切片角色</span>
-          </div>
-          {publishNotice ? (
-            <p className="mb-4 rounded-xl border border-white/8 bg-white/[0.025] px-4 py-3 text-xs text-white/55">
-              {publishNotice}
-            </p>
-          ) : null}
-          {isLoadingAgents ? (
-            <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-6 text-sm text-white/45">
-              正在加载角色……
+        <div className="grid gap-5 @min-[1100px]/profile:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="min-w-0">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-2xl font-semibold text-white">个人会话</h2>
+              <span className="text-sm text-white/40">按来源分组</span>
             </div>
-          ) : cards.length > 0 ? (
-            <div className="grid gap-5 md:grid-cols-2">
-              {cards.map((agent) => (
-                <CharacterCard
-                  key={agent.id}
-                  agent={agent}
-                  onOpenChat={() => onOpenAgent(agent.source)}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-6 text-sm leading-6 text-white/50">
-              你还没有创建任何角色。创建一个切片角色即可开始新的会话。
-            </div>
-          )}
-
-          <div className="mb-5 mt-12 flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-semibold text-white">
-                我的公共角色
-              </h2>
-              <span className="mt-1 block text-sm text-white/40">
-                独立草稿与公开版本
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setPublishNotice(null);
-                setIsPublicCreateOpen(true);
-              }}
-              className="flex shrink-0 items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-medium text-[#09090b] transition active:scale-95"
-            >
-              <Plus size={16} weight="bold" />
-              创建公共角色
-            </button>
-          </div>
-          {publicAssets.length ? (
-            <div className="space-y-3">
-              {publicAssets.map((asset) => (
-                <button
-                  key={asset.id}
-                  type="button"
-                  onClick={() => onManagePublicAsset(asset)}
-                  className="flex w-full items-center gap-4 rounded-2xl border border-white/8 bg-white/[0.025] p-4 text-left transition hover:bg-white/[0.05]"
-                >
-                  <div className="grid h-12 w-12 place-items-center rounded-full bg-white/[0.06] text-sm font-semibold text-white/75">
-                    {asset.snapshot.name.slice(0, 1)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-white">
-                      {asset.snapshot.name}
-                    </p>
-                    <p className="mt-1 text-xs text-white/38">
-                      {asset.status === "published"
-                        ? `已发布 · v${asset.latestVersionNumber}`
-                        : asset.status === "unlisted"
-                          ? "已下架"
-                          : "未发布草稿"}
-                      {asset.hasUnpublishedChanges ? " · 有未发布修改" : ""}
-                    </p>
-                  </div>
-                  <NotePencil size={18} className="text-white/35" />
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm text-white/42">
-              还没有公共角色。你可以从空白开始，也可以拷贝自己的个人会话作为初始模板。
-            </div>
-          )}
-        </div>
-        <aside className="glass-panel h-fit rounded-2xl p-6">
-          <div className="flex items-center gap-3">
-            <div className="grid h-11 w-11 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-white">
-              <NotePencil size={21} weight="duotone" />
-            </div>
-            <div>
-              <h2 className="font-semibold text-white">动态</h2>
-              <p className="text-xs text-white/40">
-                在上方切换到动态即可发布与管理
+            {publishNotice ? (
+              <p className="mb-4 rounded-xl border border-white/8 bg-white/[0.025] px-4 py-3 text-xs text-white/55">
+                {publishNotice}
               </p>
+            ) : null}
+            {isLoadingAgents ? (
+              <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-6 text-sm text-white/45">
+                正在加载个人会话……
+              </div>
+            ) : (
+              <div className="space-y-10">
+                <section>
+                  <div className="mb-4">
+                    <h3 className="text-base font-semibold text-white">
+                      原创会话
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-white/40">
+                      由你直接创建，可以导入为新的公共角色草稿。
+                    </p>
+                  </div>
+                  {originalCards.length ? (
+                    <div className="grid gap-5 @min-[760px]/profile:grid-cols-2">
+                      {originalCards.map((agent) => (
+                        <CharacterCard
+                          key={agent.id}
+                          agent={agent}
+                          onOpenChat={() => onOpenAgent(agent.source)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm leading-6 text-white/45">
+                      还没有原创会话。创建角色后即可开始新的会话。
+                    </div>
+                  )}
+                </section>
+
+                <section>
+                  <div className="mb-4">
+                    <h3 className="text-base font-semibold text-white">
+                      从公共角色添加的会话
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-white/40">
+                      保留原公共角色来源，可查看详情，但不能再次导入发布。
+                    </p>
+                  </div>
+                  {publicAssetCards.length ? (
+                    <div className="grid gap-5 @min-[760px]/profile:grid-cols-2">
+                      {publicAssetCards.map((agent) => (
+                        <CharacterCard
+                          key={agent.id}
+                          agent={agent}
+                          onOpenDetail={() => {
+                            if (agent.origin.kind === "public-asset")
+                              onOpenAsset(agent.origin.assetId);
+                          }}
+                          onOpenChat={() => onOpenAgent(agent.source)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm leading-6 text-white/45">
+                      还没有从公共角色添加的会话。
+                    </div>
+                  )}
+                </section>
+              </div>
+            )}
+
+            <div className="mb-5 mt-12 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-semibold text-white">
+                  我的公共角色
+                </h2>
+                <span className="mt-1 block text-sm text-white/40">
+                  独立草稿与公开版本
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setPublishNotice(null);
+                  setIsPublicCreateOpen(true);
+                }}
+                className="flex shrink-0 items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-medium text-[#09090b] transition active:scale-95"
+              >
+                <Plus size={16} weight="bold" />
+                创建公共角色
+              </button>
             </div>
+            {publicAssets.length ? (
+              <div className="space-y-3">
+                {publicAssets.map((asset) => (
+                  <button
+                    key={asset.id}
+                    type="button"
+                    onClick={() => onManagePublicAsset(asset)}
+                    className="flex w-full items-center gap-4 rounded-2xl border border-white/8 bg-white/[0.025] p-4 text-left transition hover:bg-white/[0.05]"
+                  >
+                    <div className="grid h-12 w-12 place-items-center rounded-full bg-white/[0.06] text-sm font-semibold text-white/75">
+                      {asset.snapshot.name.slice(0, 1)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-white">
+                        {asset.snapshot.name}
+                      </p>
+                      <p className="mt-1 text-xs text-white/38">
+                        {asset.status === "published"
+                          ? `已发布 · v${asset.latestVersionNumber}`
+                          : asset.status === "unlisted"
+                            ? "已下架"
+                            : "未发布草稿"}
+                        {asset.hasUnpublishedChanges ? " · 有未发布修改" : ""}
+                      </p>
+                    </div>
+                    <NotePencil size={18} className="text-white/35" />
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm text-white/42">
+                还没有公共角色。你可以从空白开始，也可以从原创会话导入初始设定。
+              </div>
+            )}
           </div>
-          <p className="mt-5 text-sm leading-6 text-white/42">
-            列表卡片只显示评论数量。进入动态详情后才会加载评论内容，避免主页过长。
-          </p>
-        </aside>
+          <aside className="glass-panel hidden h-fit rounded-2xl p-6 @min-[1100px]/profile:block">
+            <div className="flex items-center gap-3">
+              <div className="grid h-11 w-11 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-white">
+                <NotePencil size={21} weight="duotone" />
+              </div>
+              <div>
+                <h2 className="font-semibold text-white">动态</h2>
+                <p className="text-xs text-white/40">
+                  在上方切换到动态即可发布与管理
+                </p>
+              </div>
+            </div>
+            <p className="mt-5 text-sm leading-6 text-white/42">
+              列表卡片只显示评论数量。进入动态详情后才会加载评论内容，避免主页过长。
+            </p>
+          </aside>
+        </div>
       </div>
       {activeTab === "posts" ? (
         <div className="mx-auto max-w-3xl space-y-5">
@@ -349,13 +390,13 @@ export function PublicAssetCreateDialog({
   onCreate: (input: CreateCharacterAssetDraftRequest) => Promise<void>;
 }) {
   const eligibleAgents = agents.filter(
-    (agent) => agent.type !== "prime-world" && agent.canPublishAsPublicAsset,
+    (agent) => agent.type !== "prime-world" && agent.origin.kind === "original",
   );
-  const [mode, setMode] = useState<"blank" | "copy">("blank");
+  const [mode, setMode] = useState<"blank" | "import">("blank");
   const [type, setType] = useState<"slice-figure" | "prime-figure">(
     "slice-figure",
   );
-  const [copyFromAgentId, setCopyFromAgentId] = useState(
+  const [importFromOriginalAgentId, setImportFromOriginalAgentId] = useState(
     eligibleAgents[0]?.id ?? "",
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -374,11 +415,13 @@ export function PublicAssetCreateDialog({
         className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#101014] p-6 shadow-[0_28px_100px_rgba(0,0,0,0.58)]"
         onSubmit={async (event) => {
           event.preventDefault();
-          if (mode === "copy" && !copyFromAgentId) return;
+          if (mode === "import" && !importFromOriginalAgentId) return;
           setIsSubmitting(true);
           setError(null);
           try {
-            await onCreate(mode === "blank" ? { type } : { copyFromAgentId });
+            await onCreate(
+              mode === "blank" ? { type } : { importFromOriginalAgentId },
+            );
           } catch (reason) {
             setError(
               reason instanceof Error ? reason.message : "公共角色创建失败。",
@@ -392,7 +435,7 @@ export function PublicAssetCreateDialog({
           <div>
             <h2 className="text-xl font-semibold text-white">创建公共角色</h2>
             <p className="mt-1 text-sm leading-6 text-white/42">
-              公共角色是独立资产，拷贝完成后不会与个人会话联动。
+              公共角色是独立资产，导入完成后不会与原创会话联动。
             </p>
           </div>
           <button
@@ -410,7 +453,7 @@ export function PublicAssetCreateDialog({
           {(
             [
               ["blank", "从空白创建"],
-              ["copy", "从个人会话拷贝"],
+              ["import", "从原创会话导入"],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -451,15 +494,17 @@ export function PublicAssetCreateDialog({
           <div className="mt-6">
             <label
               className="text-sm font-medium text-white/72"
-              htmlFor="public-copy-agent"
+              htmlFor="public-import-agent"
             >
-              选择个人会话
+              选择原创会话
             </label>
             {eligibleAgents.length ? (
               <select
-                id="public-copy-agent"
-                value={copyFromAgentId}
-                onChange={(event) => setCopyFromAgentId(event.target.value)}
+                id="public-import-agent"
+                value={importFromOriginalAgentId}
+                onChange={(event) =>
+                  setImportFromOriginalAgentId(event.target.value)
+                }
                 className="mt-3 w-full rounded-xl border border-white/10 bg-[#17171c] px-4 py-3 text-sm text-white outline-none focus:border-white/25"
               >
                 {eligibleAgents.map((agent) => (
@@ -471,11 +516,11 @@ export function PublicAssetCreateDialog({
               </select>
             ) : (
               <p className="mt-3 rounded-xl border border-dashed border-white/10 p-4 text-sm leading-6 text-white/42">
-                暂无可拷贝的个人会话。从其他创作者公共角色添加的会话不能再次发布。
+                暂无可导入的原创会话。从公共角色添加的会话不能再次发布，包括自己创建后再添加的公共角色。
               </p>
             )}
             <p className="mt-3 text-xs leading-5 text-white/38">
-              只复制角色设定、日程、创作者参数和媒体素材；不会复制消息、记忆、当前状态、密钥或会话运行配置。
+              只导入角色设定、日程、创作者参数和媒体素材；不会导入消息、记忆、当前状态、密钥或会话运行配置。
             </p>
           </div>
         )}
@@ -483,7 +528,9 @@ export function PublicAssetCreateDialog({
         {error ? <p className="mt-4 text-sm text-red-200/75">{error}</p> : null}
         <button
           type="submit"
-          disabled={isSubmitting || (mode === "copy" && !copyFromAgentId)}
+          disabled={
+            isSubmitting || (mode === "import" && !importFromOriginalAgentId)
+          }
           className="mt-6 flex w-full items-center justify-center rounded-full bg-white py-3 text-sm font-medium text-black disabled:opacity-35"
         >
           {isSubmitting ? "正在创建……" : "创建并进入草稿编辑器"}

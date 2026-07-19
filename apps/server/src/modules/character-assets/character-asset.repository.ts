@@ -480,7 +480,6 @@ export class CharacterAssetRepository {
     assetId: string;
     versionId: string;
     snapshot: CharacterAssetSnapshot;
-    publicAssetPublishable: boolean;
   }) {
     return withTransaction(async (connection) => {
       const existing = await queryOne<
@@ -508,7 +507,7 @@ export class CharacterAssetRepository {
         agentId,
         conversationId,
         input.snapshot,
-        input.publicAssetPublishable,
+        input.assetId,
         now,
       );
       await execute(
@@ -844,12 +843,12 @@ async function insertSnapshotAgent(
   agentId: string,
   conversationId: string,
   snapshot: CharacterAssetSnapshot,
-  publicAssetPublishable: boolean,
+  sourcePublicAssetId: string,
   now: number,
 ) {
   await execute(
     `INSERT INTO agents
-     (id, owner_user_id, type, name, definition, public_asset_publishable, created_at, updated_at)
+     (id, owner_user_id, type, name, definition, source_public_asset_id, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       agentId,
@@ -857,7 +856,7 @@ async function insertSnapshotAgent(
       snapshot.type,
       snapshot.name,
       JSON.stringify(snapshotToDefinition(snapshot)),
-      publicAssetPublishable,
+      sourcePublicAssetId,
       now,
       now,
     ],

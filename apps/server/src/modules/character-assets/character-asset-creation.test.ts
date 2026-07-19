@@ -16,7 +16,7 @@ const baseAgent: Agent = {
   tags: [],
   introduction: "",
   isPublic: false,
-  canPublishAsPublicAsset: true,
+  origin: { kind: "original" },
   conversationId: "conv_1",
   createdAt: 1,
   updatedAt: 1,
@@ -34,24 +34,32 @@ const baseAgent: Agent = {
   },
 };
 
-test("an agent installed from another creator cannot seed a public asset", async () => {
-  const service = new CharacterAssetService(
-    {} as never,
-    {
-      findById: async () => ({
-        ...baseAgent,
-        canPublishAsPublicAsset: false,
-      }),
-    } as never,
-    {} as never,
-    {} as never,
-  );
+for (const [label, assetId] of [
+  ["another creator's public character", "asset_other"],
+  ["the owner's own public character", "asset_own"],
+  ["a public character whose source is no longer available", "asset_deleted"],
+] as const) {
+  test(`a conversation installed from ${label} cannot seed a public asset`, async () => {
+    const service = new CharacterAssetService(
+      {} as never,
+      {
+        findById: async () => ({
+          ...baseAgent,
+          origin: { kind: "public-asset", assetId },
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+    );
 
-  await assert.rejects(
-    service.createDraft("user_1", { copyFromAgentId: baseAgent.id }),
-    CharacterAssetForbiddenError,
-  );
-});
+    await assert.rejects(
+      service.createDraft("user_1", {
+        importFromOriginalAgentId: baseAgent.id,
+      }),
+      CharacterAssetForbiddenError,
+    );
+  });
+}
 
 test("one personal conversation can seed multiple independent public drafts", async () => {
   const drafts = new Map<string, CharacterAssetDraft>();
@@ -88,10 +96,10 @@ test("one personal conversation can seed multiple independent public drafts", as
   );
 
   const first = await service.createDraft("user_1", {
-    copyFromAgentId: baseAgent.id,
+    importFromOriginalAgentId: baseAgent.id,
   });
   const second = await service.createDraft("user_1", {
-    copyFromAgentId: baseAgent.id,
+    importFromOriginalAgentId: baseAgent.id,
   });
 
   assert.notEqual(first.id, second.id);
