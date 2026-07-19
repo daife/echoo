@@ -17,7 +17,7 @@ Echoo 的配置分为三层。部署配置来自仓库根目录 `.env`，管理�
 
 - 进程与网络：`NODE_ENV`、`SERVER_HOST`、`SERVER_PORT`、`CLIENT_URL`、`JWT_SECRET`。
 - 数据与队列：`MYSQL_URL`、`MYSQL_POOL_SIZE`、`REDIS_URL`、运行并发和消息缓存参数。
-- 资源存储：`RESOURCE_STORAGE_PROVIDER` 及 `RESOURCE_STORAGE_*`。选择 S3 时，Bucket 和访问凭据为必填项。
+- 资源存储：`RESOURCE_STORAGE_PROVIDER` 及 `RESOURCE_STORAGE_*`。选择 S3 时，Bucket 和访问凭据为必填项。仅当对象存储地址能被所有客户端访问且已配置 CORS 时，才开启 `RESOURCE_S3_DIRECT_UPLOADS` 或 `RESOURCE_S3_DIRECT_DOWNLOADS`；局域网开发建议均保持 `false`，通过 Echoo API 代理媒体流量。
 - 可选集成：Resend、OpenRouter 请求来源标识和管理员密码。缺少密钥时只禁用对应能力。
 - 平台能力：仅使用 `PLATFORM_OPENROUTER_*` 和 `PLATFORM_FISH_AUDIO_*`。这些密钥只在服务端内存中解析，不写入用户配置或管理后台。
 

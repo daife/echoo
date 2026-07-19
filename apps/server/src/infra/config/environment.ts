@@ -88,7 +88,7 @@ export function buildEnvironment() {
   return Object.freeze({
     nodeEnv,
     production,
-    serverHost: optional("SERVER_HOST") ?? "127.0.0.1",
+    serverHost: optional("SERVER_HOST") ?? "0.0.0.0",
     serverPort: numberValue("SERVER_PORT", 8787, { integer: true, minimum: 1 }),
     jwtSecret: jwtSecret ?? "dev-secret",
     clientUrl: optional("CLIENT_URL") ?? "http://localhost:5173",
@@ -121,6 +121,10 @@ export function buildEnvironment() {
     resourceS3SecretAccessKey: s3SecretAccessKey,
     resourceS3ForcePathStyle: booleanValue(
       "RESOURCE_S3_FORCE_PATH_STYLE",
+      false,
+    ),
+    resourceS3DirectUploads: booleanValue(
+      "RESOURCE_S3_DIRECT_UPLOADS",
       false,
     ),
     resourceS3DirectDownloads: booleanValue(

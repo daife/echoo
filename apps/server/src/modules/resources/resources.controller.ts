@@ -43,6 +43,9 @@ export async function registerResourceRoutes(app: FastifyInstance) {
   const directObjectStorageDownloads =
     environment.resourceStorageProvider === "s3" &&
     environment.resourceS3DirectDownloads;
+  const directObjectStorageUploads =
+    environment.resourceStorageProvider === "s3" &&
+    environment.resourceS3DirectUploads;
 
   app.post<{ Body: unknown }>("/uploads", async (request, reply) => {
     const userId = await request.requireUserId(reply);
@@ -56,10 +59,13 @@ export async function registerResourceRoutes(app: FastifyInstance) {
         message: parsed.error.issues[0]?.message,
       });
     try {
-      const created = await resources.createPendingUpload({
-        ownerUserId: userId,
-        ...parsed.data,
-      });
+      const created = await resources.createPendingUpload(
+        {
+          ownerUserId: userId,
+          ...parsed.data,
+        },
+        directObjectStorageUploads,
+      );
       return {
         resourceId: created.resource!.id,
         status: created.resource!.status,

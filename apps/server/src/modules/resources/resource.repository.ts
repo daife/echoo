@@ -177,13 +177,16 @@ export class ResourceRepository {
     });
   }
 
-  async createPendingUpload(input: {
-    ownerUserId: string;
-    kind: "end_user_image" | "end_user_voice" | "end_user_video";
-    fileName: string;
-    mimeType: string;
-    byteSize: number;
-  }) {
+  async createPendingUpload(
+    input: {
+      ownerUserId: string;
+      kind: "end_user_image" | "end_user_voice" | "end_user_video";
+      fileName: string;
+      mimeType: string;
+      byteSize: number;
+    },
+    directObjectStorageUpload = true,
+  ) {
     const extension = userMediaMimeTypes.get(input.mimeType);
     const expectedKind = userMediaKind(input.mimeType);
     if (!extension || expectedKind !== input.kind)
@@ -235,11 +238,9 @@ export class ResourceRepository {
     });
     return {
       resource: await this.findById(id),
-      uploadUrl: await this.storage.signPut(
-        storageKey,
-        input.mimeType,
-        10 * 60,
-      ),
+      uploadUrl: directObjectStorageUpload
+        ? await this.storage.signPut(storageKey, input.mimeType, 10 * 60)
+        : null,
       uploadMethod: "PUT" as const,
     };
   }
