@@ -1,11 +1,40 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { userRuntimeConfigPatchSchema } from "@echoo/shared";
 import { buildRuntimeConfigDefaults } from "./runtime-config.defaults.js";
 import {
   forcePlatformDefaults,
   resolvePlatformOpenRouterEndpoint,
   resolvePlatformTextEndpoint,
 } from "./runtime-config.service.js";
+
+test("accepts STT audio understanding patches and preserves STT settings", () => {
+  const result = userRuntimeConfigPatchSchema.parse({
+    primeFigure: {
+      understanding: {
+        audio: {
+          mode: "stt",
+          stt: {
+            source: "custom",
+            apiKey: "stt-secret",
+            httpUrl: "https://fish.example/v1/asr",
+            language: "zh",
+          },
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(result.primeFigure?.understanding?.audio, {
+    mode: "stt",
+    stt: {
+      source: "custom",
+      apiKey: "stt-secret",
+      httpUrl: "https://fish.example/v1/asr",
+      language: "zh",
+    },
+  });
+});
 
 test("administrator defaults are forced to platform sources without secrets", () => {
   const input = buildRuntimeConfigDefaults();

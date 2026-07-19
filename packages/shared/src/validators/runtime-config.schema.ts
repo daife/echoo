@@ -37,6 +37,13 @@ const fishAudioPatchSchema = z.object({
   chunkLength: optionalPositive,
 });
 
+const fishAudioSttPatchSchema = z.object({
+  source: z.enum(["platform", "custom"]).optional(),
+  apiKey: z.string().max(8192).nullable().optional(),
+  httpUrl: optionalText,
+  language: optionalText.nullable(),
+});
+
 export const sliceFigureRuntimeConfigPatchSchema = z.object({
   llm: textModelPatchSchema.optional(),
   replyAutoSegment: z.boolean().optional(),
@@ -110,8 +117,9 @@ export const primeFigureRuntimeConfigPatchSchema = z.object({
         .optional(),
       audio: z
         .object({
-          mode: z.enum(["native", "auxiliary"]).optional(),
+          mode: z.enum(["native", "auxiliary", "stt"]).optional(),
           model: textModelPatchSchema.optional(),
+          stt: fishAudioSttPatchSchema.optional(),
         })
         .optional(),
     })
