@@ -1,7 +1,11 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import mysql from "mysql2/promise";
 import { createClient } from "redis";
+
+const environmentPath = resolve(import.meta.dirname, "../../../.env");
+if (existsSync(environmentPath)) process.loadEnvFile(environmentPath);
 
 if (process.env.ECHOO_CONFIRM_RECREATE !== "echoo") {
   console.error(
