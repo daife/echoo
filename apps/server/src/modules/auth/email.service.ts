@@ -13,11 +13,11 @@ export class EmailService {
     return this.sendAuthEmail({
       user,
       url: verificationUrl,
-      subject: "Verify your Echoo account",
-      title: "Verify your email",
-      body: `Hi ${escapeHtml(user.displayName)}, confirm this email address to activate your Echoo account. This link expires in 24 hours.`,
-      action: "Verify email",
-      skippedMessage: "Verification email skipped",
+      subject: "验证你的 Echoo 账户",
+      title: "验证你的邮箱",
+      body: `你好，${escapeHtml(user.displayName)}，请确认此邮箱地址以激活你的 Echoo 账户。此链接将在 24 小时后失效。`,
+      action: "验证邮箱",
+      skippedMessage: "验证邮件未发送",
     });
   }
 
@@ -25,11 +25,11 @@ export class EmailService {
     return this.sendAuthEmail({
       user,
       url: resetUrl,
-      subject: "Reset your Echoo password",
-      title: "Reset your password",
-      body: `Hi ${escapeHtml(user.displayName)}, use the link below to set a new password. This link expires in 30 minutes.`,
-      action: "Choose a new password",
-      skippedMessage: "Password reset email skipped",
+      subject: "重置你的 Echoo 密码",
+      title: "重置你的密码",
+      body: `你好，${escapeHtml(user.displayName)}，请使用下面的链接设置新密码。此链接将在 30 分钟后失效。`,
+      action: "设置新密码",
+      skippedMessage: "密码重置邮件未发送",
     });
   }
 
@@ -51,7 +51,7 @@ export class EmailService {
           <h1 style="font-size:28px;margin:12px 0;color:#fff">${input.title}</h1>
           <p style="line-height:1.6;color:rgba(255,255,255,.7)">${input.body}</p>
           <p style="margin:28px 0"><a href="${input.url}" style="display:inline-block;background:#fff;color:#09090b;padding:12px 18px;border-radius:999px;text-decoration:none;font-weight:700">${input.action}</a></p>
-          <p style="font-size:12px;line-height:1.6;color:rgba(255,255,255,.38)">If you did not request this, you can ignore this email.</p>
+          <p style="font-size:12px;line-height:1.6;color:rgba(255,255,255,.38)">如果这不是你本人发起的操作，可以忽略此邮件。</p>
         </div>
       </div>
     `;

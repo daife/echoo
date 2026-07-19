@@ -2,6 +2,7 @@ import {
   ArrowRight,
   Key,
   LockKey,
+  SealCheck,
   Sparkle,
   UserCircle,
 } from "@phosphor-icons/react";
@@ -177,9 +178,21 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
                 </p>
               ) : null}
             </div>
-            <p className="text-sm text-white/60">
-              海量原创角色，多端同步消息，高度可自定义
-            </p>
+            <div className="grid gap-3">
+              {["海量原创角色", "多端同步消息", "高度可自定义"].map((item) => (
+                <div
+                  key={item}
+                  className="flex items-center gap-3 text-sm text-white/60"
+                >
+                  <SealCheck
+                    size={18}
+                    weight="duotone"
+                    className="text-white"
+                  />
+                  {item}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 

@@ -407,7 +407,7 @@ export function MessageComposer({
             ref={inputRef}
             aria-label={`给 ${title} 发消息`}
             className="min-w-0 flex-1 border-none bg-transparent px-3 py-2 text-sm text-white outline-none placeholder:text-white/32"
-            placeholder="写下消息，Enter 发送"
+            placeholder="写下消息，回车发送"
             enterKeyHint="send"
             type="text"
             value={draft}
@@ -472,9 +472,9 @@ export function MessageComposer({
       </form>
       {panel === "more" && isPrimeFigure ? (
         <div className="mt-2 rounded-xl border border-white/10 bg-[#151519] p-3 shadow-[0_18px_44px_rgba(0,0,0,0.3)]">
-          <div className="grid grid-cols-4 gap-2 sm:w-[26rem]">
+          <div className="grid min-w-0 grid-cols-4 gap-2">
             <button
-              className="flex w-24 flex-col items-center gap-2 rounded-xl p-2 text-xs text-white/55 transition hover:bg-white/[0.055] hover:text-white"
+              className="flex min-w-0 flex-col items-center gap-2 rounded-xl p-2 text-xs text-white/55 transition hover:bg-white/[0.055] hover:text-white"
               type="button"
               disabled={isCompressingImage}
               onClick={() => fileInputRef.current?.click()}
@@ -485,7 +485,7 @@ export function MessageComposer({
               {isCompressingImage ? "压缩中…" : "图片"}
             </button>
             <button
-              className="flex flex-col items-center gap-2 rounded-xl p-2 text-xs text-white/55 transition hover:bg-white/[0.055] hover:text-white"
+              className="flex min-w-0 flex-col items-center gap-2 rounded-xl p-2 text-xs text-white/55 transition hover:bg-white/[0.055] hover:text-white"
               type="button"
               onClick={() => videoInputRef.current?.click()}
             >
@@ -495,7 +495,7 @@ export function MessageComposer({
               视频
             </button>
             <button
-              className="flex flex-col items-center gap-2 rounded-xl p-2 text-xs text-white/55 transition hover:bg-white/[0.055] hover:text-white"
+              className="flex min-w-0 flex-col items-center gap-2 rounded-xl p-2 text-xs text-white/55 transition hover:bg-white/[0.055] hover:text-white"
               type="button"
               onClick={() => {
                 setIsTransferOpen(true);
@@ -508,7 +508,7 @@ export function MessageComposer({
               转账
             </button>
             <button
-              className="flex flex-col items-center gap-2 rounded-xl p-2 text-xs text-white/28"
+              className="flex min-w-0 flex-col items-center gap-2 rounded-xl p-2 text-xs text-white/28"
               type="button"
               disabled
               title="语音通话即将推出"

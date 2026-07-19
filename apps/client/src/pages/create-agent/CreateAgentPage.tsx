@@ -373,6 +373,7 @@ export function SliceFigureFormFields({
         />
         <TextField
           label="系统提示词模板"
+          description="系统提示词模板是最重要的部分，前面填写的所有内容都要在提示词模板里引用才能生效。可以使用的字段为：{{user.name}}代表用户名、{{figure.persona}}代表人设、{{figure.background}}代表背景、{{figure.personality}}代表性格、{{figure.responseStyle}}代表回复风格、{{figure.currentSituation}}代表当前情景。"
           required
           multiline
           mono
@@ -389,12 +390,6 @@ export function SliceFigureFormFields({
           placeholder={DEFAULT_SLICE_FIGURE_MEMORY_SUMMARY_PROMPT}
           onChange={(value) => onChange("memorySummaryPrompt", value)}
         />
-        <p className="text-xs leading-5 text-white/42">
-          可用：{"{{user.name}}"}、{"{{figure.persona}}"}、
-          {"{{figure.background}}"}、{"{{figure.personality}}"}、
-          {"{{figure.responseStyle}}"}、{"{{figure.currentSituation}}"}
-          。不提供用户 ID、邮箱等字段。
-        </p>
         <button
           className="w-fit rounded-full border border-white/12 px-4 py-2 text-sm text-white/65 transition hover:border-white/25 hover:text-white"
           type="button"
@@ -404,6 +399,9 @@ export function SliceFigureFormFields({
         >
           预览解析后的完整系统提示词
         </button>
+        <p className="text-xs leading-5 text-white/42">
+          建议预览后确定无误再完成创建
+        </p>
         {promptPreview !== null ? (
           <PromptPreview value={promptPreview} />
         ) : null}
@@ -1383,6 +1381,7 @@ function FormSection({
 
 function TextField({
   label,
+  description,
   value,
   placeholder,
   required,
@@ -1391,6 +1390,7 @@ function TextField({
   onChange,
 }: {
   label: string;
+  description?: string;
   value: string;
   placeholder?: string;
   required?: boolean;
@@ -1404,6 +1404,11 @@ function TextField({
         {label}
         {required ? " *" : ""}
       </span>
+      {description ? (
+        <span className="mt-1 block text-xs leading-5 text-white/42">
+          {description}
+        </span>
+      ) : null}
       {multiline ? (
         <textarea
           className={`${inputClass} mt-2 min-h-24 py-3 ${mono ? "font-mono text-xs leading-5" : "leading-6"}`}

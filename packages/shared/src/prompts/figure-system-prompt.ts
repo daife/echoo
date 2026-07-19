@@ -20,6 +20,8 @@ export const DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT = `你的人设：
 你的性格：
 {{figure.personality}}
 
+与你对话的用户为{{user.name}}
+
 严格遵守以下回复风格：
 {{figure.responseStyle}}`;
 
