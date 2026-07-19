@@ -1,9 +1,59 @@
 import type { LocalMessage } from "@echoo/shared";
 import { describe, expect, it } from "vitest";
 import {
+  createClientMessageId,
   createPendingMediaMessage,
+  createPendingTextMessage,
   mergeIncomingMessage,
 } from "./localMessageState";
+
+describe("client message ids", () => {
+  it("uses randomUUID when the secure-context API is available", () => {
+    expect(
+      createClientMessageId({ randomUUID: () => "uuid_1" }),
+    ).toBe("client_uuid_1");
+  });
+
+  it("creates unique fallback ids when randomUUID is unavailable over LAN HTTP", () => {
+    const first = createClientMessageId({
+      randomUUID: null,
+      now: 1_234,
+      random: 0.5,
+    });
+    const second = createClientMessageId({
+      randomUUID: null,
+      now: 1_234,
+      random: 0.5,
+    });
+
+    expect(first).toMatch(/^client_[a-z0-9]+_[a-z0-9]+_[a-z0-9]+$/);
+    expect(second).not.toBe(first);
+    expect(first.length).toBeLessThanOrEqual(96);
+  });
+
+  it("falls back when a WebView exposes randomUUID but rejects the call", () => {
+    expect(
+      createClientMessageId({
+        randomUUID: () => {
+          throw new DOMException("Secure context required");
+        },
+        now: 1_234,
+        random: 0.5,
+      }),
+    ).toMatch(/^client_[a-z0-9]+_[a-z0-9]+_[a-z0-9]+$/);
+  });
+
+  it("creates pending text messages without requiring randomUUID", () => {
+    const message = createPendingTextMessage({
+      conversationId: "conversation_1",
+      text: "hello",
+      now: 1_234,
+    });
+
+    expect(message.id).toMatch(/^client_/);
+    expect(message.clientMessageId).toBe(message.id);
+  });
+});
 
 describe("pending media messages", () => {
   it("creates optimistic images without layout metadata", () => {

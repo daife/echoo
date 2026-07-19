@@ -156,6 +156,7 @@ export function App() {
     bindingsReturnView,
   );
   const isViewportPanel = view === "messages" || view === "bindings";
+  const isMobileChatFullscreen = view === "messages" && !!selectedAgent;
   const showMobileBottomNav = shouldShowMobileBottomNav(
     view,
     !!selectedAgent,
@@ -662,8 +663,10 @@ export function App() {
       </div>
 
       <div
-        className={`relative z-10 mx-auto grid max-w-[1440px] grid-cols-1 px-5 pt-5 md:gap-6 md:px-16 md:pb-6 md:pt-6 ${
-          showMobileBottomNav ? "pb-28" : "pb-5"
+        className={`relative z-10 mx-auto grid max-w-[1440px] grid-cols-1 md:gap-6 md:px-16 md:pb-6 md:pt-6 ${
+          isMobileChatFullscreen
+            ? "px-0 pb-0 pt-0"
+            : `px-5 pt-5 ${showMobileBottomNav ? "pb-28" : "pb-5"}`
         } ${isViewportPanel ? "h-[100dvh] min-h-0" : "min-h-[100dvh]"} ${
           showConversationRail
             ? "md:grid-cols-[64px_300px_1fr]"

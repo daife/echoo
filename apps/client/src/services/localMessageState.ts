@@ -1,13 +1,41 @@
 import type { LocalMessage, Message } from "@echoo/shared";
 
+let fallbackClientMessageSequence = 0;
+
+export function createClientMessageId(
+  options: {
+    randomUUID?: (() => string) | null;
+    now?: number;
+    random?: number;
+  } = {},
+) {
+  const randomUUID =
+    options.randomUUID === undefined
+      ? globalThis.crypto?.randomUUID?.bind(globalThis.crypto)
+      : (options.randomUUID ?? undefined);
+  if (randomUUID) {
+    try {
+      return `client_${randomUUID()}`;
+    } catch {
+      // Some HTTP WebViews expose randomUUID but reject calls outside a secure context.
+    }
+  }
+
+  const now = options.now ?? Date.now();
+  const random = options.random ?? Math.random();
+  fallbackClientMessageSequence =
+    (fallbackClientMessageSequence + 1) % Number.MAX_SAFE_INTEGER;
+  const randomPart = Math.floor(random * Number.MAX_SAFE_INTEGER).toString(36);
+  return `client_${now.toString(36)}_${fallbackClientMessageSequence.toString(36)}_${randomPart}`;
+}
+
 export function createPendingTextMessage(input: {
   conversationId: string;
   text: string;
   clientMessageId?: string;
   now?: number;
 }): LocalMessage {
-  const clientMessageId =
-    input.clientMessageId ?? `client_${crypto.randomUUID()}`;
+  const clientMessageId = input.clientMessageId ?? createClientMessageId();
   const now = input.now ?? Date.now();
 
   return {
@@ -33,8 +61,7 @@ export function createPendingMediaMessage(input: {
   clientMessageId?: string;
   now?: number;
 }): LocalMessage {
-  const clientMessageId =
-    input.clientMessageId ?? `client_${crypto.randomUUID()}`;
+  const clientMessageId = input.clientMessageId ?? createClientMessageId();
   const now = input.now ?? Date.now();
   return {
     id: clientMessageId,

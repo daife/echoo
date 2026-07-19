@@ -13,11 +13,22 @@ import {
   X,
 } from "@phosphor-icons/react";
 import type { PrimeFigureSticker } from "@echoo/shared";
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { compressImageToJpeg } from "../../../shared/utils/imageCompression";
 import { usePushToTalk } from "../usePushToTalk";
 import { MediaAsset } from "../../media/MediaAsset";
-import { resolveTextSubmission } from "./messageComposerSubmission";
+import {
+  resolveTextSubmission,
+  shouldSubmitTextBeforeInput,
+  shouldSubmitTextInput,
+} from "./messageComposerSubmission";
 
 const IMAGE_MIME_TYPES = new Set([
   "image/jpeg",
@@ -82,7 +93,7 @@ export function MessageComposer({
     null,
   );
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const isSubmittingTextRef = useRef(false);
+  const lastTextSubmissionAtRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
   const stickerFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -194,15 +205,54 @@ export function MessageComposer({
   const isRecording =
     pushToTalk.phase === "recording" || pushToTalk.phase === "requesting";
 
-  const submitText = async () => {
+  const submitText = () => {
     const text = resolveTextSubmission(inputRef.current?.value, draft);
-    if (!text || isSending || isSubmittingTextRef.current) return;
-    isSubmittingTextRef.current = true;
+    if (!text || isSending) return;
+    const now = Date.now();
+    const previousSubmissionAt = Number(lastTextSubmissionAtRef.current) || 0;
+    if (now - previousSubmissionAt < 500) return;
+    lastTextSubmissionAtRef.current = now;
     try {
-      await onSendText(text);
-    } finally {
-      isSubmittingTextRef.current = false;
+      void Promise.resolve(onSendText(text)).catch((caught) => {
+        setNotice(caught instanceof Error ? caught.message : "发送消息失败。");
+      });
+    } catch (caught) {
+      setNotice(caught instanceof Error ? caught.message : "发送消息失败。");
     }
+  };
+
+  const handleTextKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (
+      !shouldSubmitTextInput({
+        key: event.key,
+        isComposing: event.nativeEvent.isComposing,
+        keyCode: event.keyCode,
+      })
+    )
+      return;
+    event.preventDefault();
+    void submitText();
+  };
+
+  const handleTextBeforeInput = (event: FormEvent<HTMLInputElement>) => {
+    const nativeEvent = event.nativeEvent as InputEvent;
+    if (
+      !shouldSubmitTextBeforeInput({
+        inputType: nativeEvent.inputType,
+        isComposing: nativeEvent.isComposing,
+      })
+    )
+      return;
+    event.preventDefault();
+    submitText();
+  };
+
+  const handleSendPointerDown = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (!event.isPrimary || event.button !== 0) return;
+    event.preventDefault();
+    submitText();
   };
 
   return (
@@ -325,6 +375,11 @@ export function MessageComposer({
             type="text"
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
+            onCompositionEnd={(event) => {
+              onDraftChange(event.currentTarget.value);
+            }}
+            onBeforeInput={handleTextBeforeInput}
+            onKeyDown={handleTextKeyDown}
           />
         )}
         {isPrimeFigure && mode === "text" ? (
@@ -372,7 +427,9 @@ export function MessageComposer({
             aria-label="发送消息"
             className="grid h-10 w-10 flex-none place-items-center rounded-lg bg-white text-[#09090b] transition hover:bg-white/88 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white active:translate-y-px disabled:cursor-not-allowed disabled:opacity-35"
             disabled={!draft.trim() || isSending}
-            type="submit"
+            type="button"
+            onPointerDown={handleSendPointerDown}
+            onClick={submitText}
           >
             <PaperPlaneRight size={18} weight="fill" />
           </button>

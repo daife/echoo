@@ -432,7 +432,7 @@ export function MessagesPage({
   }
 
   return (
-    <section className="grid h-full w-full min-h-0 min-w-0 grid-rows-[auto_1fr_auto] overflow-hidden rounded-[1.25rem] bg-[#0d0d10]/92 shadow-[0_28px_90px_rgba(0,0,0,0.28)]">
+    <section className="grid h-full w-full min-h-0 min-w-0 grid-rows-[auto_1fr_auto] overflow-hidden bg-[#0d0d10]/92 md:rounded-[1.25rem] md:shadow-[0_28px_90px_rgba(0,0,0,0.28)]">
       <header className="flex items-center justify-between border-b border-white/8 px-4 py-3 md:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <button
