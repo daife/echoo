@@ -42,7 +42,7 @@ export function getMicrophoneUnavailableMessage(
   capabilities: BrowserAudioCapabilities,
 ) {
   if (!capabilities.isSecureContext)
-    return "浏览器只允许可信 HTTPS 页面使用麦克风，请通过 HTTPS 地址打开 Echoo。";
+    return "当前局域网 HTTP 页面可以正常使用文字聊天，但浏览器禁止它访问麦克风。录音需要可信 HTTPS、localhost 或原生客户端。";
   if (!capabilities.hasGetUserMedia)
     return "当前浏览器未提供麦克风录音接口，请升级浏览器或更换浏览器。";
   if (!capabilities.hasAudioContext)

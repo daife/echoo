@@ -35,7 +35,6 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
-certs/
 
 # OS files
 .DS_Store

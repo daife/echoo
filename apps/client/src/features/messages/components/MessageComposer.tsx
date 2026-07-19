@@ -13,16 +13,11 @@ import {
   X,
 } from "@phosphor-icons/react";
 import type { PrimeFigureSticker } from "@echoo/shared";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from "react";
+import { useEffect, useRef, useState } from "react";
 import { compressImageToJpeg } from "../../../shared/utils/imageCompression";
 import { usePushToTalk } from "../usePushToTalk";
 import { MediaAsset } from "../../media/MediaAsset";
-import { shouldSubmitTextInput } from "./messageComposerSubmission";
+import { resolveTextSubmission } from "./messageComposerSubmission";
 
 const IMAGE_MIME_TYPES = new Set([
   "image/jpeg",
@@ -59,7 +54,7 @@ export function MessageComposer({
   draft: string;
   isSending: boolean;
   onDraftChange: (value: string) => void;
-  onSendText: () => Promise<void> | void;
+  onSendText: (text: string) => Promise<void> | void;
   onSendImage: (file: File) => Promise<void>;
   onSendVideo: (file: File) => Promise<void>;
   onSendVoice: (blob: Blob, durationSeconds: number) => Promise<void>;
@@ -200,27 +195,14 @@ export function MessageComposer({
     pushToTalk.phase === "recording" || pushToTalk.phase === "requesting";
 
   const submitText = async () => {
-    if (!draft.trim() || isSending || isSubmittingTextRef.current) return;
+    const text = resolveTextSubmission(inputRef.current?.value, draft);
+    if (!text || isSending || isSubmittingTextRef.current) return;
     isSubmittingTextRef.current = true;
     try {
-      await onSendText();
+      await onSendText(text);
     } finally {
       isSubmittingTextRef.current = false;
-      window.requestAnimationFrame(() => inputRef.current?.focus());
     }
-  };
-
-  const handleTextKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (
-      !shouldSubmitTextInput({
-        key: event.key,
-        isComposing: event.nativeEvent.isComposing,
-        keyCode: event.keyCode,
-      })
-    )
-      return;
-    event.preventDefault();
-    void submitText();
   };
 
   return (
@@ -343,7 +325,6 @@ export function MessageComposer({
             type="text"
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
-            onKeyDown={handleTextKeyDown}
           />
         )}
         {isPrimeFigure && mode === "text" ? (

@@ -1,25 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { shouldSubmitTextInput } from "./messageComposerSubmission";
+import { resolveTextSubmission } from "./messageComposerSubmission";
 
-describe("message composer keyboard submission", () => {
-  it("submits an ordinary Enter key", () => {
-    expect(
-      shouldSubmitTextInput({ key: "Enter", isComposing: false, keyCode: 13 }),
-    ).toBe(true);
+describe("message composer text submission", () => {
+  it("uses the input's live value when React draft state is behind", () => {
+    expect(resolveTextSubmission("最终输入", "最终输")).toBe("最终输入");
   });
 
-  it("does not submit IME composition confirmation", () => {
-    expect(
-      shouldSubmitTextInput({ key: "Enter", isComposing: true, keyCode: 13 }),
-    ).toBe(false);
-    expect(
-      shouldSubmitTextInput({ key: "Enter", isComposing: false, keyCode: 229 }),
-    ).toBe(false);
+  it("falls back to the draft when no live input is available", () => {
+    expect(resolveTextSubmission(undefined, "  hello  ")).toBe("hello");
   });
 
-  it("ignores non-Enter keys", () => {
-    expect(
-      shouldSubmitTextInput({ key: "Process", isComposing: false, keyCode: 0 }),
-    ).toBe(false);
+  it("rejects blank submissions", () => {
+    expect(resolveTextSubmission(" \n ", "stale draft")).toBeNull();
   });
 });

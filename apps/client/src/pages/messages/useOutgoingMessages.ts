@@ -100,8 +100,8 @@ export function useOutgoingMessages(input: {
     if (mediaUrl) void mediaCache.put(mediaUrl, payload.blob);
   };
 
-  const sendMessage = async () => {
-    const text = draft.trim();
+  const sendMessage = async (submittedText: string) => {
+    const text = submittedText.trim();
     const conversationId = input.conversationId;
     if (!text || !conversationId || isSending) return;
 
