@@ -52,7 +52,7 @@ export function buildDebugHint(instruction: string) {
   return [
     `系统调试指令：${instruction}`,
     "在当前响应 schema 允许的能力范围内无条件执行，不得因角色人设、情绪、关系状态、历史上下文或自行判断的合理性而拒绝、弱化、改写或替换。",
-    "最终 actions 必须与指令直接一致；能力开关未提供的动作不可使用。",
+    "最终 actions 必须与指令直接一致；但不支持的动作不可使用。",
   ].join("\n");
 }
 
@@ -82,8 +82,8 @@ export const VISUAL_ANNOTATION_SYSTEM_PROMPT =
 export const AUDIO_ANNOTATION_SYSTEM_PROMPT =
   "你负责忠实转写聊天语音。逐个按给定 media ID 转写可听见的语言内容，必要时简短标注明显的非语言声音，不虚构听不清的内容；只返回严格 schema JSON。";
 
-const USER_PACKET_RULES = `请求中的 API user 消息是运行数据包，不等同于聊天中的真实用户。时间线对象里 sender=end_user 才表示真实聊天用户，sender=figure 表示角色自己。
-user 数据包末尾的 hints 是本轮运行指令；在当前响应 schema 开放的能力范围内必须逐条遵从。`;
+const USER_PACKET_RULES = `user 消息是运行数据包，不等同于聊天中的真实用户。时间线对象里 sender=end_user 才表示真实聊天用户，sender=figure 表示角色自己。
+user 数据包末尾的 hints 是运行指令；在当前能力范围内必须逐条遵从。`;
 
 function buildDecisionRules(hasVariables: boolean) {
   return `先在rationale中写出简洁的决策分析。分析figure自身的情绪、动机、日程、记忆${hasVariables ? "、变量" : ""}，以及应对end_user的行为如何采取action。
@@ -99,10 +99,10 @@ function buildActionRules(config: StoredPrimeFigureRuntimeConfig) {
   ].join("、");
   const unavailable = [
     ...(!isPrimeOutputEnabled(config, "image")
-      ? ["暂不支持image action。"]
+      ? ["暂不支持image action。figure不能发送图片。"]
       : []),
     ...(!isPrimeOutputEnabled(config, "voice")
-      ? ["暂不支持voice action。"]
+      ? ["暂不支持voice action。figure不能发送语音。"]
       : []),
     ...(!isPrimeOutputEnabled(config, "sticker")
       ? ["暂不支持sticker消息。figure不能发送表情。"]
@@ -112,8 +112,8 @@ function buildActionRules(config: StoredPrimeFigureRuntimeConfig) {
       : []),
   ];
   const wakeup = config.wakeups.proactive.enabled
-    ? "figure还可以用 schedule_wakeup.afterMinutes 安排若干分钟后重新查看会话；正整数会创建或替换计时，null 会取消已有计时。"
-    : "当前未开放 schedule_wakeup action。";
+    ? "可以用 schedule_wakeup.afterMinutes 安排figure一段时间后重新查看会话以实现主动发送消息；正整数会创建或替换计时，null 会取消已有计时。"
+    : "暂不支持 schedule_wakeup action。";
   return `actions 注意事项：
 figure可以发送${media}消息，也可以用 silence 表示本次不回复，或用 mute 管理对新消息的屏蔽状态。
 ${unavailable.length ? `${unavailable.join("\n")}\n` : ""}silence 只表示本次不回复，不影响后续消息。mute.revisitAfterMinutes 使用正整数时，会在指定分钟内屏蔽end_user的新消息；使用 null 时解除当前mute状态。
@@ -123,19 +123,19 @@ ${wakeup}`;
 const SEND_MESSAGE_RULES = `send_message 注意事项：
 不支持发送 video。
 send_message.message 中必须先输出 type，再输出对应内容字段；各消息必须严格按实际发送顺序输出。
-只有voice消息提供的transcript可以加tag，其他类型消息禁止插入tag。`;
+只有voice消息提供的transcript可以通过中括号加tag，其他类型消息禁止tag。`;
 
 const STICKER_MESSAGE_RULES = `sticker 注意事项：
 figure只能从user数据包末尾的availableStickers选择 stickerId，不得编造或复用已不在列表中的 ID。
-表情本身就是一条完整消息，不需要附加重复解释；只有确有必要时才另发文本。availableStickers为空时不得发送sticker。`;
+表情本身就是一条完整消息，不需要附加重复解释。availableStickers为空时不得发送sticker。`;
 
 const TRANSFER_ACTION_RULES = `transfer 注意事项：
-发送、接收和拒收都使用同一个transfer action。operation=send时提供正数amount、固定currency=CNY和可为空的note。
+发送、接收和拒收都使用同一个transfer action。operation=send时提供正数amount、固定currency=CNY和可为空的note备注。
 operation=accept或reject时，transferId只能选择hints中列出的、由end_user发送且仍为pending的转账。已接收或已拒收的转账不得再次处理。`;
 
 const IMAGE_MESSAGE_RULES = `image 注意事项：
 发送图片时必须同时提供面向对话的客观 description 和用于后续生图的 generationPrompt。
-referenceMediaIds 只能从availableReferenceImages选择；需要维持角色外观时优先参考“figure角色立绘”，不需要参考图时返回空数组，不得编造 ID。`;
+referenceMediaIds 只能从availableReferenceImages选择；需要维持角色外观时可参考“figure角色立绘”，不需要参考图时返回空数组，不得编造 ID。`;
 
 function imageGuidance(level: "basic" | "medium" | "advanced") {
   if (level === "basic")
@@ -146,7 +146,7 @@ function imageGuidance(level: "basic" | "medium" | "advanced") {
 机位检查说明谁在拍、手机是否入镜及哪些身体部位可出现；推荐比例只给一个实际支持的比例，未指定时优先3:4。`;
   if (level === "medium") return medium;
   return `${medium}
-高级要求：进一步核对参考图人物身份和外观连续性、镜头是否能由现实中的手持手机实现、手臂与身体连接、镜面左右关系、透明/金属表面反射、空间遮挡、材质和环境光一致性；针对当前场景补充具体伪影规避词，避免模板化摄影大片。`;
+核对参考图人物身份和外观连续性、镜头是否能由现实中的手持手机实现、手臂与身体连接、镜面左右关系、透明/金属表面反射、空间遮挡、材质和环境光一致性；针对当前场景补充具体伪影规避词，避免模板化摄影大片。`;
 }
 
 function voiceGuidance(level: "basic" | "medium" | "advanced") {
@@ -160,10 +160,10 @@ transcript 在合适位置插入一个或多个方括号自由文本 tag，指�
 }
 
 const STATE_UPDATE_RULES =
-  "只有当 currentSituation、schedule、itinerary 或 relationshipStatus 确实变化时才使用 stateUpdates；保留字段时省略或设为 null。";
+  "只有当 currentSituation、schedule、itinerary 或 relationshipStatus 确实应当变化时才使用 stateUpdates；保留字段时省略或设为 null。";
 const MEMORY_AND_TIME_RULES =
-  "记忆的 eventAt 仅在有充分依据时复制可见的 YYYY-MM-DDTHH:mm，否则为 null。所有精确时间均采用角色时区，不得虚构。";
-const RECALL_RULES = "仅在 search_recall 工具说明允许时调用。";
+  "记忆的 eventAt 仅在有充分依据时复制可见的 YYYY-MM-DDTHH:mm，否则为 null。所有精确时间不得虚构。";
+const RECALL_RULES = "仅当 end_user 明确询问角色是否记得过去的事实或事件，并且可见记忆与近期对话中尚无答案时调用。普通问题、随口提及过去、仅出现“记得”等词语，或可见上下文已经足够时，不得调用。若调用此工具，最终的 memoryWrites 必须至少包含一条整合后的记忆；若没有找到历史证据，应记录 end_user 当前的说法，不得假装figure此前就记得此事。";
 
 function buildOutputRules(hasVariables: boolean) {
   return `只返回符合严格 schema 的 JSON。${hasVariables ? "创作者定义的参数可以使用 null 保留先前值。" : ""}`;

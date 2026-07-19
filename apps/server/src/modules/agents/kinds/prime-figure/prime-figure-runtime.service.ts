@@ -820,7 +820,7 @@ export async function buildPrimeChatMessages(
   );
   if (attentionIdByMessage.size) {
     hints.push(
-      `本次请求中新出现、figure 可能需要注意的 end_user 消息标记：${[
+      `本次请求中新出现、figure 可能需要注意的 end_user 消息：${[
         ...attentionIdByMessage.values(),
       ].join(", ")}。结合完整时间线顺序统一回应，不要遗漏这些消息。`,
     );
@@ -857,10 +857,10 @@ export async function buildPrimeChatMessages(
   }
   if (scheduleSegment) {
     hints.push(
-      `最近一条 end_user 消息发生在figure的“${scheduleSegment.label}”时段（${scheduleSegment.start}-${scheduleSegment.end}）：${sanitizeVisibleText(scheduleSegment.description, timezone)}`,
+      `end_user 发送的最新一条消息在figure的“${scheduleSegment.label}”时段（${scheduleSegment.start}-${scheduleSegment.end}）：${sanitizeVisibleText(scheduleSegment.description, timezone)}`,
     );
   } else {
-    hints.push("最近一条 end_user 消息不处于figure已定义的任何日程时段。");
+    hints.push("end_user 发送的最新一条消息不处于figure已定义的任何日程时段。");
   }
   if (trigger === "mute_ended") {
     hints.push(
@@ -879,7 +879,7 @@ export async function buildPrimeChatMessages(
         )
       : undefined;
     hints.push(
-      `这是 figure 此前主动安排的系统定时唤醒${waitedMinutes ? `，原计划等待约 ${waitedMinutes} 分钟后重新查看当前会话` : ""}。请结合当前状态自行判断是否采取行动。`,
+      `这是此前安排figure的主动定时查看消息${waitedMinutes ? `，原计划等待约 ${waitedMinutes} 分钟后重新查看当前会话` : ""}。请结合当前状态自行判断是否采取行动。`,
     );
   } else if (trigger === "passive_wakeup") {
     const latestMessageAt = timeline.reduce(
@@ -889,7 +889,7 @@ export async function buildPrimeChatMessages(
     const inactivitySince =
       latestMessageAt || state.passiveWakeup?.anchorActivityAtMs || now;
     hints.push(
-      `这是一次系统定时唤醒。figure 与 end_user 已有${formatElapsedDuration(inactivitySince, now)}未发生消息交流；请结合当前状态判断是否考虑采取行动。`,
+      `这是一次系统定时唤醒。figure 与 end_user 已有${formatElapsedDuration(inactivitySince, now)}未发生消息交流；请结合当前状态判断是否考虑让figure采取行动。`,
     );
   }
 
@@ -1340,7 +1340,7 @@ const SEARCH_RECALL_TOOL: ChatToolDefinition = {
   function: {
     name: "search_recall",
     description:
-      "按关键词搜索角色更早的记忆和对话历史。仅当 end_user 明确询问角色是否记得过去的事实或事件，并且可见记忆与近期对话中尚无答案时调用。普通问题、随口提及过去、仅出现“记得”等词语，或可见上下文已经足够时，不得调用。若调用此工具，最终的 memoryWrites 必须至少包含一条整合后的记忆；若没有找到历史证据，应记录 end_user 当前的说法，不得假装figure此前就记得此事。",
+      "按关键词搜索角色更早的记忆和对话历史。",
     parameters: {
       type: "object",
       description: "设置用于检索的关键词以及返回结果的数量。",
@@ -1619,7 +1619,7 @@ function buildSendMessageActionSchema(
                     generationPrompt: {
                       type: "string",
                       description:
-                        "严格按系统提示的四段格式编写，供实际图像生成服务直接使用的完整提示词。",
+                        "供实际图像生成服务直接使用的提示词。",
                     },
                     referenceMediaIds: {
                       type: "array",
