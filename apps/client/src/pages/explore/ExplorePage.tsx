@@ -8,10 +8,10 @@ import {
 } from "@phosphor-icons/react";
 import type {
   Agent,
-  CharacterAssetSummary,
+  CharacterAssetListItem,
   SocialPostSummary,
 } from "@echoo/shared";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { useServices } from "../../app/providers/ServicesProvider";
 import { MediaAsset } from "../../features/media/MediaAsset";
@@ -22,7 +22,11 @@ import { PostComposer } from "../social/PostComposer";
 export const PRIME_FIGURE_UPDATE_WARNING =
   "更新本初角色会覆盖当前的角色设定、日程、行程、当前情境、参数值、情绪与关系状态；聊天记录和长期记忆会保留。建议先进入该角色会话，从右上角菜单导出角色 JSON 备份。\n\n仍要更新到最新版吗？";
 
-export function requiresPrimeFigureUpdateWarning(asset: CharacterAssetSummary) {
+export function requiresPrimeFigureUpdateWarning(asset: {
+  snapshot: { type: "prime-figure" | "slice-figure" };
+  installedVersionId?: string;
+  updateAvailable: boolean;
+}) {
   return Boolean(
     asset.snapshot.type === "prime-figure" &&
     asset.installedVersionId &&
@@ -46,18 +50,59 @@ export function CharacterCatalog({
   onOpenUser?: (userId: string) => void;
 }) {
   const { socialService } = useServices();
-  const [assets, setAssets] = useState<CharacterAssetSummary[]>([]);
+  const [assets, setAssets] = useState<CharacterAssetListItem[]>([]);
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState<string | null>("");
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string>();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const requestController = useRef<AbortController | null>(null);
+  const loadMoreController = useRef<AbortController | null>(null);
+  const normalizedQuery = useMemo(
+    () => normalizeCharacterSearchQuery(query),
+    [query],
+  );
+  const queryInvalid = isCharacterSearchQueryInvalid(normalizedQuery);
 
   useEffect(() => {
+    requestController.current?.abort();
+    loadMoreController.current?.abort();
+    if (!normalizedQuery) {
+      setDebouncedQuery("");
+      return;
+    }
+    if (queryInvalid) {
+      setDebouncedQuery(null);
+      return;
+    }
+    return scheduleCharacterSearch(normalizedQuery, setDebouncedQuery);
+  }, [normalizedQuery, queryInvalid]);
+
+  useEffect(() => {
+    loadMoreController.current?.abort();
+    setLoadMoreError(null);
+    setNextCursor(undefined);
+    if (debouncedQuery === null) {
+      setAssets([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     let cancelled = false;
+    const controller = new AbortController();
+    requestController.current = controller;
     setLoading(true);
+    setError(null);
+    setAssets([]);
     void service
-      .list({ sort: "latest", limit: 24, q: query.trim() || undefined })
+      .list({
+        limit: 12,
+        q: debouncedQuery || undefined,
+        signal: controller.signal,
+      })
       .then((page) => {
         if (!cancelled) {
           setAssets(page.items);
@@ -65,16 +110,30 @@ export function CharacterCatalog({
         }
       })
       .catch((reason) => {
-        if (!cancelled)
+        if (
+          !cancelled &&
+          !(reason instanceof DOMException && reason.name === "AbortError")
+        )
           setError(reason instanceof Error ? reason.message : "加载角色失败。");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
+        if (requestController.current === controller)
+          requestController.current = null;
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [query, service]);
+  }, [debouncedQuery, service]);
+
+  useEffect(
+    () => () => {
+      requestController.current?.abort();
+      loadMoreController.current?.abort();
+    },
+    [],
+  );
 
   return (
     <section className="space-y-7">
@@ -87,17 +146,26 @@ export function CharacterCatalog({
             全部已公开角色
           </h2>
         </div>
-        <label className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3">
-          <MagnifyingGlass size={18} className="text-white/40" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索角色、作者或标签"
-            className="min-w-0 bg-transparent text-sm text-white outline-none"
-          />
-        </label>
+        <div>
+          <label className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3">
+            <MagnifyingGlass size={18} className="text-white/40" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜索角色、作者或标签"
+              className="min-w-0 bg-transparent text-sm text-white outline-none"
+            />
+          </label>
+          {queryInvalid ? (
+            <p className="mt-2 text-xs text-[#c7b9ed]">
+              请输入 2 至 50 个字符进行搜索。
+            </p>
+          ) : null}
+        </div>
       </header>
-      {loading ? (
+      {queryInvalid ? (
+        <EmptyState text="请输入至少两个字符开始搜索。" />
+      ) : loading ? (
         <EmptyState text="正在整理公共角色档案……" />
       ) : assets.length ? (
         <div className="grid gap-5 xl:grid-cols-2">
@@ -176,24 +244,59 @@ export function CharacterCatalog({
           ))}
         </div>
       ) : (
-        <EmptyState text={error ?? "还没有公开角色。"} />
+        <EmptyState
+          text={
+            error ??
+            (debouncedQuery ? "没有找到匹配的公开角色。" : "还没有公开角色。")
+          }
+        />
       )}
-      {nextCursor ? (
+      {nextCursor && !queryInvalid ? (
         <button
           type="button"
+          disabled={loadingMore}
           onClick={async () => {
-            const page = await service.list({
-              sort: "latest",
-              limit: 24,
-              q: query.trim() || undefined,
-              cursor: nextCursor,
-            });
-            setAssets((current) => [...current, ...page.items]);
-            setNextCursor(page.nextCursor);
+            if (loadingMore || debouncedQuery === null) return;
+            const controller = new AbortController();
+            loadMoreController.current?.abort();
+            loadMoreController.current = controller;
+            setLoadingMore(true);
+            setLoadMoreError(null);
+            try {
+              const page = await service.list({
+                limit: 12,
+                q: debouncedQuery || undefined,
+                cursor: nextCursor,
+                signal: controller.signal,
+              });
+              if (controller.signal.aborted) return;
+              setAssets((current) =>
+                mergeUniqueCharacterAssets(current, page.items),
+              );
+              setNextCursor(page.nextCursor);
+            } catch (reason) {
+              if (
+                !(
+                  reason instanceof DOMException && reason.name === "AbortError"
+                )
+              )
+                setLoadMoreError(
+                  reason instanceof Error ? reason.message : "加载更多失败。",
+                );
+            } finally {
+              if (loadMoreController.current === controller) {
+                loadMoreController.current = null;
+                setLoadingMore(false);
+              }
+            }
           }}
-          className="w-full rounded-xl border border-white/8 py-3 text-sm text-white/45 hover:text-white"
+          className="w-full rounded-xl border border-white/8 py-3 text-sm text-white/45 hover:text-white disabled:cursor-wait disabled:opacity-50"
         >
-          加载更多
+          {loadingMore
+            ? "正在加载……"
+            : loadMoreError
+              ? "加载失败，点击重试"
+              : "加载更多"}
         </button>
       ) : null}
     </section>
@@ -216,7 +319,7 @@ export function ExplorePage({
   const auth = useAuth();
   const { socialService, characterAssetService } = useServices();
   const [tab, setTab] = useState<"creations" | "posts">("creations");
-  const [assets, setAssets] = useState<CharacterAssetSummary[]>([]);
+  const [assets, setAssets] = useState<CharacterAssetListItem[]>([]);
   const [posts, setPosts] = useState<SocialPostSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -235,7 +338,7 @@ export function ExplorePage({
       .then((page) => {
         if (cancelled) return;
         if (tab === "creations")
-          setAssets((page as { items: CharacterAssetSummary[] }).items);
+          setAssets((page as { items: CharacterAssetListItem[] }).items);
         else setPosts((page as { items: SocialPostSummary[] }).items);
         setNextCursor((page as { nextCursor?: string }).nextCursor);
       })
@@ -426,7 +529,7 @@ export function ExplorePage({
             if (tab === "creations")
               setAssets((current) => [
                 ...current,
-                ...(page as { items: CharacterAssetSummary[] }).items,
+                ...(page as { items: CharacterAssetListItem[] }).items,
               ]);
             else
               setPosts((current) => [
@@ -452,7 +555,7 @@ function CharacterAssetCard({
   onToggleLike,
   onInstall,
 }: {
-  asset: CharacterAssetSummary;
+  asset: CharacterAssetListItem;
   busy?: boolean;
   onOpen: () => void;
   onOpenUser?: (userId: string) => void;
@@ -470,7 +573,7 @@ function CharacterAssetCard({
         {snapshot.coverResourcePath ? (
           <MediaAsset
             mediaUrl={snapshot.coverResourcePath}
-            variant="display"
+            variant="thumb"
             alt=""
             containerClassName="absolute inset-0"
             className="h-full w-full object-cover opacity-50 transition duration-700 hover:scale-105"
@@ -483,7 +586,7 @@ function CharacterAssetCard({
         <div className="absolute bottom-5 left-6 right-6">
           <h2 className="text-3xl font-semibold text-white">{snapshot.name}</h2>
           <p className="mt-2 line-clamp-2 text-sm leading-6 text-white/52">
-            {truncatePreviewText(snapshot.introduction || snapshot.detail.persona)}
+            {snapshot.preview}
           </p>
         </div>
       </button>
@@ -561,15 +664,37 @@ function CharacterAssetCard({
   );
 }
 
-function truncatePreviewText(text: string, maxLength = 72) {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  return normalized.length > maxLength
-    ? `${normalized.slice(0, maxLength).trimEnd()}…`
-    : normalized;
+export function mergeUniqueCharacterAssets(
+  current: CharacterAssetListItem[],
+  incoming: CharacterAssetListItem[],
+) {
+  const ids = new Set(current.map((item) => item.id));
+  return [...current, ...incoming.filter((item) => !ids.has(item.id))];
+}
+
+export const CHARACTER_SEARCH_DEBOUNCE_MS = 300;
+
+export function normalizeCharacterSearchQuery(query: string) {
+  return query.trim().replace(/\s+/g, " ");
+}
+
+export function isCharacterSearchQueryInvalid(query: string) {
+  return query.length === 1 || query.length > 50;
+}
+
+export function scheduleCharacterSearch(
+  query: string,
+  onReady: (query: string) => void,
+) {
+  const timer = globalThis.setTimeout(
+    () => onReady(query),
+    CHARACTER_SEARCH_DEBOUNCE_MS,
+  );
+  return () => globalThis.clearTimeout(timer);
 }
 
 export function characterTypeLabel(
-  type: CharacterAssetSummary["snapshot"]["type"],
+  type: CharacterAssetListItem["snapshot"]["type"],
 ) {
   return type === "prime-figure" ? "本初角色" : "切片角色";
 }

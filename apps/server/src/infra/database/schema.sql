@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash VARCHAR(255) NOT NULL,
   email_verified_at BIGINT NULL,
   created_at BIGINT NOT NULL,
-  updated_at BIGINT NOT NULL
+  updated_at BIGINT NOT NULL,
+  FULLTEXT INDEX ftx_users_display_name (display_name) WITH PARSER ngram
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS auth_tokens (
@@ -188,7 +189,8 @@ CREATE TABLE IF NOT EXISTS social_objects (
   comment_count INT UNSIGNED NOT NULL DEFAULT 0,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
-  INDEX idx_social_objects_type_created (object_type, created_at DESC)
+  INDEX idx_social_objects_type_created (object_type, created_at DESC),
+  INDEX idx_social_objects_type_likes (object_type, like_count DESC, id DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS user_follows (
@@ -250,10 +252,17 @@ CREATE TABLE IF NOT EXISTS character_asset_versions (
   asset_id VARCHAR(64) NOT NULL,
   version_number INT UNSIGNED NOT NULL,
   snapshot JSON NOT NULL,
+  search_text TEXT GENERATED ALWAYS AS (
+    CONCAT_WS(' ',
+      COALESCE(JSON_UNQUOTE(JSON_EXTRACT(snapshot, '$.name')), ''),
+      COALESCE(JSON_UNQUOTE(JSON_EXTRACT(snapshot, '$.tags')), '')
+    )
+  ) STORED,
   recommended_runtime_config JSON NULL,
   created_at BIGINT NOT NULL,
   UNIQUE KEY uq_character_asset_version (asset_id, version_number),
   INDEX idx_character_asset_versions_asset_created (asset_id, created_at DESC),
+  FULLTEXT INDEX ftx_character_asset_versions_search (search_text) WITH PARSER ngram,
   CONSTRAINT fk_character_asset_versions_asset FOREIGN KEY (asset_id) REFERENCES character_assets(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 

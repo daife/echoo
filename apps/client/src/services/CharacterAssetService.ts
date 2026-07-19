@@ -6,6 +6,9 @@ export class CharacterAssetService {
   list(input?: Parameters<CharacterAssetsApi["list"]>[0]) {
     return this.api.list(input);
   }
+  listFeatured(input?: Parameters<CharacterAssetsApi["listFeatured"]>[0]) {
+    return this.api.listFeatured(input);
+  }
   listByUser(userId: string, input?: { limit?: number; cursor?: string }) {
     return this.api.listByUser(userId, input);
   }

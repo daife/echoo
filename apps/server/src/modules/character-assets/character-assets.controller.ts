@@ -7,6 +7,7 @@ import {
 import {
   CharacterAssetForbiddenError,
   CharacterAssetNotFoundError,
+  CharacterAssetQueryError,
   CharacterAssetService,
 } from "./character-asset.service.js";
 
@@ -23,6 +24,19 @@ const createDraftSchema = z.union([
     .object({ importFromOriginalAgentId: z.string().trim().min(1).max(120) })
     .strict(),
 ]);
+const publicListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(24).default(12),
+  cursor: z.string().max(1024).optional(),
+  q: z
+    .string()
+    .transform((value) => value.trim().replace(/\s+/g, " "))
+    .refine((value) => value.length === 0 || value.length >= 2)
+    .refine((value) => value.length <= 50)
+    .optional(),
+});
+const featuredQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(12).default(6),
+});
 
 export async function registerCharacterAssetRoutes(app: FastifyInstance) {
   const assets = new CharacterAssetService();
@@ -32,17 +46,38 @@ export async function registerCharacterAssetRoutes(app: FastifyInstance) {
       limit?: string;
       cursor?: string;
       q?: string;
-      sort?: "quality" | "latest";
     };
   }>("/character-assets", async (request, reply) => {
+    const parsed = publicListQuerySchema.safeParse(request.query);
+    if (!parsed.success)
+      return reply.code(400).send({
+        error: "VALIDATION_ERROR",
+        message: "搜索词需为 2 至 50 个字符，分页参数必须有效。",
+      });
     const userId = await request.optionalUserId();
-    return assets.listPublished(userId, {
-      limit: Number(request.query.limit) || 24,
-      cursor: request.query.cursor,
-      query: request.query.q,
-      sort: request.query.sort,
-    });
+    try {
+      return await assets.listPublished(userId, {
+        limit: parsed.data.limit,
+        cursor: parsed.data.cursor,
+        query: parsed.data.q,
+      });
+    } catch (error) {
+      return assetError(reply, error);
+    }
   });
+
+  app.get<{ Querystring: { limit?: string } }>(
+    "/character-assets/featured",
+    async (request, reply) => {
+      const parsed = featuredQuerySchema.safeParse(request.query);
+      if (!parsed.success)
+        return reply.code(400).send({ error: "VALIDATION_ERROR" });
+      return assets.listFeatured(
+        await request.optionalUserId(),
+        parsed.data.limit,
+      );
+    },
+  );
 
   app.get("/users/me/character-assets", async (request, reply) => {
     const userId = await request.requireUserId(reply);
@@ -246,6 +281,10 @@ export async function registerCharacterAssetRoutes(app: FastifyInstance) {
 }
 
 function assetError(reply: FastifyReply, error: unknown) {
+  if (error instanceof CharacterAssetQueryError)
+    return reply
+      .code(400)
+      .send({ error: "INVALID_CURSOR", message: error.message });
   if (error instanceof CharacterAssetNotFoundError)
     return reply
       .code(404)

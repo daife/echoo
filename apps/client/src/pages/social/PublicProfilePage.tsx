@@ -1,6 +1,6 @@
 import { ArrowLeft, UsersThree, X } from "@phosphor-icons/react";
 import type {
-  CharacterAssetSummary,
+  CharacterAssetListItem,
   PublicUserProfile,
   SocialPostSummary,
 } from "@echoo/shared";
@@ -31,7 +31,7 @@ export function PublicProfilePage({
   const [profile, setProfile] = useState<PublicUserProfile | null>(null);
   const [tab, setTab] = useState<"creations" | "posts">("creations");
   const [posts, setPosts] = useState<SocialPostSummary[]>([]);
-  const [assets, setAssets] = useState<CharacterAssetSummary[]>([]);
+  const [assets, setAssets] = useState<CharacterAssetListItem[]>([]);
   const [list, setList] = useState<"followers" | "following" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,7 +64,7 @@ export function PublicProfilePage({
       if (cancelled) return;
       if (tab === "posts")
         setPosts((page as { items: SocialPostSummary[] }).items);
-      else setAssets((page as { items: CharacterAssetSummary[] }).items);
+      else setAssets((page as { items: CharacterAssetListItem[] }).items);
     });
     return () => {
       cancelled = true;
@@ -200,7 +200,7 @@ export function PublicProfilePage({
                   {asset.snapshot.name}
                 </p>
                 <p className="mt-2 line-clamp-3 text-sm leading-6 text-white/48">
-                  {asset.snapshot.introduction || asset.snapshot.detail.persona}
+                  {asset.snapshot.preview}
                 </p>
                 <p className="mt-4 text-xs text-white/28">
                   {asset.likeCount} 喜欢 · {asset.commentCount} 评论

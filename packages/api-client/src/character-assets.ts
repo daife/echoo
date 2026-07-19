@@ -1,6 +1,7 @@
 import type {
   CharacterAssetDetail,
   CharacterAssetDraft,
+  CharacterAssetListItem,
   CharacterAssetPage,
   CharacterAssetSnapshot,
   CharacterAssetSummary,
@@ -23,15 +24,29 @@ export class CharacterAssetsApi {
       limit?: number;
       cursor?: string;
       q?: string;
-      sort?: "quality" | "latest";
+      signal?: AbortSignal;
     } = {},
   ): Promise<CharacterAssetPage> {
+    const { signal, ...query } = input;
     return this.client
-      .get<CharacterAssetPage>("/character-assets", input)
+      .get<CharacterAssetPage>("/character-assets", query, { signal })
       .then((page) => ({
         ...page,
-        items: page.items.map((asset) => this.normalizeAsset(asset)),
+        items: page.items.map((asset) => this.normalizeListItem(asset)),
       }));
+  }
+
+  listFeatured(
+    input: { limit?: number; signal?: AbortSignal } = {},
+  ): Promise<CharacterAssetListItem[]> {
+    const { signal, ...query } = input;
+    return this.client
+      .get<CharacterAssetListItem[]>(
+        "/character-assets/featured",
+        query,
+        { signal },
+      )
+      .then((items) => items.map((asset) => this.normalizeListItem(asset)));
   }
 
   listByUser(userId: string, input: { limit?: number; cursor?: string } = {}) {
@@ -39,7 +54,7 @@ export class CharacterAssetsApi {
       .get<CharacterAssetPage>(`/users/${userId}/character-assets`, input)
       .then((page) => ({
         ...page,
-        items: page.items.map((asset) => this.normalizeAsset(asset)),
+        items: page.items.map((asset) => this.normalizeListItem(asset)),
       }));
   }
 
@@ -48,7 +63,7 @@ export class CharacterAssetsApi {
       .get<CharacterAssetPage>("/feeds/following/character-assets", input)
       .then((page) => ({
         ...page,
-        items: page.items.map((asset) => this.normalizeAsset(asset)),
+        items: page.items.map((asset) => this.normalizeListItem(asset)),
       }));
   }
 
@@ -167,6 +182,24 @@ export class CharacterAssetsApi {
           }
         : {}),
     } as T;
+  }
+
+  private normalizeListItem(
+    asset: CharacterAssetListItem,
+  ): CharacterAssetListItem {
+    return {
+      ...asset,
+      snapshot: {
+        ...asset.snapshot,
+        ...(asset.snapshot.coverResourcePath
+          ? {
+              coverResourcePath: this.client.resolveServerPath(
+                asset.snapshot.coverResourcePath,
+              ),
+            }
+          : {}),
+      },
+    };
   }
 
   private normalizeDraft(draft: CharacterAssetDraft): CharacterAssetDraft {

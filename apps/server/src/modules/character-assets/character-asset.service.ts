@@ -23,9 +23,12 @@ import type {
   StoredTextModelConfig,
 } from "../runtime-config/runtime-config.types.js";
 import {
+  CharacterAssetQueryError,
   CharacterAssetRepository,
   type AssetResourceReference,
 } from "./character-asset.repository.js";
+
+export { CharacterAssetQueryError };
 
 export class CharacterAssetNotFoundError extends Error {}
 export class CharacterAssetForbiddenError extends Error {}
@@ -43,6 +46,10 @@ export class CharacterAssetService {
     input?: Parameters<CharacterAssetRepository["listPublished"]>[1],
   ) {
     return this.assets.listPublished(viewerUserId, input);
+  }
+
+  listFeatured(viewerUserId: string | null, limit?: number) {
+    return this.assets.listFeatured(viewerUserId, limit);
   }
 
   listPublishedByAuthor(

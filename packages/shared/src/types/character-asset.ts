@@ -69,12 +69,34 @@ export interface CharacterAssetSummary {
   updatedAt: number;
 }
 
+export interface CharacterAssetListItem {
+  id: string;
+  author: { id: string; displayName: string };
+  latestVersionNumber: number;
+  snapshot: {
+    type: CharacterAssetType;
+    name: string;
+    coverResourcePath?: string;
+    attributes: AgentAttribute[];
+    tags: string[];
+    preview: string;
+  };
+  likeCount: number;
+  commentCount: number;
+  viewerHasLiked: boolean;
+  installedVersionId?: string;
+  installedVersionNumber?: number;
+  installationId?: string;
+  updateAvailable: boolean;
+  publishedAt: number;
+}
+
 export interface CharacterAssetDetail extends CharacterAssetSummary {
   latestVersion: CharacterAssetVersion;
 }
 
 export interface CharacterAssetPage {
-  items: CharacterAssetSummary[];
+  items: CharacterAssetListItem[];
   nextCursor?: string;
 }
 

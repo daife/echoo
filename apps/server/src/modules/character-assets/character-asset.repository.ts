@@ -1,11 +1,13 @@
 import type {
   CharacterAssetDraft,
   CharacterAssetDetail,
+  CharacterAssetListItem,
   CharacterAssetPage,
   CharacterAssetSnapshot,
   CharacterAssetSummary,
   PublishedRuntimeRecommendation,
 } from "@echoo/shared";
+import { createHash } from "node:crypto";
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 import {
   execute,
@@ -272,40 +274,70 @@ export class CharacterAssetRepository {
       limit?: number;
       cursor?: string;
       query?: string;
-      sort?: "quality" | "latest";
     } = {},
   ): Promise<CharacterAssetPage> {
-    const limit = Math.min(Math.max(input.limit ?? 24, 1), 100);
-    const offset = Math.max(Number(input.cursor) || 0, 0);
-    const query = input.query?.trim() ?? "";
-    const needle = `%${query}%`;
-    const order =
-      input.sort === "quality"
-        ? "social.like_count DESC, assets.published_at DESC, assets.id DESC"
-        : "assets.published_at DESC, assets.id DESC";
+    const limit = Math.min(Math.max(input.limit ?? 12, 1), 24);
+    const query = normalizeSearchQuery(input.query);
+    const scope = `published:${query}`;
+    const cursor = decodeAssetCursor(input.cursor, scope);
+    const searchJoin = query
+      ? `JOIN (
+           SELECT search_assets.id
+             FROM character_assets search_assets
+             JOIN character_asset_versions search_versions
+               ON search_versions.id = search_assets.latest_version_id
+            WHERE search_assets.status = 'published'
+              AND MATCH(search_versions.search_text)
+                  AGAINST (? IN NATURAL LANGUAGE MODE)
+           UNION
+           SELECT search_assets.id
+             FROM character_assets search_assets
+             JOIN users search_users ON search_users.id = search_assets.author_user_id
+            WHERE search_assets.status = 'published'
+              AND MATCH(search_users.display_name)
+                  AGAINST (? IN NATURAL LANGUAGE MODE)
+         ) search_matches ON search_matches.id = assets.id`
+      : "";
     const rows = await queryRows<AssetRow>(
       `${ASSET_SELECT}
+       ${searchJoin}
        WHERE assets.status = 'published'
-         AND (? = '' OR users.display_name LIKE ?
-              OR JSON_UNQUOTE(JSON_EXTRACT(versions.snapshot, '$.name')) LIKE ?
-              OR CAST(JSON_EXTRACT(versions.snapshot, '$.tags') AS CHAR) LIKE ?)
-       ORDER BY ${order} LIMIT ? OFFSET ?`,
+         AND (? IS NULL OR assets.published_at < ? OR
+              (assets.published_at = ? AND assets.id < ?))
+       ORDER BY assets.published_at DESC, assets.id DESC LIMIT ?`,
       [
         viewerUserId,
         viewerUserId,
-        query,
-        needle,
-        needle,
-        needle,
+        ...(query ? [query, query] : []),
+        cursor?.publishedAt ?? null,
+        cursor?.publishedAt ?? null,
+        cursor?.publishedAt ?? null,
+        cursor?.id ?? null,
         limit + 1,
-        offset,
       ],
     );
-    const hasMore = rows.length > limit;
+    const visible = rows.slice(0, limit);
     return {
-      items: rows.slice(0, limit).map(rowToSummary),
-      ...(hasMore ? { nextCursor: String(offset + limit) } : {}),
+      items: visible.map(rowToListItem),
+      ...(rows.length > limit && visible.length
+        ? { nextCursor: encodeAssetCursor(visible.at(-1)!, scope) }
+        : {}),
     };
+  }
+
+  async listFeatured(
+    viewerUserId: string | null,
+    requestedLimit = 6,
+  ): Promise<CharacterAssetListItem[]> {
+    const limit = Math.min(Math.max(requestedLimit || 6, 1), 12);
+    const rows = await queryRows<AssetRow>(
+      `${ASSET_SELECT}
+       WHERE assets.status = 'published' AND social.like_count > 0
+       ORDER BY social.like_count DESC, assets.published_at DESC, assets.id DESC
+       LIMIT ?`,
+      [viewerUserId, viewerUserId, limit],
+    );
+    return rows.map(rowToListItem);
   }
 
   async listPublishedByAuthor(
@@ -314,7 +346,8 @@ export class CharacterAssetRepository {
     input: { limit?: number; cursor?: string } = {},
   ): Promise<CharacterAssetPage> {
     const limit = Math.min(Math.max(input.limit ?? 24, 1), 100);
-    const cursor = decodeAssetCursor(input.cursor);
+    const scope = `author:${authorUserId}`;
+    const cursor = decodeAssetCursor(input.cursor, scope);
     const rows = await queryRows<AssetRow>(
       `${ASSET_SELECT}
        WHERE assets.status = 'published' AND assets.author_user_id = ?
@@ -334,9 +367,9 @@ export class CharacterAssetRepository {
     );
     const visible = rows.slice(0, limit);
     return {
-      items: visible.map(rowToSummary),
+      items: visible.map(rowToListItem),
       ...(rows.length > limit && visible.length
-        ? { nextCursor: encodeAssetCursor(visible.at(-1)!) }
+        ? { nextCursor: encodeAssetCursor(visible.at(-1)!, scope) }
         : {}),
     };
   }
@@ -346,7 +379,8 @@ export class CharacterAssetRepository {
     input: { limit?: number; cursor?: string } = {},
   ): Promise<CharacterAssetPage> {
     const limit = Math.min(Math.max(input.limit ?? 24, 1), 100);
-    const cursor = decodeAssetCursor(input.cursor);
+    const scope = `following:${viewerUserId}`;
+    const cursor = decodeAssetCursor(input.cursor, scope);
     const rows = await queryRows<AssetRow>(
       `${ASSET_SELECT}
        WHERE assets.status = 'published' AND (
@@ -373,9 +407,9 @@ export class CharacterAssetRepository {
     );
     const visible = rows.slice(0, limit);
     return {
-      items: visible.map(rowToSummary),
+      items: visible.map(rowToListItem),
       ...(rows.length > limit && visible.length
-        ? { nextCursor: encodeAssetCursor(visible.at(-1)!) }
+        ? { nextCursor: encodeAssetCursor(visible.at(-1)!, scope) }
         : {}),
     };
   }
@@ -728,27 +762,94 @@ function rowToSummary(row: AssetRow): CharacterAssetSummary {
   };
 }
 
-function encodeAssetCursor(row: { published_at: number; id: string }) {
-  return Buffer.from(JSON.stringify([row.published_at, row.id])).toString(
-    "base64url",
+export function rowToListItem(row: AssetRow): CharacterAssetListItem {
+  const snapshot = parseJson<CharacterAssetSnapshot>(
+    row.snapshot,
+    null as never,
   );
+  return {
+    id: row.id,
+    author: { id: row.author_user_id, displayName: row.display_name },
+    latestVersionNumber: row.version_number,
+    snapshot: {
+      type: snapshot.type,
+      name: snapshot.name,
+      ...(snapshot.coverResourcePath
+        ? { coverResourcePath: snapshot.coverResourcePath }
+        : {}),
+      attributes: snapshot.attributes.slice(0, 2),
+      tags: snapshot.tags.slice(0, 3),
+      preview: truncatePreview(
+        snapshot.introduction || snapshot.detail.persona,
+        160,
+      ),
+    },
+    likeCount: row.like_count,
+    commentCount: row.comment_count,
+    viewerHasLiked: Boolean(row.viewer_has_liked),
+    ...(row.installed_version_id
+      ? {
+          installedVersionId: row.installed_version_id,
+          installedVersionNumber: row.installed_version_number ?? undefined,
+          installationId: row.installation_id ?? undefined,
+        }
+      : {}),
+    updateAvailable: Boolean(
+      row.installed_version_id &&
+        row.installed_version_id !== row.latest_version_id,
+    ),
+    publishedAt: row.published_at,
+  };
 }
 
-function decodeAssetCursor(value?: string) {
+export function encodeAssetCursor(
+  row: { published_at: number; id: string },
+  scope: string,
+) {
+  return Buffer.from(
+    JSON.stringify({
+      v: 1,
+      p: row.published_at,
+      id: row.id,
+      s: hashScope(scope),
+    }),
+  ).toString("base64url");
+}
+
+export function decodeAssetCursor(value: string | undefined, scope: string) {
   if (!value) return null;
   try {
     const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
     if (
-      !Array.isArray(parsed) ||
-      !Number.isFinite(parsed[0]) ||
-      typeof parsed[1] !== "string"
+      !parsed ||
+      parsed.v !== 1 ||
+      !Number.isFinite(parsed.p) ||
+      typeof parsed.id !== "string" ||
+      parsed.s !== hashScope(scope)
     )
-      return null;
-    return { publishedAt: Number(parsed[0]), id: parsed[1] };
+      throw new Error();
+    return { publishedAt: Number(parsed.p), id: parsed.id };
   } catch {
-    return null;
+    throw new CharacterAssetQueryError("分页游标无效或与当前查询不匹配。");
   }
 }
+
+function hashScope(scope: string) {
+  return createHash("sha256").update(scope).digest("base64url").slice(0, 16);
+}
+
+export function normalizeSearchQuery(query?: string) {
+  return query?.trim().replace(/\s+/g, " ") ?? "";
+}
+
+export function truncatePreview(value: string, maxLength: number) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length <= maxLength
+    ? normalized
+    : `${normalized.slice(0, maxLength - 1)}…`;
+}
+
+export class CharacterAssetQueryError extends Error {}
 
 function rowToDetail(row: AssetRow): CharacterAssetDetail {
   const summary = rowToSummary(row);

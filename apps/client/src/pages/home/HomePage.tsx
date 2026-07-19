@@ -1,5 +1,5 @@
 import { Plus, Sparkle } from "@phosphor-icons/react";
-import type { Agent, CharacterAssetSummary } from "@echoo/shared";
+import type { Agent, CharacterAssetListItem } from "@echoo/shared";
 import { useEffect, useState } from "react";
 import { CharacterCatalog } from "../explore/ExplorePage";
 import { MediaAsset } from "../../features/media/MediaAsset";
@@ -22,18 +22,34 @@ export function HomePage({
   onOpenAsset: (assetId: string) => void;
   onOpenUser: (userId: string) => void;
 }) {
-  const [featured, setFeatured] = useState<CharacterAssetSummary[]>([]);
+  const [featured, setFeatured] = useState<CharacterAssetListItem[]>([]);
+  const [featuredLoading, setFeaturedLoading] = useState(true);
+  const [featuredError, setFeaturedError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
+    setFeaturedLoading(true);
+    setFeaturedError(false);
+    setFeatured([]);
     void service
-      .list({ sort: "quality", limit: 6 })
-      .then((page) => {
-        if (!cancelled) setFeatured(page.items);
+      .listFeatured({ limit: 6, signal: controller.signal })
+      .then((items) => {
+        if (!cancelled) setFeatured(items);
       })
-      .catch(() => undefined);
+      .catch((reason) => {
+        if (
+          !cancelled &&
+          !(reason instanceof DOMException && reason.name === "AbortError")
+        )
+          setFeaturedError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setFeaturedLoading(false);
+      });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [service]);
 
@@ -67,7 +83,11 @@ export function HomePage({
             </h2>
           </div>
         </div>
-        {featured.length ? (
+        {featuredLoading ? (
+          <div className="rounded-2xl border border-dashed border-white/10 py-16 text-center text-sm text-white/35">
+            正在统计最受喜爱的公开角色……
+          </div>
+        ) : featured.length ? (
           <div className="grid gap-4 md:grid-cols-3">
             {featured.map((asset, index) => (
               <button
@@ -95,8 +115,7 @@ export function HomePage({
                       {asset.snapshot.name}
                     </h3>
                     <p className="mt-2 line-clamp-2 max-w-lg text-sm leading-6 text-white/48">
-                      {asset.snapshot.introduction ||
-                        asset.snapshot.detail.persona}
+                      {asset.snapshot.preview}
                     </p>
                     <p className="mt-4 text-xs text-white/30">
                       {asset.author.displayName}
@@ -108,7 +127,9 @@ export function HomePage({
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-white/10 py-16 text-center text-sm text-white/35">
-            公开角色正在抵达这里。
+            {featuredError
+              ? "热门角色暂时加载失败。"
+              : "还没有获得点赞的公开角色。"}
           </div>
         )}
       </section>

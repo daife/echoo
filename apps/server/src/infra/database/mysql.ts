@@ -58,6 +58,16 @@ export async function initializeDatabase() {
       await connection.query(
         "ALTER TABLE billing_ledger MODIFY kind VARCHAR(48) NOT NULL",
       );
+    const [characterSearchColumns] = await connection.query<RowDataPacket[]>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = DATABASE()
+         AND table_name = 'character_asset_versions'
+         AND column_name = 'search_text'`,
+    );
+    if (!characterSearchColumns.length)
+      throw new Error(
+        "检测到不兼容的旧 Echoo 公共角色搜索 schema。请确认备份后运行 ECHOO_CONFIRM_RECREATE=echoo pnpm db:recreate。",
+      );
     const [legacyColumns] = await connection.query<RowDataPacket[]>(
       `SELECT column_name FROM information_schema.columns
        WHERE table_schema = DATABASE() AND table_name = 'conversations'
