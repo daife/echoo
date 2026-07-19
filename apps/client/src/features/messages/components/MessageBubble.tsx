@@ -11,8 +11,10 @@ import {
   X,
 } from "@phosphor-icons/react";
 import type {
+  HTMLAttributes,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
+  ReactNode,
 } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -246,22 +248,16 @@ export function MessageBubble({
     if (!message.mediaUrl) return null;
     return (
       <>
-        <div
-          className={`relative -mx-3 flex w-[calc(100%+1.5rem)] items-start gap-2 md:-mx-5 md:w-[calc(100%+2.5rem)] ${
-            mine ? "justify-end" : "justify-start"
-          }`}
-          {...longPressProps}
+        <MessageRow
+          mine={mine}
+          avatarUrl={avatarUrl}
+          avatarAlt={avatarAlt}
+          deliveryState={message.deliveryState}
+          canRetry={Boolean(canRetry)}
+          onRetry={() => onRetry?.(message.id)}
+          actionMenu={actionMenu}
+          interactionProps={longPressProps}
         >
-          {actionMenu}
-          {mine ? (
-            <DeliveryIndicator
-              state={message.deliveryState}
-              canRetry={Boolean(canRetry)}
-              onRetry={() => onRetry?.(message.id)}
-            />
-          ) : (
-            <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} />
-          )}
           <ChatVisualMedia
             mediaUrl={message.mediaUrl}
             alt={
@@ -277,8 +273,7 @@ export function MessageBubble({
             failed={mine && message.deliveryState === "failed"}
             onOpen={openMedia}
           />
-          {mine ? <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} /> : null}
-        </div>
+        </MessageRow>
         {mediaViewer}
       </>
     );
@@ -288,22 +283,14 @@ export function MessageBubble({
     if (!message.mediaUrl) return null;
     return (
       <>
-        <div
-          className={`relative -mx-3 flex w-[calc(100%+1.5rem)] items-start gap-2 md:-mx-5 md:w-[calc(100%+2.5rem)] ${
-            mine ? "justify-end" : "justify-start"
-          }`}
-        >
-          {!mine ? (
-            <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} />
-          ) : null}
+        <MessageRow mine={mine} avatarUrl={avatarUrl} avatarAlt={avatarAlt}>
           <ChatVisualMedia
             mediaUrl={message.mediaUrl}
             alt={mine ? "我发送的表情" : "角色发送的表情"}
             kind="sticker"
             onOpen={openMedia}
           />
-          {mine ? <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} /> : null}
-        </div>
+        </MessageRow>
         {mediaViewer}
       </>
     );
@@ -313,13 +300,8 @@ export function MessageBubble({
     const pending = message.transferStatus === "pending";
     const canResolve = !mine && pending && message.transferDirection === "paid";
     return (
-      <div
-        className={`relative -mx-3 flex w-[calc(100%+1.5rem)] items-start gap-2 md:-mx-5 md:w-[calc(100%+2.5rem)] ${
-          mine ? "justify-end" : "justify-start"
-        }`}
-      >
-        {!mine ? <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} /> : null}
-        <div className="w-[min(82%,320px)] flex-none overflow-hidden rounded-2xl border border-amber-200/10 bg-gradient-to-br from-[#7a4b16] to-[#4b2b10] shadow-[0_14px_32px_rgba(0,0,0,0.22)]">
+      <MessageRow mine={mine} avatarUrl={avatarUrl} avatarAlt={avatarAlt}>
+        <div className="w-[min(82%,320px)] min-w-0 overflow-hidden rounded-2xl border border-amber-200/10 bg-gradient-to-br from-[#7a4b16] to-[#4b2b10] shadow-[0_14px_32px_rgba(0,0,0,0.22)]">
           <div className="flex items-center gap-3 px-4 py-4">
             <span className="grid h-11 w-11 flex-none place-items-center rounded-full bg-white/14 text-white">
               <Money size={23} weight="duotone" />
@@ -361,29 +343,22 @@ export function MessageBubble({
             </div>
           ) : null}
         </div>
-        {mine ? <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} /> : null}
-      </div>
+      </MessageRow>
     );
   }
 
   if (message.kind === "voice") {
     return (
-      <div
-        className={`relative -mx-3 flex w-[calc(100%+1.5rem)] items-start gap-2 md:-mx-5 md:w-[calc(100%+2.5rem)] ${
-          mine ? "justify-end" : "justify-start"
-        }`}
-        {...longPressProps}
+      <MessageRow
+        mine={mine}
+        avatarUrl={avatarUrl}
+        avatarAlt={avatarAlt}
+        deliveryState={message.deliveryState}
+        canRetry={Boolean(canRetry)}
+        onRetry={() => onRetry?.(message.id)}
+        actionMenu={actionMenu}
+        interactionProps={longPressProps}
       >
-        {actionMenu}
-        {mine ? (
-          <DeliveryIndicator
-            state={message.deliveryState}
-            canRetry={Boolean(canRetry)}
-            onRetry={() => onRetry?.(message.id)}
-          />
-        ) : (
-          <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} />
-        )}
         <VoiceBubble
           mediaUrl={message.mediaUrl}
           durationSeconds={message.durationSeconds}
@@ -394,30 +369,23 @@ export function MessageBubble({
           suppressNextClickRef={didLongPressRef}
           onToggle={() => onToggleVoice?.(message.id, message.mediaUrl)}
         />
-        {mine ? <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} /> : null}
-      </div>
+      </MessageRow>
     );
   }
 
   return (
-    <div
-      className={`relative -mx-3 flex w-[calc(100%+1.5rem)] items-start gap-2 md:-mx-5 md:w-[calc(100%+2.5rem)] ${
-        mine ? "justify-end" : "justify-start"
-      }`}
-      {...longPressProps}
+    <MessageRow
+      mine={mine}
+      avatarUrl={avatarUrl}
+      avatarAlt={avatarAlt}
+      deliveryState={message.deliveryState}
+      canRetry={Boolean(canRetry)}
+      onRetry={() => onRetry?.(message.id)}
+      actionMenu={actionMenu}
+      interactionProps={longPressProps}
     >
-      {actionMenu}
-      {mine ? (
-        <DeliveryIndicator
-          state={message.deliveryState}
-          canRetry={Boolean(canRetry)}
-          onRetry={() => onRetry?.(message.id)}
-        />
-      ) : (
-        <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} />
-      )}
       <div
-        className={`max-w-[85%] whitespace-pre-wrap break-words rounded-xl px-4 py-3 text-sm leading-6 md:max-w-[70%] ${
+        className={`min-w-0 max-w-[85%] whitespace-pre-wrap break-words rounded-xl px-4 py-3 text-sm leading-6 md:max-w-[70%] ${
           mine
             ? message.deliveryState === "failed"
               ? "border border-red-300/20 bg-red-400/[0.08] text-red-50"
@@ -434,6 +402,51 @@ export function MessageBubble({
           />
         ) : null}
       </div>
+    </MessageRow>
+  );
+}
+
+function MessageRow({
+  mine,
+  avatarUrl,
+  avatarAlt,
+  deliveryState,
+  canRetry = false,
+  onRetry = () => undefined,
+  actionMenu,
+  interactionProps,
+  children,
+}: {
+  mine: boolean;
+  avatarUrl?: string;
+  avatarAlt?: string;
+  deliveryState?: "sending" | "failed";
+  canRetry?: boolean;
+  onRetry?: () => void;
+  actionMenu?: ReactNode;
+  interactionProps?: HTMLAttributes<HTMLDivElement>;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="relative flex w-full min-w-0 items-start gap-2"
+      data-message-row="contained"
+      {...interactionProps}
+    >
+      {actionMenu}
+      {!mine ? <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} /> : null}
+      <div
+        className={`flex min-w-0 flex-1 items-start gap-2 ${mine ? "justify-end" : "justify-start"}`}
+      >
+        {mine ? (
+          <DeliveryIndicator
+            state={deliveryState}
+            canRetry={canRetry}
+            onRetry={onRetry}
+          />
+        ) : null}
+        {children}
+      </div>
       {mine ? <MessageAvatar mediaUrl={avatarUrl} alt={avatarAlt} /> : null}
     </div>
   );
@@ -444,7 +457,7 @@ function MessageAvatar({ mediaUrl, alt }: { mediaUrl?: string; alt?: string }) {
     <IdentityAvatar
       mediaUrl={mediaUrl}
       alt={alt ?? "消息发送者头像"}
-      className="mb-1 h-8 w-8"
+      className="mb-1 h-8 w-8 shrink-0"
     />
   );
 }
@@ -483,7 +496,7 @@ function ChatVisualMedia({
 
   return (
     <button
-      className={`group relative block w-fit shrink-0 overflow-hidden rounded-xl bg-white/[0.025] text-left transition active:scale-[0.99] ${frameClass} ${
+      className={`group relative block w-fit min-w-0 max-w-full shrink overflow-hidden rounded-xl bg-white/[0.025] text-left transition active:scale-[0.99] ${frameClass} ${
         failed ? "outline outline-1 outline-red-300/25" : ""
       }`}
       type="button"
@@ -643,10 +656,10 @@ function VoiceBubble({
   const width = Math.min(280, Math.max(148, 142 + (seconds ?? 0) * 3));
 
   return (
-    <div className="min-w-0">
+    <div className="min-w-0 max-w-full">
       <button
         className="flex h-12 items-center gap-3 rounded-xl bg-white/[0.055] px-4 text-left text-white transition hover:bg-white/[0.075] active:scale-[0.99]"
-        style={{ width }}
+        style={{ width, maxWidth: "100%" }}
         type="button"
         aria-label={
           isBlocked
@@ -692,7 +705,7 @@ function DeliveryIndicator({
   if (state === "sending") {
     return (
       <span
-        className="mb-1 grid h-7 w-7 place-items-center text-white/38"
+        className="mb-1 grid h-7 w-7 shrink-0 place-items-center text-white/38"
         aria-label="发送中"
       >
         <SpinnerGap className="animate-spin" size={16} />
@@ -702,7 +715,7 @@ function DeliveryIndicator({
   if (state === "failed") {
     return (
       <button
-        className="mb-1 grid h-7 w-7 place-items-center rounded-full text-red-300/80 transition hover:bg-red-400/10 hover:text-red-200 disabled:cursor-default"
+        className="mb-1 grid h-7 w-7 shrink-0 place-items-center rounded-full text-red-300/80 transition hover:bg-red-400/10 hover:text-red-200 disabled:cursor-default"
         type="button"
         disabled={!canRetry}
         aria-label="发送失败，点击重试"

@@ -23,6 +23,25 @@ Echoo 的配置分为三层。部署配置来自仓库根目录 `.env`，管理�
 
 `.env.example` 是完整变量清单；本地 `.env` 可以只覆盖部署所需值。旧的 `OPENROUTER_API_KEY`、`FISH_AUDIO_API_KEY`、`DEFAULT_*` 等名称不再读取。
 
+## 手机局域网 HTTPS 调试
+
+手机浏览器只允许可信安全上下文申请麦克风权限。通过 `http://192.168.x.x:5173` 访问时，文字和媒体浏览可以工作，但录音会被浏览器禁止。开发环境应为电脑的局域网 IP 签发本地可信证书：
+
+1. 安装 `mkcert`，运行 `mkcert -install`，创建 `certs` 目录，再运行 `mkcert -cert-file certs/echoo-lan.pem -key-file certs/echoo-lan-key.pem 192.168.1.100 localhost 127.0.0.1`（将 IP 替换为电脑当前局域网地址）。
+2. 将生成的证书和私钥放在未提交的目录，例如仓库根目录 `certs/`；把 `mkcert -CAROOT` 中的根证书安装到测试手机并设为受信任证书。
+3. 创建不会提交的 `.env.secure.local`：
+
+   ```dotenv
+   VITE_API_BASE_URL=/api
+   VITE_WS_URL=/ws
+   ECHOO_DEV_HTTPS_CERT=certs/echoo-lan.pem
+   ECHOO_DEV_HTTPS_KEY=certs/echoo-lan-key.pem
+   ```
+
+4. 先启动服务端，再运行 `pnpm --filter @echoo/client dev:secure`，最后在手机访问 `https://192.168.1.100:5173`。
+
+安全模式把同源 `/api` 和 `/ws` 分别代理到本机 `8787` 端口，避免 HTTPS 页面访问 HTTP/WS 服务时被 mixed-content 策略拦截。普通 `pnpm dev` 和 Tauri 仍使用 `.env` 中原有的绝对地址。
+
 ## 管理后台
 
 - `billing_multiplier` 是上游实际美元成本的统一倍率；一次角色运行首次使用付费平台能力时读取并固定该倍率。

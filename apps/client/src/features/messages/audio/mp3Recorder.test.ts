@@ -2,9 +2,60 @@ import { describe, expect, it } from "vitest";
 import {
   createPcmCaptureWorkletSource,
   encodeMp3,
+  getMicrophoneUnavailableMessage,
 } from "./mp3Recorder";
+import { describeMicrophoneError } from "../usePushToTalk";
 
 describe("MP3 recorder", () => {
+  it("explains that an insecure page must use trusted HTTPS", () => {
+    expect(
+      getMicrophoneUnavailableMessage({
+        isSecureContext: false,
+        hasGetUserMedia: false,
+        hasAudioContext: true,
+      }),
+    ).toContain("HTTPS");
+  });
+
+  it("distinguishes a missing media API from a missing audio context", () => {
+    expect(
+      getMicrophoneUnavailableMessage({
+        isSecureContext: true,
+        hasGetUserMedia: false,
+        hasAudioContext: true,
+      }),
+    ).toContain("麦克风录音接口");
+    expect(
+      getMicrophoneUnavailableMessage({
+        isSecureContext: true,
+        hasGetUserMedia: true,
+        hasAudioContext: false,
+      }),
+    ).toContain("音频采集");
+  });
+
+  it("accepts a secure browser with media and audio APIs", () => {
+    expect(
+      getMicrophoneUnavailableMessage({
+        isSecureContext: true,
+        hasGetUserMedia: true,
+        hasAudioContext: true,
+      }),
+    ).toBeNull();
+  });
+
+  it("maps permission, device, and busy microphone failures separately", () => {
+    expect(
+      describeMicrophoneError(new DOMException("denied", "NotAllowedError")),
+    ).toContain("允许浏览器");
+    expect(
+      describeMicrophoneError(new DOMException("missing", "NotFoundError")),
+    ).toContain("未找到");
+    expect(
+      describeMicrophoneError(new DOMException("busy", "NotReadableError")),
+    ).toContain("占用");
+  });
+
   it("downmixes every microphone input channel in the audio worklet", () => {
     let Processor:
       | (new () => {
@@ -18,10 +69,7 @@ describe("MP3 recorder", () => {
         postMessage: (value: Float32Array) => posted.push(value),
       };
     }
-    const registerProcessor = (
-      name: string,
-      constructor: typeof Processor,
-    ) => {
+    const registerProcessor = (name: string, constructor: typeof Processor) => {
       expect(name).toBe("echoo-pcm-capture");
       Processor = constructor;
     };
@@ -36,10 +84,7 @@ describe("MP3 recorder", () => {
     const processor = new Processor!();
     expect(
       processor.process([
-        [
-          new Float32Array([0, 0.25, -0.5]),
-          new Float32Array([0.5, 0.75, 0.5]),
-        ],
+        [new Float32Array([0, 0.25, -0.5]), new Float32Array([0.5, 0.75, 0.5])],
       ]),
     ).toBe(true);
     expect(Array.from(posted[0] ?? [])).toEqual([0.25, 0.5, 0]);

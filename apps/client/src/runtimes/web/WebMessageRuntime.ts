@@ -24,8 +24,7 @@ export class WebMessageRuntime implements MessageRuntime {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private shouldReconnect = false;
-  private syncStatus: "stopped" | "connecting" | "syncing" | "live" =
-    "stopped";
+  private syncStatus: "stopped" | "connecting" | "syncing" | "live" = "stopped";
   private readonly pendingSyncChanges: SyncChange[] = [];
   private readonly syncChangeHandlers = new Set<(change: SyncChange) => void>();
   private readonly syncResetHandlers = new Set<() => void>();
@@ -91,7 +90,9 @@ export class WebMessageRuntime implements MessageRuntime {
   }
 
   private async openSocket(): Promise<void> {
-    const url = import.meta.env.VITE_WS_URL ?? "ws://localhost:8787/ws";
+    const url = resolveWebSocketUrl(
+      import.meta.env.VITE_WS_URL ?? "ws://localhost:8787/ws",
+    );
     let token = await this.auth.getAccessToken();
     if (!this.shouldReconnect || !token) return;
     if (this.socket && this.socket.readyState <= WebSocket.OPEN) return;
@@ -137,11 +138,14 @@ export class WebMessageRuntime implements MessageRuntime {
       }
       const payload = JSON.parse(event.data as string) as AppWsServerEvent;
       if (payload.type === "realtime.ready") {
-        void this.catchUp(payload.headCursor, token).catch(() => socket.close());
+        void this.catchUp(payload.headCursor, token).catch(() =>
+          socket.close(),
+        );
         return;
       }
       if (payload.type === "sync.change") {
-        if (this.syncStatus !== "live") this.pendingSyncChanges.push(payload.change);
+        if (this.syncStatus !== "live")
+          this.pendingSyncChanges.push(payload.change);
         else this.applySyncChange(payload.change);
         return;
       }
@@ -202,9 +206,7 @@ export class WebMessageRuntime implements MessageRuntime {
 
   async getSyncCursor() {
     const token = await this.auth.getAccessToken();
-    return token
-      ? Number(localStorage.getItem(syncCursorKey(token)) ?? 0)
-      : 0;
+    return token ? Number(localStorage.getItem(syncCursorKey(token)) ?? 0) : 0;
   }
 
   async setSyncCursor(cursor: number) {
@@ -235,9 +237,12 @@ export class WebMessageRuntime implements MessageRuntime {
       const page = (await response.json()) as SyncPage;
       if (page.resetRequired) {
         this.syncResetHandlers.forEach((handler) => handler());
-        const bootstrapResponse = await fetch(`${apiBaseUrl()}/sync/bootstrap`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const bootstrapResponse = await fetch(
+          `${apiBaseUrl()}/sync/bootstrap`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
         if (!bootstrapResponse.ok) throw new Error("同步快照失败。");
         const bootstrap = (await bootstrapResponse.json()) as SyncBootstrap;
         const now = Date.now();
@@ -285,7 +290,8 @@ export class WebMessageRuntime implements MessageRuntime {
       if (token) {
         const key = syncCursorKey(token);
         const current = Number(localStorage.getItem(key) ?? 0);
-        if (change.cursor > current) localStorage.setItem(key, String(change.cursor));
+        if (change.cursor > current)
+          localStorage.setItem(key, String(change.cursor));
       }
     });
     this.syncChangeHandlers.forEach((handler) => handler(change));
@@ -303,7 +309,8 @@ export class WebMessageRuntime implements MessageRuntime {
       await this.auth.clearTokens();
       return null;
     }
-    const session = (await response.json()) as import("@echoo/shared").AuthSession;
+    const session =
+      (await response.json()) as import("@echoo/shared").AuthSession;
     await this.auth.saveTokens(session.tokens);
     return session.tokens.accessToken;
   }
@@ -474,17 +481,30 @@ export function decodeBinaryFrame(value: ArrayBuffer) {
   }
 }
 
+export function resolveWebSocketUrl(
+  configuredUrl: string,
+  pageUrl = window.location.href,
+) {
+  const url = new URL(configuredUrl, pageUrl);
+  if (url.protocol === "http:") url.protocol = "ws:";
+  else if (url.protocol === "https:") url.protocol = "wss:";
+  if (url.protocol !== "ws:" && url.protocol !== "wss:")
+    throw new Error("VITE_WS_URL 必须使用 ws、wss、http、https 或相对路径。");
+  return url.toString();
+}
+
 function apiBaseUrl() {
-  return (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787/api").replace(
-    /\/+$/,
-    "",
-  );
+  return (
+    import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787/api"
+  ).replace(/\/+$/, "");
 }
 
 function syncCursorKey(token: string) {
   const payload = token.split(".")[1];
   try {
-    const user = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as {
+    const user = JSON.parse(
+      atob(payload.replace(/-/g, "+").replace(/_/g, "/")),
+    ) as {
       sub?: string;
     };
     return `sync.cursor.v2:${user.sub ?? "unknown"}`;

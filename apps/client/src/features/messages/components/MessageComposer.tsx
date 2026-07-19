@@ -13,10 +13,16 @@ import {
   X,
 } from "@phosphor-icons/react";
 import type { PrimeFigureSticker } from "@echoo/shared";
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { compressImageToJpeg } from "../../../shared/utils/imageCompression";
 import { usePushToTalk } from "../usePushToTalk";
 import { MediaAsset } from "../../media/MediaAsset";
+import { shouldSubmitTextInput } from "./messageComposerSubmission";
 
 const IMAGE_MIME_TYPES = new Set([
   "image/jpeg",
@@ -81,6 +87,7 @@ export function MessageComposer({
     null,
   );
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const isSubmittingTextRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
   const stickerFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -192,11 +199,35 @@ export function MessageComposer({
   const isRecording =
     pushToTalk.phase === "recording" || pushToTalk.phase === "requesting";
 
+  const submitText = async () => {
+    if (!draft.trim() || isSending || isSubmittingTextRef.current) return;
+    isSubmittingTextRef.current = true;
+    try {
+      await onSendText();
+    } finally {
+      isSubmittingTextRef.current = false;
+      window.requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  };
+
+  const handleTextKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (
+      !shouldSubmitTextInput({
+        key: event.key,
+        isComposing: event.nativeEvent.isComposing,
+        keyCode: event.keyCode,
+      })
+    )
+      return;
+    event.preventDefault();
+    void submitText();
+  };
+
   return (
-    <footer className="relative px-4 pb-4 pt-2 md:px-6 md:pb-6">
+    <footer className="relative w-full min-w-0 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-4 md:px-6 md:pb-6">
       <div className="pointer-events-none absolute inset-x-0 bottom-full h-16 bg-gradient-to-t from-[#0d0d10] to-transparent" />
       {(selectedImage || selectedVideo) && previewUrl ? (
-        <div className="mb-2 flex items-center gap-3 rounded-xl border border-white/10 bg-[#151519] p-3 shadow-[0_14px_38px_rgba(0,0,0,0.24)]">
+        <div className="mb-2 flex w-full min-w-0 items-center gap-3 overflow-hidden rounded-xl border border-white/10 bg-[#151519] p-3 shadow-[0_14px_38px_rgba(0,0,0,0.24)]">
           {selectedVideo ? (
             <video
               className="h-16 w-16 rounded-lg bg-black object-cover"
@@ -245,11 +276,10 @@ export function MessageComposer({
         </div>
       ) : null}
       <form
-        className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#121216] p-2 shadow-[0_14px_38px_rgba(0,0,0,0.22)] transition focus-within:border-white/30"
+        className="flex w-full min-w-0 items-center gap-1.5 rounded-xl border border-white/10 bg-[#121216] p-2 shadow-[0_14px_38px_rgba(0,0,0,0.22)] transition focus-within:border-white/30 sm:gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          void onSendText();
-          window.requestAnimationFrame(() => inputRef.current?.focus());
+          void submitText();
         }}
       >
         {isPrimeFigure ? (
@@ -309,8 +339,11 @@ export function MessageComposer({
             aria-label={`给 ${title} 发消息`}
             className="min-w-0 flex-1 border-none bg-transparent px-3 py-2 text-sm text-white outline-none placeholder:text-white/32"
             placeholder="写下消息，Enter 发送"
+            enterKeyHint="send"
+            type="text"
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
+            onKeyDown={handleTextKeyDown}
           />
         )}
         {isPrimeFigure && mode === "text" ? (

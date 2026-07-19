@@ -108,6 +108,51 @@ describe("MessageBubble identity", () => {
     expect(html).not.toContain("h-7 w-1");
   });
 
+  it("contains a sending user message, delivery indicator, and avatar in one row", () => {
+    const html = renderToStaticMarkup(
+      <MessageBubble
+        avatarAlt="我的头像"
+        message={{
+          id: "msg_sending",
+          from: "me",
+          text: "正在发送",
+          createdAt: 1234,
+          kind: "text",
+          deliveryState: "sending",
+        }}
+      />,
+    );
+
+    expect(html).toContain('data-message-row="contained"');
+    expect(html).toContain('aria-label="发送中"');
+    expect(html).toContain('data-identity-avatar="empty"');
+    expect(html).not.toContain("-mx-3");
+    expect(html).not.toContain("calc(100%+");
+  });
+
+  it("contains failed media and its retry control without expanding the row", () => {
+    const html = renderToStaticMarkup(
+      <MessageBubble
+        avatarAlt="我的头像"
+        message={{
+          id: "msg_failed",
+          from: "me",
+          text: "",
+          createdAt: 1234,
+          kind: "image",
+          mediaUrl: "/api/resources/resource_image/file",
+          deliveryState: "failed",
+        }}
+        onRetry={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('data-message-row="contained"');
+    expect(html).toContain("发送失败，点击重试");
+    expect(html).toContain("shrink-0");
+    expect(html).not.toContain("-mx-3");
+  });
+
   it("keeps an empty user avatar when no image is available", () => {
     const html = renderToStaticMarkup(
       <MessageBubble

@@ -13,13 +13,52 @@ export interface ActiveMp3Recorder {
   cancel(): Promise<void>;
 }
 
+export interface BrowserAudioCapabilities {
+  isSecureContext: boolean;
+  hasGetUserMedia: boolean;
+  hasAudioContext: boolean;
+}
+
+export function getBrowserAudioCapabilities(): BrowserAudioCapabilities {
+  return {
+    isSecureContext: globalThis.isSecureContext === true,
+    hasGetUserMedia:
+      typeof navigator !== "undefined" &&
+      typeof navigator.mediaDevices?.getUserMedia === "function",
+    hasAudioContext:
+      typeof window !== "undefined" &&
+      Boolean(
+        window.AudioContext ??
+        (
+          window as typeof window & {
+            webkitAudioContext?: typeof AudioContext;
+          }
+        ).webkitAudioContext,
+      ),
+  };
+}
+
+export function getMicrophoneUnavailableMessage(
+  capabilities: BrowserAudioCapabilities,
+) {
+  if (!capabilities.isSecureContext)
+    return "浏览器只允许可信 HTTPS 页面使用麦克风，请通过 HTTPS 地址打开 Echoo。";
+  if (!capabilities.hasGetUserMedia)
+    return "当前浏览器未提供麦克风录音接口，请升级浏览器或更换浏览器。";
+  if (!capabilities.hasAudioContext)
+    return "当前浏览器不支持音频采集，请升级浏览器或更换浏览器。";
+  return null;
+}
+
 export async function startMp3Recorder(
   onLevel?: (level: number) => void,
 ): Promise<ActiveMp3Recorder> {
-  if (!navigator.mediaDevices?.getUserMedia)
-    throw new Error("当前环境不支持麦克风录音。");
+  const unavailableMessage = getMicrophoneUnavailableMessage(
+    getBrowserAudioCapabilities(),
+  );
+  if (unavailableMessage) throw new Error(unavailableMessage);
 
-  const stream = await navigator.mediaDevices.getUserMedia({
+  const stream = await navigator.mediaDevices!.getUserMedia({
     audio: {
       channelCount: { ideal: 1 },
       echoCancellation: false,
@@ -31,9 +70,10 @@ export async function startMp3Recorder(
     window.AudioContext ??
     (window as typeof window & { webkitAudioContext?: typeof AudioContext })
       .webkitAudioContext;
+  // Capability validation above guarantees this constructor exists.
   if (!AudioContextClass) {
     stream.getTracks().forEach((track) => track.stop());
-    throw new Error("当前环境不支持音频采集。");
+    throw new Error("当前浏览器不支持音频采集。");
   }
 
   const context = new AudioContextClass();
@@ -72,10 +112,7 @@ export async function startMp3Recorder(
 
   if (context.audioWorklet && typeof AudioWorkletNode !== "undefined") {
     workletUrl = URL.createObjectURL(
-      new Blob(
-        [createPcmCaptureWorkletSource()],
-        { type: "text/javascript" },
-      ),
+      new Blob([createPcmCaptureWorkletSource()], { type: "text/javascript" }),
     );
     try {
       await context.audioWorklet.addModule(workletUrl);

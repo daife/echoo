@@ -114,14 +114,7 @@ export function usePushToTalk(input: {
       } catch (error) {
         if (sessionRef.current !== session) return;
         reset();
-        const message =
-          error instanceof DOMException && error.name === "NotAllowedError"
-            ? "无法使用麦克风，请在系统设置中允许 Echoo 访问。"
-            : error instanceof DOMException && error.name === "NotFoundError"
-              ? "未找到可用的麦克风。"
-              : error instanceof Error
-                ? error.message
-                : "麦克风启动失败。";
+        const message = describeMicrophoneError(error);
         input.onError(message);
       }
     },
@@ -180,4 +173,16 @@ export function usePushToTalk(input: {
     endHold,
     cancel,
   };
+}
+
+export function describeMicrophoneError(error: unknown) {
+  if (error instanceof DOMException) {
+    if (error.name === "NotAllowedError" || error.name === "SecurityError")
+      return "无法使用麦克风，请允许浏览器访问麦克风后重试。";
+    if (error.name === "NotFoundError") return "未找到可用的麦克风。";
+    if (error.name === "NotReadableError")
+      return "麦克风正被其他应用占用，请关闭占用后重试。";
+    if (error.name === "AbortError") return "麦克风启动被中断，请重试。";
+  }
+  return error instanceof Error ? error.message : "麦克风启动失败。";
 }

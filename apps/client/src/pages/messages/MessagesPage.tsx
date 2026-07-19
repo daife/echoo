@@ -432,7 +432,7 @@ export function MessagesPage({
   }
 
   return (
-    <section className="grid h-full min-h-0 grid-rows-[auto_1fr_auto] overflow-hidden rounded-[1.25rem] bg-[#0d0d10]/92 shadow-[0_28px_90px_rgba(0,0,0,0.28)]">
+    <section className="grid h-full w-full min-h-0 min-w-0 grid-rows-[auto_1fr_auto] overflow-hidden rounded-[1.25rem] bg-[#0d0d10]/92 shadow-[0_28px_90px_rgba(0,0,0,0.28)]">
       <header className="flex items-center justify-between border-b border-white/8 px-4 py-3 md:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <button
@@ -542,10 +542,10 @@ export function MessagesPage({
         </div>
       </header>
 
-      <div className="relative min-h-0">
+      <div className="relative min-h-0 min-w-0">
         <main
           ref={mainRef}
-          className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto px-5 py-7 no-scrollbar md:px-9"
+          className="flex h-full w-full min-h-0 min-w-0 flex-col gap-5 overflow-y-auto overflow-x-hidden px-4 py-7 no-scrollbar md:px-9"
           style={{ overflowAnchor: "none" }}
           onScroll={handleMessageScroll}
         >

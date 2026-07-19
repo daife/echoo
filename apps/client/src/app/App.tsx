@@ -715,7 +715,7 @@ export function App() {
         ) : null}
 
         <main
-          className={`min-w-0 ${isViewportPanel ? "min-h-0 overflow-hidden" : ""} ${
+          className={`w-full min-w-0 ${isViewportPanel ? "min-h-0 overflow-hidden" : ""} ${
             showMobileConversationList ? "hidden md:block" : ""
           }`}
         >
