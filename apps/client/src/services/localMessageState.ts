@@ -101,20 +101,42 @@ export function mergeIncomingMessage(
   const messagesWithoutExisting = messages.filter(
     (item) => !isSameLogicalMessage(item, message),
   );
-
-  if (
-    existing &&
+  const preserveStreamingAudio =
+    existing?.contentType === "voice" &&
+    message.contentType === "voice" &&
+    message.status === "pending" &&
+    existing.metadata?.audioStreaming === true;
+  const preserveExistingText =
     message.role === "assistant" &&
     message.status === "pending" &&
     !incomingText &&
-    existingText
-  ) {
+    Boolean(existingText);
+  const preservedMediaUrl =
+    preserveStreamingAudio && !message.content.mediaUrl
+      ? existing?.content.mediaUrl
+      : undefined;
+
+  if (existing && (preserveExistingText || preserveStreamingAudio)) {
+    const liveAudioDurationSeconds =
+      existing.metadata?.liveAudioDurationSeconds;
     return mergeLocalMessage(messagesWithoutExisting, {
       ...message,
       content: {
         ...message.content,
-        text: existingText,
+        ...(preserveExistingText ? { text: existingText } : {}),
+        ...(preservedMediaUrl ? { mediaUrl: preservedMediaUrl } : {}),
       },
+      ...(preserveStreamingAudio
+        ? {
+            metadata: {
+              ...message.metadata,
+              audioStreaming: true,
+              ...(typeof liveAudioDurationSeconds === "number"
+                ? { liveAudioDurationSeconds }
+                : {}),
+            },
+          }
+        : {}),
       updatedAt: Math.max(existing.updatedAt, message.updatedAt),
     });
   }
