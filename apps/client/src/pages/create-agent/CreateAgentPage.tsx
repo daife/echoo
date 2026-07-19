@@ -1,6 +1,7 @@
 import {
   Brain,
   CirclesThreePlus,
+  ArrowLeft,
   Plus,
   Sparkle,
   Trash,
@@ -40,14 +41,14 @@ const createOptions = [
     label: "本初角色",
     title: "创建本初角色",
     description:
-      "持续人格、带时间的记忆和情绪、日程感知，以及创作者定义的结构化状态。",
+      "持续人格、长期的记忆和情绪、日程感知、支持语音、图片、表情包、转账、主动消息等。适合高度拟人。",
     icon: Brain,
   },
   {
     type: "slice-figure",
     label: "切片角色",
     title: "创建切片角色",
-    description: "适合短场景、轻量人格、快速试验和临时任务。",
+    description: "配置简单，自由度高，中长期消息记忆。适合新手与自创玩法。",
     icon: CirclesThreePlus,
   },
   {
@@ -68,8 +69,10 @@ const createOptions = [
 
 export function CreateAgentPage({
   createHandlers,
+  onBack,
 }: {
   createHandlers: CreateAgentHandlers;
+  onBack: () => void;
 }) {
   const [selectedType, setSelectedType] = useState<AgentType>("slice-figure");
 
@@ -77,15 +80,20 @@ export function CreateAgentPage({
     <section className="space-y-8">
       <div className="glass-panel overflow-hidden rounded-2xl p-6 md:p-10">
         <div className="mb-5 flex items-center gap-3 text-sm text-white/50 md:mb-8">
+          <button
+            aria-label="返回"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-white/55 transition hover:bg-white/[0.06] hover:text-white"
+            type="button"
+            onClick={onBack}
+          >
+            <ArrowLeft size={18} />
+          </button>
           <Sparkle size={18} />
-          共创智能体
+          创建原创会话
         </div>
         <h1 className="max-w-3xl text-4xl font-semibold leading-[1.05] text-white md:text-6xl">
-          创造真正适合你的鲜活角色。
+          创建你自己喜爱的角色
         </h1>
-        <p className="mt-5 max-w-2xl text-sm leading-6 text-white/52">
-          每种智能体都拥有独立的会话类型与运行时；共享展示数据，但不共享行为管线。
-        </p>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[0.72fr_1.28fr]">
@@ -237,7 +245,7 @@ function SliceFigureCreateForm({
       <FormHeader
         icon={CirclesThreePlus}
         title="切片角色"
-        description="展示信息不会进入模型上下文；下方人格与对话配置可由系统提示词模板引用。"
+        description="配置简单，自由度高，中长期消息记忆。适合新手与自创玩法。"
       />
 
       <SliceFigureFormFields
@@ -301,8 +309,8 @@ export function SliceFigureFormFields({
         placeholder='{"type":"slice-figure","name":"Mira","systemPrompt":"你的人设：\\n{{figure.persona}}",...}'
       />
       <FormSection
-        title="展示与关系数据 · 不进入上下文"
-        description="仅用于界面展示、发现、序引或未来的关联与解锁能力。"
+        title="卡面数据/外部配置"
+        description="打*号的是必填项，其余对使用几乎没有影响"
       >
         <DisplayFields
           form={form}
@@ -314,8 +322,8 @@ export function SliceFigureFormFields({
         />
       </FormSection>
       <FormSection
-        title="人格与对话 · 进入上下文"
-        description="带 * 的字段必填。系统提示词决定这些字段如何组织和发送给模型。"
+        title="人格与对话"
+        description="带*号为必填项，想留空可以填‘无’"
       >
         <TextField
           label="人设"
@@ -574,11 +582,7 @@ export function PrimeFigureForm({
           <FormHeader
             icon={Brain}
             title={mode === "create" ? "本初角色" : "修改本初角色"}
-            description={
-              mode === "create"
-                ? "持续状态、记忆、日程与自主沉默由本初角色专属运行时处理。"
-                : "表单已合并角色最新的日程、参数、情绪与关系状态。"
-            }
+            description="持续人格、长期的记忆和情绪、日程感知、支持语音、图片、表情包、转账、主动消息等。适合高度拟人。"
           />
         </div>
         {onClose ? (
@@ -601,8 +605,8 @@ export function PrimeFigureForm({
       />
 
       <FormSection
-        title="展示与关系数据 · 不进入上下文"
-        description="名字、图片、属性、标签、介绍、序引、链接 ID 和解锁条件不会发送给模型。"
+        title="卡面数据/外部配置"
+        description="打*号的是必填项，其余对使用几乎没有影响"
       >
         <DisplayFields
           form={form}
@@ -625,8 +629,8 @@ export function PrimeFigureForm({
       </FormSection>
 
       <FormSection
-        title="人格与决策 · 进入上下文"
-        description="这些字段参与本初角色的每一轮结构化决策；带 * 的字段必填。"
+        title="人格与决策"
+        description="带*号为必填项，想留空可以填‘无’"
       >
         <TextField
           label="人设"
@@ -692,14 +696,14 @@ export function PrimeFigureForm({
           label="行程与长期安排"
           multiline
           value={form.itinerary ?? ""}
-          placeholder="使用上海时间的易读时间"
+          placeholder="长期安排，比如规划去成都旅行等"
           onChange={(value) => setField("itinerary", value)}
         />
       </FormSection>
 
       <FormSection
-        title="日程感知 · 进入上下文"
-        description="运行时会将消息所在时段转换成决策提示。"
+        title="日程感知"
+        description="日程不是永久的，角色可能会自行修改。可以不填。"
       >
         {(form.schedule?.segments ?? []).map((segment, index) => (
           <div
@@ -797,8 +801,8 @@ export function PrimeFigureForm({
       </FormSection>
 
       <FormSection
-        title="创作者参数 · 进入上下文"
-        description="参数定义会进入严格结构；每个参数都可以用 null 保留旧值。"
+        title="创作者参数"
+        description="可以添加一些值比如心动值等。可以不填。"
       >
         {variables.map((variable, index) => (
           <VariableEditor
@@ -828,7 +832,7 @@ export function PrimeFigureForm({
               {
                 key: "",
                 label: "",
-                type: "string",
+                type: "number",
                 description: "",
                 defaultValueText: "",
               },
@@ -901,7 +905,7 @@ function DisplayFields<T extends DisplayForm>({
         label="名字"
         required
         value={form.name}
-        placeholder="例如：Mira"
+        placeholder="例如：顾倾城"
         onChange={(value) => set("name", value as T[keyof T])}
       />
       <AttributeEditor
@@ -924,13 +928,13 @@ function DisplayFields<T extends DisplayForm>({
         multiline
         mono
         value={form.prologueHtml ?? ""}
-        placeholder="<p>展示在对话最前面的容器中，不发送给模型。</p>"
+        placeholder="还未完善，可以留空"
         onChange={(value) => set("prologueHtml", value as T[keyof T])}
       />
       <TextField
         label="链接的角色 ID（逗号分隔）"
         value={(form.linkedAgentIds ?? []).join(", ")}
-        placeholder="agent_xxx, agent_yyy"
+        placeholder="暂时无用，请留空"
         onChange={(value) =>
           set(
             "linkedAgentIds",
@@ -946,7 +950,7 @@ function DisplayFields<T extends DisplayForm>({
         multiline
         mono
         value={unlockText}
-        placeholder='{"minimumLevel": 3}'
+        placeholder="暂时无用，请留空"
         onChange={onUnlockTextChange}
       />
     </>
@@ -963,7 +967,6 @@ function AttributeEditor({
   return (
     <ListPanel
       title="属性"
-      description="仅供展示，不进入上下文。"
       onAdd={() => onChange([...items, { key: "", value: "" }])}
     >
       {items.map((item, index) => (
@@ -1018,7 +1021,6 @@ function TagEditor({
   return (
     <ListPanel
       title="标签"
-      description="仅供展示，不进入上下文。"
       onAdd={() => onChange([...items, ""])}
     >
       {items.map((item, index) => (
@@ -1063,7 +1065,7 @@ function ReferenceImageEditor({
   return (
     <ListPanel
       title="更多参考图片"
-      description="每张图片必须提供描述，运行时会将其编号加入可参考列表。"
+      description="可以添加角色的三视图、生活场景图等，以供生图时参考"
     >
       {items.map((item, index) => {
         const preview =
@@ -1159,7 +1161,7 @@ function StickerEditor({
   return (
     <ListPanel
       title={`可使用表情 · ${items.length}/20`}
-      description="最终用户和 Figure 共用同一列表；每个表情都必须填写含义或适用场景。"
+      description="表情包是和角色共用的哦，也可以之后在聊天界面添加"
     >
       <div className="grid gap-3 sm:grid-cols-2">
         {items.map((item, index) => {
@@ -1261,7 +1263,7 @@ function VariableEditor({
         <input
           className={inputClass}
           value={variable.key}
-          placeholder="参数键，例如 trust"
+          placeholder="参数键，使用英文，比如 trust"
           onChange={(event) => onChange({ key: event.target.value })}
         />
         <input
@@ -1274,7 +1276,7 @@ function VariableEditor({
       <textarea
         className={`${inputClass} mt-3 min-h-20 py-3`}
         value={variable.description}
-        placeholder="说明模型如何判断该参数"
+        placeholder="说明模型如何判断该参数，比如‘当感受到安全感或对方遵守了某个承诺时，增加信任程度’"
         onChange={(event) => onChange({ description: event.target.value })}
       />
       <div className="mt-3 grid gap-3 md:grid-cols-[150px_1fr_auto]">
@@ -1288,8 +1290,8 @@ function VariableEditor({
             })
           }
         >
-          <option value="string">字符串</option>
           <option value="number">数字</option>
+          <option value="string">字符串</option>
           <option value="boolean">布尔值</option>
           <option value="json">JSON</option>
         </select>
@@ -1428,7 +1430,7 @@ function ListPanel({
   children,
 }: {
   title: string;
-  description: string;
+  description?: string;
   onAdd?: () => void;
   children: React.ReactNode;
 }) {
@@ -1437,11 +1439,13 @@ function ListPanel({
       <div className="flex items-center justify-between">
         <div>
           <span className="text-sm font-medium text-white/78">{title}</span>
-          <p className="mt-1 text-xs text-white/35">{description}</p>
+          {description ? (
+            <p className="mt-1 text-xs text-white/35">{description}</p>
+          ) : null}
         </div>
         {onAdd ? (
           <button
-            className="text-sm text-white/55 hover:text-white"
+            className={secondaryButtonClass}
             type="button"
             onClick={onAdd}
           >
@@ -1467,10 +1471,9 @@ function JsonImport({
 }) {
   return (
     <section className="mt-7 rounded-xl border border-white/10 bg-white/[0.025] p-4">
-      <h3 className="text-sm font-semibold text-white">一键 JSON 导入</h3>
-      <p className="mt-1 text-xs text-white/40">
-        JSON 可以覆盖创建表单中的全部字段。
-      </p>
+      <h3 className="text-sm font-semibold text-white">
+        如果你之前有导出的json内容，可以在这里一键导入
+      </h3>
       <textarea
         className={`${inputClass} mt-3 min-h-32 py-3 font-mono text-xs leading-5`}
         value={value}

@@ -363,10 +363,10 @@ export function ExplorePage({
           FOLLOWING
         </p>
         <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em] text-white md:text-6xl">
-          探索你关注的人
+          探索
         </h1>
         <p className="mt-4 text-sm leading-6 text-white/45">
-          创作与动态分开展示，评论只在详情页加载。
+          你关注的人发布的作品和动态都在这里
         </p>
       </header>
       <div className="grid grid-cols-2 gap-2 rounded-full border border-white/8 bg-white/[0.025] p-1.5">

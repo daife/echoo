@@ -2,7 +2,6 @@ import {
   ArrowRight,
   Key,
   LockKey,
-  SealCheck,
   Sparkle,
   UserCircle,
 } from "@phosphor-icons/react";
@@ -89,7 +88,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
     return {
       eyebrow: "Echoo",
       title: "登录后继续。",
-      detail: "此页面涉及私人会话、外部绑定或账户设置。",
+      detail: "",
       action: "加入 Echoo",
     };
   }, [auth.authMode]);
@@ -172,25 +171,15 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
               <h1 className="mt-4 max-w-md text-5xl font-semibold leading-tight text-white">
                 {copy.title}
               </h1>
-              <p className="mt-5 max-w-md text-base leading-7 text-white/52">
-                {copy.detail}
-              </p>
+              {copy.detail ? (
+                <p className="mt-5 max-w-md text-base leading-7 text-white/52">
+                  {copy.detail}
+                </p>
+              ) : null}
             </div>
-            <div className="grid gap-3">
-              {["私人消息同步", "外部界面绑定", "原生实时保活"].map((item) => (
-                <div
-                  key={item}
-                  className="flex items-center gap-3 text-sm text-white/60"
-                >
-                  <SealCheck
-                    size={18}
-                    weight="duotone"
-                    className="text-white"
-                  />
-                  {item}
-                </div>
-              ))}
-            </div>
+            <p className="text-sm text-white/60">
+              海量原创角色，多端同步消息，高度可自定义
+            </p>
           </div>
         </div>
 

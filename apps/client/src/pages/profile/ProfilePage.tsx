@@ -689,7 +689,7 @@ export function ProfileEditorDialog({
             <p className="mt-2 text-xs text-red-200/80">{fieldError.avatar}</p>
           ) : null}
           <p className="mt-2 text-center text-[11px] leading-5 text-white/30">
-            支持 JPEG、PNG、WebP、GIF，保存前会压缩至 5MB 内。
+            支持 JPEG、PNG、WebP、GIF
           </p>
         </div>
 

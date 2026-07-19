@@ -697,6 +697,7 @@ export function App() {
             "slice-figure": createSliceFigure,
             "prime-figure": createPrimeFigure,
           }}
+          onBack={closeSecondaryView}
         />
       );
     if (view === "messages") {

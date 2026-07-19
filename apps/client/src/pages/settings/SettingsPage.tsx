@@ -105,9 +105,6 @@ export function SettingsPage({
           <ArrowLeft size={19} />
         </button>
         <div>
-          <p className="text-xs uppercase tracking-[0.22em] text-white/38">
-            账户与运行时
-          </p>
           <h1 className="mt-2 text-4xl font-semibold text-white">设置</h1>
         </div>
       </div>
@@ -235,7 +232,7 @@ export function SettingsPage({
               本初世界配置 v{config.primeWorld.version}
             </p>
             <p className="mt-2 text-sm text-white/38">
-              配置结构已预留，当前版本暂无可编辑参数。
+              暂未开放，敬请期待
             </p>
           </div>
         ) : null}
