@@ -52,6 +52,7 @@ const presetNameSchema = z.object({
 const adminSettingsSchema = z.object({
   billingMultiplier: z.number().optional(),
   usdToCnyRate: z.string().trim().min(1).max(40).optional(),
+  newUserInitialCreditUsd: z.string().trim().min(1).max(40).optional(),
   invitation: z
     .object({
       inviterRewardUsd: z.string().trim().min(1).max(40),
@@ -164,8 +165,15 @@ export async function registerAdminRoutes(app: FastifyInstance) {
           await billing.setMultiplier(body.billingMultiplier);
         if (body.usdToCnyRate !== undefined)
           await platformSettings.setUsdToCnyRate(body.usdToCnyRate);
-        if (body.invitation || body.promotion)
+        if (
+          body.newUserInitialCreditUsd !== undefined ||
+          body.invitation ||
+          body.promotion
+        )
           await platformSettings.setRewardSettings({
+            ...(body.newUserInitialCreditUsd !== undefined
+              ? { newUserInitialCreditUsd: body.newUserInitialCreditUsd }
+              : {}),
             ...(body.invitation ? { invitation: body.invitation } : {}),
             ...(body.promotion ? { promotion: body.promotion } : {}),
           });

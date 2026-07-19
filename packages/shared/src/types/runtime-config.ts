@@ -322,6 +322,7 @@ export interface WalletView {
     kind:
       | "admin_credit"
       | "admin_debit"
+      | "initial_credit"
       | "usage"
       | "invite_referrer_reward"
       | "invite_redeemer_reward"

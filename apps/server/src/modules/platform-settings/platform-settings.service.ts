@@ -22,6 +22,7 @@ const NEW_USER_RUNTIME_DEFAULTS = "new_user_runtime_defaults";
 const RUNTIME_CONFIG_PRESETS = "runtime_config_presets";
 const REWARD_SETTINGS = "reward_settings";
 const USD_TO_CNY_RATE = "usd_to_cny_rate";
+const DEFAULT_NEW_USER_INITIAL_CREDIT_USD = "0.015";
 
 export class PlatformSettingsService {
   async getUsdToCnyRate(): Promise<string | null> {
@@ -70,6 +71,7 @@ export class PlatformSettingsService {
     const row = await this.find(REWARD_SETTINGS);
     const parsed = parseJson(row?.value_json) as
       | {
+          newUserInitialCreditUsd?: unknown;
           invitation?: {
             inviterRewardUsd?: unknown;
             inviteeRewardUsd?: unknown;
@@ -81,6 +83,10 @@ export class PlatformSettingsService {
           };
         }
       | null;
+    const newUserInitialCreditUsd = safeUsd(
+      parsed?.newUserInitialCreditUsd,
+      DEFAULT_NEW_USER_INITIAL_CREDIT_USD,
+    );
     const inviterRewardUsd = safeUsd(parsed?.invitation?.inviterRewardUsd);
     const inviteeRewardUsd = safeUsd(parsed?.invitation?.inviteeRewardUsd);
     const usdPerLike = safeUsd(parsed?.promotion?.usdPerLike);
@@ -91,6 +97,7 @@ export class PlatformSettingsService {
         ? Number(parsed?.promotion?.minimumLikes)
         : 0;
     return {
+      newUserInitialCreditUsd,
       invitation: {
         inviterRewardUsd,
         inviteeRewardUsd,
@@ -114,6 +121,10 @@ export class PlatformSettingsService {
   async setRewardSettings(input: AdminRewardSettingsRequest) {
     const current = await this.getRewardSettings();
     const next = {
+      newUserInitialCreditUsd:
+        input.newUserInitialCreditUsd === undefined
+          ? current.newUserInitialCreditUsd
+          : normalizeNonNegativeUsd(input.newUserInitialCreditUsd),
       invitation: input.invitation
         ? {
             inviterRewardUsd: normalizeNonNegativeUsd(
@@ -145,6 +156,10 @@ export class PlatformSettingsService {
     };
     await this.save(REWARD_SETTINGS, next);
     return this.getRewardSettings();
+  }
+
+  async getNewUserInitialCreditUsd() {
+    return (await this.getRewardSettings()).newUserInitialCreditUsd;
   }
 
   async getNewUserRuntimeDefaults(): Promise<{
@@ -244,12 +259,12 @@ function parseJson(value: unknown) {
   }
 }
 
-function safeUsd(value: unknown) {
-  if (typeof value !== "string") return "0";
+function safeUsd(value: unknown, fallback = "0") {
+  if (typeof value !== "string") return fallback;
   try {
     return normalizeNonNegativeUsd(value);
   } catch {
-    return "0";
+    return fallback;
   }
 }
 

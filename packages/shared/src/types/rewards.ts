@@ -1,6 +1,7 @@
 export type PromotionPlatform = "douyin" | "bilibili" | "xiaohongshu";
 
 export interface RewardSettingsView {
+  newUserInitialCreditUsd: string;
   invitation: {
     inviterRewardUsd: string;
     inviteeRewardUsd: string;
@@ -55,6 +56,7 @@ export interface PromotionQuoteView {
 }
 
 export interface AdminRewardSettingsRequest {
+  newUserInitialCreditUsd?: string;
   invitation?: {
     inviterRewardUsd: string;
     inviteeRewardUsd: string;

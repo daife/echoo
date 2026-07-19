@@ -27,6 +27,7 @@ interface LedgerRow extends RowDataPacket {
   kind:
     | "admin_credit"
     | "admin_debit"
+    | "initial_credit"
     | "usage"
     | "invite_referrer_reward"
     | "invite_redeemer_reward"
@@ -51,7 +52,12 @@ export class BillingService {
   ) {}
 
   async initializeAccount(ownerUserId: string) {
-    await this.insertAccountIfAbsent(ownerUserId);
+    await withTransaction(async (connection) => {
+      const initialCredit = parseUsdToMicro(
+        await this.platformSettings.getNewUserInitialCreditUsd(),
+      );
+      await this.insertAccountIfAbsent(ownerUserId, connection, initialCredit);
+    });
   }
 
   async assertPlatformBalance() {
@@ -311,12 +317,28 @@ export class BillingService {
   private async insertAccountIfAbsent(
     ownerUserId: string,
     connection?: PoolConnection,
+    initialBalanceMicroUsd = 0,
   ) {
     const now = Date.now();
-    await execute(
+    const result = await execute(
       `INSERT IGNORE INTO billing_accounts
-       (owner_user_id, balance_micro_usd, created_at, updated_at) VALUES (?, 0, ?, ?)`,
-      [ownerUserId, now, now],
+       (owner_user_id, balance_micro_usd, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+      [ownerUserId, initialBalanceMicroUsd, now, now],
+      connection,
+    );
+    if (result.affectedRows === 0 || initialBalanceMicroUsd <= 0) return;
+    await execute(
+      `INSERT INTO billing_ledger
+       (id, owner_user_id, kind, amount_micro_usd, balance_after_micro_usd, note, created_at)
+       VALUES (?, ?, 'initial_credit', ?, ?, ?, ?)`,
+      [
+        `bill_${randomUUID()}`,
+        ownerUserId,
+        initialBalanceMicroUsd,
+        initialBalanceMicroUsd,
+        "新用户初始额度",
+        now,
+      ],
       connection,
     );
   }

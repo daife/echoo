@@ -682,6 +682,7 @@ function RewardSettingsPanel({ token, onExpired }: PanelProps) {
       const next = await authed<AdminPlatformSettingsView>(token, "/settings", {
         method: "PATCH",
         body: {
+          newUserInitialCreditUsd: value.newUserInitialCreditUsd,
           invitation: {
             inviterRewardUsd: value.invitation.inviterRewardUsd,
             inviteeRewardUsd: value.invitation.inviteeRewardUsd,
@@ -709,6 +710,28 @@ function RewardSettingsPanel({ token, onExpired }: PanelProps) {
 
   return (
     <form onSubmit={save} className="space-y-6">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+        <h2 className="text-xl font-semibold">新用户初始额度</h2>
+        <p className="mt-2 text-sm leading-6 text-white/42">
+          仅影响之后首次创建余额账户的新用户。
+        </p>
+        <label className="mt-5 block text-sm text-white/58">
+          初始额度（USD）
+          <input
+            required
+            inputMode="decimal"
+            value={value.newUserInitialCreditUsd}
+            onChange={(event) =>
+              setValue({
+                ...value,
+                newUserInitialCreditUsd: event.target.value,
+              })
+            }
+            className="mt-1.5 w-full max-w-sm rounded-lg border border-white/10 bg-black/20 px-3 py-2.5"
+          />
+        </label>
+      </section>
+
       <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
