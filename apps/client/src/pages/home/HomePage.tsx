@@ -1,4 +1,4 @@
-import { ArrowRight, Plus, Sparkle } from "@phosphor-icons/react";
+import { Plus, Sparkle } from "@phosphor-icons/react";
 import type { Agent, CharacterAssetSummary } from "@echoo/shared";
 import { useEffect, useState } from "react";
 import { CharacterCatalog } from "../explore/ExplorePage";
@@ -48,10 +48,10 @@ export function HomePage({
             <Sparkle size={14} /> Public figures
           </div>
           <h1 className="mt-6 max-w-[13ch] text-5xl font-semibold leading-[0.98] tracking-[-0.055em] text-white md:text-7xl">
-            从一个值得认识的角色开始
+            从添加一个角色开始吧
           </h1>
           <p className="mt-6 max-w-2xl text-sm leading-7 text-white/48">
-            公开版本由创作者独立维护。添加之后，你的对话、记忆和运行配置仍只属于自己的会话。
+            可以直接添加其他创作者制作的角色，也可以点击右下角创建自己的专属角色喔~
           </p>
         </div>
       </header>
@@ -59,25 +59,22 @@ export function HomePage({
       <section>
         <div className="mb-6 flex items-end justify-between gap-5">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.28em] text-white/32">
+            <p className="text-[10px] uppercase tracking-[0.28em] text-[#aaa0c7]">
               MOST LOVED
             </p>
             <h2 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-white">
-              此刻值得遇见
+              热门角色
             </h2>
           </div>
-          <span className="hidden items-center gap-2 text-xs text-white/30 md:flex">
-            依据喜欢与发布时间更新 <ArrowRight size={14} />
-          </span>
         </div>
         {featured.length ? (
-          <div className="grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-3">
             {featured.map((asset, index) => (
               <button
                 key={asset.id}
                 type="button"
                 onClick={() => onOpenAsset(asset.id)}
-                className={`group relative min-h-72 overflow-hidden bg-[#101014] p-6 ${index === 0 ? "md:col-span-2" : ""}`}
+                className={`group relative min-h-72 overflow-hidden rounded-2xl border border-white/10 bg-[#101014] p-6 ${index === 0 ? "md:col-span-2" : ""}`}
               >
                 {asset.snapshot.coverResourcePath ? (
                   <MediaAsset

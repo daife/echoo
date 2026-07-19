@@ -56,7 +56,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
   const copy = useMemo(() => {
     if (auth.authMode === "register") {
       return {
-        eyebrow: "创建访问权限",
+        eyebrow: "Echoo",
         title: "开启你的 Echoo 空间。",
         detail: "先创建账户并验证邮箱，之后即可开启你的私人运行空间。",
         action: "创建账户",
@@ -87,10 +87,10 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
       };
     }
     return {
-      eyebrow: "受保护空间",
+      eyebrow: "Echoo",
       title: "登录后继续。",
       detail: "此页面涉及私人会话、外部绑定或账户设置。",
-      action: "进入 Echoo",
+      action: "加入 Echoo",
     };
   }, [auth.authMode]);
 
@@ -214,7 +214,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
                 <UserCircle size={18} className="text-white/35" />
                 <input
                   className="h-12 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30"
-                  placeholder="Aster"
+                  placeholder="一只小可爱"
                   value={displayName}
                   onChange={(event) => setDisplayName(event.target.value)}
                 />
@@ -229,7 +229,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
                 <Key size={18} className="text-white/35" />
                 <input
                   className="h-12 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30"
-                  placeholder="you@echoo.dev"
+                  placeholder="填入你的邮箱"
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}

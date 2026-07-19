@@ -663,13 +663,13 @@ export function App() {
       </div>
 
       <div
-        className={`relative z-10 mx-auto grid max-w-[1440px] grid-cols-1 md:gap-6 md:px-16 md:pb-6 md:pt-6 ${
+        className={`relative z-10 grid max-w-none grid-cols-1 md:gap-4 md:px-4 md:pb-6 md:pt-6 ${
           isMobileChatFullscreen
             ? "px-0 pb-0 pt-0"
             : `px-5 pt-5 ${showMobileBottomNav ? "pb-28" : "pb-5"}`
-        } ${isViewportPanel ? "h-[100dvh] min-h-0" : "min-h-[100dvh]"} ${
+        } md:h-[100dvh] md:min-h-0 ${isViewportPanel ? "h-[100dvh] min-h-0" : "min-h-[100dvh]"} ${
           showConversationRail
-            ? "md:grid-cols-[64px_300px_1fr]"
+            ? "md:grid-cols-[64px_280px_minmax(0,1fr)]"
             : "md:grid-cols-[64px_1fr]"
         }`}
       >
@@ -718,7 +718,7 @@ export function App() {
         ) : null}
 
         <main
-          className={`w-full min-w-0 ${isViewportPanel ? "min-h-0 overflow-hidden" : ""} ${
+          className={`w-full min-w-0 md:min-h-0 md:overflow-y-auto md:pr-4 ${isViewportPanel ? "min-h-0 overflow-hidden md:overflow-hidden" : ""} ${
             showMobileConversationList ? "hidden md:block" : ""
           }`}
         >

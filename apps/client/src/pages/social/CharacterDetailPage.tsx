@@ -11,6 +11,7 @@ import type { CharacterAssetService } from "../../services/CharacterAssetService
 import type { SocialService } from "../../services/SocialService";
 import {
   PRIME_FIGURE_UPDATE_WARNING,
+  characterTypeLabel,
   requiresPrimeFigureUpdateWarning,
 } from "../explore/ExplorePage";
 import { SocialComments } from "./SocialComments";
@@ -82,6 +83,9 @@ export function CharacterDetailPage({
             />
           ) : null}
           <div className="absolute inset-0 bg-gradient-to-t from-[#111114] via-black/15 to-transparent" />
+          <span className="absolute left-7 top-7 flex items-center gap-2 rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-xs text-white/65 md:left-10 md:top-10">
+            v{asset.latestVersionNumber} · {characterTypeLabel(snapshot.type)}
+          </span>
           <div className="relative flex min-h-80 items-end gap-5 p-7 md:p-10">
             <div className="h-24 w-24 overflow-hidden rounded-full border border-white/20 bg-white/5">
               {snapshot.avatarResourcePath ? (

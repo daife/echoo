@@ -81,10 +81,10 @@ export function CharacterCatalog({
       <header className="flex flex-col justify-between gap-5 border-b border-white/8 pb-7 md:flex-row md:items-end">
         <div>
           <p className="text-[10px] uppercase tracking-[0.3em] text-[#aaa0c7]">
-            角色公共档案馆
+            PUBLIC CHARACTER ARCHIVE
           </p>
           <h2 className="mt-2 text-3xl font-semibold text-white">
-            找到值得长期相处的角色
+            全部已公开角色
           </h2>
         </div>
         <label className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3">
@@ -478,20 +478,40 @@ function CharacterAssetCard({
         ) : null}
         <div className="absolute inset-0 bg-gradient-to-t from-[#111114] via-transparent to-transparent" />
         <span className="absolute left-5 top-5 flex items-center gap-2 rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[10px] text-white/65">
-          <SealCheck size={14} />v{asset.latestVersionNumber}
+          <SealCheck size={14} />v{asset.latestVersionNumber} · {characterTypeLabel(snapshot.type)}
         </span>
         <div className="absolute bottom-5 left-6 right-6">
           <h2 className="text-3xl font-semibold text-white">{snapshot.name}</h2>
           <p className="mt-2 line-clamp-2 text-sm leading-6 text-white/52">
-            {snapshot.introduction || snapshot.detail.persona}
+            {truncatePreviewText(snapshot.introduction || snapshot.detail.persona)}
           </p>
         </div>
       </button>
       <div className="p-5">
+        {snapshot.attributes.length || snapshot.tags.length ? (
+          <div className="flex flex-wrap gap-2">
+            {snapshot.attributes.slice(0, 2).map((attribute) => (
+              <span
+                key={`${attribute.key}-${attribute.value}`}
+                className="rounded-full border border-white/10 bg-white/[0.035] px-2.5 py-1 text-[11px] text-white/55"
+              >
+                {attribute.key} · {attribute.value}
+              </span>
+            ))}
+            {snapshot.tags.slice(0, 3).map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full border border-[#aaa0c7]/25 bg-[#aaa0c7]/[0.08] px-2.5 py-1 text-[11px] text-[#c7b9ed]"
+              >
+                #{tag}
+              </span>
+            ))}
+          </div>
+        ) : null}
         <button
           type="button"
           onClick={() => onOpenUser?.(asset.author.id)}
-          className="text-xs text-white/38 hover:text-white"
+          className="mt-4 text-xs text-white/38 hover:text-white"
         >
           由 {asset.author.displayName} 发布
         </button>
@@ -539,6 +559,19 @@ function CharacterAssetCard({
       </div>
     </article>
   );
+}
+
+function truncatePreviewText(text: string, maxLength = 72) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  return normalized.length > maxLength
+    ? `${normalized.slice(0, maxLength).trimEnd()}…`
+    : normalized;
+}
+
+export function characterTypeLabel(
+  type: CharacterAssetSummary["snapshot"]["type"],
+) {
+  return type === "prime-figure" ? "本初角色" : "切片角色";
 }
 
 function EmptyState({ text }: { text: string }) {

@@ -36,7 +36,7 @@ export function ConversationRail({
         className={
           layout === "mobile"
             ? "flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-[#0d0d10]/72"
-            : "sticky top-6 flex max-h-[calc(100dvh-3rem)] flex-col overflow-hidden rounded-xl bg-[#0d0d10]/72"
+            : "flex h-full min-h-0 flex-col overflow-hidden rounded-xl bg-[#0d0d10]/72"
         }
       >
         <div className="border-b border-white/8 p-5">
