@@ -18,6 +18,8 @@ describe("runtime config forms", () => {
             model: "text-model",
             temperature: 0.8,
             maxTokens: 1200,
+            reasoningEnabled: true,
+            reasoningEffort: "high",
             apiKey: { configured: true, masked: "••••1234" },
           },
           context: {
@@ -31,6 +33,8 @@ describe("runtime config forms", () => {
     );
     expect(html).toContain("记忆总结轮数");
     expect(html).toContain("回复自动分段");
+    expect(html).toContain("开启官方思考/推理模式");
+    expect(html).toContain("推理强度");
     expect(html).toContain('type="password"');
     expect(html).toContain("留空则保留");
     expect(html).not.toContain("sk-secret-value");
@@ -47,7 +51,13 @@ describe("runtime config forms", () => {
       <PrimeRuntimeConfigForm
         value={{
           version: 9,
-          decisionModel: { ...endpoint, temperature: 0.4, maxTokens: 1600 },
+          decisionModel: {
+            ...endpoint,
+            temperature: 0.4,
+            maxTokens: 1600,
+            reasoningEnabled: false,
+            reasoningEffort: "high",
+          },
           outputs: {
             image: {
               enabled: true,
@@ -78,22 +88,46 @@ describe("runtime config forms", () => {
             image: {
               enabled: false,
               level: "advanced",
-              model: { ...endpoint, temperature: 0.2, maxTokens: 2400 },
+              model: {
+                ...endpoint,
+                temperature: 0.2,
+                maxTokens: 2400,
+                reasoningEnabled: false,
+                reasoningEffort: "high",
+              },
             },
             voice: {
               enabled: false,
               level: "advanced",
-              model: { ...endpoint, temperature: 0.2, maxTokens: 1600 },
+              model: {
+                ...endpoint,
+                temperature: 0.2,
+                maxTokens: 1600,
+                reasoningEnabled: false,
+                reasoningEffort: "high",
+              },
             },
           },
           understanding: {
             visual: {
               mode: "native",
-              model: { ...endpoint, temperature: 0.1, maxTokens: 2400 },
+              model: {
+                ...endpoint,
+                temperature: 0.1,
+                maxTokens: 2400,
+                reasoningEnabled: false,
+                reasoningEffort: "high",
+              },
             },
             audio: {
               mode: "stt",
-              model: { ...endpoint, temperature: 0.1, maxTokens: 2400 },
+              model: {
+                ...endpoint,
+                temperature: 0.1,
+                maxTokens: 2400,
+                reasoningEnabled: false,
+                reasoningEffort: "high",
+              },
               stt: {
                 source: "custom",
                 apiKey: { configured: true, masked: "••••5678" },
@@ -150,6 +184,8 @@ describe("runtime config forms", () => {
             model: "text-model",
             temperature: 0.8,
             maxTokens: 1200,
+            reasoningEnabled: false,
+            reasoningEffort: "high",
             apiKey: { configured: false },
           },
           context: {

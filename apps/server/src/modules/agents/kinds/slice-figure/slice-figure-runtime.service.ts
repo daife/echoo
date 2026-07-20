@@ -160,7 +160,8 @@ export class SliceFigureRuntimeService {
       ),
       temperature: runtimeConfig.llm.temperature,
       maxTokens: runtimeConfig.llm.maxTokens,
-      reasoningMode: "disabled",
+      reasoningEnabled: runtimeConfig.llm.reasoningEnabled,
+      reasoningEffort: runtimeConfig.llm.reasoningEffort,
     };
 
     if (!provider.streamChatCompletion) {
@@ -317,7 +318,8 @@ async function summarizeEntries(input: {
       ],
       temperature: 0.2,
       maxTokens: input.maxTokens,
-      reasoningMode: "disabled",
+      reasoningEnabled: false,
+      reasoningEffort: "high",
     });
     partials.push(result);
   }

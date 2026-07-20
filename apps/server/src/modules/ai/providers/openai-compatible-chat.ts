@@ -5,6 +5,7 @@ import type {
   ChatCompletionResult,
   ChatDelta,
   ChatToolCall,
+  ChatReasoningEffort,
 } from "../ai-provider.interface.js";
 
 type OpenAiCompatibleContent =
@@ -14,6 +15,8 @@ interface OpenAiCompatibleChoice {
   message?: {
     content?: OpenAiCompatibleContent;
     tool_calls?: ChatToolCall[];
+    reasoning_content?: string;
+    reasoning_details?: unknown;
   };
 }
 
@@ -39,6 +42,8 @@ interface OpenAiCompatibleStreamChoice {
       type?: "function";
       function?: { name?: string; arguments?: string };
     }>;
+    reasoning_content?: string;
+    reasoning_details?: unknown;
   };
 }
 
@@ -74,6 +79,8 @@ export async function createOpenAiCompatibleChatCompletion(input: {
   const payload = (await response.json()) as OpenAiCompatibleResponse;
   const text = normalizeContent(payload.choices?.[0]?.message?.content);
   const toolCalls = payload.choices?.[0]?.message?.tool_calls;
+  const reasoningContent = payload.choices?.[0]?.message?.reasoning_content;
+  const reasoningDetails = payload.choices?.[0]?.message?.reasoning_details;
   if (!text && !toolCalls?.length)
     throw new Error(
       `${input.providerId} chat completion returned an empty response.`,
@@ -84,6 +91,10 @@ export async function createOpenAiCompatibleChatCompletion(input: {
     model: input.completion.model,
     text,
     ...(toolCalls?.length ? { toolCalls } : {}),
+    ...(typeof reasoningContent === "string" ? { reasoningContent } : {}),
+    ...(typeof reasoningDetails !== "undefined"
+      ? { reasoningDetails }
+      : {}),
     ...(payload.id || payload.usage
       ? { usage: normalizeUsage(payload.id, payload.usage) }
       : {}),
@@ -121,10 +132,22 @@ export async function* streamOpenAiCompatibleChatCompletion(
       const payload = parseStreamChunk(event);
       const delta = payload?.choices?.[0]?.delta;
       const text = normalizeDeltaContent(delta?.content);
-      if (text || delta?.tool_calls?.length || payload?.usage)
+      if (
+        text ||
+        delta?.tool_calls?.length ||
+        typeof delta?.reasoning_content === "string" ||
+        typeof delta?.reasoning_details !== "undefined" ||
+        payload?.usage
+      )
         yield {
           ...(text ? { text } : {}),
           ...(delta?.tool_calls?.length ? { toolCalls: delta.tool_calls } : {}),
+          ...(typeof delta?.reasoning_content === "string"
+            ? { reasoningContent: delta.reasoning_content }
+            : {}),
+          ...(typeof delta?.reasoning_details !== "undefined"
+            ? { reasoningDetails: delta.reasoning_details }
+            : {}),
           ...(payload?.id || payload?.usage
             ? { usage: normalizeUsage(payload.id, payload.usage) }
             : {}),
@@ -138,10 +161,22 @@ export async function* streamOpenAiCompatibleChatCompletion(
     const payload = parseStreamChunk(event);
     const delta = payload?.choices?.[0]?.delta;
     const text = normalizeDeltaContent(delta?.content);
-    if (text || delta?.tool_calls?.length || payload?.usage)
+    if (
+      text ||
+      delta?.tool_calls?.length ||
+      typeof delta?.reasoning_content === "string" ||
+      typeof delta?.reasoning_details !== "undefined" ||
+      payload?.usage
+    )
       yield {
         ...(text ? { text } : {}),
         ...(delta?.tool_calls?.length ? { toolCalls: delta.tool_calls } : {}),
+        ...(typeof delta?.reasoning_content === "string"
+          ? { reasoningContent: delta.reasoning_content }
+          : {}),
+        ...(typeof delta?.reasoning_details !== "undefined"
+          ? { reasoningDetails: delta.reasoning_details }
+          : {}),
         ...(payload?.id || payload?.usage
           ? { usage: normalizeUsage(payload.id, payload.usage) }
           : {}),
@@ -230,9 +265,7 @@ export function buildOpenAiCompatibleRequestBody(
     tools: input.completion.tools,
     tool_choice: input.completion.toolChoice,
     parallel_tool_calls: input.completion.tools?.length ? false : undefined,
-    ...(input.completion.reasoningMode === "disabled"
-      ? disabledReasoningConfig(input.baseUrl)
-      : {}),
+    ...buildReasoningConfig(input.baseUrl, input.completion),
   };
 }
 
@@ -308,6 +341,27 @@ function shouldRetryWithJsonObject(
   );
 }
 
+function buildReasoningConfig(
+  baseUrl: string,
+  completion: ChatCompletionInput,
+) {
+  if (!completion.reasoningEnabled) return disabledReasoningConfig(baseUrl);
+  if (isDeepSeekApiUrl(baseUrl)) {
+    return {
+      thinking: { type: "enabled" },
+      reasoning_effort: normalizeDeepSeekReasoningEffort(
+        completion.reasoningEffort,
+      ),
+    };
+  }
+
+  return {
+    reasoning: {
+      effort: normalizeOpenRouterReasoningEffort(completion.reasoningEffort),
+    },
+  };
+}
+
 function disabledReasoningConfig(baseUrl: string) {
   if (isDeepSeekApiUrl(baseUrl)) {
     // DeepSeek's OpenAI-compatible API does not accept `reasoning_effort:
@@ -319,6 +373,19 @@ function disabledReasoningConfig(baseUrl: string) {
   // way to disable reasoning. `exclude` also prevents a reasoning trace from
   // being returned should an upstream provider emit one.
   return { reasoning: { effort: "none", exclude: true } };
+}
+
+function normalizeOpenRouterReasoningEffort(
+  effort: ChatReasoningEffort | undefined,
+) {
+  return effort ?? "high";
+}
+
+function normalizeDeepSeekReasoningEffort(
+  effort: ChatReasoningEffort | undefined,
+) {
+  if (effort === "xhigh") return "max";
+  return "high";
 }
 
 function isDeepSeekApiUrl(baseUrl: string) {
@@ -336,6 +403,12 @@ function toOpenAiMessage(message: ChatCompletionMessage) {
     ...(message.name ? { name: message.name } : {}),
     ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
     ...(message.toolCalls?.length ? { tool_calls: message.toolCalls } : {}),
+    ...(typeof message.reasoningContent === "string"
+      ? { reasoning_content: message.reasoningContent }
+      : {}),
+    ...(typeof message.reasoningDetails !== "undefined"
+      ? { reasoning_details: message.reasoningDetails }
+      : {}),
   };
 }
 

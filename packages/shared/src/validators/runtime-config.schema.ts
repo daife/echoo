@@ -24,6 +24,8 @@ const modelEndpointPatchSchema = z.object({
 const textModelPatchSchema = modelEndpointPatchSchema.extend({
   temperature: z.number().finite().optional(),
   maxTokens: optionalPositive,
+  reasoningEnabled: z.boolean().optional(),
+  reasoningEffort: z.enum(["low", "medium", "high", "xhigh"]).optional(),
 });
 
 const fishAudioPatchSchema = z.object({

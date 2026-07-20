@@ -322,7 +322,8 @@ export class PrimeFigureRuntimeService {
       sessionId: primeModelSessionId(input.conversationId, "decision"),
       temperature: input.runtimeConfig.decisionModel.temperature,
       maxTokens: input.runtimeConfig.decisionModel.maxTokens,
-      reasoningMode: "disabled" as const,
+      reasoningEnabled: input.runtimeConfig.decisionModel.reasoningEnabled,
+      reasoningEffort: input.runtimeConfig.decisionModel.reasoningEffort,
     };
 
     const diagnostics: PrimeCompletionDiagnostics = {
@@ -584,6 +585,12 @@ export class PrimeFigureRuntimeService {
       role: "assistant",
       content: firstResponse.text,
       toolCalls: firstResponse.toolCalls,
+      ...(firstResponse.reasoningContent
+        ? { reasoningContent: firstResponse.reasoningContent }
+        : {}),
+      ...(typeof firstResponse.reasoningDetails !== "undefined"
+        ? { reasoningDetails: firstResponse.reasoningDetails }
+        : {}),
     });
     messages.push({
       role: "tool",
@@ -721,11 +728,16 @@ async function streamPrimeChatCompletion(
   );
   const toolCalls = new Map<number, ChatToolCall>();
   let text = "";
+  let reasoningContent = "";
+  let reasoningDetails: unknown;
   for await (const delta of provider.streamChatCompletion(completion)) {
     if (delta.text) {
       text += delta.text;
       parser.push(delta.text);
     }
+    if (delta.reasoningContent) reasoningContent += delta.reasoningContent;
+    if (typeof delta.reasoningDetails !== "undefined")
+      reasoningDetails = mergeReasoningDetails(reasoningDetails, delta.reasoningDetails);
     for (const toolDelta of delta.toolCalls ?? []) {
       const current = toolCalls.get(toolDelta.index) ?? {
         id: "",
@@ -752,7 +764,17 @@ async function streamPrimeChatCompletion(
     model: completion.model,
     text,
     ...(completedToolCalls.length ? { toolCalls: completedToolCalls } : {}),
+    ...(reasoningContent ? { reasoningContent } : {}),
+    ...(typeof reasoningDetails !== "undefined"
+      ? { reasoningDetails }
+      : {}),
   };
+}
+
+function mergeReasoningDetails(current: unknown, next: unknown) {
+  if (typeof current === "undefined") return next;
+  if (Array.isArray(current) && Array.isArray(next)) return [...current, ...next];
+  return next;
 }
 
 export async function buildPrimeChatMessages(

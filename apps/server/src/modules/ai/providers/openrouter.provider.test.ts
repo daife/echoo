@@ -22,6 +22,8 @@ function deepSeekConfig(
     model: "deepseek/deepseek-v4-flash",
     temperature: 0.2,
     maxTokens: 256,
+    reasoningEnabled: false,
+    reasoningEffort: "high",
     ...overrides,
   };
 }
@@ -70,7 +72,8 @@ test("official DeepSeek requests use compatible payloads and local token billing
       model: "deepseek/deepseek-v4-flash",
       sessionId: "sticky-session",
       messages: [{ role: "user", content: "Return a JSON object." }],
-      reasoningMode: "disabled",
+      reasoningEnabled: false,
+      reasoningEffort: "high",
       responseFormat: {
         type: "json_schema",
         json_schema: { name: "result", schema: { type: "object" } },
@@ -154,6 +157,8 @@ test("official DeepSeek streaming requests request usage and settle from its fin
       model: "deepseek-v4-flash",
       sessionId: "pf-session-d",
       messages: [{ role: "user", content: "Hello" }],
+      reasoningEnabled: false,
+      reasoningEffort: "high",
     })) {
       text += delta.text ?? "";
     }

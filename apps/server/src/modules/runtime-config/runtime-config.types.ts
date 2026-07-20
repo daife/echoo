@@ -9,6 +9,8 @@ export interface StoredModelEndpointConfig {
 export interface StoredTextModelConfig extends StoredModelEndpointConfig {
   temperature: number;
   maxTokens: number;
+  reasoningEnabled: boolean;
+  reasoningEffort: "low" | "medium" | "high" | "xhigh";
 }
 
 export interface StoredFishAudioConfig {

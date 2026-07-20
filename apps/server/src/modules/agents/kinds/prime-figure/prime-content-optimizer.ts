@@ -164,7 +164,8 @@ function singleFieldCompletion(
     sessionId,
     temperature: config.temperature,
     maxTokens: config.maxTokens,
-    reasoningMode: "disabled",
+      reasoningEnabled: config.reasoningEnabled,
+      reasoningEffort: config.reasoningEffort,
     messages: [
       { role: "system", content: systemPrompt },
       {

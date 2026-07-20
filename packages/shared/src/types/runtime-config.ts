@@ -16,9 +16,13 @@ export interface ModelEndpointConfigView {
   apiKey: RuntimeSecretView;
 }
 
+export type TextModelReasoningEffort = "low" | "medium" | "high" | "xhigh";
+
 export interface TextModelConfigView extends ModelEndpointConfigView {
   temperature: number;
   maxTokens: number;
+  reasoningEnabled: boolean;
+  reasoningEffort: TextModelReasoningEffort;
 }
 
 export interface FishAudioConfigView {
@@ -173,6 +177,8 @@ export interface ModelEndpointConfigPatch {
 export interface TextModelConfigPatch extends ModelEndpointConfigPatch {
   temperature?: number;
   maxTokens?: number;
+  reasoningEnabled?: boolean;
+  reasoningEffort?: TextModelReasoningEffort;
 }
 
 export interface FishAudioConfigPatch {

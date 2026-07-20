@@ -1,5 +1,7 @@
 export type AiProviderId = string;
 
+export type ChatReasoningEffort = "low" | "medium" | "high" | "xhigh";
+
 export interface TextContentPart {
   type: "text";
   text: string;
@@ -32,6 +34,8 @@ export interface ChatCompletionMessage {
   name?: string;
   toolCallId?: string;
   toolCalls?: ChatToolCall[];
+  reasoningContent?: string;
+  reasoningDetails?: unknown;
 }
 
 export interface ChatToolDefinition {
@@ -65,7 +69,8 @@ export interface ChatCompletionInput {
   responseFormat?: Record<string, unknown>;
   tools?: ChatToolDefinition[];
   toolChoice?: "none" | "auto" | "required" | Record<string, unknown>;
-  reasoningMode?: "disabled";
+  reasoningEnabled?: boolean;
+  reasoningEffort?: ChatReasoningEffort;
 }
 
 export interface ChatCompletionResult {
@@ -73,6 +78,8 @@ export interface ChatCompletionResult {
   model: string;
   text: string;
   toolCalls?: ChatToolCall[];
+  reasoningContent?: string;
+  reasoningDetails?: unknown;
   usage?: AiUsage;
 }
 
@@ -92,6 +99,8 @@ export interface ChatDelta {
     type?: "function";
     function?: { name?: string; arguments?: string };
   }>;
+  reasoningContent?: string;
+  reasoningDetails?: unknown;
   usage?: AiUsage;
 }
 

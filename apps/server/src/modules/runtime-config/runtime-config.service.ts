@@ -531,11 +531,11 @@ export function forcePlatformDefaults(
     ...config,
     sliceFigure: {
       ...config.sliceFigure,
-      llm: endpoint(config.sliceFigure.llm),
+      llm: normalizeStoredTextModel(endpoint(config.sliceFigure.llm)),
     },
     primeFigure: {
       ...prime,
-      decisionModel: endpoint(prime.decisionModel),
+      decisionModel: normalizeStoredTextModel(endpoint(prime.decisionModel)),
       outputs: {
         ...prime.outputs,
         image: {
@@ -556,21 +556,21 @@ export function forcePlatformDefaults(
       optimization: {
         image: {
           ...prime.optimization.image,
-          model: endpoint(prime.optimization.image.model),
+          model: normalizeStoredTextModel(endpoint(prime.optimization.image.model)),
         },
         voice: {
           ...prime.optimization.voice,
-          model: endpoint(prime.optimization.voice.model),
+          model: normalizeStoredTextModel(endpoint(prime.optimization.voice.model)),
         },
       },
       understanding: {
         visual: {
           ...prime.understanding.visual,
-          model: endpoint(prime.understanding.visual.model),
+          model: normalizeStoredTextModel(endpoint(prime.understanding.visual.model)),
         },
         audio: {
           ...prime.understanding.audio,
-          model: endpoint(prime.understanding.audio.model),
+          model: normalizeStoredTextModel(endpoint(prime.understanding.audio.model)),
           stt: {
             ...prime.understanding.audio.stt,
             source: "platform",
@@ -734,12 +734,16 @@ function patchTextModel(
   patch: ModelEndpointConfigPatch & {
     temperature?: number;
     maxTokens?: number;
+    reasoningEnabled?: boolean;
+    reasoningEffort?: "low" | "medium" | "high" | "xhigh";
   },
 ): StoredTextModelConfig {
   return {
     ...patchEndpoint(current, patch),
     temperature: patch.temperature ?? current.temperature,
     maxTokens: patch.maxTokens ?? current.maxTokens,
+    reasoningEnabled: patch.reasoningEnabled ?? current.reasoningEnabled,
+    reasoningEffort: patch.reasoningEffort ?? current.reasoningEffort,
   };
 }
 
@@ -1151,13 +1155,16 @@ export function resolvePlatformTextEndpoint<
   T extends StoredModelEndpointConfig,
 >(value: T): T {
   if (value.source !== "platform") return value;
-  if (isPlatformDeepSeekRoute(value))
-    return {
-      ...value,
-      baseUrl: PLATFORM_DEEPSEEK_BASE_URL,
-      apiKey: environment.platformDeepSeekApiKey,
-    };
-  return resolvePlatformOpenRouterEndpoint(value);
+  const resolved = isPlatformDeepSeekRoute(value)
+    ? {
+        ...value,
+        baseUrl: PLATFORM_DEEPSEEK_BASE_URL,
+        apiKey: environment.platformDeepSeekApiKey,
+      }
+    : resolvePlatformOpenRouterEndpoint(value);
+  return normalizeStoredTextModel(
+    resolved as unknown as StoredTextModelConfig,
+  ) as unknown as T;
 }
 
 export function resolvePlatformOpenRouterEndpoint<
@@ -1170,6 +1177,14 @@ export function resolvePlatformOpenRouterEndpoint<
         apiKey: environment.platformOpenRouterApiKey,
       }
     : value;
+}
+
+function normalizeStoredTextModel(value: StoredTextModelConfig): StoredTextModelConfig {
+  return {
+    ...value,
+    reasoningEnabled: value.reasoningEnabled ?? false,
+    reasoningEffort: value.reasoningEffort ?? "high",
+  };
 }
 
 function positiveInteger(value: number, label: string) {

@@ -16,6 +16,8 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
         model: "google/gemini-3.1-flash-lite",
         temperature: 0.9,
         maxTokens: 1200,
+        reasoningEnabled: false,
+        reasoningEffort: "high",
       },
       replyAutoSegment: false,
       context: {
@@ -31,6 +33,8 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
         model: "google/gemini-3.1-flash-lite",
         temperature: 0.9,
         maxTokens: 1600,
+        reasoningEnabled: false,
+        reasoningEffort: "high",
       },
       outputs: {
         image: {
@@ -74,6 +78,8 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
             model: "google/gemini-3.1-flash-lite",
             temperature: 0.9,
             maxTokens: 2400,
+            reasoningEnabled: false,
+            reasoningEffort: "high",
           },
         },
         voice: {
@@ -84,6 +90,8 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
             model: "google/gemini-3.1-flash-lite",
             temperature: 0.9,
             maxTokens: 1600,
+            reasoningEnabled: false,
+            reasoningEffort: "high",
           },
         },
       },
@@ -95,6 +103,8 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
             model: "google/gemini-3.1-flash-lite",
             temperature: 0.9,
             maxTokens: 2400,
+            reasoningEnabled: false,
+            reasoningEffort: "high",
           },
         },
         audio: {
@@ -104,6 +114,8 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
             model: "google/gemini-3.1-flash-lite",
             temperature: 0.9,
             maxTokens: 2400,
+            reasoningEnabled: false,
+            reasoningEffort: "high",
           },
           stt: {
             source: "platform",

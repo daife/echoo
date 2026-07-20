@@ -92,7 +92,8 @@ export class PrimeMediaAnnotationService {
       sessionId: primeModelSessionId(conversationId, session),
       temperature: modelConfig.temperature,
       maxTokens: modelConfig.maxTokens,
-      reasoningMode: "disabled",
+      reasoningEnabled: modelConfig.reasoningEnabled,
+      reasoningEffort: modelConfig.reasoningEffort,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content },

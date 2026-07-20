@@ -7,6 +7,7 @@ import type {
   SliceFigureRuntimeConfigPatch,
   SliceFigureRuntimeConfigView,
   RuntimeConfigPresetView,
+  TextModelReasoningEffort,
 } from "@echoo/shared";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useServices } from "../../app/providers/ServicesProvider";
@@ -521,6 +522,8 @@ type EndpointDraft = {
 type TextModelDraft = EndpointDraft & {
   temperature: string;
   maxTokens: string;
+  reasoningEnabled: boolean;
+  reasoningEffort: TextModelReasoningEffort;
 };
 type SecretDraft = { value: string; clear: boolean };
 type PrimeSecretKey =
@@ -581,7 +584,7 @@ function ModelFields({
   onSecret: (patch: Partial<SecretDraft>) => void;
   platformOnly?: boolean;
 }) {
-  const update = (key: string, value: string) =>
+  const update = (key: string, value: unknown) =>
     onChange({ ...draft, [key]: value });
   return (
     <>
@@ -632,6 +635,23 @@ function ModelFields({
             value={draft.maxTokens}
             onChange={(value) => update("maxTokens", value)}
           />
+          <ToggleInput
+            label="开启官方思考/推理模式(已内置伪思维链，不开启也有一定的推理效果)"
+            checked={draft.reasoningEnabled}
+            onChange={(reasoningEnabled) =>
+              update("reasoningEnabled", reasoningEnabled)
+            }
+          />
+          {draft.reasoningEnabled ? (
+            <SelectInput
+              label="推理强度"
+              value={draft.reasoningEffort}
+              options={REASONING_EFFORT_OPTIONS}
+              onChange={(reasoningEffort) =>
+                update("reasoningEffort", reasoningEffort)
+              }
+            />
+          ) : null}
         </>
       ) : null}
       {draft.source === "custom" ? (
@@ -1015,6 +1035,12 @@ const OPTIMIZATION_OPTIONS = [
   { value: "advanced", label: "高级" },
   { value: "top", label: "顶级" },
 ] as const;
+const REASONING_EFFORT_OPTIONS = [
+  { value: "low", label: "低（兼容映射为 high）" },
+  { value: "medium", label: "中（兼容映射为 high）" },
+  { value: "high", label: "高" },
+  { value: "xhigh", label: "极高（兼容映射为 max）" },
+] as const;
 const VISUAL_UNDERSTANDING_OPTIONS = [
   { value: "native", label: "决策模型原生理解" },
   { value: "auxiliary", label: "辅助模型预先理解" },
@@ -1188,6 +1214,8 @@ function sliceDraft(value: SliceFigureRuntimeConfigView) {
     model: value.llm.model,
     temperature: String(value.llm.temperature),
     maxTokens: String(value.llm.maxTokens),
+    reasoningEnabled: value.llm.reasoningEnabled,
+    reasoningEffort: value.llm.reasoningEffort,
     replyAutoSegment: value.replyAutoSegment,
     minimumRounds: String(value.context.minimumRounds),
     maximumRounds: String(value.context.maximumRounds),
@@ -1209,6 +1237,8 @@ function slicePatch(
       model: draft.model,
       temperature: Number(draft.temperature),
       maxTokens: Number(draft.maxTokens),
+      reasoningEnabled: draft.reasoningEnabled,
+      reasoningEffort: draft.reasoningEffort,
       ...secretChange(apiKey, clearApiKey),
     },
     replyAutoSegment: draft.replyAutoSegment,
@@ -1395,11 +1425,15 @@ function textDraft(value: {
   model: string;
   temperature: number;
   maxTokens: number;
+  reasoningEnabled: boolean;
+  reasoningEffort: TextModelReasoningEffort;
 }): TextModelDraft {
   return {
     ...endpointDraft(value),
     temperature: String(value.temperature),
     maxTokens: String(value.maxTokens),
+    reasoningEnabled: value.reasoningEnabled,
+    reasoningEffort: value.reasoningEffort,
   };
 }
 
@@ -1458,5 +1492,7 @@ function textModelPatch(draft: TextModelDraft, secret: SecretDraft) {
     ...endpointPatch(draft, secret),
     temperature: Number(draft.temperature),
     maxTokens: Number(draft.maxTokens),
+    reasoningEnabled: draft.reasoningEnabled,
+    reasoningEffort: draft.reasoningEffort,
   };
 }

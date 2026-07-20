@@ -9,7 +9,8 @@ import {
 const completion = {
   model: "deepseek-v4-pro",
   messages: [{ role: "user" as const, content: "Hello" }],
-  reasoningMode: "disabled" as const,
+  reasoningEnabled: false,
+  reasoningEffort: "high" as const,
 };
 
 test("uses DeepSeek's thinking switch when reasoning is disabled", () => {
