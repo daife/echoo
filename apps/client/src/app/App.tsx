@@ -728,7 +728,14 @@ export function App() {
         />
       );
     }
-    if (view === "bindings") return <BindingsPanel onBack={closeBindings} />;
+    if (view === "bindings")
+      return (
+        <BindingsPanel
+          onBack={closeBindings}
+          agents={myAgents}
+          channelsApi={services.channelsApi}
+        />
+      );
     if (view === "settings")
       return (
         <SettingsPage

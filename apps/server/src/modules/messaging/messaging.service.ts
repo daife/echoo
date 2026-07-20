@@ -229,17 +229,17 @@ export class MessagingService {
       input.conversationId,
     );
     if (!conversation) return { kind: "not_found" };
-    if (conversation.type !== "prime-figure" || !conversation.agentId)
+    const isPrime = conversation.type === "prime-figure";
+    const isSliceImage =
+      conversation.type === "slice-figure" && input.contentType === "image";
+    if ((!isPrime && !isSliceImage) || !conversation.agentId)
       return { kind: "unsupported_type" };
 
     const existing = await this.repository.findByClientMessageId(
       input.ownerUserId,
       input.clientMessageId,
     );
-    if (existing) {
-      await this.enqueuePrimeFigureRun(input.ownerUserId, input.conversationId);
-      return { kind: "ok", message: existing };
-    }
+    if (existing) return { kind: "ok", message: existing };
 
     if (input.contentType === "sticker") {
       const agent = await this.agents.findByConversation(
@@ -461,6 +461,24 @@ export class MessagingService {
       type: "message.created",
       message,
     });
+    if (conversation.type === "slice-figure") {
+      const assistantMessage = await this.sliceReplies.createPlaceholder(
+        input.ownerUserId,
+        input.conversationId,
+        message.id,
+      );
+      this.appPush.pushToUser(input.ownerUserId, {
+        type: "message.created",
+        message: assistantMessage,
+      });
+      await this.runQueue.enqueue({
+        ownerUserId: input.ownerUserId,
+        conversationId: input.conversationId,
+        kind: "slice-figure",
+        assistantMessageId: assistantMessage.id,
+      });
+      return { kind: "ok", message };
+    }
     if (message.sequence !== undefined)
       await this.primeStates.recordMessageInteraction({
         ownerUserId: input.ownerUserId,

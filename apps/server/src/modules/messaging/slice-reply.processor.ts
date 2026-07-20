@@ -152,6 +152,11 @@ export class SliceReplyProcessor {
         type: "message.completed",
         message,
       });
+      void import("../channels/wechat.service.js").then(({ WechatService }) =>
+        new WechatService()
+          .deliver(message)
+          .catch((error) => console.warn("微信回复投递失败", error)),
+      );
       await this.createMemorySummariesOrQueueRetry(ownerUserId, conversationId);
       return message;
     } catch {
@@ -173,8 +178,7 @@ export class SliceReplyProcessor {
         role: "system",
         contentType: "system",
         content: {
-          text:
-            "AI reply is temporarily unavailable. Check the server provider configuration and try again.",
+          text: "AI reply is temporarily unavailable. Check the server provider configuration and try again.",
         },
         status: "delivered",
         metadata: { kind: "slice_runtime_error" },

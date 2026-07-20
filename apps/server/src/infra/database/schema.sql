@@ -119,6 +119,42 @@ CREATE TABLE IF NOT EXISTS conversations (
   CONSTRAINT fk_conversations_agent FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS external_interface_accounts (
+  id VARCHAR(64) PRIMARY KEY,
+  owner_user_id VARCHAR(64) NOT NULL,
+  interface_type ENUM('wechat') NOT NULL,
+  account_id VARCHAR(160) NOT NULL,
+  base_url VARCHAR(512) NOT NULL,
+  bot_token_ciphertext TEXT NOT NULL,
+  external_user_id VARCHAR(160) NULL,
+  sync_buf TEXT NULL,
+  status ENUM('pending', 'connected', 'paused', 'error') NOT NULL DEFAULT 'pending',
+  lease_until BIGINT NULL,
+  last_error TEXT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  UNIQUE KEY uq_external_account_owner_type (owner_user_id, interface_type),
+  UNIQUE KEY uq_external_account_account (interface_type, account_id),
+  CONSTRAINT fk_external_account_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS external_interface_bindings (
+  id VARCHAR(64) PRIMARY KEY,
+  owner_user_id VARCHAR(64) NOT NULL,
+  interface_type ENUM('wechat') NOT NULL,
+  account_id VARCHAR(64) NOT NULL,
+  conversation_id VARCHAR(64) NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  bound_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  UNIQUE KEY uq_external_binding_owner_type (owner_user_id, interface_type),
+  UNIQUE KEY uq_external_binding_conversation_type (conversation_id, interface_type),
+  CONSTRAINT fk_external_binding_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_external_binding_account FOREIGN KEY (account_id) REFERENCES external_interface_accounts(id) ON DELETE CASCADE,
+  CONSTRAINT fk_external_binding_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS agent_runtime_states (
   agent_id VARCHAR(64) PRIMARY KEY,
   owner_user_id VARCHAR(64) NOT NULL,
@@ -540,4 +576,21 @@ CREATE TABLE IF NOT EXISTS message_resources (
   INDEX idx_message_resources_resource (resource_id),
   CONSTRAINT fk_message_resources_message FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
   CONSTRAINT fk_message_resources_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS external_delivery_tasks (
+  id VARCHAR(64) PRIMARY KEY,
+  binding_id VARCHAR(64) NOT NULL,
+  message_id VARCHAR(64) NOT NULL,
+  status ENUM('pending', 'sent', 'failed') NOT NULL DEFAULT 'pending',
+  attempts INT UNSIGNED NOT NULL DEFAULT 0,
+  external_message_id VARCHAR(160) NULL,
+  failure_reason TEXT NULL,
+  next_attempt_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  UNIQUE KEY uq_external_delivery_message (binding_id, message_id),
+  INDEX idx_external_delivery_pending (status, next_attempt_at),
+  CONSTRAINT fk_external_delivery_binding FOREIGN KEY (binding_id) REFERENCES external_interface_bindings(id) ON DELETE CASCADE,
+  CONSTRAINT fk_external_delivery_message FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

@@ -9,6 +9,8 @@ export interface ExternalInterfaceBinding {
   displayName: string;
   externalAccountId?: string;
   enabled: boolean;
+  status?: "pending" | "connected" | "paused" | "error";
+  boundAt?: number;
   createdAt: number;
 }
 

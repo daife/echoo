@@ -11,6 +11,7 @@ import {
   UsersApi,
   RewardsApi,
   PaymentsApi,
+  ChannelsApi,
 } from "@echoo/api-client";
 import { AgentService } from "../../services/AgentService";
 import { AuthService } from "../../services/AuthService";
@@ -56,6 +57,7 @@ export function initApp(runtime: RuntimeBundle) {
     runtimeConfigService: new RuntimeConfigService(new RuntimeConfigApi(api)),
     rewardsService: new RewardsService(new RewardsApi(api)),
     rechargeService: new RechargeService(new PaymentsApi(api)),
+    channelsApi: new ChannelsApi(api),
     socialService: new SocialService(
       new PostsApi(api),
       new UsersApi(api),

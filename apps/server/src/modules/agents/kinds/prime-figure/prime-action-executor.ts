@@ -292,6 +292,12 @@ export class PrimeActionExecutor {
         };
         createdMessages.push(created);
         publishPacedMessage(created);
+        void import("../../../channels/wechat.service.js").then(
+          ({ WechatService }) =>
+            new WechatService()
+              .deliver(created.message)
+              .catch((error) => console.warn("微信回复投递失败", error)),
+        );
       }
       const deliveredMessages = createdMessages.filter(
         (created) => created.message.status !== "failed",

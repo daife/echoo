@@ -11,3 +11,4 @@ export * from "./posts";
 export * from "./users";
 export * from "./rewards";
 export * from "./payments";
+export * from "./channels";

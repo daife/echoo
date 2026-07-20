@@ -31,6 +31,8 @@ import { ChangeEventRepository } from "./modules/sync/change-event.repository.js
 import { wsSessionManager } from "./modules/realtime/ws-session-manager.js";
 import { registerRewardsRoutes } from "./modules/rewards/rewards.controller.js";
 import { registerRechargeRoutes } from "./modules/payments/recharge.controller.js";
+import { channelsModule } from "./modules/channels/channels.module.js";
+import { WechatService } from "./modules/channels/wechat.service.js";
 
 export async function buildApp() {
   await initializeDatabase();
@@ -50,6 +52,7 @@ export async function buildApp() {
   const runQueue = new AgentRunQueue();
   const resourceQueue = new ResourceProcessingQueue();
   const resourceCleanupQueue = new ResourceCleanupQueue();
+  const wechatService = new WechatService();
   const changeEventDispatcher = new ChangeEventDispatcher();
   const changeEvents = new ChangeEventRepository();
   const runService = new (
@@ -104,6 +107,7 @@ export async function buildApp() {
   await app.register(registerRuntimeConfigRoutes, { prefix: "/api" });
   await app.register(registerBillingRoutes, { prefix: "/api" });
   await app.register(registerRechargeRoutes, { prefix: "/api" });
+  await app.register(channelsModule, { prefix: "/api" });
   await app.register(registerRewardsRoutes, { prefix: "/api" });
   await app.register(registerPlatformCatalogRoutes, { prefix: "/api" });
   await app.register(registerCharacterAssetRoutes, { prefix: "/api" });
@@ -142,12 +146,14 @@ export async function buildApp() {
       .catch((error) =>
         app.log.error(error, "Resource cleanup worker stopped"),
       );
+    void wechatService.startExisting();
   });
   app.addHook("onClose", async () => {
     primeWakeupScheduler.stop();
     runQueue.stop();
     resourceQueue.stop();
     resourceCleanupQueue.stop();
+    wechatService.stopAll();
     changeEventDispatcher.stop();
     await closeRedis();
     await closeDatabase();
