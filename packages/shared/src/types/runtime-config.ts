@@ -297,7 +297,7 @@ export interface ConversationRuntimeConfigResponse {
 
 export interface RuntimeConfigWarning {
   path: string;
-  code: "MODEL_NOT_IN_CATALOG" | "MODEL_METADATA_STALE" | "PROVIDER_UNVERIFIED";
+  code: "MODEL_NOT_IN_CATALOG" | "MODEL_METADATA_STALE";
   message: string;
 }
 

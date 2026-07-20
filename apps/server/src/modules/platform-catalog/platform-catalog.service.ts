@@ -451,21 +451,6 @@ export class PlatformCatalogService {
           "模型元数据已超过 24 小时未同步。",
         ),
       );
-    if (endpoint.routingProvider) {
-      const provider = await queryOne<EndpointRow>(
-        `SELECT provider_slug, provider_name, pricing, status
-           FROM platform_model_endpoints WHERE model_id = ? AND provider_slug = ?`,
-        [endpoint.model, endpoint.routingProvider],
-      );
-      if (!provider)
-        warnings.push(
-          warning(
-            path,
-            "PROVIDER_UNVERIFIED",
-            "手填的推理服务商未在已同步端点中找到，将由 OpenRouter 在调用时校验。",
-          ),
-        );
-    }
     return warnings;
   }
 
