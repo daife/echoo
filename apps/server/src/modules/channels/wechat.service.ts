@@ -183,6 +183,26 @@ export class WechatService {
   }
 
   private async handleInbound(binding: WechatBinding, payload: any) {
+    const messageId = payload?.message_id ?? payload?.client_id ?? payload?.seq;
+    if (messageId === undefined || messageId === null || messageId === "") {
+      console.warn("忽略缺少稳定 ID 的微信入站消息", {
+        bindingId: binding.id,
+        fromUserId: payload?.from_user_id,
+      });
+      return;
+    }
+    if (
+      !binding.account.externalUserId ||
+      payload?.from_user_id !== binding.account.externalUserId
+    ) {
+      console.warn("忽略非绑定用户的微信入站消息", {
+        bindingId: binding.id,
+        messageId,
+        fromUserId: payload?.from_user_id,
+      });
+      return;
+    }
+    const clientMessageId = `wechat:${messageId}`;
     const text = (payload.item_list ?? []).find((item: any) => item.type === 1)
       ?.text_item?.text;
     if (typeof text === "string" && text.trim()) {
@@ -190,7 +210,7 @@ export class WechatService {
         ownerUserId: binding.ownerUserId,
         conversationId: binding.conversationId,
         text: text.trim(),
-        clientMessageId: `wechat:${payload.message_id ?? Date.now()}`,
+        clientMessageId,
       });
       return;
     }
@@ -205,17 +225,18 @@ export class WechatService {
         conversationId: binding.conversationId,
         contentType: "image",
         upload: {
-          fileName: `wechat-${payload.message_id ?? Date.now()}.${detected.extension}`,
+          fileName: `wechat-${messageId}.${detected.extension}`,
           mimeType: detected.mimeType,
           dataBase64: data.toString("base64"),
         },
-        clientMessageId: `wechat:${payload.message_id ?? Date.now()}`,
+        clientMessageId,
       });
     } else
-      console.warn(
-        "忽略不支持的微信入站消息",
-        payload.item_list?.map((item: any) => item.type),
-      );
+      console.warn("忽略不支持的微信入站消息", {
+        bindingId: binding.id,
+        messageId,
+        itemTypes: payload.item_list?.map((item: any) => item.type),
+      });
   }
 
   private publicBinding(binding: WechatBinding) {

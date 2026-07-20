@@ -9,22 +9,21 @@ import QRCode from "qrcode";
 
 const DEFAULT_BASE_URL = "https://ilinkai.weixin.qq.com";
 const DEFAULT_CDN_BASE_URL = "https://novac2c.cdn.weixin.qq.com/c2c";
-const attempts = new Map<
-  string,
-  {
-    qrcode: string;
-    qrcodeUrl?: string;
-    baseUrl: string;
-    createdAt: number;
-    status: "wait" | "connected" | "expired";
-    account?: {
-      accountId: string;
-      botToken: string;
-      baseUrl: string;
-      externalUserId?: string;
-    };
-  }
->();
+const ILINK_APP_ID = "bot";
+const CHANNEL_VERSION = "0.1.0";
+const ILINK_APP_CLIENT_VERSION = 0x00000100;
+
+type WechatAccountCredentials = { baseUrl: string; botToken: string };
+type LoginAttempt = {
+  qrcode: string;
+  qrcodeUrl?: string;
+  baseUrl: string;
+  createdAt: number;
+  status: "wait" | "connected" | "expired";
+  account?: WechatLoginResult["account"];
+};
+
+const attempts = new Map<string, LoginAttempt>();
 
 export interface WechatLoginResult {
   attemptId: string;
@@ -38,28 +37,94 @@ export interface WechatLoginResult {
   };
 }
 
-async function request(
+function apiBaseInfo() {
+  return {
+    channel_version: CHANNEL_VERSION,
+    bot_agent: `Echoo/${CHANNEL_VERSION}`,
+  };
+}
+
+function randomWechatUin() {
+  const value = randomBytes(4).readUInt32BE(0);
+  return Buffer.from(String(value), "utf8").toString("base64");
+}
+
+function commonHeaders() {
+  return {
+    "iLink-App-Id": ILINK_APP_ID,
+    "iLink-App-ClientVersion": String(ILINK_APP_CLIENT_VERSION),
+  };
+}
+
+function postHeaders(token?: string) {
+  return {
+    "Content-Type": "application/json",
+    AuthorizationType: "ilink_bot_token",
+    "X-WECHAT-UIN": randomWechatUin(),
+    ...commonHeaders(),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+function endpointUrl(baseUrl: string, endpoint: string) {
+  return `${baseUrl.replace(/\/$/, "")}/${endpoint}`;
+}
+
+function assertSuccess(response: any, endpoint: string) {
+  if (typeof response?.ret === "number" && response.ret !== 0)
+    throw new Error(
+      `微信接口 ${endpoint} 返回 ret=${response.ret}: ${response.errmsg ?? "未知错误"}`,
+    );
+}
+
+async function requestPost(
   baseUrl: string,
   endpoint: string,
-  body?: unknown,
+  body: Record<string, unknown>,
   token?: string,
+  signal?: AbortSignal,
 ) {
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/${endpoint}`, {
+  const response = await fetch(endpointUrl(baseUrl, endpoint), {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body ?? {}),
+    headers: postHeaders(token),
+    body: JSON.stringify({ ...body, base_info: apiBaseInfo() }),
+    signal,
   });
   if (!response.ok)
-    throw new Error(`微信接口 ${endpoint} 返回 ${response.status}`);
-  return (await response.json()) as any;
+    throw new Error(`微信接口 ${endpoint} 返回 HTTP ${response.status}`);
+  const value = (await response.json()) as any;
+  assertSuccess(value, endpoint);
+  return value;
+}
+
+async function requestGet(baseUrl: string, endpoint: string) {
+  const response = await fetch(endpointUrl(baseUrl, endpoint), {
+    method: "GET",
+    headers: commonHeaders(),
+  });
+  if (!response.ok)
+    throw new Error(`微信接口 ${endpoint} 返回 HTTP ${response.status}`);
+  const value = (await response.json()) as any;
+  assertSuccess(value, endpoint);
+  return value;
+}
+
+function normalizeRedirectHost(host: string) {
+  return /^https?:\/\//.test(host) ? host : `https://${host}`;
+}
+
+function stableClientId(value: string) {
+  const uuid = value.match(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
+  )?.[0];
+  if (uuid) return uuid.toLowerCase();
+  const digest = createHash("sha256").update(value).digest("hex");
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
 }
 
 export class WechatClient {
   async startLogin(baseUrl = DEFAULT_BASE_URL): Promise<WechatLoginResult> {
-    const response = await request(
+    const response = await requestPost(
       baseUrl,
       "ilink/bot/get_bot_qrcode?bot_type=3",
       { local_token_list: [] },
@@ -83,11 +148,7 @@ export class WechatClient {
       createdAt: Date.now(),
       status: "wait",
     });
-    return {
-      attemptId,
-      qrcodeUrl,
-      status: "wait",
-    };
+    return { attemptId, qrcodeUrl, status: "wait" };
   }
 
   async pollLogin(attemptId: string): Promise<WechatLoginResult | null> {
@@ -104,22 +165,26 @@ export class WechatClient {
       attempt.status = "expired";
       return { attemptId, qrcodeUrl: attempt.qrcodeUrl, status: "expired" };
     }
-    const response = await request(
+
+    const response = await requestGet(
       attempt.baseUrl,
       `ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(attempt.qrcode)}`,
     );
-    if (response.status === "confirmed" || response.status === "scaned") {
-      if (response.bot_token) {
-        attempt.status = "connected";
-        attempt.account = {
-          accountId: response.account_id ?? randomUUID(),
-          botToken: response.bot_token,
-          baseUrl: response.base_url ?? DEFAULT_BASE_URL,
-          ...(response.ilink_user_id
-            ? { externalUserId: response.ilink_user_id }
-            : {}),
-        };
-      }
+    if (
+      response.status === "scaned_but_redirect" &&
+      typeof response.redirect_host === "string"
+    )
+      attempt.baseUrl = normalizeRedirectHost(response.redirect_host);
+    if (response.status === "confirmed" && typeof response.bot_token === "string") {
+      attempt.status = "connected";
+      attempt.account = {
+        accountId: response.ilink_bot_id ?? randomUUID(),
+        botToken: response.bot_token,
+        baseUrl: response.baseurl ?? attempt.baseUrl,
+        ...(response.ilink_user_id
+          ? { externalUserId: response.ilink_user_id }
+          : {}),
+      };
     } else if (response.status === "expired") attempt.status = "expired";
     return {
       attemptId,
@@ -130,58 +195,40 @@ export class WechatClient {
   }
 
   async getUpdates(
-    account: { baseUrl: string; botToken: string },
+    account: WechatAccountCredentials,
     syncBuf: string,
     signal?: AbortSignal,
   ) {
-    const response = await fetch(
-      `${account.baseUrl.replace(/\/$/, "")}/ilink/bot/getupdates`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${account.botToken}`,
-        },
-        body: JSON.stringify({
-          get_updates_buf: syncBuf,
-          base_info: { channel_version: "echoo/0.1.0" },
-        }),
-        signal,
-      },
+    return requestPost(
+      account.baseUrl,
+      "ilink/bot/getupdates",
+      { get_updates_buf: syncBuf },
+      account.botToken,
+      signal,
     );
-    if (!response.ok)
-      throw new Error(`微信 getupdates 返回 ${response.status}`);
-    return (await response.json()) as any;
   }
 
   async sendText(
-    account: { baseUrl: string; botToken: string },
+    account: WechatAccountCredentials,
     to: string,
     text: string,
-    clientId = randomUUID(),
+    clientId: string = randomUUID(),
   ) {
-    const response = await request(
+    await requestPost(
       account.baseUrl,
       "ilink/bot/sendmessage",
       {
         msg: {
           to_user_id: to,
-          client_id: clientId,
+          client_id: stableClientId(clientId),
           item_list: [{ type: 1, text_item: { text } }],
         },
       },
       account.botToken,
     );
-    if (response.ret && response.ret !== 0)
-      throw new Error(
-        response.errmsg ?? `微信 sendmessage ret=${response.ret}`,
-      );
   }
 
-  async downloadImage(
-    account: { baseUrl: string; botToken: string },
-    item: any,
-  ) {
+  async downloadImage(account: WechatAccountCredentials, item: any) {
     const media = item?.image_item?.media;
     if (!media) throw new Error("微信图片缺少媒体信息");
     const url =
@@ -206,17 +253,17 @@ export class WechatClient {
   }
 
   async sendImage(
-    account: { baseUrl: string; botToken: string },
+    account: WechatAccountCredentials,
     to: string,
     data: Buffer,
-    clientId = randomUUID(),
+    clientId: string = randomUUID(),
   ) {
     const aesKey = randomBytes(16);
     const cipher = createCipheriv("aes-128-ecb", aesKey, null);
     cipher.setAutoPadding(true);
     const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
     const filekey = randomBytes(16).toString("hex");
-    const upload = await request(
+    const upload = await requestPost(
       account.baseUrl,
       "ilink/bot/getuploadurl",
       {
@@ -244,13 +291,13 @@ export class WechatClient {
     if (!uploaded.ok) throw new Error(`微信 CDN 上传返回 ${uploaded.status}`);
     const encryptedParam = uploaded.headers.get("x-encrypted-param");
     if (!encryptedParam) throw new Error("微信 CDN 上传缺少 x-encrypted-param");
-    const sent = await request(
+    await requestPost(
       account.baseUrl,
       "ilink/bot/sendmessage",
       {
         msg: {
           to_user_id: to,
-          client_id: clientId,
+          client_id: stableClientId(clientId),
           item_list: [
             {
               type: 2,
@@ -268,8 +315,6 @@ export class WechatClient {
       },
       account.botToken,
     );
-    if (sent.ret && sent.ret !== 0)
-      throw new Error(sent.errmsg ?? `微信 sendmessage ret=${sent.ret}`);
   }
 }
 
