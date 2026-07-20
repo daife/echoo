@@ -14,7 +14,19 @@ const loginOwners = new Map<
   { ownerUserId: string; conversationId: string }
 >();
 const pollers = new Map<string, AbortController>();
+const deliveryChains = new Map<string, Promise<void>>();
 const DELIVERY_RETRY_BASE_MS = 5_000;
+
+function enqueueDelivery(conversationId: string, operation: () => Promise<void>) {
+  const previous = deliveryChains.get(conversationId) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(operation);
+  deliveryChains.set(conversationId, next);
+  void next.finally(() => {
+    if (deliveryChains.get(conversationId) === next)
+      deliveryChains.delete(conversationId);
+  });
+  return next;
+}
 
 function detectImage(data: Buffer) {
   if (data.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex")))
@@ -259,13 +271,15 @@ export class WechatService {
       (message.contentType !== "text" && message.contentType !== "image")
     )
       return;
-    const binding = await this.bindings.findByConversation(
-      message.conversationId,
-    );
-    if (!binding?.account.externalUserId) return;
-    if (!(await this.bindings.createDeliveryTask(binding.id, message.id)))
-      return;
-    await this.sendDelivery(binding, message, 0);
+    await enqueueDelivery(message.conversationId, async () => {
+      const binding = await this.bindings.findByConversation(
+        message.conversationId,
+      );
+      if (!binding?.account.externalUserId) return;
+      if (!(await this.bindings.createDeliveryTask(binding.id, message.id)))
+        return;
+      await this.sendDelivery(binding, message, 0);
+    });
   }
 
   private async sendDelivery(
@@ -340,7 +354,9 @@ export class WechatService {
         task.message_id,
       );
       if (message)
-        await this.sendDelivery(binding, message, Number(task.attempts));
+        await enqueueDelivery(binding.conversationId, () =>
+          this.sendDelivery(binding, message, Number(task.attempts)),
+        );
     }
   }
 }

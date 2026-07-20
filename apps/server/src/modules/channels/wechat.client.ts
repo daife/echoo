@@ -12,6 +12,8 @@ const DEFAULT_CDN_BASE_URL = "https://novac2c.cdn.weixin.qq.com/c2c";
 const ILINK_APP_ID = "bot";
 const CHANNEL_VERSION = "0.1.0";
 const ILINK_APP_CLIENT_VERSION = 0x00000100;
+const MESSAGE_TYPE_BOT = 2;
+const MESSAGE_STATE_FINISH = 2;
 
 type WechatAccountCredentials = { baseUrl: string; botToken: string };
 type LoginAttempt = {
@@ -219,8 +221,11 @@ export class WechatClient {
       "ilink/bot/sendmessage",
       {
         msg: {
+          from_user_id: "",
           to_user_id: to,
           client_id: stableClientId(clientId),
+          message_type: MESSAGE_TYPE_BOT,
+          message_state: MESSAGE_STATE_FINISH,
           item_list: [{ type: 1, text_item: { text } }],
         },
       },
@@ -296,15 +301,20 @@ export class WechatClient {
       "ilink/bot/sendmessage",
       {
         msg: {
+          from_user_id: "",
           to_user_id: to,
           client_id: stableClientId(clientId),
+          message_type: MESSAGE_TYPE_BOT,
+          message_state: MESSAGE_STATE_FINISH,
           item_list: [
             {
               type: 2,
               image_item: {
                 media: {
                   encrypt_query_param: encryptedParam,
-                  aes_key: aesKey.toString("base64"),
+                  aes_key: Buffer.from(aesKey.toString("hex")).toString(
+                    "base64",
+                  ),
                   encrypt_type: 1,
                 },
                 mid_size: encrypted.length,

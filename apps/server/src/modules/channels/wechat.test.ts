@@ -225,12 +225,17 @@ test("wechat image delivery encrypts, uploads and sends an image item", async ()
     const uploadBody = JSON.parse(String(calls[0].init?.body));
     const image = sendBody.msg.item_list[0].image_item;
     assert.equal(image.media.encrypt_query_param, "download-token");
+    assert.equal(sendBody.msg.message_type, 2);
+    assert.equal(sendBody.msg.message_state, 2);
     assert.equal(uploadBody.base_info.bot_agent, "Echoo/0.1.0");
     assert.equal(
       (calls[0].init?.headers as Record<string, string>).AuthorizationType,
       "ilink_bot_token",
     );
-    const key = Buffer.from(image.media.aes_key, "base64");
+    const key = Buffer.from(
+      Buffer.from(image.media.aes_key, "base64").toString("utf8"),
+      "hex",
+    );
     const decipher = createDecipheriv("aes-128-ecb", key, null);
     const uploaded = Buffer.from(calls[1].init?.body as Uint8Array);
     assert.deepEqual(
@@ -240,6 +245,54 @@ test("wechat image delivery encrypts, uploads and sends an image item", async ()
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("wechat serializes concurrent deliveries for one conversation", async () => {
+  const sent: string[] = [];
+  const binding = {
+    id: "binding-1",
+    ownerUserId: "owner-1",
+    conversationId: "conversation-1",
+    account: { externalUserId: "wx-user" },
+  };
+  const service = new WechatService(
+    {
+      findByConversation: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return binding;
+      },
+      createDeliveryTask: async () => true,
+      finishDelivery: async () => undefined,
+    } as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {
+      sendText: async (_account: unknown, _to: string, text: string) => {
+        sent.push(text);
+      },
+    } as any,
+  );
+  const first = {
+    id: "msg_11111111-1111-4111-8111-111111111111",
+    conversationId: "conversation-1",
+    role: "assistant",
+    contentType: "text",
+    content: { text: "first" },
+  };
+  const second = {
+    id: "msg_22222222-2222-4222-8222-222222222222",
+    conversationId: "conversation-1",
+    role: "assistant",
+    contentType: "text",
+    content: { text: "second" },
+  };
+  await Promise.all([
+    service.deliver(first as any),
+    service.deliver(second as any),
+  ]);
+  assert.deepEqual(sent, ["first", "second"]);
 });
 
 test("wechat only creates stable text or image messages from its bound user", async () => {
