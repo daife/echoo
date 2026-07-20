@@ -40,6 +40,32 @@ test("wechat text delivery uses the official sendmessage endpoint", async () => 
   }
 });
 
+test("wechat login renders the returned login content as a QR code image", async () => {
+  const originalFetch = globalThis.fetch;
+  const loginContent = "https://liteapp.weixin.qq.com/q/example?qrcode=token";
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        ret: 0,
+        qrcode: "status-token",
+        qrcode_img_content: loginContent,
+      }),
+    );
+  try {
+    const result = await new WechatClient().startLogin(
+      "https://weixin.example",
+    );
+    assert.match(result.qrcodeUrl ?? "", /^data:image\/png;base64,/);
+    const image = Buffer.from(result.qrcodeUrl!.split(",", 2)[1], "base64");
+    assert.deepEqual(
+      image.subarray(0, 8),
+      Buffer.from("89504e470d0a1a0a", "hex"),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("wechat image download decrypts AES-128-ECB CDN payloads", async () => {
   const originalFetch = globalThis.fetch;
   const key = Buffer.from("00112233445566778899aabbccddeeff", "hex");

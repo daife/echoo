@@ -5,6 +5,7 @@ import {
   randomBytes,
   randomUUID,
 } from "node:crypto";
+import QRCode from "qrcode";
 
 const DEFAULT_BASE_URL = "https://ilinkai.weixin.qq.com";
 const DEFAULT_CDN_BASE_URL = "https://novac2c.cdn.weixin.qq.com/c2c";
@@ -13,6 +14,7 @@ const attempts = new Map<
   {
     qrcode: string;
     qrcodeUrl?: string;
+    baseUrl: string;
     createdAt: number;
     status: "wait" | "connected" | "expired";
     account?: {
@@ -62,16 +64,28 @@ export class WechatClient {
       "ilink/bot/get_bot_qrcode?bot_type=3",
       { local_token_list: [] },
     );
+    if (
+      typeof response.qrcode !== "string" ||
+      typeof response.qrcode_img_content !== "string"
+    )
+      throw new Error("微信接口未返回有效的登录二维码");
+
+    const qrcodeUrl = await QRCode.toDataURL(response.qrcode_img_content, {
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 416,
+    });
     const attemptId = randomUUID();
     attempts.set(attemptId, {
       qrcode: response.qrcode,
-      qrcodeUrl: response.qrcode_img_content,
+      qrcodeUrl,
+      baseUrl,
       createdAt: Date.now(),
       status: "wait",
     });
     return {
       attemptId,
-      qrcodeUrl: response.qrcode_img_content,
+      qrcodeUrl,
       status: "wait",
     };
   }
@@ -91,7 +105,7 @@ export class WechatClient {
       return { attemptId, qrcodeUrl: attempt.qrcodeUrl, status: "expired" };
     }
     const response = await request(
-      DEFAULT_BASE_URL,
+      attempt.baseUrl,
       `ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(attempt.qrcode)}`,
     );
     if (response.status === "confirmed" || response.status === "scaned") {
