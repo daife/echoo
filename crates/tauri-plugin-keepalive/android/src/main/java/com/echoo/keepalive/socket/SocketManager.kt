@@ -109,6 +109,7 @@ object SocketManager {
                     token = refresh(context) ?: return
                     response = client!!.newCall(Request.Builder().url(url).header("Authorization", "Bearer $token").build()).execute()
                 }
+                var reachedHeadCursor = false
                 response.use {
                     if (!it.isSuccessful) return
                     val page = JSONObject(it.body?.string().orEmpty())
@@ -119,8 +120,9 @@ object SocketManager {
                     val changes = page.optJSONArray("changes") ?: return
                     for (index in 0 until changes.length()) applyChange(context, changes.getJSONObject(index))
                     cursor = page.optLong("cursor", cursor)
-                    if (!page.optBoolean("hasMore") && cursor >= headCursor) break
+                    reachedHeadCursor = !page.optBoolean("hasMore") && cursor >= headCursor
                 }
+                if (reachedHeadCursor) break
             }
         } finally {
             synchronized(this) {

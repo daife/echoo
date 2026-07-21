@@ -35,6 +35,8 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+apps/client/src-tauri/echoo-release.keystore
+apps/client/src-tauri/.android-signing.env
 
 # OS files
 .DS_Store

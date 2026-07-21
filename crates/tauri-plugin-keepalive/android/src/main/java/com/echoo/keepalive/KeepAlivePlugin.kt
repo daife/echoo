@@ -68,7 +68,7 @@ class KeepAlivePlugin(private val activity: Activity) : Plugin(activity) {
     fun status(invoke: Invoke) {
         val running = activity.getSharedPreferences("keep_alive", Activity.MODE_PRIVATE)
             .getBoolean("enabled", false)
-        invoke.resolve(if (running) "running" else "stopped")
+        invoke.resolveObject(if (running) "running" else "stopped")
     }
 
     @Command
@@ -82,6 +82,6 @@ class KeepAlivePlugin(private val activity: Activity) : Plugin(activity) {
         activity.startService(Intent(activity, MessageKeepAliveService::class.java).apply {
             action = MessageKeepAliveService.ACTION_STOP
         })
-        invoke.resolve(state)
+        invoke.resolveObject(state)
     }
 }
