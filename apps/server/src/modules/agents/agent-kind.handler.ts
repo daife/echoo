@@ -2,9 +2,11 @@ import type {
   Agent,
   AgentType,
   CreatePrimeFigureRequest,
+  CreatePrimeWorldRequest,
   CreateSliceFigureRequest,
   UpdatePrimeFigureRequest,
   UpdateSliceFigureRequest,
+  UpdatePrimeWorldRequest,
 } from "@echoo/shared";
 
 export interface AgentKindHandler {
@@ -35,4 +37,10 @@ export interface PrimeFigureKindHandler extends AgentKindHandler {
     agentId: string,
     input: UpdatePrimeFigureRequest,
   ): Promise<Agent | null>;
+}
+
+export interface PrimeWorldKindHandler extends AgentKindHandler {
+  readonly type: "prime-world";
+  create(ownerUserId: string, input: CreatePrimeWorldRequest): Promise<Agent>;
+  update(ownerUserId: string, agentId: string, input: UpdatePrimeWorldRequest): Promise<Agent | null>;
 }

@@ -11,7 +11,8 @@ export interface AgentRunJob {
   id?: string;
   ownerUserId: string;
   conversationId: string;
-  kind: "slice-figure" | "prime-figure";
+  kind: "slice-figure" | "prime-figure" | "prime-world";
+  runId?: string;
   assistantMessageId?: string;
   attempts?: number;
   trigger?:
@@ -50,6 +51,7 @@ export class AgentRunQueue {
         ownerUserId: job.ownerUserId,
         conversationId: job.conversationId,
         kind: job.kind,
+        runId: job.runId ?? "",
         assistantMessageId: job.assistantMessageId ?? "",
         attempts: String(job.attempts ?? 0),
         trigger: job.trigger ?? "end_user_message",
@@ -107,7 +109,8 @@ export class AgentRunQueue {
             String(concurrency - this.inFlight.size),
           ]),
         );
-        for (const entry of claimed) this.startEntry(entry, handler, onActivity);
+        for (const entry of claimed)
+          this.startEntry(entry, handler, onActivity);
         if (claimed.length) continue;
       }
       const batches = await redis.xReadGroup(
@@ -242,7 +245,9 @@ export class AgentRunQueue {
 
   async metrics() {
     const redis = await getRedis();
-    const pending = await redis.sendCommand(["XPENDING", STREAM, GROUP]).catch(() => []);
+    const pending = await redis
+      .sendCommand(["XPENDING", STREAM, GROUP])
+      .catch(() => []);
     return {
       pending: Array.isArray(pending) ? Number(pending[0] ?? 0) : 0,
       retries: this.retryCount,
@@ -251,12 +256,16 @@ export class AgentRunQueue {
   }
 }
 
-function toJob(entry: { id: string; message: Record<string, string> }): AgentRunJob {
+function toJob(entry: {
+  id: string;
+  message: Record<string, string>;
+}): AgentRunJob {
   return {
     id: entry.id,
     ownerUserId: entry.message.ownerUserId!,
     conversationId: entry.message.conversationId!,
     kind: entry.message.kind as AgentRunJob["kind"],
+    ...(entry.message.runId ? { runId: entry.message.runId } : {}),
     attempts: Number(entry.message.attempts || 0),
     trigger: entry.message.trigger as AgentRunJob["trigger"],
     ...(entry.message.debugInstruction
@@ -270,22 +279,31 @@ function toJob(entry: { id: string; message: Record<string, string> }): AgentRun
       : {}),
     ...(entry.message.passiveStage
       ? {
-          passiveStage: Number(entry.message.passiveStage) as AgentRunJob["passiveStage"],
+          passiveStage: Number(
+            entry.message.passiveStage,
+          ) as AgentRunJob["passiveStage"],
         }
       : {}),
   };
 }
 
 function decodeAutoClaim(value: unknown) {
-  const entries = Array.isArray(value) && Array.isArray(value[1]) ? value[1] : [];
-  return entries.flatMap((raw): Array<{ id: string; message: Record<string, string> }> => {
-    if (!Array.isArray(raw) || typeof raw[0] !== "string" || !Array.isArray(raw[1]))
-      return [];
-    const message: Record<string, string> = {};
-    for (let index = 0; index < raw[1].length; index += 2)
-      message[String(raw[1][index])] = String(raw[1][index + 1] ?? "");
-    return [{ id: raw[0], message }];
-  });
+  const entries =
+    Array.isArray(value) && Array.isArray(value[1]) ? value[1] : [];
+  return entries.flatMap(
+    (raw): Array<{ id: string; message: Record<string, string> }> => {
+      if (
+        !Array.isArray(raw) ||
+        typeof raw[0] !== "string" ||
+        !Array.isArray(raw[1])
+      )
+        return [];
+      const message: Record<string, string> = {};
+      for (let index = 0; index < raw[1].length; index += 2)
+        message[String(raw[1][index])] = String(raw[1][index + 1] ?? "");
+      return [{ id: raw[0], message }];
+    },
+  );
 }
 
 function retryDelay(attempt: number) {

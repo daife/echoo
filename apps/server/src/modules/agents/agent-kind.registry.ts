@@ -1,7 +1,7 @@
 import type { AgentType } from "@echoo/shared";
 import type { AgentKindHandler } from "./agent-kind.handler.js";
 import { PrimeFigureHandler } from "./kinds/prime-figure/prime-figure.handler.js";
-import { PrimeWorldPlaceholderHandler } from "./kinds/prime-world/prime-world-placeholder.handler.js";
+import { PrimeWorldHandler } from "./kinds/prime-world/prime-world.handler.js";
 import { SliceFigureHandler } from "./kinds/slice-figure/slice-figure.handler.js";
 
 export class AgentKindRegistry {
@@ -11,7 +11,7 @@ export class AgentKindRegistry {
     handlers: AgentKindHandler[] = [
       new SliceFigureHandler(),
       new PrimeFigureHandler(),
-      new PrimeWorldPlaceholderHandler(),
+      new PrimeWorldHandler(),
     ],
   ) {
     handlers.forEach((handler) => this.handlers.set(handler.type, handler));

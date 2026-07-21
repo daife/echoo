@@ -3,6 +3,7 @@ import type {
   AgentResourceUpload,
   AgentExportResponse,
   CreatePrimeFigureRequest,
+  CreatePrimeWorldRequest,
   CreateSliceFigureRequest,
   PrimeFigureAgent,
   PrimeFigureEditSnapshot,
@@ -15,6 +16,7 @@ import type {
   PrimeFigureVariableValue,
   UpdatePrimeFigureRequest,
   UpdateSliceFigureRequest,
+  UpdatePrimeWorldRequest,
 } from "@echoo/shared";
 import type { RowDataPacket } from "mysql2";
 import {
@@ -42,8 +44,10 @@ interface AgentRow extends RowDataPacket {
   updated_at: number;
 }
 
-type CreateAgentInput = CreateSliceFigureRequest | CreatePrimeFigureRequest;
-type UpdateAgentInput = UpdateSliceFigureRequest | UpdatePrimeFigureRequest;
+type CreateAgentInput =
+  CreateSliceFigureRequest | CreatePrimeFigureRequest | CreatePrimeWorldRequest;
+type UpdateAgentInput =
+  UpdateSliceFigureRequest | UpdatePrimeFigureRequest | UpdatePrimeWorldRequest;
 
 export class AgentRepository {
   constructor(
@@ -235,7 +239,15 @@ export class AgentRepository {
             input,
             now,
           )
-        : undefined;
+        : existing.type === "prime-world" && "detail" in input
+          ? {
+              schemaVersion: 1 as const,
+              variables: structuredClone(input.detail.initialState),
+              view: structuredClone(input.detail.presentation.startView),
+              summaries: {},
+              updatedAt: now,
+            }
+          : undefined;
     const resourceInput = input as {
       avatar?: AgentResourceUpload | null;
       cover?: AgentResourceUpload | null;
@@ -356,6 +368,31 @@ export class AgentRepository {
     try {
       await withTransaction(async (connection) => {
         if (nextRuntimeState) {
+          if (existing.type === "prime-world") {
+            await execute(
+              `UPDATE prime_world_runs SET status = 'cancelled', error_code = 'DEFINITION_UPDATED', finished_at = ?
+               WHERE owner_user_id = ? AND conversation_id = ? AND status IN ('queued', 'running')`,
+              [now, ownerUserId, existing.conversationId],
+              connection,
+            );
+            await execute(
+              `UPDATE prime_world_events events JOIN prime_world_runs runs ON runs.event_id = events.id
+               SET events.processed_at = COALESCE(events.processed_at, ?)
+               WHERE runs.owner_user_id = ? AND runs.conversation_id = ? AND runs.status = 'cancelled'`,
+              [now, ownerUserId, existing.conversationId],
+              connection,
+            );
+            await execute(
+              "DELETE FROM prime_world_history_entries WHERE owner_user_id = ? AND conversation_id = ?",
+              [ownerUserId, existing.conversationId],
+              connection,
+            );
+            await execute(
+              "DELETE FROM prime_world_scheduled_events WHERE owner_user_id = ? AND conversation_id = ?",
+              [ownerUserId, existing.conversationId],
+              connection,
+            );
+          }
           await execute(
             "UPDATE agents SET name = ?, definition = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?",
             [input.name, JSON.stringify(definition), now, agentId, ownerUserId],
@@ -1089,6 +1126,7 @@ function buildDetail(
   referenceImages: PrimeFigureReferenceImage[],
   stickers: PrimeFigureSticker[],
 ) {
+  if (type === "prime-world") return (input as CreatePrimeWorldRequest).detail;
   if (type === "slice-figure") {
     const value = input as CreateSliceFigureRequest;
     return {
@@ -1131,6 +1169,14 @@ function buildDetail(
 }
 
 function buildRuntimeState(input: CreateAgentInput, now: number) {
+  if (input.type === "prime-world")
+    return {
+      schemaVersion: 1,
+      variables: input.detail.initialState,
+      view: input.detail.presentation.startView,
+      summaries: {},
+      updatedAt: now,
+    };
   if (input.type !== "prime-figure") return {};
   const variables: Record<string, PrimeFigureVariableValue> = {};
   for (const definition of input.variableDefinitions ?? []) {
@@ -1152,6 +1198,7 @@ function buildRuntimeState(input: CreateAgentInput, now: number) {
 }
 
 function getInitialPreview(input: CreateAgentInput) {
+  if (input.type === "prime-world") return input.introduction || input.name;
   if (input.type === "slice-figure")
     return input.openingLine || input.introduction || input.persona;
   return input.introduction || input.currentSituation || input.persona;

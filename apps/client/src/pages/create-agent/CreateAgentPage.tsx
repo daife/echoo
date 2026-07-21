@@ -16,6 +16,7 @@ import {
   type AgentResourceUpload,
   type AgentType,
   type CreatePrimeFigureRequest,
+  type CreatePrimeWorldRequest,
   type CreateSliceFigureRequest,
   type PrimeFigureScheduleSegment,
   type PrimeFigureReferenceImage,
@@ -29,10 +30,12 @@ import { useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { imageFileToUpload } from "../../shared/utils/imageCompression";
 import { MediaAsset } from "../../features/media/MediaAsset";
+import { PrimeWorldCreateForm } from "./PrimeWorldCreateForm";
 
 export type CreateAgentHandlers = {
   "slice-figure": (input: CreateSliceFigureRequest) => Promise<Agent>;
   "prime-figure": (input: CreatePrimeFigureRequest) => Promise<Agent>;
+  "prime-world": (input: CreatePrimeWorldRequest) => Promise<Agent>;
 };
 
 const createOptions = [
@@ -54,7 +57,7 @@ const createOptions = [
   {
     type: "prime-world",
     label: "本初世界",
-    title: "本初世界（稍后推出）",
+    title: "创建本初世界",
     description:
       "世界状态、规则推进和多主体事件会走完全独立的创建与运行时流程。",
     icon: Sparkle,
@@ -119,9 +122,7 @@ export function CreateAgentPage({
                   <span
                     className={`rounded-full px-3 py-1 text-xs ${active ? "bg-white font-semibold text-[#09090b]" : "border border-white/10 text-white/45"}`}
                   >
-                    {option.type === "prime-world"
-                      ? `${option.label}（稍后推出）`
-                      : option.label}
+                    {option.label}
                   </span>
                 </div>
                 <h2 className="mt-4 text-xl font-semibold text-white md:mt-8 md:text-3xl">
@@ -140,7 +141,7 @@ export function CreateAgentPage({
         ) : selectedType === "prime-figure" ? (
           <PrimeFigureCreateForm onCreate={createHandlers["prime-figure"]} />
         ) : (
-          <UnavailableCreatePanel />
+          <PrimeWorldCreateForm onCreate={createHandlers["prime-world"]} />
         )}
       </div>
     </section>

@@ -2,9 +2,11 @@ import type { AgentsApi } from "@echoo/api-client";
 import type {
   AddPrimeFigureStickerRequest,
   CreatePrimeFigureRequest,
+  CreatePrimeWorldRequest,
   CreateSliceFigureRequest,
   UpdatePrimeFigureRequest,
   UpdateSliceFigureRequest,
+  UpdatePrimeWorldRequest,
 } from "@echoo/shared";
 
 export class AgentService {
@@ -21,6 +23,7 @@ export class AgentService {
   createPrimeFigure(input: CreatePrimeFigureRequest) {
     return this.api.createPrimeFigure(input);
   }
+  createPrimeWorld(input: CreatePrimeWorldRequest) { return this.api.createPrimeWorld(input); }
 
   updateSliceFigure(agentId: string, input: UpdateSliceFigureRequest) {
     return this.api.updateSliceFigure(agentId, input);
@@ -29,6 +32,7 @@ export class AgentService {
   updatePrimeFigure(agentId: string, input: UpdatePrimeFigureRequest) {
     return this.api.updatePrimeFigure(agentId, input);
   }
+  updatePrimeWorld(agentId: string, input: UpdatePrimeWorldRequest) { return this.api.updatePrimeWorld(agentId, input); }
 
   addPrimeFigureSticker(agentId: string, input: AddPrimeFigureStickerRequest) {
     return this.api.addPrimeFigureSticker(agentId, input);

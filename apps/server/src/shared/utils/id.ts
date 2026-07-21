@@ -12,7 +12,10 @@ export type EntityPrefix =
   | "aver"
   | "inst"
   | "post"
-  | "comment";
+  | "comment"
+  | "pwe"
+  | "pwr"
+  | "pwh";
 
 export function createId(prefix: EntityPrefix) {
   return `${prefix}_${randomUUID()}`;

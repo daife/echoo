@@ -555,6 +555,223 @@ export const updateSliceFigureSchema = createSliceFigureSchema.omit({
   type: true,
 });
 
-export const createPrimeWorldPlaceholderSchema = createAgentBaseSchema.extend({
+const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number().finite(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ]),
+);
+
+const worldElementIdSchema = z.string().trim().min(1).max(120);
+const worldElementSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.discriminatedUnion("type", [
+    z
+      .object({
+        id: worldElementIdSchema,
+        type: z.literal("stack"),
+        direction: z.enum(["vertical", "horizontal"]).optional(),
+        children: z.array(worldElementSchema).max(100),
+      })
+      .strict(),
+    z
+      .object({
+        id: worldElementIdSchema,
+        type: z.literal("text"),
+        text: z.string().max(64 * 1024),
+        tone: z.enum(["body", "muted", "title"]).optional(),
+      })
+      .strict(),
+    z
+      .object({
+        id: worldElementIdSchema,
+        type: z.literal("image"),
+        resourceUrl: z.string().trim().min(1).max(2_000),
+        alt: z.string().max(500).optional(),
+      })
+      .strict(),
+    z
+      .object({
+        id: worldElementIdSchema,
+        type: z.literal("choices"),
+        actionId: z.string().trim().min(1).max(120),
+        choices: z
+          .array(
+            z
+              .object({
+                id: z.string().trim().min(1).max(120),
+                label: z.string().trim().min(1).max(500),
+                description: z.string().max(2_000).optional(),
+                payload: z.record(z.string(), jsonValueSchema).optional(),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(20),
+      })
+      .strict(),
+    z
+      .object({
+        id: worldElementIdSchema,
+        type: z.literal("progress"),
+        value: z.number().finite().nonnegative(),
+        max: z.number().finite().positive(),
+        label: z.string().max(500).optional(),
+      })
+      .strict(),
+    z.object({ id: worldElementIdSchema, type: z.literal("divider") }).strict(),
+  ]),
+);
+
+const worldViewSchema = z
+  .object({
+    revision: z.number().int().nonnegative(),
+    title: z.string().max(200).optional(),
+    background: z
+      .object({
+        color: z
+          .string()
+          .regex(/^#[0-9a-fA-F]{6}$/)
+          .optional(),
+        resourceUrl: z.string().trim().min(1).max(2_000).optional(),
+      })
+      .strict()
+      .optional(),
+    root: worldElementSchema,
+    input: z
+      .object({
+        mode: z.enum(["text", "voice", "text-and-voice"]),
+        placeholder: z.string().max(500).optional(),
+        submitLabel: z.string().max(120).optional(),
+      })
+      .strict()
+      .optional(),
+    audio: z
+      .object({ autoPlay: z.boolean(), allowInterrupt: z.boolean() })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .superRefine((view, context) => {
+    const ids = new Set<string>();
+    let count = 0;
+    const visit = (value: unknown, depth: number) => {
+      if (!value || typeof value !== "object") return;
+      const element = value as {
+        id?: string;
+        type?: string;
+        children?: unknown[];
+      };
+      count += 1;
+      if (depth > 12)
+        context.addIssue({
+          code: "custom",
+          message: "世界视图嵌套深度不能超过 12 层。",
+        });
+      if (element.id && ids.has(element.id))
+        context.addIssue({
+          code: "custom",
+          message: `世界视图元素 ID ${element.id} 重复。`,
+        });
+      if (element.id) ids.add(element.id);
+      for (const child of element.children ?? []) visit(child, depth + 1);
+    };
+    visit(view.root, 1);
+    if (count > 200)
+      context.addIssue({
+        code: "custom",
+        message: "世界视图元素不能超过 200 个。",
+      });
+  });
+export const primeWorldViewSchema = worldViewSchema;
+
+const primeWorldDetailSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    definitionRevision: z.number().int().nonnegative().optional().default(0),
+    workflow: z
+      .object({
+        version: z.literal(1),
+        nodes: z
+          .array(
+            z
+              .object({
+                id: z.string().trim().min(1).max(120),
+                type: z.string().trim().min(1).max(120),
+                version: z.number().int().positive(),
+                name: z.string().max(160).optional(),
+                config: z.record(z.string(), jsonValueSchema),
+              })
+              .strict(),
+          )
+          .max(200),
+        edges: z
+          .array(
+            z
+              .object({
+                id: z.string().trim().min(1).max(120),
+                kind: z.enum(["control", "data"]),
+                source: z
+                  .object({
+                    nodeId: z.string().trim().min(1),
+                    port: z.string().trim().min(1),
+                  })
+                  .strict(),
+                target: z
+                  .object({
+                    nodeId: z.string().trim().min(1),
+                    port: z.string().trim().min(1),
+                  })
+                  .strict(),
+              })
+              .strict(),
+          )
+          .max(400),
+        editor: z
+          .object({
+            positions: z.record(
+              z.string(),
+              z
+                .object({ x: z.number().finite(), y: z.number().finite() })
+                .strict(),
+            ),
+            viewport: z
+              .object({
+                x: z.number().finite(),
+                y: z.number().finite(),
+                zoom: z.number().finite().positive(),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict(),
+      })
+      .strict(),
+    initialState: z.record(z.string(), jsonValueSchema),
+    stateSchema: z.record(z.string(), jsonValueSchema).optional(),
+    presentation: z
+      .object({
+        theme: z.enum(["system", "light", "dark"]),
+        accentColor: z
+          .string()
+          .regex(/^#[0-9a-fA-F]{6}$/)
+          .optional(),
+        startView: worldViewSchema,
+      })
+      .strict(),
+  })
+  .strict();
+
+export const primeWorldDefinitionSchema = primeWorldDetailSchema;
+
+export const createPrimeWorldSchema = createAgentBaseSchema.extend({
   type: z.literal("prime-world"),
+  detail: primeWorldDetailSchema,
+});
+
+export const updatePrimeWorldSchema = createPrimeWorldSchema.omit({
+  type: true,
 });

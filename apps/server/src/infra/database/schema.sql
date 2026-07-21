@@ -168,6 +168,62 @@ CREATE TABLE IF NOT EXISTS agent_runtime_states (
   CONSTRAINT fk_agent_runtime_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS prime_world_events (
+  seq BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  id VARCHAR(64) NOT NULL UNIQUE,
+  owner_user_id VARCHAR(64) NOT NULL,
+  conversation_id VARCHAR(64) NOT NULL,
+  client_event_id VARCHAR(120) NOT NULL,
+  type VARCHAR(32) NOT NULL,
+  payload_json JSON NOT NULL,
+  created_at BIGINT NOT NULL,
+  processed_at BIGINT NULL,
+  UNIQUE KEY uq_prime_world_event_client (owner_user_id, client_event_id),
+  INDEX idx_prime_world_events_conversation (conversation_id, seq),
+  CONSTRAINT fk_prime_world_events_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_prime_world_events_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS prime_world_runs (
+  id VARCHAR(64) PRIMARY KEY,
+  event_id VARCHAR(64) NOT NULL UNIQUE,
+  owner_user_id VARCHAR(64) NOT NULL,
+  conversation_id VARCHAR(64) NOT NULL,
+  definition_revision INT UNSIGNED NOT NULL,
+  definition_json JSON NOT NULL,
+  status ENUM('queued', 'running', 'completed', 'failed', 'cancelled') NOT NULL,
+  state_version_before BIGINT UNSIGNED NULL,
+  state_version_after BIGINT UNSIGNED NULL,
+  error_code VARCHAR(80) NULL,
+  error_detail VARCHAR(2000) NULL,
+  started_at BIGINT NULL,
+  finished_at BIGINT NULL,
+  created_at BIGINT NOT NULL,
+  INDEX idx_prime_world_runs_conversation (conversation_id, created_at),
+  CONSTRAINT fk_prime_world_runs_event FOREIGN KEY (event_id) REFERENCES prime_world_events(id) ON DELETE CASCADE,
+  CONSTRAINT fk_prime_world_runs_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_prime_world_runs_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS prime_world_history_entries (
+  seq BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  id VARCHAR(64) NOT NULL UNIQUE,
+  owner_user_id VARCHAR(64) NOT NULL,
+  conversation_id VARCHAR(64) NOT NULL,
+  run_id VARCHAR(64) NOT NULL,
+  node_id VARCHAR(120) NOT NULL,
+  channel VARCHAR(80) NOT NULL,
+  role VARCHAR(20) NOT NULL,
+  content_json JSON NOT NULL,
+  token_estimate INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL,
+  UNIQUE KEY uq_prime_world_history_node (run_id, node_id, channel, role),
+  INDEX idx_prime_world_history_read (conversation_id, channel, seq),
+  CONSTRAINT fk_prime_world_history_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_prime_world_history_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_prime_world_history_run FOREIGN KEY (run_id) REFERENCES prime_world_runs(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS prime_memories (
   id VARCHAR(64) PRIMARY KEY,
   agent_id VARCHAR(64) NOT NULL,

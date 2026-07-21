@@ -12,6 +12,7 @@ import {
   RewardsApi,
   PaymentsApi,
   ChannelsApi,
+  PrimeWorldApi,
 } from "@echoo/api-client";
 import { AgentService } from "../../services/AgentService";
 import { AuthService } from "../../services/AuthService";
@@ -22,6 +23,7 @@ import { CharacterAssetService } from "../../services/CharacterAssetService";
 import { SocialService } from "../../services/SocialService";
 import { RewardsService } from "../../services/RewardsService";
 import { RechargeService } from "../../services/RechargeService";
+import { PrimeWorldService } from "../../services/PrimeWorldService";
 
 export function initApp(runtime: RuntimeBundle) {
   let refreshPromise: Promise<string | null> | null = null;
@@ -41,6 +43,7 @@ export function initApp(runtime: RuntimeBundle) {
 
   return {
     agentService: new AgentService(new AgentsApi(api)),
+    primeWorldService: new PrimeWorldService(new PrimeWorldApi(api)),
     characterAssetService: new CharacterAssetService(
       new CharacterAssetsApi(api),
     ),

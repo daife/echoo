@@ -1,6 +1,7 @@
 export * from "./client";
 export * from "./auth";
 export * from "./agents";
+export * from "./prime-world";
 export * from "./messages";
 export * from "./runtime-config";
 export * from "./resources";

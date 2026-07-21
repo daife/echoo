@@ -3,9 +3,11 @@ import { ZodError } from "zod";
 import { addPrimeFigureStickerSchema } from "@echoo/shared";
 import type {
   CreatePrimeFigureRequest,
+  CreatePrimeWorldRequest,
   CreateSliceFigureRequest,
   UpdatePrimeFigureRequest,
   UpdateSliceFigureRequest,
+  UpdatePrimeWorldRequest,
 } from "@echoo/shared";
 import { InvalidMediaUploadError } from "../resources/resource.repository.js";
 import { AgentsService } from "./agents.service.js";
@@ -50,7 +52,7 @@ export async function registerAgentRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post<{ Body: CreateSliceFigureRequest | CreatePrimeFigureRequest }>(
+  app.post<{ Body: CreateSliceFigureRequest | CreatePrimeFigureRequest | CreatePrimeWorldRequest }>(
     "/",
     { bodyLimit: 96 * 1024 * 1024 },
     async (request, reply) => {
@@ -72,6 +74,23 @@ export async function registerAgentRoutes(app: FastifyInstance) {
             .code(400)
             .send({ error: "INVALID_MEDIA_UPLOAD", message: error.message });
         }
+        throw error;
+      }
+    },
+  );
+
+  app.patch<{ Params: { agentId: string }; Body: UpdatePrimeWorldRequest }>(
+    "/:agentId/prime-world",
+    { bodyLimit: 2 * 1024 * 1024 },
+    async (request, reply) => {
+      const userId = await request.requireUserId(reply);
+      if (!userId) return;
+      try {
+        const agent = await agents.updatePrimeWorld(userId, request.params.agentId, request.body);
+        if (!agent) return reply.code(404).send({ error: "NOT_FOUND", message: "未找到本初世界。" });
+        return { agent };
+      } catch (error) {
+        if (error instanceof ZodError) return reply.code(400).send({ error: "VALIDATION_ERROR", message: error.issues[0]?.message ?? "本初世界定义无效。" });
         throw error;
       }
     },

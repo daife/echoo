@@ -7,6 +7,8 @@ import { closeDatabase, initializeDatabase } from "./infra/database/mysql.js";
 import { AgentRunQueue } from "./infra/redis/run-queue.js";
 import { closeRedis, getRedis } from "./infra/redis/redis.js";
 import { registerAgentRoutes } from "./modules/agents/agents.controller.js";
+import { registerPrimeWorldRoutes } from "./modules/agents/kinds/prime-world/prime-world.controller.js";
+import { PrimeWorldService } from "./modules/agents/kinds/prime-world/prime-world.service.js";
 import { PrimeFigureWakeupScheduler } from "./modules/agents/kinds/prime-figure/prime-figure-silence.scheduler.js";
 import { registerAuthDecorators } from "./modules/auth/auth.decorators.js";
 import { registerAuthRoutes } from "./modules/auth/auth.controller.js";
@@ -20,6 +22,7 @@ import { ResourceCleanupQueue } from "./modules/resources/resource-cleanup.queue
 import { registerRuntimeConfigRoutes } from "./modules/runtime-config/runtime-config.controller.js";
 import { registerAdminRoutes } from "./modules/admin/admin.controller.js";
 import { registerBillingRoutes } from "./modules/billing/billing.controller.js";
+import { BillingContext } from "./modules/billing/billing-context.js";
 import { registerPlatformCatalogRoutes } from "./modules/platform-catalog/platform-catalog.controller.js";
 import { registerCharacterAssetRoutes } from "./modules/character-assets/character-assets.controller.js";
 import { registerSocialRoutes } from "./modules/social/social.controller.js";
@@ -50,6 +53,8 @@ export async function buildApp() {
   );
   const primeWakeupScheduler = new PrimeFigureWakeupScheduler();
   const runQueue = new AgentRunQueue();
+  const worldRunService = new PrimeWorldService();
+  let worldRecoveryTimer: ReturnType<typeof setInterval> | undefined;
   const resourceQueue = new ResourceProcessingQueue();
   const resourceCleanupQueue = new ResourceCleanupQueue();
   const wechatService = new WechatService();
@@ -99,6 +104,7 @@ export async function buildApp() {
 
   await app.register(registerAuthRoutes, { prefix: "/api/auth" });
   await app.register(registerAgentRoutes, { prefix: "/api/agents" });
+  await app.register(registerPrimeWorldRoutes, { prefix: "/api/prime-world" });
   await app.register(registerMessagingRoutes, { prefix: "/api" });
   await app.register(registerConversationRoutes, {
     prefix: "/api/conversations",
@@ -131,10 +137,32 @@ export async function buildApp() {
       .catch((error) => app.log.error(error, "Prime wakeup scheduler stopped"));
     void runQueue
       .start(
-        (job) => runService.processQueuedRun(job),
+        (job) =>
+          job.kind === "prime-world"
+            ? BillingContext.run(
+                {
+                  ownerUserId: job.ownerUserId,
+                  conversationId: job.conversationId,
+                },
+                () => worldRunService.processQueuedRun(job),
+              )
+            : runService.processQueuedRun(job),
         (activity) => runService.publishAgentActivity(activity),
       )
       .catch((error) => app.log.error(error, "Agent run worker stopped"));
+    void worldRunService
+      .recoverQueuedRuns()
+      .catch((error) =>
+        app.log.warn(error, "Prime world queued-run recovery unavailable"),
+      );
+    worldRecoveryTimer = setInterval(() => {
+      void worldRunService
+        .recoverQueuedRuns()
+        .catch((error) =>
+          app.log.warn(error, "Prime world queued-run recovery failed"),
+        );
+    }, 30_000);
+    worldRecoveryTimer.unref();
     void resourceQueue
       .recoverFromDatabase()
       .then(() => resourceQueue.start())
@@ -151,6 +179,7 @@ export async function buildApp() {
   app.addHook("onClose", async () => {
     primeWakeupScheduler.stop();
     runQueue.stop();
+    if (worldRecoveryTimer) clearInterval(worldRecoveryTimer);
     resourceQueue.stop();
     resourceCleanupQueue.stop();
     wechatService.stopAll();

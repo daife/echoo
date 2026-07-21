@@ -4,10 +4,12 @@ import type {
   AgentExportResponse,
   CreateAgentResponse,
   CreatePrimeFigureRequest,
+  CreatePrimeWorldRequest,
   CreateSliceFigureRequest,
   PrimeFigureEditSnapshot,
   UpdatePrimeFigureRequest,
   UpdateSliceFigureRequest,
+  UpdatePrimeWorldRequest,
 } from "@echoo/shared";
 import type { ApiClient } from "./client";
 
@@ -42,6 +44,10 @@ export class AgentsApi {
       }));
   }
 
+  createPrimeWorld(body: CreatePrimeWorldRequest): Promise<CreateAgentResponse> {
+    return this.client.post<CreateAgentResponse>("/agents", body).then((response) => ({ agent: normalizeAgentResources(this.client, response.agent) }));
+  }
+
   updateSliceFigure(
     agentId: string,
     body: UpdateSliceFigureRequest,
@@ -62,6 +68,10 @@ export class AgentsApi {
       .then((response) => ({
         agent: normalizeAgentResources(this.client, response.agent),
       }));
+  }
+
+  updatePrimeWorld(agentId: string, body: UpdatePrimeWorldRequest): Promise<CreateAgentResponse> {
+    return this.client.patch<CreateAgentResponse>(`/agents/${agentId}/prime-world`, body).then((response) => ({ agent: normalizeAgentResources(this.client, response.agent) }));
   }
 
   addPrimeFigureSticker(

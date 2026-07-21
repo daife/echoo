@@ -10,9 +10,11 @@ import type {
   CreateCharacterAssetDraftRequest,
   AddPrimeFigureStickerRequest,
   CreatePrimeFigureRequest,
+  CreatePrimeWorldRequest,
   CreateSliceFigureRequest,
   UpdatePrimeFigureRequest,
   UpdateSliceFigureRequest,
+  UpdatePrimeWorldRequest,
 } from "@echoo/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -34,6 +36,7 @@ import { CreateAgentPage } from "../pages/create-agent/CreateAgentPage";
 import { ExplorePage } from "../pages/explore/ExplorePage";
 import { HomePage } from "../pages/home/HomePage";
 import { MessagesPage } from "../pages/messages/MessagesPage";
+import { PrimeWorldPage } from "../pages/prime-world/PrimeWorldPage";
 import { ProfilePage } from "../pages/profile/ProfilePage";
 import { SettingsPage } from "../pages/settings/SettingsPage";
 import { PublicAssetEditorPage } from "../pages/public-asset/PublicAssetEditorPage";
@@ -462,6 +465,22 @@ export function App() {
     }
   };
 
+  const createPrimeWorld = async (input: CreatePrimeWorldRequest) => {
+    const created = await services.agentService.createPrimeWorld(input);
+    const agent = created.agent;
+    setMyAgents((current) => [agent, ...current.filter((item) => item.id !== agent.id)]);
+    openAgent(agent);
+    return agent;
+  };
+
+  const updatePrimeWorld = async (agentId: string, input: UpdatePrimeWorldRequest) => {
+    const updated = await services.agentService.updatePrimeWorld(agentId, input);
+    const agent = updated.agent;
+    setMyAgents((current) => current.map((item) => item.id === agent.id ? agent : item));
+    setSelectedAgent((current) => current?.id === agent.id ? agent : current);
+    return agent;
+  };
+
   const updateSliceFigure = async (
     agentId: string,
     input: UpdateSliceFigureRequest,
@@ -696,11 +715,14 @@ export function App() {
           createHandlers={{
             "slice-figure": createSliceFigure,
             "prime-figure": createPrimeFigure,
+            "prime-world": createPrimeWorld,
           }}
           onBack={closeSecondaryView}
         />
       );
     if (view === "messages") {
+      if (selectedAgent?.type === "prime-world")
+        return <PrimeWorldPage agent={selectedAgent} service={services.primeWorldService} onBack={closeConversation} onSave={async (detail) => { await updatePrimeWorld(selectedAgent.id, { name: selectedAgent.name, attributes: selectedAgent.attributes, tags: selectedAgent.tags, introduction: selectedAgent.introduction, isPublic: selectedAgent.isPublic, detail }); }} />;
       return (
         <MessagesPage
           agent={selectedAgent ?? undefined}

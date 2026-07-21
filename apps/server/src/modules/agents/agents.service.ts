@@ -1,9 +1,11 @@
 import type {
   AddPrimeFigureStickerRequest,
   CreatePrimeFigureRequest,
+  CreatePrimeWorldRequest,
   CreateSliceFigureRequest,
   UpdatePrimeFigureRequest,
   UpdateSliceFigureRequest,
+  UpdatePrimeWorldRequest,
 } from "@echoo/shared";
 import { AgentKindRegistry } from "./agent-kind.registry.js";
 import { AgentRepository } from "./agent.repository.js";
@@ -40,11 +42,24 @@ export class AgentsService {
 
   createAgent(
     userId: string,
-    input: CreateSliceFigureRequest | CreatePrimeFigureRequest,
+    input: CreateSliceFigureRequest | CreatePrimeFigureRequest | CreatePrimeWorldRequest,
   ) {
     if (input.type === "prime-figure")
       return this.createPrimeFigure(userId, input);
+    if (input.type === "prime-world") return this.createPrimeWorld(userId, input);
     return this.createSliceFigure(userId, input);
+  }
+
+  createPrimeWorld(userId: string, input: CreatePrimeWorldRequest) {
+    const handler = this.kinds.get("prime-world");
+    if (!handler) throw new Error("本初世界处理器未注册。");
+    return handler.create(userId, input);
+  }
+
+  updatePrimeWorld(userId: string, agentId: string, input: UpdatePrimeWorldRequest) {
+    const handler = this.kinds.get("prime-world");
+    if (!handler) throw new Error("本初世界处理器未注册。");
+    return handler.update(userId, agentId, input);
   }
 
   updateSliceFigure(

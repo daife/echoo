@@ -160,9 +160,8 @@ export interface PrimeFigureDetail {
   initialRelationshipStatus: string;
 }
 
-export interface PrimeWorldDetail {
-  status: "placeholder";
-}
+export type { PrimeWorldDetail } from "./prime-world.js";
+import type { PrimeWorldDetail } from "./prime-world.js";
 
 export type AgentDetail =
   SliceFigureDetail | PrimeFigureDetail | PrimeWorldDetail;
@@ -268,6 +267,20 @@ export type UpdatePrimeFigureRequest = Omit<
   currentRelationshipStatus: string;
 };
 
+export interface CreatePrimeWorldRequest {
+  type: "prime-world";
+  avatar?: AgentResourceUpload | null;
+  cover?: AgentResourceUpload | null;
+  name: string;
+  attributes?: AgentAttribute[];
+  tags?: string[];
+  introduction?: string;
+  isPublic: boolean;
+  detail: PrimeWorldDetail;
+}
+
+export type UpdatePrimeWorldRequest = Omit<CreatePrimeWorldRequest, "type">;
+
 export interface AddPrimeFigureStickerRequest {
   upload: AgentResourceUpload;
   description: string;
@@ -279,7 +292,7 @@ export interface PrimeFigureEditSnapshot {
 }
 
 export interface AgentExportResponse {
-  data: CreateSliceFigureRequest | CreatePrimeFigureRequest;
+  data: CreateSliceFigureRequest | CreatePrimeFigureRequest | CreatePrimeWorldRequest;
 }
 
 export type PrimeMessageSender = "prime_figure" | "end_user";
