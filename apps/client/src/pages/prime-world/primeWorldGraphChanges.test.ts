@@ -42,7 +42,9 @@ describe("Prime World graph persistence", () => {
     expect(
       applyPersistentNodeChanges(detail, [{ id: "start", type: "remove" }]),
     ).toBe(true);
-    expect(detail.workflow.nodes.some((node) => node.id === "start")).toBe(false);
+    expect(detail.workflow.nodes.some((node) => node.id === "start")).toBe(
+      false,
+    );
     expect(detail.workflow.editor.positions.start).toBeUndefined();
     expect(
       detail.workflow.edges.some(
@@ -53,18 +55,40 @@ describe("Prime World graph persistence", () => {
   });
 
   it("only persists edge removals", () => {
+    const edgeId = detail.workflow.edges[0]!.id;
     const selection: EdgeChange[] = [
-      { id: "e-start", type: "select", selected: true },
+      { id: edgeId, type: "select", selected: true },
     ];
     expect(applyPersistentEdgeChanges(detail, selection)).toBe(false);
-    expect(detail.workflow.edges.some((edge) => edge.id === "e-start")).toBe(true);
+    expect(detail.workflow.edges.some((edge) => edge.id === edgeId)).toBe(true);
 
     expect(
-      applyPersistentEdgeChanges(detail, [
-        { id: "e-start", type: "remove" },
-      ]),
+      applyPersistentEdgeChanges(detail, [{ id: edgeId, type: "remove" }]),
     ).toBe(true);
-    expect(detail.workflow.edges.some((edge) => edge.id === "e-start")).toBe(false);
+    expect(detail.workflow.edges.some((edge) => edge.id === edgeId)).toBe(
+      false,
+    );
+  });
+
+  it("starts from a complete LLM story workflow", () => {
+    const nodeTypes = new Set(detail.workflow.nodes.map((node) => node.type));
+
+    expect([...nodeTypes]).toEqual(
+      expect.arrayContaining([
+        "trigger.textInput",
+        "trigger.uiAction",
+        "history.read",
+        "data.messages",
+        "ai.llm",
+        "state.patch",
+        "view.showChoices",
+      ]),
+    );
+    expect(
+      detail.workflow.nodes.every(
+        (node) => detail.workflow.editor.positions[node.id] !== undefined,
+      ),
+    ).toBe(true);
   });
 
   it("places palette nodes near the viewport center with a cascade", () => {
