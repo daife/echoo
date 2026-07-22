@@ -12,9 +12,9 @@ import {
   Background,
   Controls,
   Handle,
-  MiniMap,
   Position,
   ReactFlow,
+  applyNodeChanges,
   type Connection,
   type Edge,
   type Node,
@@ -27,7 +27,7 @@ import "@xyflow/react/dist/style.css";
 import { json } from "@codemirror/lang-json";
 import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
-import { BracketsCurly, ClipboardText, Copy, DownloadSimple, FlowArrow, FloppyDisk, MagnifyingGlass, Trash, UploadSimple, X } from "@phosphor-icons/react";
+import { BracketsCurly, ClipboardText, Copy, DownloadSimple, FlowArrow, FloppyDisk, LinkBreak, MagnifyingGlass, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PrimeWorldService } from "../../services/PrimeWorldService";
 import {
@@ -38,12 +38,13 @@ import {
 
 type FlowNode = Node<{ world: PrimeWorldNode; catalog?: PrimeWorldNodeCatalogEntry; inputs: PrimeWorldNodeCatalogEntry["inputs"]; outputs: PrimeWorldNodeCatalogEntry["outputs"] }, "world">;
 
-export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, onClose }: {
+export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, onClose, saveLabel = "校验并保存" }: {
   detail: PrimeWorldDetail;
-  conversationId: string;
+  conversationId?: string;
   service: PrimeWorldService;
   onSave: (detail: PrimeWorldDetail, preserveRuntimeState: boolean) => Promise<void>;
-  onClose: () => void;
+  onClose?: () => void;
+  saveLabel?: string;
 }) {
   const [document, setDocument] = useState(() => structuredClone(detail));
   const [source, setSource] = useState(() => JSON.stringify(detail, null, 2));
@@ -53,6 +54,7 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState<string>();
   const [selectedId, setSelectedId] = useState<string>();
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string>();
   const [issues, setIssues] = useState<PrimeWorldValidationIssue[]>([]);
   const [saving, setSaving] = useState(false);
   const [preserveRuntimeState, setPreserveRuntimeState] = useState(false);
@@ -78,11 +80,12 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
   }, [service]);
   useEffect(() => { void loadCatalog(); }, [loadCatalog]);
   useEffect(() => {
+    if (!conversationId) return;
     void service.getSnapshot(conversationId).then((snapshot) => snapshot.run ? service.trace(conversationId, snapshot.run.id) : null).then((value) => setTrace(value?.trace ?? [])).catch(() => undefined);
   }, [conversationId, service]);
   const catalogByType = useMemo(() => new Map(catalog.map((entry) => [entry.type, entry])), [catalog]);
   const nodeTypes = useMemo(() => ({ world: WorldNode }), []);
-  const nodes = useMemo<FlowNode[]>(() => document.workflow.nodes.map((world) => {
+  const documentNodes = useMemo<FlowNode[]>(() => document.workflow.nodes.map((world) => {
     const catalog = catalogByType.get(world.type);
     const ports = resolvedPorts(world, catalog, document.workflow.edges);
     return {
@@ -92,6 +95,8 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
       data: { world, catalog, ...ports },
     };
   }), [catalogByType, document]);
+  const [nodes, setNodes] = useState<FlowNode[]>(documentNodes);
+  useEffect(() => { setNodes(documentNodes); }, [documentNodes]);
   const edges = useMemo<Edge[]>(() => document.workflow.edges.map((edge) => ({
     id: edge.id,
     source: edge.source.nodeId,
@@ -100,8 +105,9 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
     targetHandle: edge.target.port,
     type: "smoothstep",
     animated: edge.kind === "control",
-    style: { stroke: edge.kind === "control" ? "#a78bfa" : "#38bdf8" },
-  })), [document.workflow.edges]);
+    selected: edge.id === selectedEdgeId,
+    style: { stroke: edge.kind === "control" ? "#a78bfa" : "#38bdf8", strokeWidth: edge.id === selectedEdgeId ? 3 : 1.5 },
+  })), [document.workflow.edges, selectedEdgeId]);
 
   const updateDocument = useCallback((recipe: (value: PrimeWorldDetail) => void | boolean) => {
     setDocument((current) => {
@@ -113,13 +119,21 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
     });
   }, []);
   const onNodesChange = useCallback<OnNodesChange<FlowNode>>((changes) => {
-    updateDocument((next) => applyPersistentNodeChanges(next, changes));
+    setNodes((current) => applyNodeChanges(changes, current));
+    const persistentChanges = changes.filter((change) =>
+      change.type === "remove" ||
+      (change.type === "position" && change.position && change.dragging !== true),
+    );
+    if (persistentChanges.length)
+      updateDocument((next) => applyPersistentNodeChanges(next, persistentChanges));
     if (selectedId && changes.some((change) => change.type === "remove" && change.id === selectedId))
       setSelectedId(undefined);
   }, [selectedId, updateDocument]);
   const onEdgesChange = useCallback<OnEdgesChange>((changes) => {
     updateDocument((next) => applyPersistentEdgeChanges(next, changes));
-  }, [updateDocument]);
+    if (selectedEdgeId && changes.some((change) => change.type === "remove" && change.id === selectedEdgeId))
+      setSelectedEdgeId(undefined);
+  }, [selectedEdgeId, updateDocument]);
   const onConnect = useCallback((connection: Connection) => {
     if (!connection.sourceHandle || !connection.targetHandle) return;
     const source = document.workflow.nodes.find((node) => node.id === connection.source);
@@ -143,6 +157,7 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
       next.workflow.editor.positions[id] = position;
     });
     setSelectedId(id);
+    setSelectedEdgeId(undefined);
   }, [catalogByType, updateDocument]);
   const addNodeAtViewportCenter = useCallback((type: string) => {
     const index = paletteAddIndex.current++;
@@ -171,6 +186,10 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
     delete next.workflow.editor.positions[selectedId];
     setSelectedId(undefined);
   });
+  const disconnectSelectedEdge = () => selectedEdgeId && updateDocument((next) => {
+    next.workflow.edges = next.workflow.edges.filter((edge) => edge.id !== selectedEdgeId);
+    setSelectedEdgeId(undefined);
+  });
   const save = async () => {
     if (!jsonValid) { setMode("json"); return; }
     setSaving(true);
@@ -179,13 +198,15 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
       setIssues(result.issues);
       if (!result.valid) return;
       await onSave(document, preserveRuntimeState);
-      onClose();
+      onClose?.();
     } catch (error) {
       setIssues([{ code: "VALIDATION_ERROR", pointer: "/", message: error instanceof Error ? error.message : "工作流校验失败。" }]);
     } finally { setSaving(false); }
   };
   const selected = document.workflow.nodes.find((node) => node.id === selectedId);
+  const selectedEdge = document.workflow.edges.find((edge) => edge.id === selectedEdgeId);
   const exportBundle = async () => {
+    if (!conversationId) return;
     const bundle = await service.exportBundle(conversationId);
     const url = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" }));
     const anchor = window.document.createElement("a");
@@ -212,16 +233,16 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#0b0b0d]">
       <header className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-        <div><p className="text-[11px] uppercase tracking-[.18em] text-white/35">Revision {detail.definitionRevision}</p><h2 className="font-semibold text-white">世界工作流</h2></div>
+        <div><p className="text-[11px] uppercase tracking-[.18em] text-white/35">{conversationId ? `Revision ${detail.definitionRevision}` : "New world"}</p><h2 className="font-semibold text-white">世界工作流</h2></div>
         <div className="flex items-center gap-2">
           <div className="flex rounded-lg border border-white/10 p-1"><ModeButton active={mode === "graph"} onClick={() => setMode("graph")} icon={<FlowArrow size={15}/>} label="画布"/><ModeButton active={mode === "json"} onClick={() => setMode("json")} icon={<BracketsCurly size={15}/>} label="JSON"/></div>
-          <button title="导出 bundle" className="grid h-9 w-9 place-items-center rounded-lg text-white/60 hover:bg-white/10" onClick={() => void exportBundle()}><DownloadSimple size={17}/></button>
-          <button title="粘贴 bundle 并导入" className="grid h-9 w-9 place-items-center rounded-lg text-white/60 hover:bg-white/10" onClick={() => void importBundleFromClipboard()}><ClipboardText size={17}/></button>
-          <button title="导入 bundle" className="grid h-9 w-9 place-items-center rounded-lg text-white/60 hover:bg-white/10" onClick={() => importInput.current?.click()}><UploadSimple size={17}/></button>
-          <input ref={importInput} className="hidden" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; void file.text().then(importBundleText); event.currentTarget.value = ""; }}/>
-          <button className="grid h-9 w-9 place-items-center rounded-lg text-white/60 hover:bg-white/10" onClick={onClose}><X size={18}/></button>
-          <label className="hidden items-center gap-2 text-[11px] text-white/50 xl:flex"><input type="checkbox" checked={preserveRuntimeState} onChange={(event) => setPreserveRuntimeState(event.target.checked)}/>保留运行状态</label>
-          <button className="flex h-9 items-center gap-2 rounded-lg bg-white px-3 text-sm font-medium text-black disabled:opacity-50" disabled={saving || !jsonValid} onClick={() => void save()}><FloppyDisk size={16}/>{saving ? "校验中" : "校验并保存"}</button>
+          {conversationId ? <><button type="button" title="导出 bundle" className="grid h-9 w-9 place-items-center rounded-lg text-white/60 hover:bg-white/10" onClick={() => void exportBundle()}><DownloadSimple size={17}/></button>
+          <button type="button" title="粘贴 bundle 并导入" className="grid h-9 w-9 place-items-center rounded-lg text-white/60 hover:bg-white/10" onClick={() => void importBundleFromClipboard()}><ClipboardText size={17}/></button>
+          <button type="button" title="导入 bundle" className="grid h-9 w-9 place-items-center rounded-lg text-white/60 hover:bg-white/10" onClick={() => importInput.current?.click()}><UploadSimple size={17}/></button>
+          <input ref={importInput} className="hidden" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; void file.text().then(importBundleText); event.currentTarget.value = ""; }}/></> : null}
+          {onClose ? <button type="button" aria-label="关闭编辑器" className="grid h-9 w-9 place-items-center rounded-lg text-white/60 hover:bg-white/10" onClick={onClose}><X size={18}/></button> : null}
+          {conversationId ? <label className="hidden items-center gap-2 text-[11px] text-white/50 xl:flex"><input type="checkbox" checked={preserveRuntimeState} onChange={(event) => setPreserveRuntimeState(event.target.checked)}/>保留运行状态</label> : null}
+          <button type="button" className="flex h-9 items-center gap-2 rounded-lg bg-white px-3 text-sm font-medium text-black disabled:opacity-50" disabled={saving || !jsonValid} onClick={() => void save()}><FloppyDisk size={16}/>{saving ? "校验中" : saveLabel}</button>
         </div>
       </header>
       {mode === "json" ? <JsonEditor value={source} onChange={(value) => {
@@ -240,12 +261,12 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
             {catalogLoading ? <p className="mt-4 text-xs text-white/35">正在加载节点目录…</p> : catalogError ? <div className="mt-4 rounded-lg border border-red-300/15 bg-red-300/[.05] p-3"><p className="text-xs leading-5 text-red-200/75">{catalogError}</p><button className="mt-2 text-xs font-medium text-white/70 hover:text-white" onClick={() => void loadCatalog()}>重新加载</button></div> : [...new Set(catalog.map((item) => item.category))].map((category) => <div key={category} className="mt-4"><p className="mb-2 text-[10px] uppercase tracking-[.14em] text-white/30">{category}</p>{catalog.filter((item) => item.category === category && `${item.title} ${item.type}`.toLowerCase().includes(filter.toLowerCase())).map((entry) => <button key={entry.type} draggable title="单击添加到画布中心，或拖到指定位置" onDragStart={(event) => { paletteDragging.current = true; event.dataTransfer.setData("application/echoo-world-node", entry.type); }} onDragEnd={() => { window.requestAnimationFrame(() => { paletteDragging.current = false; }); }} onClick={() => { if (!paletteDragging.current) addNodeAtViewportCenter(entry.type); }} className="mb-1.5 block w-full rounded-lg border border-white/10 bg-white/[.035] p-2 text-left hover:border-white/25"><span className="block text-xs text-white/80">{entry.title}</span><span className="block truncate font-mono text-[9px] text-white/35">{entry.type}</span></button>)}</div>)}
           </aside>
           <div ref={canvas} className="relative min-h-0 min-w-0 bg-[#0e0e11]" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}>
-            <ReactFlow<FlowNode, Edge> className="h-full w-full" nodes={nodes} edges={edges} nodeTypes={nodeTypes} onInit={(instance) => { flowInstance.current = instance; }} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={(_, node) => setSelectedId(node.id)} onPaneClick={() => setSelectedId(undefined)} onDrop={(event) => { event.preventDefault(); const type = event.dataTransfer.getData("application/echoo-world-node"); if (type) addNode(type, flowInstance.current?.screenToFlowPosition({ x: event.clientX, y: event.clientY }) ?? { x: 100, y: 100 }); }} fitView deleteKeyCode={["Backspace", "Delete"]} connectionRadius={24}>
-              <Background color="#303039" gap={24}/><MiniMap pannable zoomable nodeColor="#6d5bd0"/><Controls/>
+            <ReactFlow<FlowNode, Edge> className="h-full w-full" nodes={nodes} edges={edges} nodeTypes={nodeTypes} onInit={(instance) => { flowInstance.current = instance; }} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={(_, node) => { setSelectedId(node.id); setSelectedEdgeId(undefined); }} onEdgeClick={(_, edge) => { setSelectedEdgeId(edge.id); setSelectedId(undefined); }} onPaneClick={() => { setSelectedId(undefined); setSelectedEdgeId(undefined); }} onDrop={(event) => { event.preventDefault(); const type = event.dataTransfer.getData("application/echoo-world-node"); if (type) addNode(type, flowInstance.current?.screenToFlowPosition({ x: event.clientX, y: event.clientY }) ?? { x: 100, y: 100 }); }} fitView deleteKeyCode={["Backspace", "Delete"]} connectionRadius={24}>
+              <Background color="#303039" gap={24}/><Controls className="overflow-hidden rounded-lg border border-white/10 bg-[#17171b] shadow-[0_10px_30px_rgba(0,0,0,.3)] [&_button]:border-white/10 [&_button]:bg-[#17171b] [&_button]:fill-white/65 [&_button:hover]:bg-[#24242a] [&_button:hover]:fill-white"/>
             </ReactFlow>
-            {selected ? <div className="absolute bottom-3 left-3 flex gap-1 rounded-lg border border-white/10 bg-black/70 p-1"><button className="rounded p-2 text-white/60 hover:bg-white/10" onClick={duplicateSelected}><Copy size={15}/></button><button className="rounded p-2 text-red-300/70 hover:bg-white/10" onClick={deleteSelected}><Trash size={15}/></button></div> : null}
+            {selected ? <div className="absolute bottom-3 left-14 flex gap-1 rounded-lg border border-white/10 bg-black/70 p-1"><button type="button" title="复制节点" className="rounded p-2 text-white/60 hover:bg-white/10" onClick={duplicateSelected}><Copy size={15}/></button><button type="button" title="删除节点" className="rounded p-2 text-red-300/70 hover:bg-white/10" onClick={deleteSelected}><Trash size={15}/></button></div> : selectedEdge ? <button type="button" className="absolute bottom-3 left-14 flex h-9 items-center gap-2 rounded-lg border border-red-300/15 bg-[#211719]/95 px-3 text-xs font-medium text-red-200/80 shadow-lg hover:bg-[#2b1b1e] hover:text-red-100" onClick={disconnectSelectedEdge}><LinkBreak size={15}/>断开连接</button> : null}
           </div>
-          <aside className="overflow-y-auto border-l border-white/10 p-4">{selected ? <ConfigPanel node={selected} schema={catalogByType.get(selected.type)?.configSchema} onChange={(config) => updateDocument((next) => { const node = next.workflow.nodes.find((item) => item.id === selected.id); if (node) node.config = config; })}/> : <p className="text-xs leading-5 text-white/35">选择节点以编辑名称和配置。端口颜色表示控制、数据与流类型。</p>}</aside>
+          <aside className="overflow-y-auto border-l border-white/10 p-4">{selected ? <ConfigPanel node={selected} schema={catalogByType.get(selected.type)?.configSchema} onChange={(config) => updateDocument((next) => { const node = next.workflow.nodes.find((item) => item.id === selected.id); if (node) node.config = config; })}/> : selectedEdge ? <div><p className="text-xs font-semibold text-white">已选择连接</p><p className="mt-3 break-all font-mono text-[10px] leading-5 text-white/45">{selectedEdge.source.nodeId}.{selectedEdge.source.port}<br/>→ {selectedEdge.target.nodeId}.{selectedEdge.target.port}</p><button type="button" className="mt-4 flex h-9 items-center gap-2 rounded-lg border border-red-300/15 px-3 text-xs text-red-200/75 hover:bg-red-300/[.06] hover:text-red-100" onClick={disconnectSelectedEdge}><LinkBreak size={15}/>断开这条连接</button><p className="mt-3 text-[10px] leading-4 text-white/30">也可以选中连线后按 Delete 或 Backspace。</p></div> : <p className="text-xs leading-5 text-white/35">选择节点以编辑名称和配置；单击连线可以查看或断开连接。端口颜色表示控制、数据与流类型。</p>}</aside>
         </div>
       )}
       <footer className="max-h-32 overflow-y-auto border-t border-white/10 bg-black/20 px-4 py-2">{!jsonValid ? <p className="text-xs text-red-300">JSON 语法无效；画布仍保留最后一个有效版本。</p> : issues.length ? issues.map((issue) => <button key={`${issue.pointer}:${issue.code}`} className="mr-3 text-left text-xs text-amber-200/80 hover:text-amber-100" onClick={() => { if (issue.nodeId) { setSelectedId(issue.nodeId); setMode("graph"); } else setMode("json"); }}>{issue.code} · {issue.message}</button>) : trace.length ? trace.slice(-8).map((entry) => <button key={`${entry.sequence}:${entry.phase}`} className="mr-3 text-left font-mono text-[10px] text-white/45 hover:text-white" onClick={() => { setSelectedId(entry.nodeId); setMode("graph"); }}>{entry.nodeId} · {entry.phase} · {entry.durationMs ?? 0}ms</button>) : <p className="text-xs text-white/30">校验问题与最近测试运行 trace 将显示在这里。</p>}</footer>
@@ -257,7 +278,10 @@ function WorldNode({ data, selected }: NodeProps<FlowNode>) {
   const entry = data.catalog;
   return <div className={`min-w-48 rounded-xl border bg-[#18181d] shadow-2xl ${selected ? "border-violet-400" : "border-white/15"}`}>
     <div className="border-b border-white/10 px-3 py-2"><p className="text-xs font-semibold text-white">{data.world.name || entry?.title || data.world.id}</p><p className="font-mono text-[9px] text-violet-300/80">{data.world.type}</p></div>
-    <div className="grid grid-cols-2 gap-x-7 gap-y-1 px-2 py-2 text-[9px]">{data.inputs.map((port) => <div key={`i:${port.name}`} className="relative text-white/45" title={port.type}><Handle type="target" position={Position.Left} id={port.name} style={{ background: portColor(port.type), width: 8, height: 8 }}/>{port.name}</div>)}{data.outputs.map((port) => <div key={`o:${port.name}`} className="relative text-right text-white/45" title={port.type}>{port.name}<Handle type="source" position={Position.Right} id={port.name} style={{ background: portColor(port.type), width: 8, height: 8 }}/></div>)}</div>
+    <div className="flex justify-between gap-7 px-3 py-2 text-[9px]">
+      <div className="space-y-1">{data.inputs.map((port) => <div key={`i:${port.name}`} className="relative text-white/45" title={port.type}><Handle type="target" position={Position.Left} id={port.name} style={{ left: -12, background: portColor(port.type), width: 9, height: 9, border: "2px solid #18181d" }}/>{port.name}</div>)}</div>
+      <div className="space-y-1">{data.outputs.map((port) => <div key={`o:${port.name}`} className="relative text-right text-white/45" title={port.type}>{port.name}<Handle type="source" position={Position.Right} id={port.name} style={{ right: -12, background: portColor(port.type), width: 9, height: 9, border: "2px solid #18181d" }}/></div>)}</div>
+    </div>
   </div>;
 }
 

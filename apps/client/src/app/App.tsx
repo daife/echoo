@@ -712,6 +712,7 @@ export function App() {
     if (view === "create")
       return (
         <CreateAgentPage
+          primeWorldService={services.primeWorldService}
           createHandlers={{
             "slice-figure": createSliceFigure,
             "prime-figure": createPrimeFigure,

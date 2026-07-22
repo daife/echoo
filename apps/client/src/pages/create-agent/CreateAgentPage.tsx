@@ -31,6 +31,7 @@ import { useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { imageFileToUpload } from "../../shared/utils/imageCompression";
 import { MediaAsset } from "../../features/media/MediaAsset";
+import type { PrimeWorldService } from "../../services/PrimeWorldService";
 import { PrimeWorldCreateForm } from "./PrimeWorldCreateForm";
 
 export type CreateAgentHandlers = {
@@ -74,10 +75,12 @@ const createOptions = [
 export function CreateAgentPage({
   createHandlers,
   importPrimeWorld,
+  primeWorldService,
   onBack,
 }: {
   createHandlers: CreateAgentHandlers;
   importPrimeWorld: (bundle: PrimeWorldExportBundle) => Promise<Agent>;
+  primeWorldService: PrimeWorldService;
   onBack: () => void;
 }) {
   const [selectedType, setSelectedType] = useState<AgentType>("slice-figure");
@@ -102,8 +105,8 @@ export function CreateAgentPage({
         </h1>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[0.72fr_1.28fr]">
-        <div className="space-y-5">
+      <div className={selectedType === "prime-world" ? "space-y-5" : "grid gap-5 lg:grid-cols-[0.72fr_1.28fr]"}>
+        <div className={selectedType === "prime-world" ? "grid gap-5 md:grid-cols-3" : "space-y-5"}>
           {createOptions.map((option) => {
             const Icon = option.icon;
             const active = selectedType === option.type;
@@ -144,7 +147,7 @@ export function CreateAgentPage({
         ) : selectedType === "prime-figure" ? (
           <PrimeFigureCreateForm onCreate={createHandlers["prime-figure"]} />
         ) : (
-          <PrimeWorldCreateForm onCreate={createHandlers["prime-world"]} onImport={importPrimeWorld} />
+          <PrimeWorldCreateForm onCreate={createHandlers["prime-world"]} onImport={importPrimeWorld} service={primeWorldService} />
         )}
       </div>
     </section>

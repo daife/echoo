@@ -1,41 +1,23 @@
 import type { Agent, CreatePrimeWorldRequest, PrimeWorldExportBundle } from "@echoo/shared";
 import { useRef, useState } from "react";
+import type { PrimeWorldService } from "../../services/PrimeWorldService";
+import { PrimeWorldEditorPage } from "../prime-world/PrimeWorldEditorPage";
 import { DEFAULT_PRIME_WORLD_DETAIL } from "../prime-world/primeWorldTemplate";
 
 export function PrimeWorldCreateForm({
   onCreate,
   onImport,
+  service,
 }: {
   onCreate: (input: CreatePrimeWorldRequest) => Promise<Agent>;
   onImport: (bundle: PrimeWorldExportBundle) => Promise<Agent>;
+  service: PrimeWorldService;
 }) {
   const [name, setName] = useState("");
-  const [definition, setDefinition] = useState(
-    JSON.stringify(DEFAULT_PRIME_WORLD_DETAIL, null, 2),
-  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [bundleText, setBundleText] = useState("");
   const bundleFile = useRef<HTMLInputElement>(null);
-  const submit = async () => {
-    try {
-      setSaving(true);
-      setError(null);
-      await onCreate({
-        type: "prime-world",
-        name: name.trim(),
-        attributes: [],
-        tags: [],
-        introduction: "",
-        isPublic: false,
-        detail: JSON.parse(definition),
-      });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "创建失败。");
-    } finally {
-      setSaving(false);
-    }
-  };
   const importBundle = async () => {
     try {
       setSaving(true);
@@ -48,14 +30,11 @@ export function PrimeWorldCreateForm({
     }
   };
   return (
-    <form
-      className="glass-panel space-y-4 rounded-2xl p-5 md:p-7"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit();
-      }}
-    >
-      <h2 className="text-2xl font-semibold text-white">世界定义</h2>
+    <div className="glass-panel space-y-4 rounded-2xl p-5 md:p-7">
+      <div>
+        <h2 className="text-2xl font-semibold text-white">世界定义</h2>
+        <p className="mt-1 text-sm text-white/45">在画布中编排节点，也可以切换到 JSON 精确编辑。</p>
+      </div>
       <input
         className="h-11 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-white outline-none"
         placeholder="世界名称"
@@ -63,11 +42,25 @@ export function PrimeWorldCreateForm({
         onChange={(event) => setName(event.target.value)}
         required
       />
-      <textarea
-        className="min-h-80 w-full rounded-lg border border-white/10 bg-black/20 p-3 font-mono text-xs text-white outline-none"
-        value={definition}
-        onChange={(event) => setDefinition(event.target.value)}
-      />
+      <div className="h-[46rem] min-h-[36rem] overflow-hidden rounded-xl border border-white/10 bg-[#0b0b0d]">
+        <PrimeWorldEditorPage
+          detail={DEFAULT_PRIME_WORLD_DETAIL}
+          service={service}
+          saveLabel="创建世界"
+          onSave={async (detail) => {
+            if (!name.trim()) throw new Error("请先填写世界名称。");
+            await onCreate({
+              type: "prime-world",
+              name: name.trim(),
+              attributes: [],
+              tags: [],
+              introduction: "",
+              isPublic: false,
+              detail,
+            });
+          }}
+        />
+      </div>
       <div className="rounded-xl border border-white/10 bg-white/[.025] p-3">
         <div className="mb-2 flex items-center justify-between gap-3">
           <p className="text-xs text-white/55">或粘贴 / 选择 Prime World bundle</p>
@@ -77,13 +70,7 @@ export function PrimeWorldCreateForm({
         <textarea className="min-h-28 w-full rounded-lg border border-white/10 bg-black/20 p-2 font-mono text-[10px] text-white outline-none" placeholder="粘贴 echoo-prime-world bundle JSON" value={bundleText} onChange={(event) => setBundleText(event.target.value)}/>
         <button type="button" className="mt-2 h-9 rounded-lg border border-white/15 px-4 text-xs text-white disabled:opacity-50" disabled={saving || !bundleText.trim()} onClick={() => void importBundle()}>导入为新世界</button>
       </div>
-      <button
-        className="h-11 rounded-lg bg-white px-5 text-sm font-medium text-black disabled:opacity-50"
-        disabled={saving || !name.trim()}
-      >
-        {saving ? "创建中" : "创建世界"}
-      </button>
       {error ? <p className="text-sm text-red-300">{error}</p> : null}
-    </form>
+    </div>
   );
 }
