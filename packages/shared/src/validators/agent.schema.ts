@@ -589,7 +589,7 @@ const worldElementSchema: z.ZodType<unknown> = z.lazy(() =>
       .object({
         id: worldElementIdSchema,
         type: z.literal("image"),
-        resourceUrl: z.string().trim().min(1).max(2_000),
+        resourceId: z.string().trim().min(1).max(120),
         alt: z.string().max(500).optional(),
       })
       .strict(),
@@ -636,7 +636,7 @@ const worldViewSchema = z
           .string()
           .regex(/^#[0-9a-fA-F]{6}$/)
           .optional(),
-        resourceUrl: z.string().trim().min(1).max(2_000).optional(),
+        resourceId: z.string().trim().min(1).max(120).optional(),
       })
       .strict()
       .optional(),
@@ -772,6 +772,26 @@ export const createPrimeWorldSchema = createAgentBaseSchema.extend({
   detail: primeWorldDetailSchema,
 });
 
-export const updatePrimeWorldSchema = createPrimeWorldSchema.omit({
-  type: true,
-});
+export const updatePrimeWorldSchema = createPrimeWorldSchema
+  .omit({ type: true })
+  .extend({ preserveRuntimeState: z.boolean().optional() });
+
+export const primeWorldExportBundleSchema = z
+  .object({
+    format: z.literal("echoo-prime-world"),
+    formatVersion: z.literal(1),
+    name: z.string().trim().min(1).max(80),
+    attributes: z.array(agentAttributeSchema).max(30).optional(),
+    tags: z.array(z.string().trim().min(1).max(30)).max(20).optional(),
+    introduction: z.string().max(5_000).optional(),
+    isPublic: z.boolean(),
+    detail: primeWorldDetailSchema,
+    resources: z.array(z.object({
+      key: z.string().regex(/^resource-[1-9][0-9]*$/),
+      usageKind: z.string().min(1).max(80),
+      mimeType: z.enum(["image/png", "image/jpeg", "image/webp", "audio/mpeg", "audio/wav", "audio/ogg"]),
+      fileName: z.string().min(1).max(255),
+      dataBase64: z.string().min(1).max(18_000_000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/, "资源内容必须是有效 base64。"),
+    }).strict()).max(100),
+  })
+  .strict();

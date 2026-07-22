@@ -1,4 +1,4 @@
-import type { AppWsServerEvent, Message, SyncChange } from "@echoo/shared";
+import type { AppWsServerEvent, Message, PrimeWorldRealtimeEvent, SyncChange } from "@echoo/shared";
 
 export type MessageDeltaEvent = Extract<
   AppWsServerEvent,
@@ -31,6 +31,16 @@ export type ConversationAgentMuteChangedEvent = Extract<
   AppWsServerEvent,
   { type: "conversation.agent_mute_changed" }
 >;
+export type PrimeWorldAudioChunkEvent = {
+  type: "world.audio.chunk";
+  conversationId: string;
+  runId: string;
+  nodeId: string;
+  port: string;
+  sequence: number;
+  mimeType: string;
+  data: Uint8Array;
+};
 
 export interface MessageRuntime {
   startRealtime(): Promise<void>;
@@ -62,4 +72,6 @@ export interface MessageRuntime {
   onMessageAudioFailed(
     handler: (event: MessageAudioFailedEvent) => void,
   ): () => void;
+  onPrimeWorldEvent(handler: (event: PrimeWorldRealtimeEvent) => void): () => void;
+  onPrimeWorldAudioChunk(handler: (event: PrimeWorldAudioChunkEvent) => void): () => void;
 }

@@ -1,5 +1,6 @@
 import type {
   PrimeFigureRuntimeConfigPatch,
+  PrimeWorldRuntimeConfigPatch,
   SliceFigureRuntimeConfigPatch,
   UserRuntimeConfigView,
   WalletView,
@@ -9,6 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import {
   PrimeRuntimeConfigForm,
+  PrimeWorldRuntimeConfigForm,
   SliceRuntimeConfigForm,
 } from "../../features/runtime-config/RuntimeConfigForms";
 import type { RuntimeConfigService } from "../../services/RuntimeConfigService";
@@ -87,6 +89,19 @@ export function SettingsPage({
       });
       setConfig(next);
       setNotice(saveNotice("本初角色全局配置已保存。", next));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "配置保存失败。");
+      throw caught;
+    }
+  }
+
+  async function updateWorld(patch: PrimeWorldRuntimeConfigPatch) {
+    setError(null);
+    setNotice(null);
+    try {
+      const next = await runtimeConfigService.updateUserConfig({ primeWorld: patch });
+      setConfig(next);
+      setNotice(saveNotice("本初世界全局配置已保存。", next));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "配置保存失败。");
       throw caught;
@@ -227,14 +242,7 @@ export function SettingsPage({
           />
         ) : null}
         {config && section === "prime-world" ? (
-          <div className="rounded-xl border border-dashed border-white/10 px-5 py-12 text-center">
-            <p className="text-sm font-medium text-white/70">
-              本初世界配置 v{config.primeWorld.version}
-            </p>
-            <p className="mt-2 text-sm text-white/38">
-              暂未开放，敬请期待
-            </p>
-          </div>
+          <PrimeWorldRuntimeConfigForm value={config.primeWorld} onSave={updateWorld} error={error} notice={notice}/>
         ) : null}
         {!config && error ? (
           <p className="text-sm text-red-200/75">{error}</p>

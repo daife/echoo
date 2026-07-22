@@ -1,5 +1,6 @@
 import type { Message } from "../types/message.js";
 import type { SyncChange, SyncCursor } from "../types/sync.js";
+import type { PrimeWorldRealtimeEvent } from "../types/prime-world.js";
 
 export type AppWsServerEvent =
   | {
@@ -67,15 +68,26 @@ export type AppWsServerEvent =
       connectionId: string;
       protocolVersion: 2;
       headCursor: SyncCursor;
-    };
+    }
+  | PrimeWorldRealtimeEvent;
 
 export type AppWsClientEvent = { type: "ping"; sentAt: number };
 
 export type DurableWsEvent = Extract<AppWsServerEvent, { type: "sync.change" }>;
 
-export interface BinaryWsFrameHeader {
-  type: "message.audio.chunk";
-  messageId: string;
-  conversationId: string;
-  sequence: number;
-}
+export type BinaryWsFrameHeader =
+  | {
+      type: "message.audio.chunk";
+      messageId: string;
+      conversationId: string;
+      sequence: number;
+    }
+  | {
+      type: "world.audio.chunk";
+      conversationId: string;
+      runId: string;
+      nodeId: string;
+      port: string;
+      sequence: number;
+      mimeType: string;
+    };

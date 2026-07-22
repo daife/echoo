@@ -25,6 +25,7 @@ import {
   type PrimeFigureStickerInput,
   type PrimeFigureVariableDefinition,
   type PrimeFigureVariableType,
+  type PrimeWorldExportBundle,
 } from "@echoo/shared";
 import { useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
@@ -72,9 +73,11 @@ const createOptions = [
 
 export function CreateAgentPage({
   createHandlers,
+  importPrimeWorld,
   onBack,
 }: {
   createHandlers: CreateAgentHandlers;
+  importPrimeWorld: (bundle: PrimeWorldExportBundle) => Promise<Agent>;
   onBack: () => void;
 }) {
   const [selectedType, setSelectedType] = useState<AgentType>("slice-figure");
@@ -141,7 +144,7 @@ export function CreateAgentPage({
         ) : selectedType === "prime-figure" ? (
           <PrimeFigureCreateForm onCreate={createHandlers["prime-figure"]} />
         ) : (
-          <PrimeWorldCreateForm onCreate={createHandlers["prime-world"]} />
+          <PrimeWorldCreateForm onCreate={createHandlers["prime-world"]} onImport={importPrimeWorld} />
         )}
       </div>
     </section>

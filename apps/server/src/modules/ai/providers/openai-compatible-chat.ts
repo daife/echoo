@@ -233,6 +233,7 @@ function sendChatCompletionRequest(
       ...input.headers,
     },
     body: JSON.stringify(body),
+    signal: input.completion.signal,
   });
 }
 

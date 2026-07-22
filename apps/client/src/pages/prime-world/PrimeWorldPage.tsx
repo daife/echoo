@@ -8,11 +8,14 @@ import {
   ArrowLeft,
   PaperPlaneRight,
   Play,
+  Microphone,
   SlidersHorizontal,
 } from "@phosphor-icons/react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { PrimeWorldService } from "../../services/PrimeWorldService";
 import { PrimeWorldEditorPage } from "./PrimeWorldEditorPage";
+import { usePushToTalk } from "../../features/messages/usePushToTalk";
+import { PrimeWorldAudioPlayer } from "./PrimeWorldAudioPlayer";
 
 export function PrimeWorldPage({
   agent,
@@ -23,7 +26,7 @@ export function PrimeWorldPage({
   agent: PrimeWorldAgent;
   service: PrimeWorldService;
   onBack: () => void;
-  onSave: (detail: PrimeWorldAgent["detail"]) => Promise<void>;
+  onSave: (detail: PrimeWorldAgent["detail"], preserveRuntimeState: boolean) => Promise<void>;
 }) {
   const [view, setView] = useState<WorldView>(
     agent.detail.presentation.startView,
@@ -32,12 +35,94 @@ export function PrimeWorldPage({
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [resourceUrls, setResourceUrls] = useState(new Map<string, string>());
+  const [temporaryText, setTemporaryText] = useState<Record<string, string>>({});
+  const player = useRef(new PrimeWorldAudioPlayer());
+  const activeRun = useRef<string | undefined>(undefined);
+  const textSequences = useRef(new Map<string, number>());
   useEffect(() => {
     void service
       .getSnapshot(agent.conversationId)
-      .then((snapshot) => setView(snapshot.state.view))
+      .then((snapshot) => {
+        setView(snapshot.state.view);
+        if (snapshot.run?.status === "queued" || snapshot.run?.status === "running") {
+          activeRun.current = snapshot.run.id;
+          setBusy(true);
+        }
+      })
       .catch(() => undefined);
   }, [agent.conversationId, service]);
+  useEffect(() => {
+    void service.resolveViewResources(view).then(setResourceUrls).catch(() => undefined);
+  }, [service, view]);
+  useEffect(() => service.subscribe((event) => {
+    if (event.conversationId !== agent.conversationId) return;
+    if (event.type === "world.run.started") {
+      activeRun.current = event.runId;
+      setBusy(true);
+      setTemporaryText({});
+      textSequences.current.clear();
+      player.current.stop();
+    } else if (event.runId !== activeRun.current) {
+      return;
+    } else if (event.type === "world.view.text_delta") {
+      const expected = textSequences.current.get(event.nodeId) ?? 0;
+      if (event.sequence !== expected) {
+        setTemporaryText({});
+        void service.getSnapshot(agent.conversationId).then((snapshot) => setView(snapshot.state.view));
+        return;
+      }
+      textSequences.current.set(event.nodeId, expected + 1);
+      setTemporaryText((current) => ({ ...current, [event.elementId]: `${current[event.elementId] ?? ""}${event.delta}` }));
+    } else if (event.type === "world.view.committed") {
+      setView(event.view);
+      setTemporaryText({});
+    } else if (event.type === "world.audio.started") {
+      player.current.start(event.mimeType);
+    } else if (event.type === "world.audio.completed") {
+      void (async () => player.current.complete(event.resourceId ? await service.resolveAudioResource(event.resourceId) : undefined))();
+    } else if (event.type === "world.audio.failed") {
+      player.current.stop();
+    } else if (event.type === "world.run.completed") {
+      setBusy(false);
+      activeRun.current = undefined;
+    } else if (event.type === "world.run.cancelled" || event.type === "world.run.failed") {
+      setBusy(false);
+      activeRun.current = undefined;
+      setTemporaryText({});
+      player.current.stop();
+      if (event.type === "world.run.failed") setError(event.message ?? "世界运行失败。");
+      void service.getSnapshot(agent.conversationId).then((snapshot) => setView(snapshot.state.view));
+    }
+  }, (event) => {
+    if (event.conversationId !== agent.conversationId || event.runId !== activeRun.current) return;
+    player.current.append(event.sequence, event.data);
+  }), [agent.conversationId, service]);
+  useEffect(() => () => player.current.stop(), []);
+  useEffect(() => {
+    if (!busy) return;
+    const timer = window.setInterval(() => {
+      void service.getSnapshot(agent.conversationId).then((snapshot) => {
+        if (!snapshot.run || snapshot.run.id !== activeRun.current) return;
+        if (snapshot.run.status === "completed") {
+          setView(snapshot.state.view);
+          setTemporaryText({});
+          const audio = [...(snapshot.resources ?? [])].reverse().find((resource) => resource.mimeType.startsWith("audio/"));
+          if (audio && player.current.requiresFullResource())
+            void service.resolveAudioResource(audio.resourceId).then((url) => player.current.complete(url));
+          activeRun.current = undefined;
+          setBusy(false);
+        } else if (snapshot.run.status === "failed" || snapshot.run.status === "cancelled") {
+          setView(snapshot.state.view);
+          setTemporaryText({});
+          player.current.stop();
+          activeRun.current = undefined;
+          setBusy(false);
+        }
+      }).catch(() => undefined);
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [agent.conversationId, busy, service]);
   const dispatch = async (
     type: "world.start" | "ui.action" | "input.text",
     payload: JsonObject = {},
@@ -50,6 +135,7 @@ export function PrimeWorldPage({
         type,
         payload,
         expectedViewRevision: view.revision,
+        interruptCurrent: type !== "world.start",
       });
       const snapshot = await service.getSnapshot(agent.conversationId);
       setView(snapshot.state.view);
@@ -64,6 +150,24 @@ export function PrimeWorldPage({
     const text = input.trim();
     if (text && !busy) void dispatch("input.text", { text });
   };
+  const pushToTalk = usePushToTalk({
+    disabled: false,
+    maxRecordingSeconds: 120,
+    onError: setError,
+    onRecorded: async (blob) => {
+      setBusy(true);
+      try {
+        const resourceId = await service.uploadVoice(blob);
+        await service.dispatch(agent.conversationId, {
+          clientEventId: crypto.randomUUID(),
+          type: "input.voice",
+          payload: { resourceId },
+          expectedViewRevision: view.revision,
+          interruptCurrent: true,
+        });
+      } finally { setBusy(false); }
+    },
+  });
   return (
     <section className="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-5xl flex-col gap-5 py-4 md:py-8">
       <header className="flex items-center justify-between gap-3 border-b border-white/10 pb-4">
@@ -82,7 +186,7 @@ export function PrimeWorldPage({
         </div>
         <div className="flex gap-2">
           <button
-            className="grid h-9 w-9 place-items-center rounded-lg text-white/70 hover:bg-white/10"
+            className="hidden h-9 w-9 place-items-center rounded-lg text-white/70 hover:bg-white/10 md:grid"
             title="编辑定义"
             onClick={() => setEditing((value) => !value)}
           >
@@ -101,6 +205,7 @@ export function PrimeWorldPage({
       {editing ? (
         <PrimeWorldEditorPage
           detail={agent.detail}
+          conversationId={agent.conversationId}
           service={service}
           onSave={onSave}
           onClose={() => setEditing(false)}
@@ -108,7 +213,12 @@ export function PrimeWorldPage({
       ) : (
         <main
           className="flex flex-1 flex-col overflow-hidden rounded-xl border border-white/10 bg-white/[0.035]"
-          style={{ backgroundColor: view.background?.color }}
+          style={{
+            backgroundColor: view.background?.color,
+            ...(view.background?.resourceId
+              ? { backgroundImage: `url(${resourceUrls.get(view.background.resourceId) ?? ""})`, backgroundSize: "cover" }
+              : {}),
+          }}
         >
           {view.title ? (
             <div className="border-b border-white/10 px-5 py-3 text-sm font-medium text-white/75">
@@ -119,15 +229,16 @@ export function PrimeWorldPage({
             <WorldElement
               element={view.root}
               disabled={busy}
+              resourceUrls={resourceUrls}
+              temporaryText={temporaryText}
               onAction={(actionId, payload) =>
                 void dispatch("ui.action", { actionId, ...payload })
               }
             />
           </div>
-          {view.input?.mode === "text" ||
-          view.input?.mode === "text-and-voice" ? (
+          {view.input ? (
             <div className="flex gap-2 border-t border-white/10 p-4">
-              <input
+              {view.input.mode === "text" || view.input.mode === "text-and-voice" ? <><input
                 className="h-11 min-w-0 flex-1 rounded-lg border border-white/10 bg-black/20 px-3 text-sm text-white outline-none placeholder:text-white/35"
                 placeholder={view.input.placeholder ?? "输入行动..."}
                 value={input}
@@ -144,7 +255,24 @@ export function PrimeWorldPage({
                 onClick={submitText}
               >
                 <PaperPlaneRight size={18} weight="fill" />
-              </button>
+              </button></> : null}
+              {view.input.mode === "voice" || view.input.mode === "text-and-voice" ? (
+                <button
+                  aria-label="按住录音，松开发送"
+                  className={`grid h-11 min-w-11 place-items-center rounded-lg border ${pushToTalk.phase === "recording" ? "border-red-300 bg-red-400/20 text-red-200" : "border-white/10 bg-white/[.06] text-white/70"}`}
+                  onPointerDown={(event) => {
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    if (activeRun.current) {
+                      player.current.stop();
+                      void service.cancel(agent.conversationId, activeRun.current);
+                    }
+                    void pushToTalk.beginHold(event.clientY);
+                  }}
+                  onPointerMove={(event) => pushToTalk.moveHold(event.clientY)}
+                  onPointerUp={pushToTalk.endHold}
+                  onPointerCancel={pushToTalk.cancel}
+                ><Microphone size={18} weight={pushToTalk.phase === "recording" ? "fill" : "regular"}/></button>
+              ) : null}
             </div>
           ) : null}
         </main>
@@ -163,17 +291,21 @@ function WorldElement({
   element,
   disabled,
   onAction,
+  resourceUrls,
+  temporaryText,
 }: {
   element: WorldViewElement;
   disabled: boolean;
   onAction: (actionId: string, payload: JsonObject) => void;
+  resourceUrls: Map<string, string>;
+  temporaryText: Record<string, string>;
 }): ReactNode {
   if (element.type === "text")
     return (
       <p
         className={`whitespace-pre-wrap ${element.tone === "title" ? "text-2xl font-semibold leading-tight text-white" : element.tone === "muted" ? "text-sm leading-6 text-white/50" : "text-[15px] leading-7 text-white/90"}`}
       >
-        {element.text}
+        {temporaryText[element.id] ?? element.text}
       </p>
     );
   if (element.type === "divider") return <hr className="border-white/10" />;
@@ -181,7 +313,7 @@ function WorldElement({
     return (
       <img
         className="max-h-[28rem] w-full rounded-lg object-cover"
-        src={element.resourceUrl}
+        src={resourceUrls.get(element.resourceId)}
         alt={element.alt ?? ""}
       />
     );
@@ -242,6 +374,8 @@ function WorldElement({
           element={child}
           disabled={disabled}
           onAction={onAction}
+          resourceUrls={resourceUrls}
+          temporaryText={temporaryText}
         />
       ))}
     </div>

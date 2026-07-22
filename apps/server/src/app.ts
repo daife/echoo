@@ -55,6 +55,7 @@ export async function buildApp() {
   const runQueue = new AgentRunQueue();
   const worldRunService = new PrimeWorldService();
   let worldRecoveryTimer: ReturnType<typeof setInterval> | undefined;
+  let worldScheduleTimer: ReturnType<typeof setInterval> | undefined;
   const resourceQueue = new ResourceProcessingQueue();
   const resourceCleanupQueue = new ResourceCleanupQueue();
   const wechatService = new WechatService();
@@ -155,6 +156,9 @@ export async function buildApp() {
       .catch((error) =>
         app.log.warn(error, "Prime world queued-run recovery unavailable"),
       );
+    void worldRunService.dispatchDueTimers().catch((error) =>
+      app.log.warn(error, "Prime world timer recovery unavailable"),
+    );
     worldRecoveryTimer = setInterval(() => {
       void worldRunService
         .recoverQueuedRuns()
@@ -163,6 +167,12 @@ export async function buildApp() {
         );
     }, 30_000);
     worldRecoveryTimer.unref();
+    worldScheduleTimer = setInterval(() => {
+      void worldRunService.dispatchDueTimers().catch((error) =>
+        app.log.warn(error, "Prime world timer dispatch failed"),
+      );
+    }, 1_000);
+    worldScheduleTimer.unref();
     void resourceQueue
       .recoverFromDatabase()
       .then(() => resourceQueue.start())
@@ -180,6 +190,7 @@ export async function buildApp() {
     primeWakeupScheduler.stop();
     runQueue.stop();
     if (worldRecoveryTimer) clearInterval(worldRecoveryTimer);
+    if (worldScheduleTimer) clearInterval(worldScheduleTimer);
     resourceQueue.stop();
     resourceCleanupQueue.stop();
     wechatService.stopAll();

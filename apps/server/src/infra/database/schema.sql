@@ -224,6 +224,59 @@ CREATE TABLE IF NOT EXISTS prime_world_history_entries (
   CONSTRAINT fk_prime_world_history_run FOREIGN KEY (run_id) REFERENCES prime_world_runs(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS prime_world_scheduled_events (
+  id VARCHAR(64) PRIMARY KEY,
+  owner_user_id VARCHAR(64) NOT NULL,
+  conversation_id VARCHAR(64) NOT NULL,
+  trigger_key VARCHAR(120) NOT NULL,
+  due_at BIGINT NOT NULL,
+  payload_json JSON NOT NULL,
+  status ENUM('scheduled', 'leased', 'fired', 'cancelled') NOT NULL DEFAULT 'scheduled',
+  lease_until BIGINT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  UNIQUE KEY uq_prime_world_schedule_key (conversation_id, trigger_key),
+  INDEX idx_prime_world_schedule_due (status, due_at, lease_until),
+  CONSTRAINT fk_prime_world_schedule_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_prime_world_schedule_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS prime_world_run_trace_entries (
+  seq BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  id VARCHAR(64) NOT NULL UNIQUE,
+  run_id VARCHAR(64) NOT NULL,
+  owner_user_id VARCHAR(64) NOT NULL,
+  conversation_id VARCHAR(64) NOT NULL,
+  node_id VARCHAR(120) NOT NULL,
+  node_type VARCHAR(120) NOT NULL,
+  phase ENUM('started', 'completed', 'failed') NOT NULL,
+  started_at BIGINT NOT NULL,
+  finished_at BIGINT NULL,
+  duration_ms INT UNSIGNED NULL,
+  input_summary_json JSON NULL,
+  output_summary_json JSON NULL,
+  usage_json JSON NULL,
+  error_code VARCHAR(80) NULL,
+  error_detail VARCHAR(1000) NULL,
+  created_at BIGINT NOT NULL,
+  INDEX idx_prime_world_trace_run (run_id, seq),
+  CONSTRAINT fk_prime_world_trace_run FOREIGN KEY (run_id) REFERENCES prime_world_runs(id) ON DELETE CASCADE,
+  CONSTRAINT fk_prime_world_trace_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_prime_world_trace_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS prime_world_run_resources (
+  run_id VARCHAR(64) NOT NULL,
+  resource_id VARCHAR(64) NOT NULL,
+  node_id VARCHAR(120) NOT NULL,
+  port VARCHAR(80) NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (run_id, resource_id, node_id, port),
+  INDEX idx_prime_world_run_resources_resource (resource_id),
+  CONSTRAINT fk_prime_world_run_resources_run FOREIGN KEY (run_id) REFERENCES prime_world_runs(id) ON DELETE CASCADE,
+  CONSTRAINT fk_prime_world_run_resources_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS prime_memories (
   id VARCHAR(64) PRIMARY KEY,
   agent_id VARCHAR(64) NOT NULL,

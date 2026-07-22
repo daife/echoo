@@ -1,4 +1,4 @@
-import type { Message, SyncChange } from "@echoo/shared";
+import type { Message, PrimeWorldRealtimeEvent, SyncChange } from "@echoo/shared";
 import type {
   AuthRuntime,
   ConversationAgentActivityEvent,
@@ -9,6 +9,7 @@ import type {
   MessageAudioStartedEvent,
   MessageDeltaEvent,
   MessageRuntime,
+  PrimeWorldAudioChunkEvent,
 } from "../contracts";
 import { WebMessageRuntime } from "../web/WebMessageRuntime";
 import { tauriInvoke } from "./tauriInvoke";
@@ -156,6 +157,14 @@ export class TauriMessageRuntime implements MessageRuntime {
     _handler: (event: MessageAudioFailedEvent) => void,
   ): () => void {
     return this.realtime.onMessageAudioFailed(_handler);
+  }
+
+  onPrimeWorldEvent(_handler: (event: PrimeWorldRealtimeEvent) => void) {
+    return this.realtime.onPrimeWorldEvent(_handler);
+  }
+
+  onPrimeWorldAudioChunk(_handler: (event: PrimeWorldAudioChunkEvent) => void) {
+    return this.realtime.onPrimeWorldAudioChunk(_handler);
   }
 }
 

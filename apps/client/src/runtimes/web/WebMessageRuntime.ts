@@ -5,6 +5,7 @@ import type {
   SyncChange,
   SyncPage,
   BinaryWsFrameHeader,
+  PrimeWorldRealtimeEvent,
 } from "@echoo/shared";
 import type {
   AuthRuntime,
@@ -16,6 +17,7 @@ import type {
   MessageAudioStartedEvent,
   MessageDeltaEvent,
   MessageRuntime,
+  PrimeWorldAudioChunkEvent,
 } from "../contracts";
 
 export class WebMessageRuntime implements MessageRuntime {
@@ -67,6 +69,8 @@ export class WebMessageRuntime implements MessageRuntime {
   private readonly audioFailedHandlers = new Set<
     (event: MessageAudioFailedEvent) => void
   >();
+  private readonly primeWorldHandlers = new Set<(event: PrimeWorldRealtimeEvent) => void>();
+  private readonly primeWorldAudioHandlers = new Set<(event: PrimeWorldAudioChunkEvent) => void>();
 
   constructor(private readonly auth: AuthRuntime) {}
 
@@ -130,10 +134,17 @@ export class WebMessageRuntime implements MessageRuntime {
     socket.onmessage = (event) => {
       if (event.data instanceof ArrayBuffer) {
         const frame = decodeBinaryFrame(event.data);
-        if (frame?.header.type === "message.audio.chunk")
+        if (frame?.header.type === "message.audio.chunk") {
+          const header = frame.header;
           this.audioChunkHandlers.forEach((handler) =>
-            handler({ ...frame.header, data: frame.data }),
+            handler({ ...header, data: frame.data }),
           );
+        } else if (frame?.header.type === "world.audio.chunk") {
+          const header = frame.header;
+          this.primeWorldAudioHandlers.forEach((handler) =>
+            handler({ ...header, data: frame.data }),
+          );
+        }
         return;
       }
       const payload = JSON.parse(event.data as string) as AppWsServerEvent;
@@ -147,6 +158,10 @@ export class WebMessageRuntime implements MessageRuntime {
         if (this.syncStatus !== "live")
           this.pendingSyncChanges.push(payload.change);
         else this.applySyncChange(payload.change);
+        return;
+      }
+      if (payload.type.startsWith("world.")) {
+        this.primeWorldHandlers.forEach((handler) => handler(payload as PrimeWorldRealtimeEvent));
         return;
       }
       if (payload.type === "conversation.agent_activity") {
@@ -460,6 +475,16 @@ export class WebMessageRuntime implements MessageRuntime {
   ): () => void {
     this.audioFailedHandlers.add(handler);
     return () => this.audioFailedHandlers.delete(handler);
+  }
+
+  onPrimeWorldEvent(handler: (event: PrimeWorldRealtimeEvent) => void) {
+    this.primeWorldHandlers.add(handler);
+    return () => this.primeWorldHandlers.delete(handler);
+  }
+
+  onPrimeWorldAudioChunk(handler: (event: PrimeWorldAudioChunkEvent) => void) {
+    this.primeWorldAudioHandlers.add(handler);
+    return () => this.primeWorldAudioHandlers.delete(handler);
   }
 }
 

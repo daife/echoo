@@ -43,7 +43,11 @@ export function initApp(runtime: RuntimeBundle) {
 
   return {
     agentService: new AgentService(new AgentsApi(api)),
-    primeWorldService: new PrimeWorldService(new PrimeWorldApi(api)),
+    primeWorldService: new PrimeWorldService(
+      new PrimeWorldApi(api),
+      new ResourcesApi(api),
+      runtime.message,
+    ),
     characterAssetService: new CharacterAssetService(
       new CharacterAssetsApi(api),
     ),

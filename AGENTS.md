@@ -7,6 +7,8 @@
 由于项目还在开发阶段，一般情况不用考虑旧数据库兼容
 一般情况不用使用浏览器级的验证
 
+Shared 包约定：`packages/shared` 需要持续重构；后续涉及 shared 的改动应优先按领域拆分类型、协议、schema 与 fixtures，避免继续扩大单文件和根出口耦合。
+
 Android 构建约定：
 - 首次构建前运行 `CI=true pnpm --filter @echoo/client tauri android init --ci`；构建使用 `CI=true pnpm --filter @echoo/client tauri android build --apk --target aarch64 --ci`。
 - 发布签名使用 `apps/client/src-tauri/echoo-release.keystore` 及本地忽略的 `apps/client/src-tauri/.android-signing.env` 中的 `TAURI_ANDROID_KEYSTORE_*` 配置；Tauri 输出的 `*-unsigned.apk` 必须再用 Android SDK 的 `apksigner` 签名并验证 v2/v3。

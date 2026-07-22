@@ -50,6 +50,7 @@ export class FishAudioTtsService {
   async synthesize(
     transcript: string,
     onAudio: (chunk: Buffer) => void,
+    signal?: AbortSignal,
   ): Promise<FishAudioTtsResult> {
     const pricePerMillionUtf8Bytes = fishAudioPricePerMillionUtf8Bytes(
       this.config.model,
@@ -68,6 +69,7 @@ export class FishAudioTtsService {
       method: "POST",
       headers: fishAudioHeaders(apiKey, this.config.model),
       body: JSON.stringify(ttsRequest(this.config, referenceId, transcript)),
+      signal,
     });
 
     if (!response.ok) {

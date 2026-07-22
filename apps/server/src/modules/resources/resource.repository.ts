@@ -134,7 +134,7 @@ export class ResourceRepository {
 
   async saveGeneratedMedia(
     ownerUserId: string,
-    kind: "prime_figure_voice" | "prime_figure_image",
+    kind: "prime_figure_voice" | "prime_figure_image" | "prime_world_audio",
     mimeType: string,
     data: Buffer,
   ): Promise<ResourceRecord> {
@@ -148,6 +148,26 @@ export class ResourceRepository {
       kind,
       mimeType,
       fileName: `generated${extension}`,
+      extension,
+      data,
+    });
+  }
+
+  async savePrimeWorldBundleResource(
+    ownerUserId: string,
+    mimeType: string,
+    fileName: string,
+    data: Buffer,
+  ) {
+    const extension = generatedMimeTypes.get(mimeType);
+    if (!extension) throw new Error(`Unsupported Prime World bundle media type: ${mimeType}.`);
+    if (!data.length || data.byteLength > 12 * 1024 * 1024)
+      throw new Error("Prime World bundle resource size is invalid.");
+    return this.persistReadyResource({
+      ownerUserId,
+      kind: "prime_world_import",
+      mimeType,
+      fileName: fileName.slice(0, 255),
       extension,
       data,
     });

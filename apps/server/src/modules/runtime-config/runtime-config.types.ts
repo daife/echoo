@@ -109,11 +109,20 @@ export interface StoredPrimeFigureRuntimeConfig {
 }
 
 export interface StoredPrimeWorldRuntimeConfig {
-  version: 1;
+  version: 2;
+  mainModel: StoredTextModelConfig;
+  summaryModel: StoredTextModelConfig;
+  stt: StoredFishAudioSttConfig;
+  tts: StoredFishAudioConfig;
+  context: {
+    windowTokens: number;
+    providerReserveTokens: number;
+  };
+  audio: { autoPlay: boolean };
 }
 
 export interface StoredUserRuntimeConfig {
-  version: 2;
+  version: 3;
   sliceFigure: StoredSliceFigureRuntimeConfig;
   primeFigure: StoredPrimeFigureRuntimeConfig;
   primeWorld: StoredPrimeWorldRuntimeConfig;

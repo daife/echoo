@@ -4,6 +4,24 @@ export interface JsonObject {
   [key: string]: JsonValue;
 }
 
+export type PrimeWorldNodeCategory =
+  | "trigger"
+  | "state"
+  | "data"
+  | "logic"
+  | "flow"
+  | "history"
+  | "ai"
+  | "audio"
+  | "view"
+  | "convert";
+
+export type PrimeWorldNodeExecution =
+  | "sync"
+  | "async"
+  | "stream-source"
+  | "stream-sink";
+
 export type PrimeWorldPortType =
   | "control"
   | "text"
@@ -26,6 +44,25 @@ export interface PrimeWorldNode {
   config: JsonObject;
 }
 
+export interface PrimeWorldPortDefinition {
+  name: string;
+  type: PrimeWorldPortType;
+  required?: boolean;
+  multiple?: boolean;
+}
+
+export interface PrimeWorldNodeCatalogEntry {
+  type: string;
+  version: number;
+  title: string;
+  description: string;
+  category: PrimeWorldNodeCategory;
+  execution: PrimeWorldNodeExecution;
+  configSchema: JsonObject;
+  inputs: PrimeWorldPortDefinition[];
+  outputs: PrimeWorldPortDefinition[];
+}
+
 export interface PrimeWorldEdge {
   id: string;
   kind: "control" | "data";
@@ -46,7 +83,7 @@ export type WorldViewElement =
       text: string;
       tone?: "body" | "muted" | "title";
     }
-  | { id: string; type: "image"; resourceUrl: string; alt?: string }
+  | { id: string; type: "image"; resourceId: string; alt?: string }
   | {
       id: string;
       type: "choices";
@@ -70,7 +107,7 @@ export interface WorldInputSpec {
 export interface WorldView {
   revision: number;
   title?: string;
-  background?: { color?: string; resourceUrl?: string };
+  background?: { color?: string; resourceId?: string };
   root: WorldViewElement;
   input?: WorldInputSpec;
   audio?: { autoPlay: boolean; allowInterrupt: boolean };
@@ -136,10 +173,36 @@ export interface PrimeWorldRun {
   createdAt: number;
 }
 
+export type PrimeWorldTracePhase = "started" | "completed" | "failed";
+
+export interface PrimeWorldRunTraceEntry {
+  sequence: number;
+  runId: string;
+  nodeId: string;
+  nodeType: string;
+  phase: PrimeWorldTracePhase;
+  startedAt: number;
+  finishedAt?: number;
+  durationMs?: number;
+  inputSummary?: JsonObject;
+  outputSummary?: JsonObject;
+  usage?: JsonObject;
+  errorCode?: string;
+  errorDetail?: string;
+}
+
+export interface PrimeWorldRunResource {
+  nodeId: string;
+  port: string;
+  resourceId: string;
+  mimeType: string;
+}
+
 export interface PrimeWorldSnapshot {
   state: PrimeWorldRuntimeState;
   run?: PrimeWorldRun;
   stateVersion?: number;
+  resources?: PrimeWorldRunResource[];
 }
 
 export interface PrimeWorldValidationIssue {
@@ -148,4 +211,85 @@ export interface PrimeWorldValidationIssue {
   pointer: string;
   nodeId?: string;
   port?: string;
+}
+
+export type PrimeWorldRealtimeEvent =
+  | {
+      type: "world.run.started" | "world.run.completed" | "world.run.cancelled";
+      conversationId: string;
+      runId: string;
+      stateVersion?: number;
+    }
+  | {
+      type: "world.run.failed";
+      conversationId: string;
+      runId: string;
+      errorCode: string;
+      message?: string;
+    }
+  | {
+      type: "world.view.committed";
+      conversationId: string;
+      runId: string;
+      view: WorldView;
+      stateVersion: number;
+    }
+  | {
+      type: "world.view.text_delta";
+      conversationId: string;
+      runId: string;
+      nodeId: string;
+      elementId: string;
+      sequence: number;
+      delta: string;
+    }
+  | {
+      type: "world.audio.started";
+      conversationId: string;
+      runId: string;
+      nodeId: string;
+      port: string;
+      mimeType: string;
+    }
+  | {
+      type: "world.audio.completed";
+      conversationId: string;
+      runId: string;
+      nodeId: string;
+      port: string;
+      resourceId?: string;
+    }
+  | {
+      type: "world.audio.failed";
+      conversationId: string;
+      runId: string;
+      nodeId: string;
+      port: string;
+      error: string;
+    }
+  | {
+      type: "world.trace.entry";
+      conversationId: string;
+      runId: string;
+      entry: PrimeWorldRunTraceEntry;
+    };
+
+export interface PrimeWorldExportedResource {
+  key: string;
+  usageKind: string;
+  mimeType: string;
+  fileName: string;
+  dataBase64: string;
+}
+
+export interface PrimeWorldExportBundle {
+  format: "echoo-prime-world";
+  formatVersion: 1;
+  name: string;
+  attributes?: Array<{ key: string; value: string }>;
+  tags?: string[];
+  introduction?: string;
+  isPublic: boolean;
+  detail: PrimeWorldDetail;
+  resources: PrimeWorldExportedResource[];
 }

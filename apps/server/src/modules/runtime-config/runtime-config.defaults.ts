@@ -8,7 +8,7 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
     apiKey: "",
   };
   return {
-    version: 2,
+    version: 3,
     sliceFigure: {
       version: 3,
       llm: {
@@ -142,6 +142,42 @@ export function buildRuntimeConfigDefaults(): StoredUserRuntimeConfig {
         },
       },
     },
-    primeWorld: { version: 1 },
+    primeWorld: {
+      version: 2,
+      mainModel: {
+        ...sharedEndpoint,
+        model: "google/gemini-3.1-flash-lite",
+        temperature: 0.8,
+        maxTokens: 4_096,
+        reasoningEnabled: false,
+        reasoningEffort: "high",
+      },
+      summaryModel: {
+        ...sharedEndpoint,
+        model: "google/gemini-3.1-flash-lite",
+        temperature: 0.3,
+        maxTokens: 2_048,
+        reasoningEnabled: false,
+        reasoningEffort: "high",
+      },
+      stt: {
+        source: "platform",
+        apiKey: "",
+        httpUrl: "https://api.fish.audio/v1/asr",
+        language: "",
+      },
+      tts: {
+        source: "platform",
+        apiKey: "",
+        referenceId: "5671e9d40d7a48e1b81e78ff58359903",
+        model: "s2.1-pro-free",
+        httpUrl: "https://api.fish.audio/v1/tts",
+        wsUrl: "wss://api.fish.audio/v1/tts/live",
+        latency: "balanced",
+        chunkLength: 100,
+      },
+      context: { windowTokens: 32_768, providerReserveTokens: 1_024 },
+      audio: { autoPlay: true },
+    },
   };
 }

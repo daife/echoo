@@ -38,10 +38,32 @@ export class FishAudioSttService {
     );
   }
 
+  async transcribeResource(
+    ownerUserId: string,
+    resourceId: string,
+    config: StoredFishAudioSttConfig,
+    signal?: AbortSignal,
+  ) {
+    if (!config.apiKey)
+      throw new Error("Fish Audio STT API key is not configured.");
+    if (!config.httpUrl.trim())
+      throw new Error("Fish Audio STT URL is not configured.");
+    if (config.source === "platform") await this.billing.assertPlatformBalance();
+    const result = await this.transcribe(
+      ownerUserId,
+      { id: resourceId, messageId: resourceId, resourceId, type: "voice" },
+      config,
+      signal,
+    );
+    if (result.type !== "voice") throw new Error("Fish Audio STT returned an invalid annotation.");
+    return result.transcript;
+  }
+
   private async transcribe(
     ownerUserId: string,
     item: PrimePendingMedia,
     config: StoredFishAudioSttConfig,
+    signal?: AbortSignal,
   ): Promise<PrimeMediaAnnotation> {
     if (item.type !== "voice")
       throw new Error(`Fish Audio STT 仅支持 voice 媒体：${item.id}。`);
@@ -67,6 +89,7 @@ export class FishAudioSttService {
         "Content-Type": "application/msgpack",
       },
       body,
+      signal,
     });
     if (!response.ok) {
       const detail = await readErrorDetail(response);

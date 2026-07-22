@@ -29,6 +29,7 @@ import { createId } from "../../shared/utils/id.js";
 import { ResourceRepository } from "../resources/resource.repository.js";
 import { ChangeEventRepository } from "../sync/change-event.repository.js";
 import { syncScheduledRuns } from "./kinds/prime-figure/scheduled-run.repository.js";
+import { collectPrimeWorldResourceIds } from "./kinds/prime-world/prime-world-node-registry.js";
 import type { PoolConnection } from "mysql2/promise";
 
 interface AgentRow extends RowDataPacket {
@@ -92,6 +93,7 @@ export class AgentRepository {
       null;
     let referenceImages: PrimeFigureReferenceImage[] = [];
     let stickers: PrimeFigureSticker[] = [];
+    let persisted = false;
     try {
       avatar = input.avatar
         ? await this.resources.saveImage(
@@ -204,6 +206,7 @@ export class AgentRepository {
           connection,
         );
       });
+      persisted = true;
       await this.resources.replaceAgentReferences(id, [
         ...(avatar ? [{ resourceId: avatar.id, usageKind: "avatar" }] : []),
         ...(cover ? [{ resourceId: cover.id, usageKind: "cover" }] : []),
@@ -215,9 +218,23 @@ export class AgentRepository {
           resourceId: item.resourceId,
           usageKind: "sticker",
         })),
+        ...(input.type === "prime-world"
+          ? collectPrimeWorldResourceIds(
+              input.detail.workflow.nodes,
+              input.detail.presentation.startView,
+            ).map((resourceId) => ({ resourceId, usageKind: "world" }))
+          : []),
       ]);
       return (await this.findById(ownerUserId, id))!;
     } catch (error) {
+      if (persisted)
+        await withTransaction((connection) =>
+          execute(
+            "DELETE FROM agents WHERE id = ? AND owner_user_id = ?",
+            [id, ownerUserId],
+            connection,
+          ),
+        ).catch(() => undefined);
       await this.deletePreparedResources(ownerUserId, [
         avatar?.publicPath,
         cover?.publicPath,
@@ -239,7 +256,7 @@ export class AgentRepository {
             input,
             now,
           )
-        : existing.type === "prime-world" && "detail" in input
+        : existing.type === "prime-world" && "detail" in input && !input.preserveRuntimeState
           ? {
               schemaVersion: 1 as const,
               variables: structuredClone(input.detail.initialState),
@@ -969,6 +986,13 @@ export class AgentRepository {
         })),
       );
     }
+    if (agent.type === "prime-world")
+      references.push(
+        ...collectPrimeWorldResourceIds(
+          agent.detail.workflow.nodes,
+          agent.detail.presentation.startView,
+        ).map((resourceId) => ({ resourceId, usageKind: "world" })),
+      );
     await this.resources.replaceAgentReferences(agent.id, references);
   }
 

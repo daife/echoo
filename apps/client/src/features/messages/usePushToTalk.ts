@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { startMp3Recorder, type ActiveMp3Recorder } from "./audio/mp3Recorder";
 
 const CANCEL_DISTANCE_PX = 72;
-const MAX_RECORDING_SECONDS = 60;
+const DEFAULT_MAX_RECORDING_SECONDS = 60;
 const MIN_RECORDING_SECONDS = 1;
 
 export function isPushToTalkCancelGesture(startY: number, currentY: number) {
@@ -15,7 +15,9 @@ export function usePushToTalk(input: {
   disabled?: boolean;
   onRecorded: (blob: Blob, durationSeconds: number) => Promise<void> | void;
   onError: (message: string) => void;
+  maxRecordingSeconds?: number;
 }) {
+  const maxRecordingSeconds = Math.max(1, Math.min(120, input.maxRecordingSeconds ?? DEFAULT_MAX_RECORDING_SECONDS));
   const [phase, setPhase] = useState<PushToTalkPhase>("idle");
   const [level, setLevel] = useState(0);
   const [durationSeconds, setDurationSeconds] = useState(0);
@@ -71,7 +73,7 @@ export function usePushToTalk(input: {
         reset();
         await input.onRecorded(
           result.blob,
-          Math.min(MAX_RECORDING_SECONDS, result.durationSeconds),
+          Math.min(maxRecordingSeconds, result.durationSeconds),
         );
       } catch (error) {
         reset();
@@ -80,7 +82,7 @@ export function usePushToTalk(input: {
         );
       }
     },
-    [clearTimers, input, reset],
+    [clearTimers, input, maxRecordingSeconds, reset],
   );
   const finishRef = useRef(finish);
   finishRef.current = finish;
@@ -110,7 +112,7 @@ export function usePushToTalk(input: {
         );
         maximumTimerRef.current = window.setTimeout(() => {
           void finishRef.current(cancelArmedRef.current);
-        }, MAX_RECORDING_SECONDS * 1_000);
+        }, maxRecordingSeconds * 1_000);
       } catch (error) {
         if (sessionRef.current !== session) return;
         reset();
@@ -118,7 +120,7 @@ export function usePushToTalk(input: {
         input.onError(message);
       }
     },
-    [input, phase, reset],
+    [input, maxRecordingSeconds, phase, reset],
   );
 
   const moveHold = useCallback((clientY: number) => {

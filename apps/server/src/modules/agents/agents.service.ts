@@ -20,6 +20,10 @@ export class AgentsService {
     return this.repository.listByOwner(userId);
   }
 
+  getAgent(userId: string, agentId: string) {
+    return this.repository.findById(userId, agentId);
+  }
+
   getPrimeFigureEditSnapshot(userId: string, agentId: string) {
     return this.repository.getPrimeFigureEditSnapshot(userId, agentId);
   }

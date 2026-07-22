@@ -71,6 +71,7 @@ export interface ChatCompletionInput {
   toolChoice?: "none" | "auto" | "required" | Record<string, unknown>;
   reasoningEnabled?: boolean;
   reasoningEffort?: ChatReasoningEffort;
+  signal?: AbortSignal;
 }
 
 export interface ChatCompletionResult {

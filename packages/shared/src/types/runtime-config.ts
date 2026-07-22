@@ -136,11 +136,17 @@ export interface PrimeFigureWakeupConfig {
 }
 
 export interface PrimeWorldRuntimeConfigView {
-  version: 1;
+  version: 2;
+  mainModel: TextModelConfigView;
+  summaryModel: TextModelConfigView;
+  stt: FishAudioSttConfigView;
+  tts: FishAudioConfigView;
+  context: { windowTokens: number; providerReserveTokens: number };
+  audio: { autoPlay: boolean };
 }
 
 export interface UserRuntimeConfigView {
-  version: 2;
+  version: 3;
   sliceFigure: SliceFigureRuntimeConfigView;
   primeFigure: PrimeFigureRuntimeConfigView;
   primeWorld: PrimeWorldRuntimeConfigView;
@@ -270,7 +276,16 @@ export interface PrimeFigureRuntimeConfigPatch {
 export interface UserRuntimeConfigPatch {
   sliceFigure?: SliceFigureRuntimeConfigPatch;
   primeFigure?: PrimeFigureRuntimeConfigPatch;
-  primeWorld?: Record<string, never>;
+  primeWorld?: PrimeWorldRuntimeConfigPatch;
+}
+
+export interface PrimeWorldRuntimeConfigPatch {
+  mainModel?: TextModelConfigPatch;
+  summaryModel?: TextModelConfigPatch;
+  stt?: FishAudioSttConfigPatch;
+  tts?: FishAudioConfigPatch;
+  context?: Partial<PrimeWorldRuntimeConfigView["context"]>;
+  audio?: Partial<PrimeWorldRuntimeConfigView["audio"]>;
 }
 
 export type FigureRuntimeConfigView =
@@ -281,7 +296,7 @@ export type FigureRuntimeConfigView =
 export type FigureRuntimeConfigPatch =
   | SliceFigureRuntimeConfigPatch
   | PrimeFigureRuntimeConfigPatch
-  | Record<string, never>;
+  | PrimeWorldRuntimeConfigPatch;
 
 export interface ConversationRuntimeConfigResponse {
   mode: RuntimeConfigMode;

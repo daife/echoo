@@ -717,12 +717,19 @@ export function App() {
             "prime-figure": createPrimeFigure,
             "prime-world": createPrimeWorld,
           }}
+          importPrimeWorld={async (bundle) => {
+            const created = await services.primeWorldService.importBundle(bundle);
+            const agent = created.agent;
+            setMyAgents((current) => [agent, ...current.filter((item) => item.id !== agent.id)]);
+            openAgent(agent);
+            return agent;
+          }}
           onBack={closeSecondaryView}
         />
       );
     if (view === "messages") {
       if (selectedAgent?.type === "prime-world")
-        return <PrimeWorldPage agent={selectedAgent} service={services.primeWorldService} onBack={closeConversation} onSave={async (detail) => { await updatePrimeWorld(selectedAgent.id, { name: selectedAgent.name, attributes: selectedAgent.attributes, tags: selectedAgent.tags, introduction: selectedAgent.introduction, isPublic: selectedAgent.isPublic, detail }); }} />;
+        return <PrimeWorldPage agent={selectedAgent} service={services.primeWorldService} onBack={closeConversation} onSave={async (detail, preserveRuntimeState) => { await updatePrimeWorld(selectedAgent.id, { name: selectedAgent.name, attributes: selectedAgent.attributes, tags: selectedAgent.tags, introduction: selectedAgent.introduction, isPublic: selectedAgent.isPublic, detail, preserveRuntimeState }); }} />;
       return (
         <MessagesPage
           agent={selectedAgent ?? undefined}

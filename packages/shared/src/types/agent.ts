@@ -279,7 +279,9 @@ export interface CreatePrimeWorldRequest {
   detail: PrimeWorldDetail;
 }
 
-export type UpdatePrimeWorldRequest = Omit<CreatePrimeWorldRequest, "type">;
+export type UpdatePrimeWorldRequest = Omit<CreatePrimeWorldRequest, "type"> & {
+  preserveRuntimeState?: boolean;
+};
 
 export interface AddPrimeFigureStickerRequest {
   upload: AgentResourceUpload;

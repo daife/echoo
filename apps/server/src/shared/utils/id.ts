@@ -15,7 +15,9 @@ export type EntityPrefix =
   | "comment"
   | "pwe"
   | "pwr"
-  | "pwh";
+  | "pwh"
+  | "pws"
+  | "pwt";
 
 export function createId(prefix: EntityPrefix) {
   return `${prefix}_${randomUUID()}`;

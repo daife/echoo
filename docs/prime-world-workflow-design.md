@@ -17,20 +17,19 @@
 
 ## 0. 当前实现基线（2026-07-22）
 
-当前更改已经形成 M1 的可运行闭环：
+当前实现已经形成 M1 至 M3 的首版闭环：
 
 - 正式共享类型和 Zod 定义，受控 `WorldView` 固定为 `stack`、`text`、`image`、`choices`、`progress`、`divider`。
-- 四张运行表、幂等 event/run 创建、run 捕获定义快照、draft state CAS 提交和独立历史表。
+- 运行、历史、摘要、定时事件、trace 和运行资源持久化，幂等 event/run 创建、run 定义快照与 draft state CAS 提交。
 - Redis Stream 异步执行、同会话 lease、queued run 补偿、终态查询和取消后的提交拦截。
 - 节点白名单、端口类型、控制环、重复 ID、单值数据来源、不可达副作用和图规模校验。
 - 状态、常量、模板、pick、object、条件、switch、数学、随机、历史追加和基础 view 节点。
-- 独立 `PrimeWorldPage`、view revision 防旧操作、JSON 校验保存、只读图谱检查和内置无模型选择世界模板。
+- 独立 `PrimeWorldPage`、view revision 防旧操作、可写 XYFlow/CodeMirror 编辑器和内置无模型选择世界模板。
+- 服务端节点注册表、确定性 fork/join 调度、流广播、四种显式流转换节点、完整静态/运行时配额和跨进程取消。
+- LLM 文本流与动态 JSON Schema、历史窗口与滚动摘要、批量 STT、流式 TTS/字幕/音频播放和失败回滚。
+- 作者安全 trace、资源所有权核验、timer/reset，以及版本化 bundle 导入导出。
 
-仍未完成且不能在产品声明中当作已有能力：
-
-- 图谱目前用于结构检查，尚不能直接拖拽、连线和编辑节点；JSON 仍是唯一写入界面。
-- 通用 history.read、滚动摘要、LLM、动态 JSON Schema、STT/TTS、流式视图和跨进程主动中止 provider 尚未实现。
-- reset、定时调度、作者 trace、导入导出、资源所有权检查和完整配额仍待补齐。
+语音范围采用批量 STT：录音完成并上传为 ready 资源后才进入工作流，不提供实时 STT partial；LLM 文本与 TTS 音频仍可流式传递、播放和抢话。
 
 设计调整：run 表增加 `definition_json` 快照。只保存 revision 无法保证排队期间作者更新定义后，旧 run 仍按接收事件时的定义执行；在引入独立不可变定义版本表前，按 run 保存有界定义快照是更可靠的过渡方案。
 
@@ -435,7 +434,7 @@ export interface PrimeWorldRuntimeState {
 | `trigger.worldStart` | `event`                     | 首次进入或显式重置后触发   |
 | `trigger.uiAction`   | `actionId`、`payload`       | 接收受控 UI 操作           |
 | `trigger.textInput`  | `text`                      | 接收独立世界文本输入       |
-| `trigger.voiceInput` | `audio`、可选 `audioStream` | 接收已上传音频或实时音频流 |
+| `trigger.voiceInput` | `audio`                     | 接收录音完成后上传的音频   |
 | `trigger.timer`      | `triggerKey`、`payload`     | 接收定时器事件             |
 
 ### 8.2 状态与数据
@@ -480,15 +479,26 @@ export interface PrimeWorldRuntimeState {
 
 ### 8.5 AI 与音频
 
-| 节点        | 主要输入和输出                                 | 行为                         |
-| ----------- | ---------------------------------------------- | ---------------------------- |
-| `ai.llm`    | `messages` -> `textStream/text` 或 `json`      | 复用平台或自定义模型配置     |
-| `audio.stt` | `audio/audioStream` -> `partialText/finalText` | 支持 batch 和 streaming 模式 |
-| `audio.tts` | `text/textStream` -> `audio/audioStream`       | 支持完整和流式合成           |
+| 节点        | 主要输入和输出                            | 行为                     |
+| ----------- | ----------------------------------------- | ------------------------ |
+| `ai.llm`    | `messages` -> `textStream/text` 或 `json` | 复用平台或自定义模型配置 |
+| `audio.stt` | `audio` -> `finalText`                    | 仅支持完整资源的批量识别 |
+| `audio.tts` | `text/textStream` -> `audio/audioStream`  | 支持完整和流式合成       |
+
+`audio.stt` 实际仅接受完整 `audio` 并输出 `finalText`。如果未来节点只产生 `audio-stream`，必须显式使用 `convert.audioFromStream` 收集后再进入 STT。
+
+### 8.6 显式流转换
+
+| 节点                      | 转换                          | 默认与上限                                    |
+| ------------------------- | ----------------------------- | --------------------------------------------- |
+| `convert.textToStream`    | `text -> text-stream`         | 按 Unicode 字符确定性分块，默认 256 字符      |
+| `convert.textFromStream`  | `text-stream -> text`         | 等待流完成，最多 128 KiB                      |
+| `convert.audioToStream`   | `audio -> audio-stream`       | 从资源分块读取，默认 64 KiB                   |
+| `convert.audioFromStream` | `audio-stream -> audio`       | 最多 12 MiB；成功固化，失败或取消时清理资源   |
 
 `ai.llm` 的 JSON 模式使用作者配置的 JSON Schema 子集。允许 `object`、`array`、`string`、`number`、`integer`、`boolean`、`enum`、`required`、数组数量和字符串长度限制；禁止远程 `$ref`、递归 schema 和未声明属性。Ajv 校验失败走 `invalid` 错误端口，不得把未校验数据传给状态或 UI。
 
-### 8.6 显示与播放
+### 8.7 显示与播放
 
 | 节点                   | 行为                                   |
 | ---------------------- | -------------------------------------- |
@@ -528,7 +538,7 @@ export type WorldViewElement =
   | WorldDividerElement;
 ```
 
-首版渲染元素固定为 `stack`、`text`、`image`、`choices`、`progress` 和 `divider`。容器最大深度 12，元素总数最大 200。文本不解释 HTML；图片只能引用已授权 resource ID 或服务端签发的媒体访问项。
+首版渲染元素固定为 `stack`、`text`、`image`、`choices`、`progress` 和 `divider`。容器最大深度 12，元素总数最大 200。文本不解释 HTML；`image` 与背景只保存已授权的 `resourceId`，客户端通过现有资源访问接口将其解析为可访问 URL。
 
 `choices` 中每个选项包含稳定 `id`、显示 `label`、可选 `description` 和提交给服务端的 JSON payload。客户端不能将作者未声明的 action ID 发送给服务端；服务端仍会根据当前 view revision 复核 action 是否有效，防止重复点击旧选项。
 
@@ -548,24 +558,28 @@ prime-world  -> PrimeWorldPage
 
 ### 10.1 作者接口
 
-| 方法   | 路径                                 | 用途                             |
-| ------ | ------------------------------------ | -------------------------------- |
-| `POST` | `/prime-worlds/validate`             | 校验未保存工作流，返回节点级错误 |
-| `POST` | `/agents/prime-world`                | 创建世界与会话                   |
-| `PUT`  | `/agents/:agentId/prime-world`       | 保存定义并增加 revision          |
-| `POST` | `/agents/:agentId/prime-world/reset` | 重置作者测试会话                 |
+| 方法    | 路径                                 | 用途                                         |
+| ------- | ------------------------------------ | -------------------------------------------- |
+| `GET`   | `/prime-world/catalog`               | 获取服务端实际注册的节点目录                 |
+| `POST`  | `/prime-world/validate`              | 聚合校验未保存工作流，返回全部可定位问题     |
+| `POST`  | `/prime-world/import`                | 导入并完整重验版本化世界 bundle              |
+| `POST`  | `/agents`                            | 创建世界与初始会话                           |
+| `PATCH` | `/agents/:agentId/prime-world`       | 保存定义并增加 revision，可选择保留运行状态  |
+| `POST`  | `/agents/:agentId/prime-world/reset` | 重置作者测试会话                             |
 
 校验错误包含 `code`、`message`、`nodeId`、可选 `port` 和 JSON Pointer，画布与 JSON 编辑器可以定位同一错误。
 
 ### 10.2 运行接口
 
-| 方法   | 路径                                                      | 用途                                         |
-| ------ | --------------------------------------------------------- | -------------------------------------------- |
-| `GET`  | `/conversations/:conversationId/world`                    | 获取定义摘要、状态版本、当前 view 和活动 run |
-| `POST` | `/conversations/:conversationId/world/events`             | 提交文本、语音或 UI 事件                     |
-| `GET`  | `/conversations/:conversationId/world/runs/:runId`        | 获取 run 状态和安全诊断                      |
-| `POST` | `/conversations/:conversationId/world/runs/:runId/cancel` | 取消活动 run                                 |
-| `POST` | `/conversations/:conversationId/world/reset`              | 清除状态、历史、定时器并重新触发 start       |
+| 方法   | 路径                                             | 用途                                         |
+| ------ | ------------------------------------------------ | -------------------------------------------- |
+| `GET`  | `/prime-world/:conversationId`                   | 获取定义摘要、状态版本、当前 view 和活动 run |
+| `GET`  | `/prime-world/:conversationId/export`            | 导出不含运行状态、历史和密钥的版本化 bundle  |
+| `POST` | `/prime-world/:conversationId/events`            | 提交文本、语音或 UI 事件                     |
+| `GET`  | `/prime-world/:conversationId/runs/:runId`       | 获取 run 状态                                |
+| `GET`  | `/prime-world/:conversationId/runs/:runId/trace` | 原创世界作者获取安全 trace                   |
+| `POST` | `/prime-world/:conversationId/runs/:runId/cancel`| 取消活动 run                                 |
+| `POST` | `/prime-world/:conversationId/reset`             | 清除状态、历史、定时器并重新触发 start       |
 
 事件请求：
 
@@ -579,7 +593,7 @@ export interface SubmitPrimeWorldEventRequest {
 }
 ```
 
-`input.voice` 的 payload 引用已完成上传的 resource ID。实时 STT 使用独立、最长 120 秒的 capture session：开始帧创建 `captureId`，后续二进制帧携带 `conversationId`、`captureId` 和 `sequence`。capture service 在当前 WebSocket 进程内调用流式 STT 并推送 partial；结束帧固化音频资源和 final transcript，再创建正式 `input.voice` world event。工作流中的 `audio.stt` 节点在 streaming 模式下复用 capture 的 final transcript，不重复调用 STT；在 batch 模式下读取音频资源并发起一次 STT。
+`input.voice` 的 payload 引用已完成上传且状态为 ready 的 resource ID。客户端沿用 MP3 recorder，Prime World 最长录制 120 秒；录音结束后执行两阶段上传，再创建正式 `input.voice` world event。工作流中的 `audio.stt` 读取完整资源并调用一次批量 STT，不存在 capture session、流式 STT 或 partial transcript。
 
 ### 10.3 服务端实时事件
 
@@ -591,19 +605,18 @@ export interface SubmitPrimeWorldEventRequest {
 - `world.run.cancelled`
 - `world.view.committed`
 - `world.view.text_delta`
-- `world.stt.partial`
 - `world.audio.started`
 - `world.audio.chunk` 二进制帧
 - `world.audio.completed`
 - `world.audio.failed`
 
-run 和 view 事件包含 `conversationId` 与 `runId`；录音阶段的 `world.stt.partial` 包含 `conversationId` 与 `captureId`。增量事件包含 `sequence`。`world.view.committed` 携带完整 view 和新状态版本，是断线恢复的稳定边界；文本和音频增量不进入通用 sync change log。
+run、view 和音频事件包含 `conversationId` 与 `runId`，增量事件包含 `sequence`。`world.view.committed` 携带完整 view 和新状态版本，是断线恢复的稳定边界；文本和音频增量不进入通用 sync change log。协议不定义 `world.stt.partial`。
 
 ## 11. 完整基准玩法一：语音聊天小游戏
 
 ### 11.1 玩法定义
 
-玩家按住或点击录音，提交一句话。系统显示识别中的字幕，完成识别后读取最近对话与摘要，调用 LLM 生成角色回答，同时显示回答字幕并流式播放语音。完成后保存用户与 assistant 的完整历史。玩家在播放期间再次说话会打断旧语音和旧 run。
+玩家按住或点击录音，提交一句话。录音完成并批量识别后，系统读取最近对话与摘要，调用 LLM 生成角色回答，同时增量显示回答字幕并流式播放语音。完成后保存用户与 assistant 的完整历史。玩家在播放期间再次说话会打断旧语音和旧 run。
 
 ### 11.2 状态
 
@@ -639,12 +652,11 @@ flowchart TD
     LLM -. "textStream" .-> SUBTITLE["view.streamText"]
     LLM -. "textStream" .-> TTS["audio.tts stream"]
     TTS -. "audioStream" .-> AUDIO["view.playAudioStream"]
-    STT -. "partialText" .-> TRANSCRIPT["view.streamText transcript"]
 ```
 
 关键连接语义：
 
-- `audio.stt.finalText` 才连接到用户历史与 LLM；partial 只连接识别字幕。
+- `audio.stt.finalText` 连接到用户历史与 LLM；STT 不产生 partial。
 - 语音事件配置 `interruptCurrent: true`；旧 run 的取消发生在事件接入层，不占用新图中的节点。
 - 用户历史在读取窗口前提交到 run draft，因此本轮用户文本包含在 LLM messages 中。
 - `ai.llm.textStream` 同时连接字幕和 TTS；两个 sink 在 LLM 开始前注册。
@@ -669,7 +681,7 @@ LLM 节点使用文本模式，最大输出由运行配置限制。回答失败�
 ### 11.6 验收条件
 
 - 完整录音可以通过非流式 STT 进入 LLM。
-- 开启实时模式后可以显示 STT partial，但只产生一次 LLM 调用。
+- 每份 ready 音频只产生一次批量 STT 和一次 LLM 调用。
 - LLM 首个文本增量到达后可以更新字幕，并在 TTS 产生音频后开始播放。
 - 下个回合的 prompt 包含配置窗口内的历史和滚动摘要。
 - LLM、TTS 或连接失败不会保存不完整 assistant 历史。
@@ -982,7 +994,7 @@ Ajv 通过后还要执行领域校验：
 ### 13.3 重试
 
 - 网络断开、429 和上游 5xx 在没有开始向客户端交付流时最多自动重试一次。
-- 已产生 LLM 文本流、STT partial 或 TTS 音频后不自动重试，避免重复内容和重复播放。
+- 已产生 LLM 文本流或 TTS 音频后不自动重试，避免重复内容和重复播放；批量 STT 没有 partial 交付。
 - JSON 校验失败可以由作者显式连接一次 `ai.llm` 修复节点；执行器不隐式无限修复。
 - 所有计费调用复用 BillingContext，并在 run/node 诊断中记录不含密钥的用量信息。
 
@@ -1006,11 +1018,11 @@ Ajv 通过后还要执行领域校验：
 
 ### 阶段一：共享协议与持久化
 
-状态：核心项已完成；repository 数据库集成测试和资源归属校验待补。
+状态：已完成。
 
 - 将 `PrimeWorldDetail` 替换为正式 schema，并增加创建、更新、事件、状态、视图和 WebSocket 类型。
 - 增加工作流 Zod schema、动态 JSON Schema 约束和节点目录类型。
-- 增加四张 prime world 表及 repository。
+- 增加事件、运行、历史、定时事件、trace 和运行资源六张 prime world 表及 repository。
 - 扩展 sync/entity 类型，使 agent 定义更新可以同步；世界增量不进入通用 sync。
 - 完成 schema、repository 和幂等事件测试。
 
@@ -1018,7 +1030,7 @@ Ajv 通过后还要执行领域校验：
 
 ### 阶段二：编译器与核心执行器
 
-状态：无模型串行图、数据求值、draft 提交、取消提交拦截和队列补偿已完成；fork/join、timer 和完整配额待补。
+状态：已完成，包括 fork/join、timer、显式流转换、完整配额和跨进程取消。
 
 - 实现节点注册表、图编译器、控制调度、数据端口、draft state、原子提交和取消。
 - 扩展 Redis run job 支持 `prime-world`，保留同会话串行 lease。
@@ -1029,7 +1041,7 @@ Ajv 通过后还要执行领域校验：
 
 ### 阶段三：独立运行界面与编辑器
 
-状态：独立运行页、受控 renderer、revision 防旧操作、JSON 校验保存和图谱检查已完成；可写画布、节点配置面板和实时订阅待补。
+状态：已完成，包括可写画布、节点配置面板、实时文本/音频订阅和失败回滚。
 
 - 新增 `PrimeWorldPage`、受控 WorldView renderer、世界输入与实时 runtime。
 - 修改 App 打开逻辑，让 `prime-world` 不进入 MessagesPage。
@@ -1040,7 +1052,7 @@ Ajv 通过后还要执行领域校验：
 
 ### 阶段四：LLM、历史窗口与沉浸式小说
 
-状态：未开始。进入本阶段前先补 history.read 与动态 schema，避免把上下文和模型调用硬编码到特定玩法。
+状态：已完成。
 
 - 封装现有 ModelSession 为 `ai.llm` 节点。
 - 使用 Ajv 实现动态输出 schema，并实现状态补丁领域校验。
@@ -1051,19 +1063,19 @@ Ajv 通过后还要执行领域校验：
 
 ### 阶段五：语音链路
 
-状态：未开始。M3 在 M2 稳定后实施，复用既有 Fish Audio 服务，不在 M1 中引入半成品音频协议。
+状态：已完成；STT 按已确认范围仅提供录音完成后的批量模式。
 
 - 封装现有 Fish Audio 非流式 STT、流式 TTS 和资源存储。
-- 增加实时语音上传协议、streaming STT adapter 和 partial 事件。
+- 复用两阶段资源上传提交完整录音；不增加 streaming STT adapter 或 partial 事件。
 - 实现 LLM 文本流到字幕与 TTS 的双 sink、音频二进制帧和客户端播放控制。
 - 实现语音抢话、取消、失败回滚和重连恢复。
 - 按第 11 节创建内置“空间站导航员”示例定义，作为集成 fixture 和手工验收世界。
 
-完成标准：语音聊天小游戏的全部验收条件通过；非流式 STT 和实时 STT 两种模式都有测试。
+完成标准：语音聊天小游戏的全部验收条件通过；批量 STT、LLM 双流、流式 TTS、抢话和失败回滚有测试。
 
 ### 阶段六：配额、诊断与发布准备
 
-状态：图规模与视图规模配额已完成，其余随 M2/M3 分阶段落实。
+状态：已完成。
 
 - 落实节点、状态、视图、历史、调用次数和墙钟时间配额。
 - 完善作者 run trace、稳定错误码、计费诊断和敏感信息脱敏。

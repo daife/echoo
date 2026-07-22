@@ -11,9 +11,12 @@ import type {
 } from "@echoo/shared";
 import { InvalidMediaUploadError } from "../resources/resource.repository.js";
 import { AgentsService } from "./agents.service.js";
+import { PrimeWorldService } from "./kinds/prime-world/prime-world.service.js";
+import { PrimeWorldCompileError } from "./kinds/prime-world/prime-world-compiler.js";
 
 export async function registerAgentRoutes(app: FastifyInstance) {
   const agents = new AgentsService();
+  const worlds = new PrimeWorldService();
 
   app.get("/", async (request, reply) => {
     const userId = await request.requireUserId(reply);
@@ -74,6 +77,10 @@ export async function registerAgentRoutes(app: FastifyInstance) {
             .code(400)
             .send({ error: "INVALID_MEDIA_UPLOAD", message: error.message });
         }
+        if (error instanceof PrimeWorldCompileError)
+          return reply.code(400).send({ error: error.code, message: error.message, issue: error.validationIssue });
+        if (request.body.type === "prime-world" && error instanceof Error)
+          return reply.code(400).send({ error: "PRIME_WORLD_INVALID", message: error.message });
         throw error;
       }
     },
@@ -91,8 +98,23 @@ export async function registerAgentRoutes(app: FastifyInstance) {
         return { agent };
       } catch (error) {
         if (error instanceof ZodError) return reply.code(400).send({ error: "VALIDATION_ERROR", message: error.issues[0]?.message ?? "本初世界定义无效。" });
+        if (error instanceof PrimeWorldCompileError) return reply.code(400).send({ error: error.code, message: error.message, issue: error.validationIssue });
+        if (error instanceof Error && (error.message.startsWith("世界资源") || error.message.includes("stateSchema") || error.message.includes("运行状态")))
+          return reply.code(400).send({ error: "PRIME_WORLD_INVALID", message: error.message });
         throw error;
       }
+    },
+  );
+
+  app.post<{ Params: { agentId: string } }>(
+    "/:agentId/prime-world/reset",
+    async (request, reply) => {
+      const userId = await request.requireUserId(reply);
+      if (!userId) return;
+      const agent = await agents.getAgent(userId, request.params.agentId);
+      if (!agent || agent.type !== "prime-world")
+        return reply.code(404).send({ error: "NOT_FOUND", message: "未找到本初世界。" });
+      return reply.code(202).send(await worlds.reset(userId, agent.conversationId));
     },
   );
 

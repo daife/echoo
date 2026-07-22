@@ -7,6 +7,7 @@ import type {
   FishAudioSttConfigPatch,
   ModelEndpointConfigPatch,
   PrimeFigureRuntimeConfigPatch,
+  PrimeWorldRuntimeConfigPatch,
   SliceFigureRuntimeConfigPatch,
   UserRuntimeConfigPatch,
   UserRuntimeConfigView,
@@ -28,6 +29,7 @@ import type {
   StoredFishAudioSttConfig,
   StoredModelEndpointConfig,
   StoredPrimeFigureRuntimeConfig,
+  StoredPrimeWorldRuntimeConfig,
   StoredRuntimeConfigPresets,
   StoredSliceFigureRuntimeConfig,
   StoredTextModelConfig,
@@ -106,6 +108,9 @@ export class RuntimeConfigService {
       primeFigure: patch.primeFigure
         ? patchPrimeConfig(current.primeFigure, patch.primeFigure)
         : current.primeFigure,
+      primeWorld: patch.primeWorld
+        ? patchPrimeWorldConfig(current.primeWorld, patch.primeWorld)
+        : current.primeWorld,
     });
     validateUserConfig(next);
     const warnings = await this.validateCatalogUser(next);
@@ -222,6 +227,9 @@ export class RuntimeConfigService {
       primeFigure: patch.primeFigure
         ? patchPrimeConfig(current.primeFigure, patch.primeFigure)
         : current.primeFigure,
+      primeWorld: patch.primeWorld
+        ? patchPrimeWorldConfig(current.primeWorld, patch.primeWorld)
+        : current.primeWorld,
     };
     validateUserConfig(next);
     const warnings = await this.validateCatalogUser(next);
@@ -527,6 +535,7 @@ export function forcePlatformDefaults(
     apiKey: "",
   });
   const prime = config.primeFigure;
+  const world = config.primeWorld;
   return {
     ...config,
     sliceFigure: {
@@ -580,6 +589,24 @@ export function forcePlatformDefaults(
         },
       },
     },
+    primeWorld: {
+      ...world,
+      mainModel: normalizeStoredTextModel(endpoint(world.mainModel)),
+      summaryModel: normalizeStoredTextModel(endpoint(world.summaryModel)),
+      stt: {
+        ...world.stt,
+        source: "platform",
+        apiKey: "",
+        httpUrl: "https://api.fish.audio/v1/asr",
+      },
+      tts: {
+        ...world.tts,
+        source: "platform",
+        apiKey: "",
+        httpUrl: "https://api.fish.audio/v1/tts",
+        wsUrl: "wss://api.fish.audio/v1/tts/live",
+      },
+    },
   };
 }
 
@@ -615,6 +642,26 @@ function patchSliceConfig(
     llm: patch.llm ? patchTextModel(current.llm, patch.llm) : current.llm,
     replyAutoSegment: patch.replyAutoSegment ?? current.replyAutoSegment,
     context: { ...current.context, ...patch.context },
+  };
+}
+
+function patchPrimeWorldConfig(
+  current: StoredPrimeWorldRuntimeConfig,
+  patch: PrimeWorldRuntimeConfigPatch,
+): StoredPrimeWorldRuntimeConfig {
+  return {
+    ...current,
+    version: 2,
+    mainModel: patch.mainModel
+      ? patchTextModel(current.mainModel, patch.mainModel)
+      : current.mainModel,
+    summaryModel: patch.summaryModel
+      ? patchTextModel(current.summaryModel, patch.summaryModel)
+      : current.summaryModel,
+    stt: patch.stt ? patchFishAudioStt(current.stt, patch.stt) : current.stt,
+    tts: patch.tts ? patchFishAudio(current.tts, patch.tts) : current.tts,
+    context: { ...current.context, ...patch.context },
+    audio: { ...current.audio, ...patch.audio },
   };
 }
 
@@ -806,7 +853,10 @@ function patchFigureConfig(
       current as StoredPrimeFigureRuntimeConfig,
       patch as PrimeFigureRuntimeConfigPatch,
     );
-  return current;
+  return patchPrimeWorldConfig(
+    current as StoredPrimeWorldRuntimeConfig,
+    patch as PrimeWorldRuntimeConfigPatch,
+  );
 }
 
 function selectFigureConfig(config: StoredUserRuntimeConfig, type: AgentType) {
@@ -822,7 +872,7 @@ function redactUserConfig(
     ...config,
     sliceFigure: redactFigureConfig(config.sliceFigure),
     primeFigure: redactFigureConfig(config.primeFigure),
-    primeWorld: config.primeWorld,
+    primeWorld: redactFigureConfig(config.primeWorld),
   } as UserRuntimeConfigView;
 }
 
@@ -850,6 +900,14 @@ function selectRedactedPresets(
 }
 
 function redactFigureConfig(config: StoredFigureRuntimeConfig): any {
+  if ("mainModel" in config)
+    return {
+      ...config,
+      mainModel: redactEndpoint(config.mainModel),
+      summaryModel: redactEndpoint(config.summaryModel),
+      stt: redactFishAudioStt(config.stt),
+      tts: redactFishAudio(config.tts),
+    };
   if (!("llm" in config) && !("decisionModel" in config)) return config;
   if ("llm" in config) return { ...config, llm: redactEndpoint(config.llm) };
   return {
@@ -946,6 +1004,7 @@ function redactSecret(secret: string) {
 function validateUserConfig(config: StoredUserRuntimeConfig) {
   validateFigureConfig("slice-figure", config.sliceFigure);
   validateFigureConfig("prime-figure", config.primeFigure);
+  validateFigureConfig("prime-world", config.primeWorld);
 }
 
 function validateFigureConfig(
@@ -1020,7 +1079,20 @@ function validateFigureConfig(
       invalid("被动唤醒时间必须严格递增。");
     if (value.context.maximumMessages < value.context.minimumMessages)
       invalid("最大上下文消息数不能小于最小上下文消息数。");
+    return;
   }
+  const value = config as StoredPrimeWorldRuntimeConfig;
+  validateTextModel(value.mainModel);
+  validateTextModel(value.summaryModel);
+  if (value.stt.source === "custom" && (!value.stt.httpUrl.trim() || !value.stt.apiKey.trim()))
+    invalid("自定义本初世界 STT 必须配置地址和 API Key。");
+  if (!value.tts.model.trim() || (value.tts.source === "custom" && (!value.tts.httpUrl.trim() || !value.tts.wsUrl.trim() || !value.tts.apiKey.trim())))
+    invalid("本初世界 TTS 模型不能为空；自定义配置还必须包含地址和 API Key。");
+  positiveInteger(value.tts.chunkLength, "本初世界 TTS 分块长度");
+  positiveInteger(value.context.windowTokens, "本初世界上下文窗口");
+  nonnegativeInteger(value.context.providerReserveTokens, "本初世界 provider 预留 token");
+  if (value.context.providerReserveTokens >= value.context.windowTokens)
+    invalid("provider 预留 token 必须小于上下文窗口。");
 }
 
 function validateTextModel(config: StoredTextModelConfig) {
