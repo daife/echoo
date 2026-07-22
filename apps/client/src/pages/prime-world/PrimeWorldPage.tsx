@@ -12,6 +12,7 @@ import {
   SlidersHorizontal,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { PrimeWorldService } from "../../services/PrimeWorldService";
 import { PrimeWorldEditorPage } from "./PrimeWorldEditorPage";
 import { usePushToTalk } from "../../features/messages/usePushToTalk";
@@ -99,6 +100,14 @@ export function PrimeWorldPage({
     player.current.append(event.sequence, event.data);
   }), [agent.conversationId, service]);
   useEffect(() => () => player.current.stop(), []);
+  useEffect(() => {
+    if (!editing) return;
+    const previousOverflow = window.document.body.style.overflow;
+    window.document.body.style.overflow = "hidden";
+    return () => {
+      window.document.body.style.overflow = previousOverflow;
+    };
+  }, [editing]);
   useEffect(() => {
     if (!busy) return;
     const timer = window.setInterval(() => {
@@ -203,13 +212,23 @@ export function PrimeWorldPage({
         </div>
       </header>
       {editing ? (
-        <PrimeWorldEditorPage
-          detail={agent.detail}
-          conversationId={agent.conversationId}
-          service={service}
-          onSave={onSave}
-          onClose={() => setEditing(false)}
-        />
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100] h-[100dvh] w-[100dvw] bg-[#0b0b0d]"
+            role="dialog"
+            aria-modal="true"
+            aria-label="世界工作流编辑器"
+          >
+            <PrimeWorldEditorPage
+              detail={agent.detail}
+              conversationId={agent.conversationId}
+              service={service}
+              onSave={onSave}
+              onClose={() => setEditing(false)}
+            />
+          </div>,
+          window.document.body,
+        )
       ) : (
         <main
           className="flex flex-1 flex-col overflow-hidden rounded-xl border border-white/10 bg-white/[0.035]"

@@ -15,8 +15,6 @@ import {
   MiniMap,
   Position,
   ReactFlow,
-  applyEdgeChanges,
-  applyNodeChanges,
   type Connection,
   type Edge,
   type Node,
@@ -32,6 +30,11 @@ import { EditorView, lineNumbers } from "@codemirror/view";
 import { BracketsCurly, ClipboardText, Copy, DownloadSimple, FlowArrow, FloppyDisk, MagnifyingGlass, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PrimeWorldService } from "../../services/PrimeWorldService";
+import {
+  applyPersistentEdgeChanges,
+  applyPersistentNodeChanges,
+  paletteNodePosition,
+} from "./primeWorldGraphChanges";
 
 type FlowNode = Node<{ world: PrimeWorldNode; catalog?: PrimeWorldNodeCatalogEntry; inputs: PrimeWorldNodeCatalogEntry["inputs"]; outputs: PrimeWorldNodeCatalogEntry["outputs"] }, "world">;
 
@@ -47,6 +50,8 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
   const [jsonValid, setJsonValid] = useState(true);
   const [mode, setMode] = useState<"graph" | "json">("graph");
   const [catalog, setCatalog] = useState<PrimeWorldNodeCatalogEntry[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState<string>();
   const [selectedId, setSelectedId] = useState<string>();
   const [issues, setIssues] = useState<PrimeWorldValidationIssue[]>([]);
   const [saving, setSaving] = useState(false);
@@ -55,12 +60,28 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
   const [trace, setTrace] = useState<PrimeWorldRunTraceEntry[]>([]);
   const importInput = useRef<HTMLInputElement>(null);
   const flowInstance = useRef<ReactFlowInstance<FlowNode, Edge> | null>(null);
+  const canvas = useRef<HTMLDivElement>(null);
+  const paletteAddIndex = useRef(0);
+  const paletteDragging = useRef(false);
 
-  useEffect(() => { void service.catalog().then((value) => setCatalog(value.nodes)); }, [service]);
+  const loadCatalog = useCallback(async () => {
+    setCatalogLoading(true);
+    setCatalogError(undefined);
+    try {
+      const value = await service.catalog();
+      setCatalog(value.nodes);
+    } catch (error) {
+      setCatalogError(error instanceof Error ? error.message : "节点目录加载失败。");
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, [service]);
+  useEffect(() => { void loadCatalog(); }, [loadCatalog]);
   useEffect(() => {
     void service.getSnapshot(conversationId).then((snapshot) => snapshot.run ? service.trace(conversationId, snapshot.run.id) : null).then((value) => setTrace(value?.trace ?? [])).catch(() => undefined);
   }, [conversationId, service]);
   const catalogByType = useMemo(() => new Map(catalog.map((entry) => [entry.type, entry])), [catalog]);
+  const nodeTypes = useMemo(() => ({ world: WorldNode }), []);
   const nodes = useMemo<FlowNode[]>(() => document.workflow.nodes.map((world) => {
     const catalog = catalogByType.get(world.type);
     const ports = resolvedPorts(world, catalog, document.workflow.edges);
@@ -82,31 +103,23 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
     style: { stroke: edge.kind === "control" ? "#a78bfa" : "#38bdf8" },
   })), [document.workflow.edges]);
 
-  const updateDocument = useCallback((recipe: (value: PrimeWorldDetail) => void) => {
+  const updateDocument = useCallback((recipe: (value: PrimeWorldDetail) => void | boolean) => {
     setDocument((current) => {
       const next = structuredClone(current);
-      recipe(next);
+      if (recipe(next) === false) return current;
       setSource(JSON.stringify(next, null, 2));
       setJsonValid(true);
       return next;
     });
   }, []);
   const onNodesChange = useCallback<OnNodesChange<FlowNode>>((changes) => {
-    const changed = applyNodeChanges(changes, nodes);
-    updateDocument((next) => {
-      const retained = new Set(changed.map((node) => node.id));
-      next.workflow.nodes = next.workflow.nodes.filter((node) => retained.has(node.id));
-      next.workflow.edges = next.workflow.edges.filter((edge) => retained.has(edge.source.nodeId) && retained.has(edge.target.nodeId));
-      next.workflow.editor.positions = Object.fromEntries(changed.map((node) => [node.id, node.position]));
-    });
-  }, [nodes, updateDocument]);
+    updateDocument((next) => applyPersistentNodeChanges(next, changes));
+    if (selectedId && changes.some((change) => change.type === "remove" && change.id === selectedId))
+      setSelectedId(undefined);
+  }, [selectedId, updateDocument]);
   const onEdgesChange = useCallback<OnEdgesChange>((changes) => {
-    const changed = applyEdgeChanges(changes, edges);
-    updateDocument((next) => {
-      const retained = new Set(changed.map((edge) => edge.id));
-      next.workflow.edges = next.workflow.edges.filter((edge) => retained.has(edge.id));
-    });
-  }, [edges, updateDocument]);
+    updateDocument((next) => applyPersistentEdgeChanges(next, changes));
+  }, [updateDocument]);
   const onConnect = useCallback((connection: Connection) => {
     if (!connection.sourceHandle || !connection.targetHandle) return;
     const source = document.workflow.nodes.find((node) => node.id === connection.source);
@@ -131,6 +144,16 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
     });
     setSelectedId(id);
   }, [catalogByType, updateDocument]);
+  const addNodeAtViewportCenter = useCallback((type: string) => {
+    const index = paletteAddIndex.current++;
+    const bounds = canvas.current?.getBoundingClientRect();
+    const instance = flowInstance.current;
+    const offset = (index % 6) * 24;
+    const position = bounds && instance
+      ? paletteNodePosition(bounds, (point) => instance.screenToFlowPosition(point), index)
+      : { x: 100 + offset, y: 100 + offset };
+    addNode(type, position);
+  }, [addNode]);
   const duplicateSelected = () => {
     const original = document.workflow.nodes.find((node) => node.id === selectedId);
     if (!original) return;
@@ -187,7 +210,7 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
   };
 
   return (
-    <div className="flex h-[min(78vh,54rem)] min-h-[42rem] flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0b0b0d]">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#0b0b0d]">
       <header className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <div><p className="text-[11px] uppercase tracking-[.18em] text-white/35">Revision {detail.definitionRevision}</p><h2 className="font-semibold text-white">世界工作流</h2></div>
         <div className="flex items-center gap-2">
@@ -211,13 +234,13 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
         }
         catch { setJsonValid(false); }
       }}/> : (
-        <div className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)_17rem]">
+        <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[13rem_minmax(0,1fr)_17rem]">
           <aside className="overflow-y-auto border-r border-white/10 p-3">
             <label className="flex h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[.03] px-2 text-white/45"><MagnifyingGlass size={14}/><input className="min-w-0 bg-transparent text-xs text-white outline-none" placeholder="筛选节点" value={filter} onChange={(event) => setFilter(event.target.value)}/></label>
-            {[...new Set(catalog.map((item) => item.category))].map((category) => <div key={category} className="mt-4"><p className="mb-2 text-[10px] uppercase tracking-[.14em] text-white/30">{category}</p>{catalog.filter((item) => item.category === category && `${item.title} ${item.type}`.toLowerCase().includes(filter.toLowerCase())).map((entry) => <button key={entry.type} draggable onDragStart={(event) => event.dataTransfer.setData("application/echoo-world-node", entry.type)} onDoubleClick={() => addNode(entry.type, { x: 100, y: 100 })} className="mb-1.5 block w-full rounded-lg border border-white/10 bg-white/[.035] p-2 text-left hover:border-white/25"><span className="block text-xs text-white/80">{entry.title}</span><span className="block truncate font-mono text-[9px] text-white/35">{entry.type}</span></button>)}</div>)}
+            {catalogLoading ? <p className="mt-4 text-xs text-white/35">正在加载节点目录…</p> : catalogError ? <div className="mt-4 rounded-lg border border-red-300/15 bg-red-300/[.05] p-3"><p className="text-xs leading-5 text-red-200/75">{catalogError}</p><button className="mt-2 text-xs font-medium text-white/70 hover:text-white" onClick={() => void loadCatalog()}>重新加载</button></div> : [...new Set(catalog.map((item) => item.category))].map((category) => <div key={category} className="mt-4"><p className="mb-2 text-[10px] uppercase tracking-[.14em] text-white/30">{category}</p>{catalog.filter((item) => item.category === category && `${item.title} ${item.type}`.toLowerCase().includes(filter.toLowerCase())).map((entry) => <button key={entry.type} draggable title="单击添加到画布中心，或拖到指定位置" onDragStart={(event) => { paletteDragging.current = true; event.dataTransfer.setData("application/echoo-world-node", entry.type); }} onDragEnd={() => { window.requestAnimationFrame(() => { paletteDragging.current = false; }); }} onClick={() => { if (!paletteDragging.current) addNodeAtViewportCenter(entry.type); }} className="mb-1.5 block w-full rounded-lg border border-white/10 bg-white/[.035] p-2 text-left hover:border-white/25"><span className="block text-xs text-white/80">{entry.title}</span><span className="block truncate font-mono text-[9px] text-white/35">{entry.type}</span></button>)}</div>)}
           </aside>
-          <div className="relative bg-[#0e0e11]" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}>
-            <ReactFlow<FlowNode, Edge> nodes={nodes} edges={edges} nodeTypes={{ world: WorldNode }} onInit={(instance) => { flowInstance.current = instance; }} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={(_, node) => setSelectedId(node.id)} onPaneClick={() => setSelectedId(undefined)} onDrop={(event) => { event.preventDefault(); const type = event.dataTransfer.getData("application/echoo-world-node"); if (type) addNode(type, flowInstance.current?.screenToFlowPosition({ x: event.clientX, y: event.clientY }) ?? { x: 100, y: 100 }); }} fitView deleteKeyCode={["Backspace", "Delete"]} connectionRadius={24}>
+          <div ref={canvas} className="relative min-h-0 min-w-0 bg-[#0e0e11]" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}>
+            <ReactFlow<FlowNode, Edge> className="h-full w-full" nodes={nodes} edges={edges} nodeTypes={nodeTypes} onInit={(instance) => { flowInstance.current = instance; }} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={(_, node) => setSelectedId(node.id)} onPaneClick={() => setSelectedId(undefined)} onDrop={(event) => { event.preventDefault(); const type = event.dataTransfer.getData("application/echoo-world-node"); if (type) addNode(type, flowInstance.current?.screenToFlowPosition({ x: event.clientX, y: event.clientY }) ?? { x: 100, y: 100 }); }} fitView deleteKeyCode={["Backspace", "Delete"]} connectionRadius={24}>
               <Background color="#303039" gap={24}/><MiniMap pannable zoomable nodeColor="#6d5bd0"/><Controls/>
             </ReactFlow>
             {selected ? <div className="absolute bottom-3 left-3 flex gap-1 rounded-lg border border-white/10 bg-black/70 p-1"><button className="rounded p-2 text-white/60 hover:bg-white/10" onClick={duplicateSelected}><Copy size={15}/></button><button className="rounded p-2 text-red-300/70 hover:bg-white/10" onClick={deleteSelected}><Trash size={15}/></button></div> : null}
