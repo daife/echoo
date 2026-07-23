@@ -25,7 +25,7 @@ Echoo API
 
 ```bash
 apt update
-apt install -y nginx certbot python3-certbot-nginx rsync
+apt install -y nginx rsync
 corepack enable
 corepack prepare pnpm@11.7.0 --activate
 
@@ -155,7 +155,7 @@ journalctl -u echoo -f
 
 服务端只监听 `127.0.0.1:8787`。如启动失败，先检查 MySQL、Redis 容器状态和 `.env` 中两条连接 URL 的密码是否一致。
 
-## 6. 配置 Nginx 与 HTTPS
+## 6. 配置 Nginx 与 Cloudflare Origin Certificate
 
 创建 `/etc/nginx/sites-available/echooo.uk`：
 
@@ -179,17 +179,31 @@ server {
 }
 ```
 
-启用该站点、检查配置并申请证书：
+先启用 HTTP 站点，使 Nginx 可以提供站点和完成到 `www` 的跳转：
 
 ```bash
 ln -s /etc/nginx/sites-available/echooo.uk /etc/nginx/sites-enabled/echooo.uk
 rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl reload nginx
-certbot --nginx -d www.echooo.uk -d echooo.uk
 ```
 
-确认证书已签发后，将站点文件替换为以下最终配置：
+在 Cloudflare 控制台进入 **SSL/TLS → Origin Server → Create Certificate**，为 `www.echooo.uk` 和 `echooo.uk` 创建 Origin Certificate。将页面只显示一次的两段内容分别保存到服务器：
+
+```bash
+install -d -m 700 /etc/nginx/ssl
+nano /etc/nginx/ssl/echooo.uk.pem
+# 粘贴 Cloudflare Origin Certificate
+
+nano /etc/nginx/ssl/echooo.uk.key
+# 粘贴 Cloudflare Private Key
+
+chmod 600 /etc/nginx/ssl/echooo.uk.key
+```
+
+在 Cloudflare **SSL/TLS → Overview** 将加密模式设为 **Full (strict)**，并保持 `echooo.uk` 与 `www.echooo.uk` 的 DNS 记录为橙色云朵代理状态。
+
+然后将站点文件替换为以下最终配置：
 
 ```nginx
 server {
@@ -204,8 +218,8 @@ server {
     listen [::]:443 ssl http2;
     server_name echooo.uk;
 
-    ssl_certificate /etc/letsencrypt/live/www.echooo.uk/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/www.echooo.uk/privkey.pem;
+    ssl_certificate /etc/nginx/ssl/echooo.uk.pem;
+    ssl_certificate_key /etc/nginx/ssl/echooo.uk.key;
     return 301 https://www.echooo.uk$request_uri;
 }
 
@@ -214,8 +228,8 @@ server {
     listen [::]:443 ssl http2;
     server_name www.echooo.uk;
 
-    ssl_certificate /etc/letsencrypt/live/www.echooo.uk/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/www.echooo.uk/privkey.pem;
+    ssl_certificate /etc/nginx/ssl/echooo.uk.pem;
+    ssl_certificate_key /etc/nginx/ssl/echooo.uk.key;
 
     root /var/www/echooo;
     index index.html;
@@ -253,6 +267,8 @@ server {
 ```bash
 nginx -t && systemctl reload nginx
 ```
+
+Cloudflare Origin Certificate 只被 Cloudflare 信任；直接用服务器 IP 访问 HTTPS 会显示证书不受信任，这是预期行为。请不要把 Cloudflare SSL 模式设为 Flexible。
 
 最终访问路径为：
 
