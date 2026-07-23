@@ -72,18 +72,12 @@ export class RuntimeConfigService {
     ) as StoredFigureRuntimeConfig;
   }
 
-  async validatePlatformFigureConfig(
-    type: AgentType,
-    config: unknown,
-  ) {
+  async validatePlatformFigureConfig(type: AgentType, config: unknown) {
     const normalized = forcePlatformPreset(
       type,
       config as StoredFigureRuntimeConfig,
     );
-    validateFigureConfig(
-      type,
-      normalized as StoredFigureRuntimeConfig,
-    );
+    validateFigureConfig(type, normalized as StoredFigureRuntimeConfig);
     await this.validateCatalogFigure(type, normalized);
     return normalized;
   }
@@ -568,21 +562,29 @@ export function forcePlatformDefaults(
       optimization: {
         image: {
           ...prime.optimization.image,
-          model: normalizeStoredTextModel(endpoint(prime.optimization.image.model)),
+          model: normalizeStoredTextModel(
+            endpoint(prime.optimization.image.model),
+          ),
         },
         voice: {
           ...prime.optimization.voice,
-          model: normalizeStoredTextModel(endpoint(prime.optimization.voice.model)),
+          model: normalizeStoredTextModel(
+            endpoint(prime.optimization.voice.model),
+          ),
         },
       },
       understanding: {
         visual: {
           ...prime.understanding.visual,
-          model: normalizeStoredTextModel(endpoint(prime.understanding.visual.model)),
+          model: normalizeStoredTextModel(
+            endpoint(prime.understanding.visual.model),
+          ),
         },
         audio: {
           ...prime.understanding.audio,
-          model: normalizeStoredTextModel(endpoint(prime.understanding.audio.model)),
+          model: normalizeStoredTextModel(
+            endpoint(prime.understanding.audio.model),
+          ),
           stt: {
             ...prime.understanding.audio.stt,
             source: "platform",
@@ -613,7 +615,10 @@ export function forcePlatformDefaults(
   };
 }
 
-function forcePlatformPreset(type: AgentType, config: StoredFigureRuntimeConfig) {
+function forcePlatformPreset(
+  type: AgentType,
+  config: StoredFigureRuntimeConfig,
+) {
   const defaults = buildRuntimeConfigDefaults();
   const wrapped: StoredUserRuntimeConfig = {
     ...defaults,
@@ -1085,13 +1090,25 @@ function validateFigureConfig(
   const value = config as StoredPrimeWorldRuntimeConfig;
   validateTextModel(value.mainModel);
   validateTextModel(value.summaryModel);
-  if (value.stt.source === "custom" && (!value.stt.httpUrl.trim() || !value.stt.apiKey.trim()))
+  if (
+    value.stt.source === "custom" &&
+    (!value.stt.httpUrl.trim() || !value.stt.apiKey.trim())
+  )
     invalid("自定义本初世界 STT 必须配置地址和 API Key。");
-  if (!value.tts.model.trim() || (value.tts.source === "custom" && (!value.tts.httpUrl.trim() || !value.tts.wsUrl.trim() || !value.tts.apiKey.trim())))
+  if (
+    !value.tts.model.trim() ||
+    (value.tts.source === "custom" &&
+      (!value.tts.httpUrl.trim() ||
+        !value.tts.wsUrl.trim() ||
+        !value.tts.apiKey.trim()))
+  )
     invalid("本初世界 TTS 模型不能为空；自定义配置还必须包含地址和 API Key。");
   positiveInteger(value.tts.chunkLength, "本初世界 TTS 分块长度");
   positiveInteger(value.context.windowTokens, "本初世界上下文窗口");
-  nonnegativeInteger(value.context.providerReserveTokens, "本初世界 provider 预留 token");
+  nonnegativeInteger(
+    value.context.providerReserveTokens,
+    "本初世界 provider 预留 token",
+  );
   if (value.context.providerReserveTokens >= value.context.windowTokens)
     invalid("provider 预留 token 必须小于上下文窗口。");
 }
@@ -1167,6 +1184,32 @@ function resolvePlatformFigureConfig(
   const resolveText = (value: StoredTextModelConfig) =>
     resolvePlatformTextEndpoint(value);
   if ("llm" in config) return { ...config, llm: resolveText(config.llm) };
+  if ("mainModel" in config) {
+    const stt = config.stt;
+    const tts = config.tts;
+    return {
+      ...config,
+      mainModel: resolveText(config.mainModel),
+      summaryModel: resolveText(config.summaryModel),
+      stt:
+        stt.source === "platform"
+          ? {
+              ...stt,
+              httpUrl: environment.platformFishAudioAsrUrl,
+              apiKey: environment.platformFishAudioApiKey,
+            }
+          : stt,
+      tts:
+        tts.source === "platform"
+          ? {
+              ...tts,
+              httpUrl: environment.platformFishAudioHttpUrl,
+              wsUrl: environment.platformFishAudioWsUrl,
+              apiKey: environment.platformFishAudioApiKey,
+            }
+          : tts,
+    };
+  }
   if (!("decisionModel" in config)) return config;
   const tts = config.outputs.voice.tts;
   return {
@@ -1252,7 +1295,9 @@ export function resolvePlatformOpenRouterEndpoint<
     : value;
 }
 
-function normalizeStoredTextModel(value: StoredTextModelConfig): StoredTextModelConfig {
+function normalizeStoredTextModel(
+  value: StoredTextModelConfig,
+): StoredTextModelConfig {
   return {
     ...value,
     reasoningEnabled: value.reasoningEnabled ?? false,

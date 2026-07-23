@@ -1,7 +1,72 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { environment } from "../../infra/config/environment.js";
 import { buildRuntimeConfigDefaults } from "./runtime-config.defaults.js";
 import { RuntimeConfigService } from "./runtime-config.service.js";
+
+test("resolves platform endpoints for prime-world runtime config", async () => {
+  const defaults = buildRuntimeConfigDefaults();
+  defaults.primeWorld.mainModel.baseUrl = "https://stored.invalid/v1";
+  defaults.primeWorld.mainModel.apiKey = "stored-main-key";
+  defaults.primeWorld.summaryModel.baseUrl = "https://stored.invalid/v1";
+  defaults.primeWorld.summaryModel.apiKey = "stored-summary-key";
+  defaults.primeWorld.stt.httpUrl = "https://stored.invalid/asr";
+  defaults.primeWorld.stt.apiKey = "stored-stt-key";
+  defaults.primeWorld.tts.httpUrl = "https://stored.invalid/tts";
+  defaults.primeWorld.tts.wsUrl = "wss://stored.invalid/tts";
+  defaults.primeWorld.tts.apiKey = "stored-tts-key";
+  const repository = {
+    findResolvedConversationConfig: async () => ({
+      conversationType: "prime-world",
+      userConfig: defaults,
+      mode: "global",
+      customConfig: null,
+    }),
+  };
+  const service = new RuntimeConfigService(
+    repository as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const response = await service.resolveConversationConfig(
+    "user",
+    "conversation",
+  );
+
+  assert.equal(response.conversationType, "prime-world");
+  assert.ok("mainModel" in response.config);
+  if (!("mainModel" in response.config)) return;
+  assert.equal(
+    response.config.mainModel.baseUrl,
+    environment.platformOpenRouterBaseUrl,
+  );
+  assert.equal(
+    response.config.mainModel.apiKey,
+    environment.platformOpenRouterApiKey,
+  );
+  assert.equal(
+    response.config.summaryModel.baseUrl,
+    environment.platformOpenRouterBaseUrl,
+  );
+  assert.equal(
+    response.config.summaryModel.apiKey,
+    environment.platformOpenRouterApiKey,
+  );
+  assert.equal(
+    response.config.stt.httpUrl,
+    environment.platformFishAudioAsrUrl,
+  );
+  assert.equal(response.config.stt.apiKey, environment.platformFishAudioApiKey);
+  assert.equal(
+    response.config.tts.httpUrl,
+    environment.platformFishAudioHttpUrl,
+  );
+  assert.equal(response.config.tts.wsUrl, environment.platformFishAudioWsUrl);
+  assert.equal(response.config.tts.apiKey, environment.platformFishAudioApiKey);
+});
 
 test("returns mode metadata when the selected conversation config is invalid", async () => {
   const defaults = buildRuntimeConfigDefaults();
