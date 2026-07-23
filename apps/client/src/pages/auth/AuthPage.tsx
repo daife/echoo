@@ -20,7 +20,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [password, setPassword] = useState("");
   const [notice, setNotice] = useState<string | null>(
     verificationToken
-      ? "检测到验证链接，请确认账户后继续。"
+      ? "是你在尝试加入Echoo吗，点击下方“验证邮箱”即可"
       : resetToken
         ? "检测到重置链接，请设置新密码。"
         : null,
@@ -66,8 +66,8 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
       return {
         eyebrow: "邮箱验证",
         title: "验证你的账户。",
-        detail: "验证邮箱后即可登录，同时避免未确认的邮箱地址访问私人会话。",
-        action: "验证邮箱",
+        detail: "是你在尝试加入Echoo吗，点击下方“验证邮箱”即可",
+        action: "点我验证邮箱",
       };
     }
     if (auth.authMode === "forgot") {
@@ -90,7 +90,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
       eyebrow: "Echoo",
       title: "登录后继续。",
       detail: "",
-      action: "加入 Echoo",
+      action: "登录",
     };
   }, [auth.authMode]);
 
@@ -109,7 +109,6 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
           displayName: displayName || undefined,
         });
         setDevVerificationToken(response.verificationToken ?? null);
-        setPassword("");
         auth.setAuthMode("login");
         setNotice("账户已创建，请先验证邮箱再登录。");
       } else if (auth.authMode === "forgot") {

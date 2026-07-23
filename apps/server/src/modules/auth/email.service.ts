@@ -16,7 +16,7 @@ export class EmailService {
       subject: "验证你的 Echoo 账户",
       title: "验证你的邮箱",
       body: `你好，${escapeHtml(user.displayName)}，请确认此邮箱地址以激活你的 Echoo 账户。此链接将在 24 小时后失效。`,
-      action: "验证邮箱",
+      action: "点我验证邮箱",
       skippedMessage: "验证邮件未发送",
     });
   }

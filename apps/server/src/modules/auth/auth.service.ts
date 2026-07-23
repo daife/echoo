@@ -103,7 +103,11 @@ export class AuthService {
     }
 
     if (!user.emailVerifiedAt) {
-      throw new AuthError("EMAIL_NOT_VERIFIED", "请先验证邮箱再登录。", 403);
+      throw new AuthError(
+        "EMAIL_NOT_VERIFIED",
+        "请去邮箱查收验证邮件，验证完毕后再回来登录，若未收到邮件，请稍后重试",
+        403,
+      );
     }
 
     return this.createSession(user.id);
