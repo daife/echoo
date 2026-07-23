@@ -3,18 +3,19 @@ import type {
   AgentAttribute,
   AgentType,
   PrimeFigureDetail,
+  PrimeWorldDetail,
   SliceFigureDetail,
-} from "./agent.js";
+} from "../../types/agent.js";
 
-export type CharacterAssetType = Exclude<AgentType, "prime-world">;
-export type CharacterAssetStatus = "draft" | "published" | "unlisted";
+export type PublicAssetType = AgentType;
+export type PublicAssetStatus = "draft" | "published" | "unlisted";
 
-export type CreateCharacterAssetDraftRequest =
-  | { type: CharacterAssetType; importFromOriginalAgentId?: never }
+export type CreatePublicAssetDraftRequest =
+  | { type: PublicAssetType; importFromOriginalAgentId?: never }
   | { importFromOriginalAgentId: string; type?: never };
 
-export interface CharacterAssetSnapshotBase {
-  type: CharacterAssetType;
+export interface PublicAssetSnapshotBase {
+  type: PublicAssetType;
   name: string;
   avatarResourceId?: string;
   avatarResourcePath?: string;
@@ -25,38 +26,42 @@ export interface CharacterAssetSnapshotBase {
   introduction: string;
 }
 
-export type CharacterAssetSnapshot =
-  | (CharacterAssetSnapshotBase & {
+export type PublicAssetSnapshot =
+  | (PublicAssetSnapshotBase & {
       type: "slice-figure";
       detail: SliceFigureDetail;
     })
-  | (CharacterAssetSnapshotBase & {
+  | (PublicAssetSnapshotBase & {
       type: "prime-figure";
       detail: PrimeFigureDetail;
+    })
+  | (PublicAssetSnapshotBase & {
+      type: "prime-world";
+      detail: PrimeWorldDetail;
     });
 
 export interface PublishedRuntimeRecommendation {
   version: 1;
-  characterType: CharacterAssetType;
+  assetType: PublicAssetType;
   config: Record<string, unknown>;
 }
 
-export interface CharacterAssetVersion {
+export interface PublicAssetVersion {
   id: string;
   assetId: string;
   versionNumber: number;
-  snapshot: CharacterAssetSnapshot;
+  snapshot: PublicAssetSnapshot;
   recommendedRuntimeConfig?: PublishedRuntimeRecommendation;
   createdAt: number;
 }
 
-export interface CharacterAssetSummary {
+export interface PublicAssetSummary {
   id: string;
   author: { id: string; displayName: string };
-  status: CharacterAssetStatus;
+  status: PublicAssetStatus;
   latestVersionId: string;
   latestVersionNumber: number;
-  snapshot: CharacterAssetSnapshot;
+  snapshot: PublicAssetSnapshot;
   hasRecommendedRuntimeConfig: boolean;
   likeCount: number;
   commentCount: number;
@@ -64,17 +69,21 @@ export interface CharacterAssetSummary {
   installedVersionId?: string;
   installedVersionNumber?: number;
   installationId?: string;
+  worldProgressCompatibility?: {
+    canPreserve: boolean;
+    reason?: string;
+  };
   updateAvailable: boolean;
   publishedAt: number;
   updatedAt: number;
 }
 
-export interface CharacterAssetListItem {
+export interface PublicAssetListItem {
   id: string;
   author: { id: string; displayName: string };
   latestVersionNumber: number;
   snapshot: {
-    type: CharacterAssetType;
+    type: PublicAssetType;
     name: string;
     coverResourcePath?: string;
     attributes: AgentAttribute[];
@@ -91,20 +100,20 @@ export interface CharacterAssetListItem {
   publishedAt: number;
 }
 
-export interface CharacterAssetDetail extends CharacterAssetSummary {
-  latestVersion: CharacterAssetVersion;
+export interface PublicAssetDetail extends PublicAssetSummary {
+  latestVersion: PublicAssetVersion;
 }
 
-export interface CharacterAssetPage {
-  items: CharacterAssetListItem[];
+export interface PublicAssetPage {
+  items: PublicAssetListItem[];
   nextCursor?: string;
 }
 
-export interface CharacterAssetDraft {
+export interface PublicAssetDraft {
   id: string;
   author: { id: string; displayName: string };
-  status: CharacterAssetStatus;
-  snapshot: CharacterAssetSnapshot;
+  status: PublicAssetStatus;
+  snapshot: PublicAssetSnapshot;
   recommendedRuntimeConfig?: PublishedRuntimeRecommendation;
   latestVersionId?: string;
   latestVersionNumber?: number;
@@ -113,21 +122,22 @@ export interface CharacterAssetDraft {
   updatedAt: number;
 }
 
-export interface SaveCharacterAssetRecommendationRequest {
+export interface SavePublicAssetRecommendationRequest {
   enabled: boolean;
   config?: Record<string, unknown>;
 }
 
-export interface PublishCharacterAssetResponse {
-  asset: CharacterAssetDetail;
+export interface PublishPublicAssetResponse {
+  asset: PublicAssetDetail;
 }
 
-export interface InstallCharacterAssetResponse {
+export interface InstallPublicAssetResponse {
   agent: Agent;
   installationId: string;
   installedVersionId: string;
 }
 
-export interface InstallCharacterAssetRequest {
+export interface InstallPublicAssetRequest {
   applyRecommendedRuntimeConfig: boolean;
+  worldProgressStrategy?: "preserve-compatible" | "reset";
 }

@@ -61,25 +61,28 @@ export class RuntimeConfigService {
     await this.repository.insertUserConfigIfAbsent(ownerUserId, defaults);
   }
 
-  async getPlatformFigureDefaults(type: "slice-figure" | "prime-figure") {
+  async getPlatformFigureDefaults(type: AgentType) {
     const defaults = await this.readNewUserDefaults();
     return structuredClone(
-      type === "slice-figure" ? defaults.sliceFigure : defaults.primeFigure,
+      type === "slice-figure"
+        ? defaults.sliceFigure
+        : type === "prime-figure"
+          ? defaults.primeFigure
+          : defaults.primeWorld,
     ) as StoredFigureRuntimeConfig;
   }
 
   async validatePlatformFigureConfig(
-    type: "slice-figure" | "prime-figure",
+    type: AgentType,
     config: unknown,
   ) {
     const normalized = forcePlatformPreset(
       type,
-      config as StoredSliceFigureRuntimeConfig | StoredPrimeFigureRuntimeConfig,
+      config as StoredFigureRuntimeConfig,
     );
     validateFigureConfig(
       type,
-      normalized as
-        StoredSliceFigureRuntimeConfig | StoredPrimeFigureRuntimeConfig,
+      normalized as StoredFigureRuntimeConfig,
     );
     await this.validateCatalogFigure(type, normalized);
     return normalized;
@@ -610,19 +613,17 @@ export function forcePlatformDefaults(
   };
 }
 
-function forcePlatformPreset(
-  type: "slice-figure" | "prime-figure",
-  config: StoredSliceFigureRuntimeConfig | StoredPrimeFigureRuntimeConfig,
-) {
+function forcePlatformPreset(type: AgentType, config: StoredFigureRuntimeConfig) {
   const defaults = buildRuntimeConfigDefaults();
   const wrapped: StoredUserRuntimeConfig = {
     ...defaults,
     ...(type === "slice-figure"
       ? { sliceFigure: config as StoredSliceFigureRuntimeConfig }
-      : { primeFigure: config as StoredPrimeFigureRuntimeConfig }),
+      : type === "prime-figure"
+        ? { primeFigure: config as StoredPrimeFigureRuntimeConfig }
+        : { primeWorld: config as StoredPrimeWorldRuntimeConfig }),
   };
-  return selectFigureConfig(forcePlatformDefaults(wrapped), type) as
-    StoredSliceFigureRuntimeConfig | StoredPrimeFigureRuntimeConfig;
+  return selectFigureConfig(forcePlatformDefaults(wrapped), type);
 }
 
 function normalizePresetName(name: string) {

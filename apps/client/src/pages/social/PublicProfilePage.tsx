@@ -1,10 +1,11 @@
 import { ArrowLeft, UsersThree, X } from "@phosphor-icons/react";
 import type {
-  CharacterAssetListItem,
+  Agent,
   PublicUserProfile,
   SocialPostSummary,
 } from "@echoo/shared";
-import { useEffect, useState } from "react";
+import type { PublicAssetListItem } from "@echoo/shared/public-assets";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { useServices } from "../../app/providers/ServicesProvider";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
@@ -27,13 +28,21 @@ export function PublicProfilePage({
   onRequireAuth: () => void;
 }) {
   const auth = useAuth();
-  const { socialService, characterAssetService } = useServices();
+  const { socialService, publicAssetService } = useServices();
   const [profile, setProfile] = useState<PublicUserProfile | null>(null);
   const [tab, setTab] = useState<"creations" | "posts">("creations");
   const [posts, setPosts] = useState<SocialPostSummary[]>([]);
-  const [assets, setAssets] = useState<CharacterAssetListItem[]>([]);
+  const [assets, setAssets] = useState<PublicAssetListItem[]>([]);
+  const [assetType, setAssetType] = useState<"all" | Agent["type"]>("all");
   const [list, setList] = useState<"followers" | "following" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const filteredAssets = useMemo(
+    () =>
+      assetType === "all"
+        ? assets
+        : assets.filter((asset) => asset.snapshot.type === assetType),
+    [assetType, assets],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -59,17 +68,19 @@ export function PublicProfilePage({
     const request =
       tab === "posts"
         ? socialService.listUserPosts(userId)
-        : characterAssetService.listByUser(userId);
+        : publicAssetService.listByUser(userId, {
+            type: assetType === "all" ? undefined : assetType,
+          });
     void request.then((page) => {
       if (cancelled) return;
       if (tab === "posts")
         setPosts((page as { items: SocialPostSummary[] }).items);
-      else setAssets((page as { items: CharacterAssetListItem[] }).items);
+      else setAssets((page as { items: PublicAssetListItem[] }).items);
     });
     return () => {
       cancelled = true;
     };
-  }, [characterAssetService, socialService, tab, userId]);
+  }, [assetType, publicAssetService, socialService, tab, userId]);
 
   if (!profile)
     return (
@@ -153,6 +164,25 @@ export function PublicProfilePage({
           动态
         </button>
       </div>
+      {tab === "creations" ? (
+        <div className="flex flex-wrap gap-2">
+          {([
+            ["all", "全部"],
+            ["slice-figure", "切片角色"],
+            ["prime-figure", "本初角色"],
+            ["prime-world", "本初世界"],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setAssetType(value)}
+              className={`rounded-full border px-4 py-2 text-xs ${assetType === value ? "border-white bg-white text-black" : "border-white/10 text-white/50"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {tab === "posts" ? (
         <div className="mx-auto max-w-3xl space-y-5">
           {profile.isSelf ? (
@@ -186,9 +216,9 @@ export function PublicProfilePage({
             <Empty text="还没有发布动态。" />
           )}
         </div>
-      ) : assets.length ? (
+      ) : filteredAssets.length ? (
         <div className="grid gap-4 md:grid-cols-2">
-          {assets.map((asset) => (
+          {filteredAssets.map((asset) => (
             <button
               key={asset.id}
               type="button"
@@ -210,7 +240,7 @@ export function PublicProfilePage({
           ))}
         </div>
       ) : (
-        <Empty text="还没有公开创作。" />
+        <Empty text={assets.length ? "该类型还没有公开创作。" : "还没有公开创作。"} />
       )}
       {list ? (
         <FollowListDialog

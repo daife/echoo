@@ -1,22 +1,25 @@
 import type {
-  CharacterAssetDetail,
-  CharacterAssetDraft,
-  CharacterAssetListItem,
-  CharacterAssetPage,
-  CharacterAssetSnapshot,
-  CharacterAssetSummary,
-  CreateCharacterAssetDraftRequest,
-  InstallCharacterAssetResponse,
-  InstallCharacterAssetRequest,
-  PublishCharacterAssetResponse,
-  SaveCharacterAssetRecommendationRequest,
+  PublicAssetDetail,
+  PublicAssetDraft,
+  PublicAssetListItem,
+  PublicAssetPage,
+  PublicAssetSnapshot,
+  PublicAssetSummary,
+  CreatePublicAssetDraftRequest,
+  InstallPublicAssetResponse,
+  InstallPublicAssetRequest,
+  PublishPublicAssetResponse,
+  SavePublicAssetRecommendationRequest,
+} from "@echoo/shared/public-assets";
+import type {
   CreatePrimeFigureRequest,
+  CreatePrimeWorldRequest,
   CreateSliceFigureRequest,
 } from "@echoo/shared";
 import { normalizeAgentResources } from "./agents";
 import type { ApiClient } from "./client";
 
-export class CharacterAssetsApi {
+export class PublicAssetsApi {
   constructor(private readonly client: ApiClient) {}
 
   list(
@@ -24,12 +27,13 @@ export class CharacterAssetsApi {
       limit?: number;
       cursor?: string;
       q?: string;
+      type?: PublicAssetSnapshot["type"];
       signal?: AbortSignal;
     } = {},
-  ): Promise<CharacterAssetPage> {
+  ): Promise<PublicAssetPage> {
     const { signal, ...query } = input;
     return this.client
-      .get<CharacterAssetPage>("/character-assets", query, { signal })
+      .get<PublicAssetPage>("/public-assets", query, { signal })
       .then((page) => ({
         ...page,
         items: page.items.map((asset) => this.normalizeListItem(asset)),
@@ -38,58 +42,71 @@ export class CharacterAssetsApi {
 
   listFeatured(
     input: { limit?: number; signal?: AbortSignal } = {},
-  ): Promise<CharacterAssetListItem[]> {
+  ): Promise<PublicAssetListItem[]> {
     const { signal, ...query } = input;
     return this.client
-      .get<CharacterAssetListItem[]>(
-        "/character-assets/featured",
+      .get<PublicAssetListItem[]>(
+        "/public-assets/featured",
         query,
         { signal },
       )
       .then((items) => items.map((asset) => this.normalizeListItem(asset)));
   }
 
-  listByUser(userId: string, input: { limit?: number; cursor?: string } = {}) {
+  listByUser(
+    userId: string,
+    input: {
+      limit?: number;
+      cursor?: string;
+      type?: PublicAssetSnapshot["type"];
+    } = {},
+  ) {
     return this.client
-      .get<CharacterAssetPage>(`/users/${userId}/character-assets`, input)
+      .get<PublicAssetPage>(`/users/${userId}/public-assets`, input)
       .then((page) => ({
         ...page,
         items: page.items.map((asset) => this.normalizeListItem(asset)),
       }));
   }
 
-  listFollowing(input: { limit?: number; cursor?: string } = {}) {
+  listFollowing(
+    input: {
+      limit?: number;
+      cursor?: string;
+      type?: PublicAssetSnapshot["type"];
+    } = {},
+  ) {
     return this.client
-      .get<CharacterAssetPage>("/feeds/following/character-assets", input)
+      .get<PublicAssetPage>("/feeds/following/public-assets", input)
       .then((page) => ({
         ...page,
         items: page.items.map((asset) => this.normalizeListItem(asset)),
       }));
   }
 
-  get(assetId: string): Promise<CharacterAssetDetail> {
+  get(assetId: string): Promise<PublicAssetDetail> {
     return this.client
-      .get<CharacterAssetDetail>(`/character-assets/${assetId}`)
+      .get<PublicAssetDetail>(`/public-assets/${assetId}`)
       .then((asset) => this.normalizeAsset(asset));
   }
 
   unlist(assetId: string) {
     return this.client.post<{ ok: true }>(
-      `/character-assets/${assetId}/unlist`,
+      `/public-assets/${assetId}/unlist`,
     );
   }
 
   delete(assetId: string) {
-    return this.client.delete<{ ok: true }>(`/character-assets/${assetId}`);
+    return this.client.delete<{ ok: true }>(`/public-assets/${assetId}`);
   }
 
   install(
     assetId: string,
-    input: InstallCharacterAssetRequest,
-  ): Promise<InstallCharacterAssetResponse> {
+    input: InstallPublicAssetRequest,
+  ): Promise<InstallPublicAssetResponse> {
     return this.client
-      .post<InstallCharacterAssetResponse>(
-        `/character-assets/${assetId}/install`,
+      .post<InstallPublicAssetResponse>(
+        `/public-assets/${assetId}/install`,
         input,
       )
       .then((response) => ({
@@ -100,11 +117,11 @@ export class CharacterAssetsApi {
 
   updateInstallation(
     assetId: string,
-    input: InstallCharacterAssetRequest,
-  ): Promise<InstallCharacterAssetResponse> {
+    input: InstallPublicAssetRequest,
+  ): Promise<InstallPublicAssetResponse> {
     return this.client
-      .post<InstallCharacterAssetResponse>(
-        `/character-assets/${assetId}/install/update`,
+      .post<InstallPublicAssetResponse>(
+        `/public-assets/${assetId}/install/update`,
         input,
       )
       .then((response) => ({
@@ -114,32 +131,32 @@ export class CharacterAssetsApi {
   }
 
   createDraft(
-    input: CreateCharacterAssetDraftRequest,
-  ): Promise<CharacterAssetDraft> {
+    input: CreatePublicAssetDraftRequest,
+  ): Promise<PublicAssetDraft> {
     return this.client
-      .post<CharacterAssetDraft>("/character-assets/drafts", input)
+      .post<PublicAssetDraft>("/public-assets/drafts", input)
       .then((draft) => this.normalizeDraft(draft));
   }
 
-  listMine(): Promise<CharacterAssetDraft[]> {
+  listMine(): Promise<PublicAssetDraft[]> {
     return this.client
-      .get<CharacterAssetDraft[]>("/users/me/character-assets")
+      .get<PublicAssetDraft[]>("/users/me/public-assets")
       .then((drafts) => drafts.map((draft) => this.normalizeDraft(draft)));
   }
 
-  getDraft(assetId: string): Promise<CharacterAssetDraft> {
+  getDraft(assetId: string): Promise<PublicAssetDraft> {
     return this.client
-      .get<CharacterAssetDraft>(`/character-assets/${assetId}/draft`)
+      .get<PublicAssetDraft>(`/public-assets/${assetId}/draft`)
       .then((draft) => this.normalizeDraft(draft));
   }
 
-  saveDraftCharacter(
+  saveDraftContent(
     assetId: string,
-    input: CreateSliceFigureRequest | CreatePrimeFigureRequest,
-  ): Promise<CharacterAssetDraft> {
+    input: CreateSliceFigureRequest | CreatePrimeFigureRequest | CreatePrimeWorldRequest,
+  ): Promise<PublicAssetDraft> {
     return this.client
-      .patch<CharacterAssetDraft>(
-        `/character-assets/${assetId}/draft/character`,
+      .patch<PublicAssetDraft>(
+        `/public-assets/${assetId}/draft/content`,
         input,
       )
       .then((draft) => this.normalizeDraft(draft));
@@ -147,20 +164,20 @@ export class CharacterAssetsApi {
 
   saveDraftRecommendation(
     assetId: string,
-    input: SaveCharacterAssetRecommendationRequest,
-  ): Promise<CharacterAssetDraft> {
+    input: SavePublicAssetRecommendationRequest,
+  ): Promise<PublicAssetDraft> {
     return this.client
-      .patch<CharacterAssetDraft>(
-        `/character-assets/${assetId}/draft/recommendation`,
+      .patch<PublicAssetDraft>(
+        `/public-assets/${assetId}/draft/recommendation`,
         input,
       )
       .then((draft) => this.normalizeDraft(draft));
   }
 
-  publishDraft(assetId: string): Promise<PublishCharacterAssetResponse> {
+  publishDraft(assetId: string): Promise<PublishPublicAssetResponse> {
     return this.client
-      .post<PublishCharacterAssetResponse>(
-        `/character-assets/${assetId}/publish`,
+      .post<PublishPublicAssetResponse>(
+        `/public-assets/${assetId}/publish`,
       )
       .then((response) => ({
         ...response,
@@ -168,7 +185,7 @@ export class CharacterAssetsApi {
       }));
   }
 
-  private normalizeAsset<T extends CharacterAssetSummary>(asset: T): T {
+  private normalizeAsset<T extends PublicAssetSummary>(asset: T): T {
     const snapshot = normalizeSnapshot(this.client, asset.snapshot);
     return {
       ...asset,
@@ -176,7 +193,7 @@ export class CharacterAssetsApi {
       ...("latestVersion" in asset
         ? {
             latestVersion: {
-              ...(asset as CharacterAssetDetail).latestVersion,
+              ...(asset as PublicAssetDetail).latestVersion,
               snapshot,
             },
           }
@@ -185,8 +202,8 @@ export class CharacterAssetsApi {
   }
 
   private normalizeListItem(
-    asset: CharacterAssetListItem,
-  ): CharacterAssetListItem {
+    asset: PublicAssetListItem,
+  ): PublicAssetListItem {
     return {
       ...asset,
       snapshot: {
@@ -202,7 +219,7 @@ export class CharacterAssetsApi {
     };
   }
 
-  private normalizeDraft(draft: CharacterAssetDraft): CharacterAssetDraft {
+  private normalizeDraft(draft: PublicAssetDraft): PublicAssetDraft {
     return {
       ...draft,
       snapshot: normalizeSnapshot(this.client, draft.snapshot),
@@ -212,8 +229,8 @@ export class CharacterAssetsApi {
 
 function normalizeSnapshot(
   client: ApiClient,
-  snapshot: CharacterAssetSnapshot,
-): CharacterAssetSnapshot {
+  snapshot: PublicAssetSnapshot,
+): PublicAssetSnapshot {
   const detail =
     snapshot.type === "prime-figure"
       ? {
@@ -249,5 +266,5 @@ function normalizeSnapshot(
         }
       : {}),
     detail,
-  } as CharacterAssetSnapshot;
+  } as PublicAssetSnapshot;
 }

@@ -5,7 +5,7 @@ export * from "./prime-world";
 export * from "./messages";
 export * from "./runtime-config";
 export * from "./resources";
-export * from "./character-assets";
+export * from "./public-assets";
 export * from "./sync";
 export * from "./social";
 export * from "./posts";

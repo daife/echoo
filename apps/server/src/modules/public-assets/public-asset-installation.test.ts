@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { CharacterAssetSnapshot } from "@echoo/shared";
-import { reconcileInstalledPrimeRuntimeState } from "./character-asset.repository.js";
+import { fogHarborLettersFixture } from "@echoo/shared";
+import type { PublicAssetSnapshot } from "@echoo/shared/public-assets";
+import { reconcileInstalledPrimeRuntimeState } from "./public-asset.repository.js";
+import { assessWorldProgressCompatibility } from "./public-asset.service.js";
 
 test("prime installation updates reset author-controlled runtime fields", () => {
-  const snapshot: CharacterAssetSnapshot = {
+  const snapshot: PublicAssetSnapshot = {
     type: "prime-figure",
     name: "新版角色",
     attributes: [],
@@ -71,4 +73,35 @@ test("prime installation updates reset author-controlled runtime fields", () => 
   assert.equal(result.updatedAt, 100);
   assert.equal(result.memories, memories);
   assert.equal(result.lastFigureActivityAtMs, 50);
+});
+
+test("world progress compatibility requires a schema-compatible current state", () => {
+  const snapshot: Extract<PublicAssetSnapshot, { type: "prime-world" }> = {
+    type: "prime-world",
+    name: "雾港来信",
+    attributes: [],
+    tags: [],
+    introduction: "",
+    detail: structuredClone(fogHarborLettersFixture),
+  };
+
+  assert.deepEqual(
+    assessWorldProgressCompatibility(snapshot, {
+      variables: structuredClone(fogHarborLettersFixture.initialState),
+    }),
+    { canPreserve: true },
+  );
+  assert.equal(
+    assessWorldProgressCompatibility(snapshot, {
+      variables: { story: { stageId: "unknown" } },
+    }).canPreserve,
+    false,
+  );
+
+  snapshot.detail.stateSchema = undefined;
+  const noSchema = assessWorldProgressCompatibility(snapshot, {
+    variables: structuredClone(fogHarborLettersFixture.initialState),
+  });
+  assert.equal(noSchema.canPreserve, false);
+  assert.match(noSchema.reason ?? "", /没有声明状态结构/);
 });

@@ -1,18 +1,21 @@
-import type { CharacterAssetsApi } from "@echoo/api-client";
+import type { PublicAssetsApi } from "@echoo/api-client";
 
-export class CharacterAssetService {
-  constructor(private readonly api: CharacterAssetsApi) {}
+export class PublicAssetService {
+  constructor(private readonly api: PublicAssetsApi) {}
 
-  list(input?: Parameters<CharacterAssetsApi["list"]>[0]) {
+  list(input?: Parameters<PublicAssetsApi["list"]>[0]) {
     return this.api.list(input);
   }
-  listFeatured(input?: Parameters<CharacterAssetsApi["listFeatured"]>[0]) {
+  listFeatured(input?: Parameters<PublicAssetsApi["listFeatured"]>[0]) {
     return this.api.listFeatured(input);
   }
-  listByUser(userId: string, input?: { limit?: number; cursor?: string }) {
+  listByUser(
+    userId: string,
+    input?: Parameters<PublicAssetsApi["listByUser"]>[1],
+  ) {
     return this.api.listByUser(userId, input);
   }
-  listFollowing(input?: { limit?: number; cursor?: string }) {
+  listFollowing(input?: Parameters<PublicAssetsApi["listFollowing"]>[0]) {
     return this.api.listFollowing(input);
   }
   get(assetId: string) {
@@ -27,12 +30,17 @@ export class CharacterAssetService {
   install(assetId: string, applyRecommendedRuntimeConfig: boolean) {
     return this.api.install(assetId, { applyRecommendedRuntimeConfig });
   }
-  updateInstallation(assetId: string, applyRecommendedRuntimeConfig: boolean) {
+  updateInstallation(
+    assetId: string,
+    applyRecommendedRuntimeConfig: boolean,
+    worldProgressStrategy?: "preserve-compatible" | "reset",
+  ) {
     return this.api.updateInstallation(assetId, {
       applyRecommendedRuntimeConfig,
+      worldProgressStrategy,
     });
   }
-  createDraft(input: Parameters<CharacterAssetsApi["createDraft"]>[0]) {
+  createDraft(input: Parameters<PublicAssetsApi["createDraft"]>[0]) {
     return this.api.createDraft(input);
   }
   listMine() {
@@ -41,15 +49,15 @@ export class CharacterAssetService {
   getDraft(assetId: string) {
     return this.api.getDraft(assetId);
   }
-  saveDraftCharacter(
+  saveDraftContent(
     assetId: string,
-    input: Parameters<CharacterAssetsApi["saveDraftCharacter"]>[1],
+    input: Parameters<PublicAssetsApi["saveDraftContent"]>[1],
   ) {
-    return this.api.saveDraftCharacter(assetId, input);
+    return this.api.saveDraftContent(assetId, input);
   }
   saveDraftRecommendation(
     assetId: string,
-    input: Parameters<CharacterAssetsApi["saveDraftRecommendation"]>[1],
+    input: Parameters<PublicAssetsApi["saveDraftRecommendation"]>[1],
   ) {
     return this.api.saveDraftRecommendation(assetId, input);
   }

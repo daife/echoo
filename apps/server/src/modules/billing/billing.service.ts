@@ -109,9 +109,9 @@ export class BillingService {
           ? await queryOne<CreatorAttributionRow>(
               `SELECT assets.author_user_id, assets.id asset_id
                  FROM conversations conversations
-                 JOIN character_asset_installations installations
+                 JOIN public_asset_installations installations
                    ON installations.agent_id = conversations.agent_id
-                 JOIN character_assets assets
+                 JOIN public_assets assets
                    ON assets.id = installations.asset_id
                   AND assets.status = 'published'
                 WHERE conversations.id = ? AND conversations.owner_user_id = ?

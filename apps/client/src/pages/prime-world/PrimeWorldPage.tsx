@@ -127,6 +127,12 @@ export function PrimeWorldPage({
           player.current.stop();
           activeRun.current = undefined;
           setBusy(false);
+          if (snapshot.run.status === "failed")
+            setError(
+              snapshot.run.errorDetail ??
+                snapshot.run.errorCode ??
+                "世界运行失败。",
+            );
         }
       }).catch(() => undefined);
     }, 1_000);

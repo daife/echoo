@@ -10,7 +10,7 @@ export class SocialService {
     const object = await this.requireObject(objectId, userId);
     if (
       liked &&
-      object.object_type === "character_asset" &&
+      object.object_type === "public_asset" &&
       object.asset_status !== "published"
     )
       throw new SocialActionForbiddenError("已下架资产不能新增点赞。");
@@ -40,7 +40,7 @@ export class SocialService {
   }) {
     const object = await this.requireObject(input.objectId, input.authorUserId);
     if (
-      object.object_type === "character_asset" &&
+      object.object_type === "public_asset" &&
       object.asset_status !== "published"
     )
       throw new SocialActionForbiddenError("已下架资产不能新增评论。");
@@ -88,7 +88,7 @@ export class SocialService {
     const object = await this.social.findObject(objectId, viewerUserId);
     if (
       !object ||
-      (object.object_type !== "character_asset" &&
+      (object.object_type !== "public_asset" &&
         object.object_type !== "post")
     )
       throw new SocialObjectNotFoundError("社交对象不存在。");

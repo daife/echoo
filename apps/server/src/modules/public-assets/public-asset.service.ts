@@ -1,15 +1,19 @@
 import {
   DEFAULT_SLICE_FIGURE_MEMORY_SUMMARY_PROMPT,
   DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT,
-  type CharacterAssetType,
-  type CharacterAssetSnapshot,
-  type CreateCharacterAssetDraftRequest,
+  fogHarborLettersFixture,
   type CreatePrimeFigureRequest,
+  type CreatePrimeWorldRequest,
   type CreateSliceFigureRequest,
   type PrimeFigureReferenceImage,
   type PrimeFigureSticker,
-  type PublishedRuntimeRecommendation,
 } from "@echoo/shared";
+import type {
+  CreatePublicAssetDraftRequest,
+  PublicAssetSnapshot,
+  PublicAssetType,
+  PublishedRuntimeRecommendation,
+} from "@echoo/shared/public-assets";
 import { AgentRepository } from "../agents/agent.repository.js";
 import { ResourceRepository } from "../resources/resource.repository.js";
 import { RuntimeConfigService } from "../runtime-config/runtime-config.service.js";
@@ -19,23 +23,27 @@ import type {
   StoredFishAudioSttConfig,
   StoredModelEndpointConfig,
   StoredPrimeFigureRuntimeConfig,
+  StoredPrimeWorldRuntimeConfig,
   StoredSliceFigureRuntimeConfig,
   StoredTextModelConfig,
 } from "../runtime-config/runtime-config.types.js";
+import { compilePrimeWorld } from "../agents/kinds/prime-world/prime-world-compiler.js";
+import { collectPrimeWorldResourceIds } from "../agents/kinds/prime-world/prime-world-node-registry.js";
+import { compilePrimeWorldJsonSchema } from "../agents/kinds/prime-world/prime-world-json-schema.js";
 import {
-  CharacterAssetQueryError,
-  CharacterAssetRepository,
+  PublicAssetQueryError,
+  PublicAssetRepository,
   type AssetResourceReference,
-} from "./character-asset.repository.js";
+} from "./public-asset.repository.js";
 
-export { CharacterAssetQueryError };
+export { PublicAssetQueryError };
 
-export class CharacterAssetNotFoundError extends Error {}
-export class CharacterAssetForbiddenError extends Error {}
+export class PublicAssetNotFoundError extends Error {}
+export class PublicAssetForbiddenError extends Error {}
 
-export class CharacterAssetService {
+export class PublicAssetService {
   constructor(
-    private readonly assets = new CharacterAssetRepository(),
+    private readonly assets = new PublicAssetRepository(),
     private readonly agents = new AgentRepository(),
     private readonly resources = new ResourceRepository(),
     private readonly runtimeConfigs = new RuntimeConfigService(),
@@ -43,7 +51,7 @@ export class CharacterAssetService {
 
   listPublished(
     viewerUserId: string | null,
-    input?: Parameters<CharacterAssetRepository["listPublished"]>[1],
+    input?: Parameters<PublicAssetRepository["listPublished"]>[1],
   ) {
     return this.assets.listPublished(viewerUserId, input);
   }
@@ -55,21 +63,42 @@ export class CharacterAssetService {
   listPublishedByAuthor(
     viewerUserId: string | null,
     authorUserId: string,
-    input?: { limit?: number; cursor?: string },
+    input?: Parameters<PublicAssetRepository["listPublishedByAuthor"]>[2],
   ) {
     return this.assets.listPublishedByAuthor(viewerUserId, authorUserId, input);
   }
 
   listFollowing(
     viewerUserId: string,
-    input?: { limit?: number; cursor?: string },
+    input?: Parameters<PublicAssetRepository["listFollowing"]>[1],
   ) {
     return this.assets.listFollowing(viewerUserId, input);
   }
 
   async getVisible(viewerUserId: string | null, assetId: string) {
     const asset = await this.assets.findVisible(viewerUserId, assetId);
-    if (!asset) throw new CharacterAssetNotFoundError("未找到角色资产。");
+    if (!asset) throw new PublicAssetNotFoundError("未找到公共资产。");
+    if (
+      viewerUserId &&
+      asset.snapshot.type === "prime-world" &&
+      asset.installationId &&
+      asset.updateAvailable
+    ) {
+      const installation = await this.assets.findInstallation(viewerUserId, assetId);
+      const state = installation
+        ? await this.agents.getRuntimeState<Record<string, unknown>>(
+            viewerUserId,
+            installation.agent_id,
+          )
+        : null;
+      return {
+        ...asset,
+        worldProgressCompatibility: assessWorldProgressCompatibility(
+          asset.snapshot,
+          state,
+        ),
+      };
+    }
     return asset;
   }
 
@@ -79,26 +108,26 @@ export class CharacterAssetService {
 
   async getDraft(ownerUserId: string, assetId: string) {
     const draft = await this.assets.findDraftForAuthor(ownerUserId, assetId);
-    if (!draft) throw new CharacterAssetNotFoundError("未找到公共角色草稿。");
+    if (!draft) throw new PublicAssetNotFoundError("未找到公共资产草稿。");
     return draft;
   }
 
   async createDraft(
     ownerUserId: string,
-    input: CreateCharacterAssetDraftRequest,
+    input: CreatePublicAssetDraftRequest,
   ) {
-    let snapshot: CharacterAssetSnapshot;
+    let snapshot: PublicAssetSnapshot;
     let resources: AssetResourceReference[] = [];
     if (typeof input.importFromOriginalAgentId === "string") {
       const agent = await this.agents.findById(
         ownerUserId,
         input.importFromOriginalAgentId,
       );
-      if (!agent || agent.type === "prime-world")
-        throw new CharacterAssetNotFoundError("未找到可导入的原创会话。");
+      if (!agent)
+        throw new PublicAssetNotFoundError("未找到可导入的原创会话。");
       if (agent.origin.kind !== "original")
-        throw new CharacterAssetForbiddenError(
-          "从公共角色添加的会话不能再次发布，包括自己创建的公共角色。",
+        throw new PublicAssetForbiddenError(
+          "从公共资产添加的会话不能再次发布，包括自己创建的公共资产。",
         );
       ({ snapshot, resources } = await this.buildSnapshot(ownerUserId, agent));
     } else {
@@ -120,14 +149,14 @@ export class CharacterAssetService {
     return this.getDraft(ownerUserId, assetId);
   }
 
-  async saveDraftCharacter(
+  async saveDraftContent(
     ownerUserId: string,
     assetId: string,
-    input: CreateSliceFigureRequest | CreatePrimeFigureRequest,
+    input: CreateSliceFigureRequest | CreatePrimeFigureRequest | CreatePrimeWorldRequest,
   ) {
     const draft = await this.getDraft(ownerUserId, assetId);
     if (draft.snapshot.type !== input.type)
-      throw new CharacterAssetForbiddenError("公共角色类型不能修改。");
+      throw new PublicAssetForbiddenError("公共资产类型不能修改。");
     const { snapshot, resources } = await this.buildDraftSnapshot(
       ownerUserId,
       draft.snapshot,
@@ -165,7 +194,7 @@ export class CharacterAssetService {
         validated,
       );
       if (!recommendation)
-        throw new CharacterAssetForbiddenError("推荐配置只能使用平台模型。");
+        throw new PublicAssetForbiddenError("推荐配置只能使用平台模型。");
     }
     const resources = await this.snapshotResources(ownerUserId, draft.snapshot);
     await this.assets.saveDraft({
@@ -179,25 +208,27 @@ export class CharacterAssetService {
   }
 
   async publishDraft(ownerUserId: string, assetId: string) {
+    const draft = await this.getDraft(ownerUserId, assetId);
+    if (draft.snapshot.type === "prime-world") compilePrimeWorld(draft.snapshot.detail);
     const published = await this.assets.publishDraft(ownerUserId, assetId);
     if (!published)
-      throw new CharacterAssetForbiddenError("草稿没有可发布的修改。");
+      throw new PublicAssetForbiddenError("草稿没有可发布的修改。");
     const asset = await this.assets.findVisible(ownerUserId, assetId);
-    if (!asset) throw new Error("公共角色发布后读取失败。");
+    if (!asset) throw new Error("公共资产发布后读取失败。");
     return { asset };
   }
 
   async unlist(ownerUserId: string, assetId: string) {
     if (!(await this.assets.unlist(ownerUserId, assetId)))
-      throw new CharacterAssetNotFoundError("未找到可下架的角色资产。");
+      throw new PublicAssetNotFoundError("未找到可下架的公共资产。");
   }
 
   async deleteAsset(ownerUserId: string, assetId: string) {
     const result = await this.assets.deleteDeletable(ownerUserId, assetId);
     if (result === "not-found")
-      throw new CharacterAssetNotFoundError("未找到要删除的公共角色。");
+      throw new PublicAssetNotFoundError("未找到要删除的公共资产。");
     if (result === "not-deletable")
-      throw new CharacterAssetForbiddenError("请先下架公共角色，再彻底删除。");
+      throw new PublicAssetForbiddenError("请先下架公共资产，再彻底删除。");
   }
 
   async install(
@@ -207,20 +238,24 @@ export class CharacterAssetService {
   ) {
     const asset = await this.assets.findVisible(ownerUserId, assetId);
     if (!asset || asset.status !== "published")
-      throw new CharacterAssetNotFoundError("角色资产不存在或已下架。");
+      throw new PublicAssetNotFoundError("公共资产不存在或已下架。");
+    const snapshot = snapshotForVersion(
+      asset.latestVersion.snapshot,
+      asset.latestVersion.versionNumber,
+    );
     const installation = await this.assets.createInstallation({
       ownerUserId,
       assetId,
       versionId: asset.latestVersion.id,
-      snapshot: asset.latestVersion.snapshot,
+      snapshot,
     });
     if (!installation)
-      throw new CharacterAssetNotFoundError("角色资产不存在或已下架。");
+      throw new PublicAssetNotFoundError("公共资产不存在或已下架。");
     const agent = await this.agents.findById(
       ownerUserId,
       installation.agent_id,
     );
-    if (!agent) throw new Error("角色资产安装后读取失败。");
+    if (!agent) throw new Error("公共资产安装后读取失败。");
     if (
       applyRecommendedRuntimeConfig &&
       asset.latestVersion.recommendedRuntimeConfig
@@ -244,24 +279,40 @@ export class CharacterAssetService {
     ownerUserId: string,
     assetId: string,
     applyRecommendedRuntimeConfig = false,
+    worldProgressStrategy: "preserve-compatible" | "reset" = "reset",
   ) {
     const [asset, installation] = await Promise.all([
       this.assets.findVisible(ownerUserId, assetId),
       this.assets.findInstallation(ownerUserId, assetId),
     ]);
     if (!asset || !installation)
-      throw new CharacterAssetNotFoundError("未找到已添加的角色资产。");
-    const agentId = await this.assets.updateInstallationToLatest({
+      throw new PublicAssetNotFoundError("未找到已添加的公共资产。");
+    const snapshot = snapshotForVersion(
+      asset.latestVersion.snapshot,
+      asset.latestVersion.versionNumber,
+    );
+    if (snapshot.type === "prime-world") compilePrimeWorld(snapshot.detail);
+    let agentId: string | null;
+    try {
+      agentId = await this.assets.updateInstallationToLatest({
       ownerUserId,
       installationId: installation.id,
       assetId,
       latestVersionId: asset.latestVersion.id,
-      snapshot: asset.latestVersion.snapshot,
-    });
+        snapshot,
+        worldProgressStrategy,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "PUBLIC_ASSET_WORLD_RUN_ACTIVE")
+        throw new PublicAssetForbiddenError("世界正在运行，请等待本轮结束后再更新。");
+      if (error instanceof Error && error.message === "PUBLIC_ASSET_WORLD_STATE_INCOMPATIBLE")
+        throw new PublicAssetForbiddenError("当前世界进度与新版本不兼容，请选择重置进度。");
+      throw error;
+    }
     if (!agentId)
-      throw new CharacterAssetNotFoundError("未找到已添加的角色资产。");
+      throw new PublicAssetNotFoundError("未找到已添加的公共资产。");
     const agent = await this.agents.findById(ownerUserId, agentId);
-    if (!agent) throw new Error("角色资产更新后读取失败。");
+    if (!agent) throw new Error("公共资产更新后读取失败。");
     if (
       applyRecommendedRuntimeConfig &&
       asset.latestVersion.recommendedRuntimeConfig
@@ -285,11 +336,9 @@ export class CharacterAssetService {
     ownerUserId: string,
     agent: Exclude<Awaited<ReturnType<AgentRepository["findById"]>>, null>,
   ): Promise<{
-    snapshot: CharacterAssetSnapshot;
+    snapshot: PublicAssetSnapshot;
     resources: AssetResourceReference[];
   }> {
-    if (agent.type === "prime-world")
-      throw new CharacterAssetForbiddenError("本初世界暂不支持发布。");
     const references: AssetResourceReference[] = [];
     const avatar = agent.avatarResourcePath
       ? await this.resources.findByPublicPath(
@@ -316,6 +365,13 @@ export class CharacterAssetService {
           usageKind: "sticker",
         })),
       );
+    } else if (agent.type === "prime-world") {
+      references.push(
+        ...collectPrimeWorldResourceIds(
+          agent.detail.workflow.nodes,
+          agent.detail.presentation.startView,
+        ).map((resourceId) => ({ resourceId, usageKind: "world" })),
+      );
     }
     const snapshot = {
       type: agent.type,
@@ -336,21 +392,21 @@ export class CharacterAssetService {
       tags: [...agent.tags],
       introduction: agent.introduction,
       detail: structuredClone(agent.detail),
-    } as CharacterAssetSnapshot;
+    } as PublicAssetSnapshot;
     return { snapshot, resources: deduplicateReferences(references) };
   }
 
   private async snapshotResources(
     ownerUserId: string,
-    snapshot: CharacterAssetSnapshot,
+    snapshot: PublicAssetSnapshot,
   ) {
     const resources: AssetResourceReference[] = [];
     const add = async (resourceId: string | undefined, usageKind: string) => {
       if (!resourceId) return;
       const resource = await this.resources.findById(resourceId);
       if (!resource || resource.ownerUserId !== ownerUserId)
-        throw new CharacterAssetForbiddenError(
-          "公共角色包含不可用的媒体资源。",
+        throw new PublicAssetForbiddenError(
+          "公共资产包含不可用的媒体资源。",
         );
       resources.push({ resourceId, usageKind });
     };
@@ -361,14 +417,20 @@ export class CharacterAssetService {
         await add(image.resourceId, "reference");
       for (const sticker of snapshot.detail.stickers ?? [])
         await add(sticker.resourceId, "sticker");
+    } else if (snapshot.type === "prime-world") {
+      for (const resourceId of collectPrimeWorldResourceIds(
+        snapshot.detail.workflow.nodes,
+        snapshot.detail.presentation.startView,
+      ))
+        await add(resourceId, "world");
     }
     return deduplicateReferences(resources);
   }
 
   private async buildDraftSnapshot(
     ownerUserId: string,
-    current: CharacterAssetSnapshot,
-    input: CreateSliceFigureRequest | CreatePrimeFigureRequest,
+    current: PublicAssetSnapshot,
+    input: CreateSliceFigureRequest | CreatePrimeFigureRequest | CreatePrimeWorldRequest,
   ) {
     const resolveCover = async (
       kind: "agent_avatar" | "agent_cover",
@@ -411,8 +473,8 @@ export class CharacterAssetService {
             ? await this.resources.findById(item.resourceId)
             : null;
         if (!record || record.ownerUserId !== ownerUserId)
-          throw new CharacterAssetForbiddenError(
-            "公共角色包含不可用的媒体资源。",
+          throw new PublicAssetForbiddenError(
+            "公共资产包含不可用的媒体资源。",
           );
         resolved.push({
           resourceId: record.id,
@@ -441,7 +503,7 @@ export class CharacterAssetService {
       tags: [...(input.tags ?? [])],
       introduction: input.introduction ?? "",
     };
-    let snapshot: CharacterAssetSnapshot;
+    let snapshot: PublicAssetSnapshot;
     if (input.type === "slice-figure") {
       snapshot = {
         ...base,
@@ -462,9 +524,9 @@ export class CharacterAssetService {
           memorySummaryPrompt: input.memorySummaryPrompt,
         },
       };
-    } else {
+    } else if (input.type === "prime-figure") {
       const currentPrime = current as Extract<
-        CharacterAssetSnapshot,
+        PublicAssetSnapshot,
         { type: "prime-figure" }
       >;
       const referenceImages = (await resolveMedia(
@@ -501,6 +563,13 @@ export class CharacterAssetService {
             currentPrime.detail.initialRelationshipStatus,
         },
       };
+    } else {
+      compilePrimeWorld(input.detail);
+      snapshot = {
+        ...base,
+        type: "prime-world",
+        detail: structuredClone(input.detail),
+      };
     }
     return {
       snapshot,
@@ -509,16 +578,40 @@ export class CharacterAssetService {
   }
 }
 
+export function assessWorldProgressCompatibility(
+  snapshot: Extract<PublicAssetSnapshot, { type: "prime-world" }>,
+  state: Record<string, unknown> | null,
+): { canPreserve: boolean; reason?: string } {
+  if (!snapshot.detail.stateSchema)
+    return {
+      canPreserve: false,
+      reason: "新版本没有声明状态结构，无法安全保留现有进度。",
+    };
+  if (!state || !state.variables || typeof state.variables !== "object")
+    return {
+      canPreserve: false,
+      reason: "无法读取当前世界进度，只能重置到新版本。",
+    };
+  const validate = compilePrimeWorldJsonSchema(snapshot.detail.stateSchema);
+  if (!validate(state.variables))
+    return {
+      canPreserve: false,
+      reason: "当前世界进度不符合新版本的状态结构。",
+    };
+  return { canPreserve: true };
+}
+
 export function sanitizeRuntimeRecommendation(
-  characterType: "slice-figure" | "prime-figure",
+  assetType: PublicAssetType,
   config: StoredFigureRuntimeConfig,
 ): PublishedRuntimeRecommendation | null {
   if (containsCustomSource(config)) return null;
-  const publishedConfig =
-    characterType === "slice-figure"
-      ? sanitizeSliceConfig(config as StoredSliceFigureRuntimeConfig)
-      : sanitizePrimeConfig(config as StoredPrimeFigureRuntimeConfig);
-  return { version: 1, characterType, config: publishedConfig };
+  const publishedConfig = assetType === "slice-figure"
+    ? sanitizeSliceConfig(config as StoredSliceFigureRuntimeConfig)
+    : assetType === "prime-figure"
+      ? sanitizePrimeConfig(config as StoredPrimeFigureRuntimeConfig)
+      : sanitizeWorldConfig(config as StoredPrimeWorldRuntimeConfig);
+  return { version: 1, assetType, config: publishedConfig };
 }
 
 function sanitizeSliceConfig(config: StoredSliceFigureRuntimeConfig) {
@@ -581,6 +674,18 @@ function sanitizePrimeConfig(config: StoredPrimeFigureRuntimeConfig) {
   };
 }
 
+function sanitizeWorldConfig(config: StoredPrimeWorldRuntimeConfig) {
+  return {
+    version: config.version,
+    mainModel: sanitizeTextModel(config.mainModel),
+    summaryModel: sanitizeTextModel(config.summaryModel),
+    stt: sanitizeFishAudioStt(config.stt),
+    tts: sanitizeFishAudio(config.tts),
+    context: structuredClone(config.context),
+    audio: structuredClone(config.audio),
+  };
+}
+
 function sanitizeModelEndpoint(config: StoredModelEndpointConfig) {
   return {
     source: "platform",
@@ -624,10 +729,10 @@ function containsCustomSource(value: unknown): boolean {
   return Object.values(record).some(containsCustomSource);
 }
 
-function createEmptySnapshot(type: CharacterAssetType): CharacterAssetSnapshot {
+function createEmptySnapshot(type: PublicAssetType): PublicAssetSnapshot {
   const base = {
     type,
-    name: "未命名公共角色",
+    name: type === "prime-world" ? "未命名本初世界" : "未命名公共资产",
     attributes: [],
     tags: [],
     introduction: "",
@@ -649,7 +754,7 @@ function createEmptySnapshot(type: CharacterAssetType): CharacterAssetSnapshot {
         memorySummaryPrompt: DEFAULT_SLICE_FIGURE_MEMORY_SUMMARY_PROMPT,
       },
     };
-  return {
+  if (type === "prime-figure") return {
     ...base,
     type,
     detail: {
@@ -670,6 +775,17 @@ function createEmptySnapshot(type: CharacterAssetType): CharacterAssetSnapshot {
       initialRelationshipStatus: "",
     },
   };
+  return {
+    ...base,
+    type: "prime-world",
+    detail: structuredClone(fogHarborLettersFixture),
+  };
+}
+
+function snapshotForVersion(snapshot: PublicAssetSnapshot, versionNumber: number) {
+  const next = structuredClone(snapshot);
+  if (next.type === "prime-world") next.detail.definitionRevision = versionNumber;
+  return next;
 }
 
 function deduplicateReferences(references: AssetResourceReference[]) {

@@ -2,7 +2,7 @@ import {
   AgentsApi,
   ApiClient,
   AuthApi,
-  CharacterAssetsApi,
+  PublicAssetsApi,
   MessageApi,
   RuntimeConfigApi,
   ResourcesApi,
@@ -19,7 +19,7 @@ import { AuthService } from "../../services/AuthService";
 import { MessageService } from "../../services/MessageService";
 import type { RuntimeBundle } from "../../runtimes/factory/RuntimeBundle";
 import { RuntimeConfigService } from "../../services/RuntimeConfigService";
-import { CharacterAssetService } from "../../services/CharacterAssetService";
+import { PublicAssetService } from "../../services/PublicAssetService";
 import { SocialService } from "../../services/SocialService";
 import { RewardsService } from "../../services/RewardsService";
 import { RechargeService } from "../../services/RechargeService";
@@ -48,8 +48,8 @@ export function initApp(runtime: RuntimeBundle) {
       new ResourcesApi(api),
       runtime.message,
     ),
-    characterAssetService: new CharacterAssetService(
-      new CharacterAssetsApi(api),
+    publicAssetService: new PublicAssetService(
+      new PublicAssetsApi(api),
     ),
     authService: new AuthService(
       new AuthApi(api),

@@ -29,6 +29,7 @@ import {
 import { PrimeWorldRepository } from "./prime-world.repository.js";
 import {
   executePrimeWorldGraph,
+  PrimeWorldAuthoredError,
   PrimeWorldExecutionFailure,
   type PrimeWorldHistoryDraft,
 } from "./prime-world-executor.js";
@@ -326,19 +327,21 @@ export class PrimeWorldService {
           job.runId,
         );
       } else {
-        const code = stableWorldErrorCode(cause);
+        const authored = cause instanceof PrimeWorldAuthoredError ? cause : undefined;
+        const code = authored?.code ?? stableWorldErrorCode(cause);
+        const detail = authored?.userMessage ?? (cause instanceof Error ? cause.message : "Unknown world error");
         await this.worlds.fail(
           job.ownerUserId,
           job.runId,
           code,
-          cause instanceof Error ? cause.message : "Unknown world error",
+          detail,
         );
         this.publish(
           job.ownerUserId,
           "world.run.failed",
           job.conversationId,
           job.runId,
-          { errorCode: code },
+          { errorCode: code, message: detail },
         );
       }
     } finally {

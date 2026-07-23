@@ -433,9 +433,9 @@ export class ResourceRepository {
        LEFT JOIN message_resources ON message_resources.resource_id = resources.id
        LEFT JOIN agent_resources ON agent_resources.resource_id = resources.id
        LEFT JOIN user_resources ON user_resources.resource_id = resources.id
-       LEFT JOIN character_asset_version_resources asset_versions
+       LEFT JOIN public_asset_version_resources asset_versions
          ON asset_versions.resource_id = resources.id
-       LEFT JOIN character_asset_draft_resources asset_drafts
+       LEFT JOIN public_asset_draft_resources asset_drafts
          ON asset_drafts.resource_id = resources.id
        LEFT JOIN social_post_resources post_resources
          ON post_resources.resource_id = resources.id
@@ -470,9 +470,9 @@ export class ResourceRepository {
        ) AND NOT EXISTS (
          SELECT 1 FROM agent_resources WHERE resource_id = resources.id
        ) AND NOT EXISTS (
-         SELECT 1 FROM character_asset_version_resources WHERE resource_id = resources.id
+         SELECT 1 FROM public_asset_version_resources WHERE resource_id = resources.id
        ) AND NOT EXISTS (
-         SELECT 1 FROM character_asset_draft_resources WHERE resource_id = resources.id
+         SELECT 1 FROM public_asset_draft_resources WHERE resource_id = resources.id
        ) AND NOT EXISTS (
          SELECT 1 FROM social_post_resources WHERE resource_id = resources.id
        )`,
@@ -549,11 +549,11 @@ export class ResourceRepository {
        WHERE resources.id = ? AND (
          resources.owner_user_id = ? OR
          EXISTS (
-           SELECT 1 FROM character_asset_version_resources version_resources
-           JOIN character_asset_versions versions
+           SELECT 1 FROM public_asset_version_resources version_resources
+           JOIN public_asset_versions versions
              ON versions.id = version_resources.version_id
-           JOIN character_assets assets ON assets.id = versions.asset_id
-           LEFT JOIN character_asset_installations installations
+           JOIN public_assets assets ON assets.id = versions.asset_id
+           LEFT JOIN public_asset_installations installations
              ON installations.version_id = versions.id
               AND installations.owner_user_id = ?
            WHERE version_resources.resource_id = resources.id
@@ -577,10 +577,10 @@ export class ResourceRepository {
       `SELECT resources.id FROM resources
        WHERE resources.id = ? AND (
          EXISTS (
-           SELECT 1 FROM character_asset_version_resources version_resources
-           JOIN character_asset_versions versions
+           SELECT 1 FROM public_asset_version_resources version_resources
+           JOIN public_asset_versions versions
              ON versions.id = version_resources.version_id
-           JOIN character_assets assets ON assets.id = versions.asset_id
+           JOIN public_assets assets ON assets.id = versions.asset_id
            WHERE version_resources.resource_id = resources.id
              AND assets.status = 'published'
          ) OR EXISTS (

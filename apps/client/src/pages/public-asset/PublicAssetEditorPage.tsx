@@ -6,14 +6,17 @@ import {
   UploadSimple,
 } from "@phosphor-icons/react";
 import type {
-  CharacterAssetDraft,
   CreatePrimeFigureRequest,
+  CreatePrimeWorldRequest,
   CreateSliceFigureRequest,
   PrimeFigureRuntimeConfigPatch,
   PrimeFigureRuntimeConfigView,
+  PrimeWorldRuntimeConfigPatch,
+  PrimeWorldRuntimeConfigView,
   SliceFigureRuntimeConfigPatch,
   SliceFigureRuntimeConfigView,
 } from "@echoo/shared";
+import type { PublicAssetDraft } from "@echoo/shared/public-assets";
 import { useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import {
@@ -22,10 +25,13 @@ import {
   SliceFigureFormFields,
 } from "../create-agent/CreateAgentPage";
 import {
+  PrimeWorldRuntimeConfigForm,
   PrimeRuntimeConfigForm,
   SliceRuntimeConfigForm,
 } from "../../features/runtime-config/RuntimeConfigForms";
-import type { CharacterAssetService } from "../../services/CharacterAssetService";
+import type { PublicAssetService } from "../../services/PublicAssetService";
+import { useServices } from "../../app/providers/ServicesProvider";
+import { PrimeWorldEditorPage } from "../prime-world/PrimeWorldEditorPage";
 
 export function PublicAssetEditorPage({
   draft,
@@ -34,13 +40,13 @@ export function PublicAssetEditorPage({
   onDeleted,
   onBack,
 }: {
-  draft: CharacterAssetDraft;
-  service: CharacterAssetService;
-  onDraftChange: (draft: CharacterAssetDraft) => void;
+  draft: PublicAssetDraft;
+  service: PublicAssetService;
+  onDraftChange: (draft: PublicAssetDraft) => void;
   onDeleted: () => void;
   onBack: () => void;
 }) {
-  const [tab, setTab] = useState<"character" | "recommendation">("character");
+  const [tab, setTab] = useState<"content" | "recommendation">("content");
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -65,7 +71,7 @@ export function PublicAssetEditorPage({
       await service.unlist(draft.id);
       const next = await service.getDraft(draft.id);
       onDraftChange(next);
-      setNotice("公共角色已下架，草稿仍可继续编辑。");
+      setNotice("公共资产已下架，草稿仍可继续编辑。");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "下架失败。");
     } finally {
@@ -112,7 +118,7 @@ export function PublicAssetEditorPage({
               </span>
             </div>
             <p className="mt-1 text-xs text-white/38">
-              公共草稿独立于本地角色
+              公共草稿独立于本地会话
               {draft.latestVersionNumber
                 ? ` · 当前 v${draft.latestVersionNumber}`
                 : ""}
@@ -162,7 +168,7 @@ export function PublicAssetEditorPage({
       <div className="grid grid-cols-2 gap-1 rounded-full border border-white/8 bg-white/[0.025] p-1">
         {(
           [
-            ["character", "角色内容"],
+            ["content", draft.snapshot.type === "prime-world" ? "世界内容" : "角色内容"],
             ["recommendation", "推荐配置"],
           ] as const
         ).map(([id, label]) => (
@@ -177,14 +183,14 @@ export function PublicAssetEditorPage({
         ))}
       </div>
 
-      {tab === "character" ? (
+      {tab === "content" ? (
         <CharacterDraftForm
           key={`${draft.id}-${draft.updatedAt}`}
           draft={draft}
           service={service}
           onSaved={(next) => {
             onDraftChange(next);
-            setNotice("角色草稿已保存，线上版本没有变化。");
+            setNotice("资产草稿已保存，线上版本没有变化。");
           }}
         />
       ) : (
@@ -207,12 +213,25 @@ function CharacterDraftForm({
   service,
   onSaved,
 }: {
-  draft: CharacterAssetDraft;
-  service: CharacterAssetService;
-  onSaved: (draft: CharacterAssetDraft) => void;
+  draft: PublicAssetDraft;
+  service: PublicAssetService;
+  onSaved: (draft: PublicAssetDraft) => void;
 }) {
   const { user } = useAuth();
+  const { primeWorldService } = useServices();
   const snapshot = draft.snapshot;
+  if (snapshot.type === "prime-world") {
+    return (
+      <WorldDraftForm
+        draft={draft as PublicAssetDraft & {
+          snapshot: Extract<PublicAssetDraft["snapshot"], { type: "prime-world" }>;
+        }}
+        service={service}
+        primeWorldService={primeWorldService}
+        onSaved={onSaved}
+      />
+    );
+  }
   if (snapshot.type === "prime-figure") {
     const form: CreatePrimeFigureRequest = {
       type: "prime-figure",
@@ -253,7 +272,7 @@ function CharacterDraftForm({
         existingReferenceImages={snapshot.detail.referenceImages}
         existingStickers={snapshot.detail.stickers ?? []}
         onSubmit={async (input) => {
-          onSaved(await service.saveDraftCharacter(draft.id, input));
+          onSaved(await service.saveDraftContent(draft.id, input));
         }}
       />
     );
@@ -268,16 +287,88 @@ function CharacterDraftForm({
   );
 }
 
+function WorldDraftForm({
+  draft,
+  service,
+  primeWorldService,
+  onSaved,
+}: {
+  draft: PublicAssetDraft & {
+    snapshot: Extract<PublicAssetDraft["snapshot"], { type: "prime-world" }>;
+  };
+  service: PublicAssetService;
+  primeWorldService: ReturnType<typeof useServices>["primeWorldService"];
+  onSaved: (draft: PublicAssetDraft) => void;
+}) {
+  const [name, setName] = useState(draft.snapshot.name);
+  const [introduction, setIntroduction] = useState(
+    draft.snapshot.introduction,
+  );
+  const [tags, setTags] = useState(draft.snapshot.tags.join("、"));
+  return (
+    <div className="space-y-5">
+      <div className="glass-panel grid gap-4 rounded-2xl p-6 md:grid-cols-2">
+        <label className="text-xs text-white/50">
+          世界名称
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none"
+          />
+        </label>
+        <label className="text-xs text-white/50">
+          标签（顿号或逗号分隔）
+          <input
+            value={tags}
+            onChange={(event) => setTags(event.target.value)}
+            className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none"
+          />
+        </label>
+        <label className="text-xs text-white/50 md:col-span-2">
+          简介
+          <textarea
+            value={introduction}
+            onChange={(event) => setIntroduction(event.target.value)}
+            className="mt-2 min-h-24 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none"
+          />
+        </label>
+      </div>
+      <div className="overflow-hidden rounded-2xl border border-white/8 bg-[#0b0b0d]">
+        <PrimeWorldEditorPage
+          detail={draft.snapshot.detail}
+          service={primeWorldService}
+          saveLabel="校验并保存世界草稿"
+          onSave={async (detail) => {
+            const payload: CreatePrimeWorldRequest = {
+              type: "prime-world",
+              name: name.trim(),
+              attributes: draft.snapshot.attributes,
+              tags: tags
+                .split(/[、,，]/)
+                .map((tag) => tag.trim())
+                .filter(Boolean),
+              introduction: introduction.trim(),
+              isPublic: false,
+              detail,
+            };
+            onSaved(await service.saveDraftContent(draft.id, payload));
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function SliceDraftForm({
   draft,
   service,
   user,
   onSaved,
 }: {
-  draft: CharacterAssetDraft;
-  service: CharacterAssetService;
+  draft: PublicAssetDraft;
+  service: PublicAssetService;
   user: { displayName: string } | null;
-  onSaved: (draft: CharacterAssetDraft) => void;
+  onSaved: (draft: PublicAssetDraft) => void;
 }) {
   const snapshot = draft.snapshot as Extract<
     typeof draft.snapshot,
@@ -321,7 +412,7 @@ function SliceDraftForm({
         setSaving(true);
         setError(null);
         try {
-          onSaved(await service.saveDraftCharacter(draft.id, payload));
+          onSaved(await service.saveDraftContent(draft.id, payload));
         } catch (reason) {
           setError(reason instanceof Error ? reason.message : "保存失败。");
         } finally {
@@ -374,9 +465,9 @@ function RecommendationDraftForm({
   service,
   onSaved,
 }: {
-  draft: CharacterAssetDraft;
-  service: CharacterAssetService;
-  onSaved: (draft: CharacterAssetDraft) => void;
+  draft: PublicAssetDraft;
+  service: PublicAssetService;
+  onSaved: (draft: PublicAssetDraft) => void;
 }) {
   const [enabled, setEnabled] = useState(
     Boolean(draft.recommendedRuntimeConfig),
@@ -436,13 +527,30 @@ function RecommendationDraftForm({
             );
           }}
         />
-      ) : (
+      ) : draft.snapshot.type === "prime-figure" ? (
         <PrimeRuntimeConfigForm
           value={
             withSecretViews(config) as unknown as PrimeFigureRuntimeConfigView
           }
           platformOnly
           onSave={async (patch: PrimeFigureRuntimeConfigPatch) => {
+            const merged = stripSecrets(
+              deepMerge(config, patch as unknown as Record<string, unknown>),
+            );
+            onSaved(
+              await service.saveDraftRecommendation(draft.id, {
+                enabled: true,
+                config: merged,
+              }),
+            );
+          }}
+        />
+      ) : (
+        <PrimeWorldRuntimeConfigForm
+          value={
+            withSecretViews(config) as unknown as PrimeWorldRuntimeConfigView
+          }
+          onSave={async (patch: PrimeWorldRuntimeConfigPatch) => {
             const merged = stripSecrets(
               deepMerge(config, patch as unknown as Record<string, unknown>),
             );
@@ -505,7 +613,7 @@ function stripSecrets(value: Record<string, unknown>): Record<string, unknown> {
   return result;
 }
 
-function statusLabel(status: CharacterAssetDraft["status"]) {
+function statusLabel(status: PublicAssetDraft["status"]) {
   if (status === "published") return "已发布";
   if (status === "unlisted") return "已下架";
   return "未发布草稿";

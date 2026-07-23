@@ -99,7 +99,7 @@ describe("PublicAssetCreateDialog", () => {
 
     expect(html).toContain("从空白创建");
     expect(html).toContain("从原创会话导入");
-    expect(html).toContain("公共角色是独立资产");
+    expect(html).toContain("公共资产独立于原创会话");
     expect(html).toContain("创建并进入草稿编辑器");
   });
 });
@@ -123,9 +123,9 @@ describe("ProfilePage personal conversations", () => {
 
     expect(html).toContain("个人会话");
     expect(html).toContain("原创会话");
-    expect(html).toContain("从公共角色添加的会话");
-    expect(html).toContain("查看 公共林晚 的公共角色详情");
-    expect(html).not.toContain("查看 原创小霁 的公共角色详情");
+    expect(html).toContain("从公共资产添加的会话");
+    expect(html).toContain("查看 公共林晚 的公共资产详情");
+    expect(html).not.toContain("查看 原创小霁 的公共资产详情");
     expect(html).toContain("进入与 原创小霁 的会话");
     expect(html).toContain("进入与 公共林晚 的会话");
     expect(html).toContain('data-identity-avatar="image"');

@@ -35,7 +35,8 @@ const createDefaultPrimeWorld = (): PrimeWorldDetail => {
     summarize: { x: 3160, y: 280 },
     "save-summary": { x: 3420, y: 280 },
     "summary-failed": { x: 3420, y: 440 },
-    "generation-failed": { x: 1600, y: 650 },
+    "output-invalid": { x: 1600, y: 620 },
+    "model-failed": { x: 1860, y: 620 },
   };
   return detail;
 };

@@ -24,7 +24,7 @@ import { registerAdminRoutes } from "./modules/admin/admin.controller.js";
 import { registerBillingRoutes } from "./modules/billing/billing.controller.js";
 import { BillingContext } from "./modules/billing/billing-context.js";
 import { registerPlatformCatalogRoutes } from "./modules/platform-catalog/platform-catalog.controller.js";
-import { registerCharacterAssetRoutes } from "./modules/character-assets/character-assets.controller.js";
+import { registerPublicAssetRoutes } from "./modules/public-assets/public-assets.controller.js";
 import { registerSocialRoutes } from "./modules/social/social.controller.js";
 import { registerSocialPostRoutes } from "./modules/posts/social-post.controller.js";
 import { registerUsersRoutes } from "./modules/users/users.controller.js";
@@ -117,7 +117,7 @@ export async function buildApp() {
   await app.register(channelsModule, { prefix: "/api" });
   await app.register(registerRewardsRoutes, { prefix: "/api" });
   await app.register(registerPlatformCatalogRoutes, { prefix: "/api" });
-  await app.register(registerCharacterAssetRoutes, { prefix: "/api" });
+  await app.register(registerPublicAssetRoutes, { prefix: "/api" });
   await app.register(registerSocialRoutes, { prefix: "/api" });
   await app.register(registerSocialPostRoutes, { prefix: "/api" });
   await app.register(registerUsersRoutes, { prefix: "/api" });

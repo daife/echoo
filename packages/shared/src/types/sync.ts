@@ -1,5 +1,5 @@
 import type { Agent } from "./agent.js";
-import type { CharacterAssetDraft } from "./character-asset.js";
+import type { PublicAssetDraft } from "../domains/public-assets/types.js";
 import type { MediaResourceStatus, Message } from "./message.js";
 
 export type SyncCursor = number;
@@ -10,7 +10,7 @@ export type SyncEntity =
   | { entityType: "agent"; value: Agent }
   | { entityType: "message"; value: Message }
   | { entityType: "resource"; value: MediaResourceStatus }
-  | { entityType: "asset"; value: CharacterAssetDraft };
+  | { entityType: "asset"; value: PublicAssetDraft };
 
 export interface SyncChange {
   cursor: SyncCursor;
@@ -33,5 +33,5 @@ export interface SyncPage {
 export interface SyncBootstrap {
   cursor: SyncCursor;
   agents: Agent[];
-  assets: CharacterAssetDraft[];
+  assets: PublicAssetDraft[];
 }

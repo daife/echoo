@@ -135,6 +135,16 @@ export class PrimeWorldExecutionFailure extends Error {
   }
 }
 
+export class PrimeWorldAuthoredError extends Error {
+  constructor(
+    readonly code: string,
+    readonly userMessage: string,
+  ) {
+    super(code);
+    this.name = "PrimeWorldAuthoredError";
+  }
+}
+
 class WorldExecution {
   private readonly values = new Map<string, RuntimeValue | Promise<RuntimeValue>>();
   private readonly completed = new Set<string>();
@@ -296,7 +306,8 @@ class WorldExecution {
     if (node.type === "data.messages") {
       const fromInput = await input("history", []);
       const text = await input("text", "");
-      const configured = Array.isArray(node.config.messages) ? node.config.messages : [];
+      const resolved = resolveDeep(node.config.messages ?? [], context);
+      const configured = Array.isArray(resolved) ? resolved : [];
       set("messages", [...configured, ...(Array.isArray(fromInput) ? fromInput : []), ...(typeof text === "string" && text ? [{ role: String(node.config.textRole ?? "user"), content: text }] : [])] as JsonValue[]);
       return ["control"];
     }
@@ -444,8 +455,12 @@ class WorldExecution {
       return ["control"];
     }
     if (node.type === "view.showError") {
-      this.publish({ type: "world.run.failed", errorCode: "WORLD_AUTHORED_ERROR", message: String(node.config.message) });
-      throw new Error("WORLD_AUTHORED_ERROR");
+      throw new PrimeWorldAuthoredError(
+        typeof node.config.errorCode === "string"
+          ? node.config.errorCode
+          : "WORLD_AUTHORED_ERROR",
+        String(node.config.message),
+      );
     }
     if (node.type === "view.setBusy") return ["control"];
     throw new Error(`NODE_HANDLER_NOT_REGISTERED:${node.type}`);
@@ -530,15 +545,38 @@ class WorldExecution {
         await Promise.resolve();
         return ["control"];
       }
-      const response = await this.withExternalRetry(() => provider.createChatCompletion({ ...request, responseFormat: { type: "json_schema", json_schema: { name: "prime_world_output", strict: true, schema: config.outputSchema } } }));
-      this.attachUsage(id, response.usage);
-      if (Buffer.byteLength(response.text, "utf8") > MAX_TEXT_BYTES) throw new Error("LLM_JSON_QUOTA_EXCEEDED");
-      let parsed: unknown;
-      try { parsed = JSON.parse(response.text); } catch { return ["invalid"]; }
+      const responseFormat = { type: "json_schema", json_schema: { name: "prime_world_output", strict: true, schema: config.outputSchema } } as const;
       const validate = compilePrimeWorldJsonSchema(config.outputSchema as JsonObject);
-      if (!validate(parsed) || (config.validator === "immersive-novel-v1" && !validateImmersiveNovel(parsed, config.validatorConfig, this.draft.variables))) return ["invalid"];
-      set("json", parsed as JsonValue);
-      return ["control"];
+      let messagesForAttempt = request.messages;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const response = await this.withExternalRetry(() => provider.createChatCompletion({ ...request, messages: messagesForAttempt, responseFormat }));
+        this.attachUsage(id, response.usage);
+        if (Buffer.byteLength(response.text, "utf8") > MAX_TEXT_BYTES) throw new Error("LLM_JSON_QUOTA_EXCEEDED");
+        const result = validateWorldJsonOutput(
+          response.text,
+          validate,
+          config.validator,
+          config.validatorConfig,
+          this.draft.variables,
+        );
+        if (result.value !== undefined) {
+          set("json", result.value);
+          return ["control"];
+        }
+        if (attempt > 0 || this.externalCalls >= MAX_EXTERNAL_CALLS) return ["invalid"];
+        messagesForAttempt = [
+          ...request.messages,
+          { role: "assistant" as const, content: response.text.slice(0, 32_000) },
+          {
+            role: "user" as const,
+            content: [
+              "上一个 JSON 输出未通过应用校验。请只返回修复后的完整 JSON 对象，不要解释。",
+              ...result.issues.slice(0, 12).map((issue) => `- ${issue}`),
+            ].join("\n"),
+          },
+        ];
+      }
+      return ["invalid"];
     } catch (error) {
       if (stableErrorCode(error) === "CANCELLED") throw error;
       set("text", "");
@@ -876,38 +914,78 @@ function fitChatMessages(messages: ChatCompletionMessage[], maxTokens: number) {
   return [...leadingSystem, ...recent.reverse()];
 }
 
-function validateImmersiveNovel(value: unknown, rawConfig: JsonValue | undefined, state: JsonObject) {
-  if (!isObject(value)) return false;
-  if (!Array.isArray(value.choices) || value.choices.length !== 3) return false;
+function validateWorldJsonOutput(
+  text: string,
+  validate: ReturnType<typeof compilePrimeWorldJsonSchema>,
+  validator: JsonValue | undefined,
+  validatorConfig: JsonValue | undefined,
+  state: JsonObject,
+): { value?: JsonValue; issues: string[] } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { issues: ["输出不是合法 JSON。"] };
+  }
+  if (!validate(parsed))
+    return {
+      issues: (validate.errors ?? []).map(
+        (error) => `${error.instancePath || "/"} ${error.message ?? "不符合 schema"}`,
+      ),
+    };
+  const semanticIssues =
+    validator === "immersive-novel-v1"
+      ? validateImmersiveNovel(parsed, validatorConfig, state)
+      : [];
+  return semanticIssues.length
+    ? { issues: semanticIssues }
+    : { value: parsed as JsonValue, issues: [] };
+}
+
+function validateImmersiveNovel(value: unknown, rawConfig: JsonValue | undefined, state: JsonObject): string[] {
+  const issues: string[] = [];
+  if (!isObject(value)) return ["根值必须是对象。"];
+  if (!Array.isArray(value.choices) || value.choices.length !== 3)
+    return ["choices 必须恰好包含三个选项。"];
   const ids = value.choices.map((choice) => isObject(choice) ? choice.id : undefined);
-  if (ids.some((id) => typeof id !== "string") || new Set(ids).size !== 3) return false;
-  if (!isObject(value.statePatch)) return false;
+  if (ids.some((id) => typeof id !== "string") || new Set(ids).size !== 3)
+    issues.push("choices 的 id 必须是三个互不重复的字符串。");
+  if (!isObject(value.statePatch)) return [...issues, "statePatch 必须是对象。"];
   const patch = value.statePatch;
-  if (patch.chapterIndexDelta !== 0 && patch.chapterIndexDelta !== 1) return false;
-  if (!validateImmersiveStatePatch(patch, rawConfig, state)) return false;
+  issues.push(...validateImmersiveStatePatchIssues(patch, rawConfig, state));
+  if (issues.length) return issues;
   for (const key of ["setFlags", "removeFlags", "inventoryAdd", "inventoryRemove"])
     if (Array.isArray(patch[key])) patch[key] = [...new Set(patch[key].map(String))];
-  return true;
+  return [];
 }
 
 function validateImmersiveStatePatch(patch: JsonObject, rawConfig: JsonValue | undefined, state: JsonObject) {
-  if (patch.chapterIndexDelta !== 0 && patch.chapterIndexDelta !== 1) return false;
+  return validateImmersiveStatePatchIssues(patch, rawConfig, state).length === 0;
+}
+
+function validateImmersiveStatePatchIssues(patch: JsonObject, rawConfig: JsonValue | undefined, state: JsonObject) {
+  const issues: string[] = [];
+  if (patch.chapterIndexDelta !== 0 && patch.chapterIndexDelta !== 1)
+    issues.push("chapterIndexDelta 只能是 0 或 1。");
   const config = isObject(rawConfig) ? rawConfig : {};
   const story = isObject(state.story) ? state.story : state;
-  if (story.status === "ending") return false;
+  if (story.status === "ending") issues.push("故事已经结束，不能继续推进。");
   const stages = isObject(config.stages) ? config.stages : {};
   if (typeof patch.nextStageId === "string") {
     const current = String(story.stageId ?? "");
     const allowed = Array.isArray(stages[current]) ? stages[current].map(String) : [];
-    if (!allowed.includes(patch.nextStageId)) return false;
+    if (!allowed.includes(patch.nextStageId))
+      issues.push(`nextStageId 必须是当前阶段 ${current} 的合法后继：${allowed.join("、") || "无"}。`);
   }
   const characters = new Set(Array.isArray(config.characterIds) ? config.characterIds.map(String) : Object.keys(isObject(story.characterStates) ? story.characterStates : {}));
-  if (Array.isArray(patch.characterChanges) && patch.characterChanges.some((change) => !isObject(change) || typeof change.characterId !== "string" || !characters.has(change.characterId))) return false;
+  if (Array.isArray(patch.characterChanges) && patch.characterChanges.some((change) => !isObject(change) || typeof change.characterId !== "string" || !characters.has(change.characterId)))
+    issues.push(`characterChanges 只能引用角色：${[...characters].join("、")}。`);
   const flagIds = new Set(Array.isArray(config.flagIds) ? config.flagIds.map(String) : []);
   if (flagIds.size)
     for (const key of ["setFlags", "removeFlags"])
-      if (Array.isArray(patch[key]) && patch[key].some((flag) => !flagIds.has(String(flag)))) return false;
-  return true;
+      if (Array.isArray(patch[key]) && patch[key].some((flag) => !flagIds.has(String(flag))))
+        issues.push(`${key} 只能引用旗标：${[...flagIds].join("、")}。`);
+  return issues;
 }
 
 function applyImmersiveNovelPatch(target: JsonObject, patch: JsonObject) {

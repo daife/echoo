@@ -61,12 +61,12 @@ export async function initializeDatabase() {
     const [characterSearchColumns] = await connection.query<RowDataPacket[]>(
       `SELECT column_name FROM information_schema.columns
        WHERE table_schema = DATABASE()
-         AND table_name = 'character_asset_versions'
+         AND table_name = 'public_asset_versions'
          AND column_name = 'search_text'`,
     );
     if (!characterSearchColumns.length)
       throw new Error(
-        "检测到不兼容的旧 Echoo 公共角色搜索 schema。请确认备份后运行 ECHOO_CONFIRM_RECREATE=echoo pnpm db:recreate。",
+        "检测到不兼容的旧 Echoo 公共资产搜索 schema。请确认备份后运行 ECHOO_CONFIRM_RECREATE=echoo pnpm db:recreate。",
       );
     const [legacyColumns] = await connection.query<RowDataPacket[]>(
       `SELECT column_name FROM information_schema.columns

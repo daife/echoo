@@ -83,7 +83,7 @@ export const primeWorldNodeRegistry: Record<string, PrimeWorldNodeSpec> = Object
     spec({ type: "view.playAudio", title: "播放音频", description: "播放完整资源", category: "view", execution: "sync", configSchema: emptySchema, inputs: [control, p("audio", "audio", true)], outputs: [p("control", "control")], sideEffect: true }),
     spec({ type: "view.playAudioStream", title: "播放音频流", description: "顺序推送音频块", category: "view", execution: "stream-sink", configSchema: emptySchema, inputs: [control, p("audioStream", "audio-stream", true)], outputs: [p("control", "control")], sideEffect: true }),
     spec({ type: "view.stopAudio", title: "停止音频", description: "停止当前世界音频", category: "view", execution: "sync", configSchema: emptySchema, inputs: [control], outputs: [p("control", "control")], sideEffect: true }),
-    spec({ type: "view.showError", title: "显示错误", description: "渲染作者配置的错误提示", category: "view", execution: "sync", configSchema: objectSchema({ message: stringSchema() }, ["message"]), inputs: [control], outputs: [p("control", "control")], sideEffect: true }),
+    spec({ type: "view.showError", title: "显示错误", description: "终止本轮并显示作者配置的错误提示", category: "view", execution: "sync", configSchema: objectSchema({ message: stringSchema(), errorCode: stringSchema({ pattern: "^WORLD_[A-Z0-9_]+$" }) }, ["message"]), inputs: [control], outputs: [p("control", "control")], sideEffect: true }),
   ].map((item) => [item.type, item]),
 );
 

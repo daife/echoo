@@ -6,7 +6,7 @@ import type {
   SyncPage,
 } from "@echoo/shared";
 import { AgentRepository } from "../agents/agent.repository.js";
-import { CharacterAssetService } from "../character-assets/character-asset.service.js";
+import { PublicAssetService } from "../public-assets/public-asset.service.js";
 import { MessageRepository } from "../messaging/message.repository.js";
 import { ResourceRepository } from "../resources/resource.repository.js";
 import {
@@ -20,7 +20,7 @@ export class SyncService {
     private readonly agents = new AgentRepository(),
     private readonly messages = new MessageRepository(),
     private readonly resources = new ResourceRepository(),
-    private readonly assets = new CharacterAssetService(),
+    private readonly assets = new PublicAssetService(),
   ) {}
 
   async bootstrap(ownerUserId: string): Promise<SyncBootstrap> {

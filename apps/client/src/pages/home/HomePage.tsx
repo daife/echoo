@@ -1,9 +1,10 @@
 import { Plus, Sparkle } from "@phosphor-icons/react";
-import type { Agent, CharacterAssetListItem } from "@echoo/shared";
+import type { Agent } from "@echoo/shared";
+import type { PublicAssetListItem } from "@echoo/shared/public-assets";
 import { useEffect, useState } from "react";
-import { CharacterCatalog } from "../explore/ExplorePage";
+import { PublicAssetCatalog } from "../explore/ExplorePage";
 import { MediaAsset } from "../../features/media/MediaAsset";
-import type { CharacterAssetService } from "../../services/CharacterAssetService";
+import type { PublicAssetService } from "../../services/PublicAssetService";
 
 export function HomePage({
   service,
@@ -14,7 +15,7 @@ export function HomePage({
   onOpenAsset,
   onOpenUser,
 }: {
-  service: CharacterAssetService;
+  service: PublicAssetService;
   isAuthenticated: boolean;
   onCreateAgent: () => void;
   onAgentInstalled: (agent: Agent) => void;
@@ -22,7 +23,7 @@ export function HomePage({
   onOpenAsset: (assetId: string) => void;
   onOpenUser: (userId: string) => void;
 }) {
-  const [featured, setFeatured] = useState<CharacterAssetListItem[]>([]);
+  const [featured, setFeatured] = useState<PublicAssetListItem[]>([]);
   const [featuredLoading, setFeaturedLoading] = useState(true);
   const [featuredError, setFeaturedError] = useState(false);
 
@@ -61,13 +62,13 @@ export function HomePage({
         </div>
         <div className="relative max-w-4xl">
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-[#aaa0c7]">
-            <Sparkle size={14} /> Public figures
+            <Sparkle size={14} /> Public creations
           </div>
           <h1 className="mt-6 max-w-[13ch] text-5xl font-semibold leading-[0.98] tracking-[-0.055em] text-white md:text-7xl">
             从添加一个角色开始吧
           </h1>
           <p className="mt-6 max-w-2xl text-sm leading-7 text-white/48">
-            可以直接添加其他创作者制作的角色，也可以点击右下角创建自己的专属角色喔~
+            可以直接添加其他创作者制作的角色或世界，也可以点击右下角创建自己的专属角色或世界喔~
           </p>
         </div>
       </header>
@@ -79,13 +80,13 @@ export function HomePage({
               MOST LOVED
             </p>
             <h2 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-white">
-              热门角色
+              热门创作
             </h2>
           </div>
         </div>
         {featuredLoading ? (
           <div className="rounded-2xl border border-dashed border-white/10 py-16 text-center text-sm text-white/35">
-            正在统计最受喜爱的公开角色……
+            正在统计最受喜爱的公开资产……
           </div>
         ) : featured.length ? (
           <div className="grid gap-4 md:grid-cols-3">
@@ -128,13 +129,13 @@ export function HomePage({
         ) : (
           <div className="rounded-2xl border border-dashed border-white/10 py-16 text-center text-sm text-white/35">
             {featuredError
-              ? "热门角色暂时加载失败。"
-              : "还没有获得点赞的公开角色。"}
+              ? "热门创作暂时加载失败。"
+              : "还没有获得点赞的公开资产。"}
           </div>
         )}
       </section>
 
-      <CharacterCatalog
+      <PublicAssetCatalog
         service={service}
         isAuthenticated={isAuthenticated}
         onAgentInstalled={onAgentInstalled}

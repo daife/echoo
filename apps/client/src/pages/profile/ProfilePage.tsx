@@ -10,12 +10,14 @@ import {
 import type {
   Agent,
   AgentResourceUpload,
-  CharacterAssetDraft,
-  CreateCharacterAssetDraftRequest,
   UpdateUserProfileRequest,
   UserProfile,
   SocialPostSummary,
 } from "@echoo/shared";
+import type {
+  CreatePublicAssetDraftRequest,
+  PublicAssetDraft,
+} from "@echoo/shared/public-assets";
 import { CharacterCard } from "../../features/conversations/components/CharacterCard";
 import { useEffect, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
@@ -41,11 +43,11 @@ export function ProfilePage({
   isLoadingAgents: boolean;
   onOpenAgent: (agent: Agent) => void;
   onOpenSettings: () => void;
-  publicAssets: CharacterAssetDraft[];
+  publicAssets: PublicAssetDraft[];
   onCreatePublicDraft: (
-    input: CreateCharacterAssetDraftRequest,
+    input: CreatePublicAssetDraftRequest,
   ) => Promise<void>;
-  onManagePublicAsset: (asset: CharacterAssetDraft) => void;
+  onManagePublicAsset: (asset: PublicAssetDraft) => void;
   onOpenAsset: (assetId: string) => void;
   onOpenPost: (postId: string) => void;
   onOpenUser: (userId: string) => void;
@@ -185,7 +187,7 @@ export function ProfilePage({
                       原创会话
                     </h3>
                     <p className="mt-1 text-xs leading-5 text-white/40">
-                      由你直接创建，可以导入为新的公共角色草稿。
+                      由你直接创建，可以导入为新的公共资产草稿。
                     </p>
                   </div>
                   {originalCards.length ? (
@@ -208,10 +210,10 @@ export function ProfilePage({
                 <section>
                   <div className="mb-4">
                     <h3 className="text-base font-semibold text-white">
-                      从公共角色添加的会话
+                      从公共资产添加的会话
                     </h3>
                     <p className="mt-1 text-xs leading-5 text-white/40">
-                      保留原公共角色来源，可查看详情，但不能再次导入发布。
+                      保留原公共资产来源，可查看详情，但不能再次导入发布。
                     </p>
                   </div>
                   {publicAssetCards.length ? (
@@ -230,7 +232,7 @@ export function ProfilePage({
                     </div>
                   ) : (
                     <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm leading-6 text-white/45">
-                      还没有从公共角色添加的会话。
+                      还没有从公共资产添加的会话。
                     </div>
                   )}
                 </section>
@@ -240,7 +242,7 @@ export function ProfilePage({
             <div className="mb-5 mt-12 flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-semibold text-white">
-                  我的公共角色
+                  我的公共资产
                 </h2>
                 <span className="mt-1 block text-sm text-white/40">
                   独立草稿与公开版本
@@ -255,7 +257,7 @@ export function ProfilePage({
                 className="flex shrink-0 items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-medium text-[#09090b] transition active:scale-95"
               >
                 <Plus size={16} weight="bold" />
-                创建公共角色
+                创建公共资产
               </button>
             </div>
             {publicAssets.length ? (
@@ -289,7 +291,7 @@ export function ProfilePage({
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm text-white/42">
-                还没有公共角色。你可以从空白开始，也可以从原创会话导入初始设定。
+                还没有公共资产。你可以从空白开始，也可以从原创会话导入初始设定。
               </div>
             )}
           </div>
@@ -369,7 +371,7 @@ export function ProfilePage({
               setIsPublicCreateOpen(false);
             } catch (error) {
               setPublishNotice(
-                error instanceof Error ? error.message : "公共角色创建失败。",
+                error instanceof Error ? error.message : "公共资产创建失败。",
               );
               throw error;
             }
@@ -387,13 +389,11 @@ export function PublicAssetCreateDialog({
 }: {
   agents: Agent[];
   onClose: () => void;
-  onCreate: (input: CreateCharacterAssetDraftRequest) => Promise<void>;
+  onCreate: (input: CreatePublicAssetDraftRequest) => Promise<void>;
 }) {
-  const eligibleAgents = agents.filter(
-    (agent) => agent.type !== "prime-world" && agent.origin.kind === "original",
-  );
+  const eligibleAgents = agents.filter((agent) => agent.origin.kind === "original");
   const [mode, setMode] = useState<"blank" | "import">("blank");
-  const [type, setType] = useState<"slice-figure" | "prime-figure">(
+  const [type, setType] = useState<Agent["type"]>(
     "slice-figure",
   );
   const [importFromOriginalAgentId, setImportFromOriginalAgentId] = useState(
@@ -411,7 +411,7 @@ export function PublicAssetCreateDialog({
       }}
     >
       <form
-        aria-label="创建公共角色"
+        aria-label="创建公共资产"
         className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#101014] p-6 shadow-[0_28px_100px_rgba(0,0,0,0.58)]"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -424,7 +424,7 @@ export function PublicAssetCreateDialog({
             );
           } catch (reason) {
             setError(
-              reason instanceof Error ? reason.message : "公共角色创建失败。",
+              reason instanceof Error ? reason.message : "公共资产创建失败。",
             );
           } finally {
             setIsSubmitting(false);
@@ -433,14 +433,14 @@ export function PublicAssetCreateDialog({
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-semibold text-white">创建公共角色</h2>
+            <h2 className="text-xl font-semibold text-white">创建公共资产</h2>
             <p className="mt-1 text-sm leading-6 text-white/42">
-              公共角色是独立资产，导入完成后不会与原创会话联动。
+              公共资产独立于原创会话，支持角色与本初世界。
             </p>
           </div>
           <button
             type="button"
-            aria-label="关闭公共角色创建"
+            aria-label="关闭公共资产创建"
             disabled={isSubmitting}
             onClick={onClose}
             className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-white/45 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-40"
@@ -470,13 +470,14 @@ export function PublicAssetCreateDialog({
         {mode === "blank" ? (
           <fieldset className="mt-6">
             <legend className="text-sm font-medium text-white/72">
-              角色类型
+              资产类型
             </legend>
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="mt-3 grid grid-cols-3 gap-3">
               {(
                 [
                   ["slice-figure", "切片角色"],
                   ["prime-figure", "本初角色"],
+                  ["prime-world", "本初世界"],
                 ] as const
               ).map(([value, label]) => (
                 <button
@@ -510,17 +511,21 @@ export function PublicAssetCreateDialog({
                 {eligibleAgents.map((agent) => (
                   <option key={agent.id} value={agent.id}>
                     {agent.name} ·{" "}
-                    {agent.type === "prime-figure" ? "本初角色" : "切片角色"}
+                    {agent.type === "prime-figure"
+                      ? "本初角色"
+                      : agent.type === "prime-world"
+                        ? "本初世界"
+                        : "切片角色"}
                   </option>
                 ))}
               </select>
             ) : (
               <p className="mt-3 rounded-xl border border-dashed border-white/10 p-4 text-sm leading-6 text-white/42">
-                暂无可导入的原创会话。从公共角色添加的会话不能再次发布，包括自己创建后再添加的公共角色。
+                暂无可导入的原创会话。从公共资产添加的会话不能再次发布。
               </p>
             )}
             <p className="mt-3 text-xs leading-5 text-white/38">
-              只导入角色设定、日程、创作者参数和媒体素材；不会导入消息、记忆、当前状态、密钥或会话运行配置。
+              只导入资产定义与媒体素材；不会导入消息、运行进度、密钥或会话运行配置。
             </p>
           </div>
         )}

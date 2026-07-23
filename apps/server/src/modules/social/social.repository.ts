@@ -36,12 +36,12 @@ export class SocialRepository {
       `SELECT social.id, social.object_type, assets.status AS asset_status,
               COALESCE(assets.author_user_id, posts.author_user_id) AS owner_user_id,
               (posts.id IS NOT NULL OR assets.status = 'published' OR assets.author_user_id = ? OR
-               EXISTS(SELECT 1 FROM character_asset_installations installations
+               EXISTS(SELECT 1 FROM public_asset_installations installations
                       WHERE installations.asset_id = assets.id
                         AND installations.owner_user_id = ?)) AS viewer_can_access
        FROM social_objects social
-       LEFT JOIN character_assets assets
-         ON social.object_type = 'character_asset' AND assets.id = social.id
+       LEFT JOIN public_assets assets
+         ON social.object_type = 'public_asset' AND assets.id = social.id
        LEFT JOIN social_posts posts
          ON social.object_type = 'post' AND posts.id = social.id
        WHERE social.id = ?`,
@@ -110,7 +110,7 @@ export class SocialRepository {
        LEFT JOIN user_resources avatar_link
          ON avatar_link.user_id = users.id AND avatar_link.usage_kind = 'avatar'
        LEFT JOIN resources avatar ON avatar.id = avatar_link.resource_id
-       LEFT JOIN character_assets assets ON assets.id = comments.object_id
+       LEFT JOIN public_assets assets ON assets.id = comments.object_id
        LEFT JOIN social_posts posts ON posts.id = comments.object_id
        WHERE comments.object_id = ?
          AND comments.parent_comment_id IS NULL
@@ -138,7 +138,7 @@ export class SocialRepository {
            LEFT JOIN user_resources avatar_link
              ON avatar_link.user_id = users.id AND avatar_link.usage_kind = 'avatar'
            LEFT JOIN resources avatar ON avatar.id = avatar_link.resource_id
-           LEFT JOIN character_assets assets ON assets.id = comments.object_id
+           LEFT JOIN public_assets assets ON assets.id = comments.object_id
            LEFT JOIN social_posts posts ON posts.id = comments.object_id
            WHERE comments.parent_comment_id IN (${visibleRows.map(() => "?").join(",")})
              AND (comments.status != 'hidden' OR comments.author_user_id = ?
@@ -226,7 +226,7 @@ export class SocialRepository {
        LEFT JOIN user_resources avatar_link
          ON avatar_link.user_id = users.id AND avatar_link.usage_kind = 'avatar'
        LEFT JOIN resources avatar ON avatar.id = avatar_link.resource_id
-       LEFT JOIN character_assets assets ON assets.id = comments.object_id
+       LEFT JOIN public_assets assets ON assets.id = comments.object_id
        LEFT JOIN social_posts posts ON posts.id = comments.object_id
        WHERE comments.id = ?`,
       [commentId],
@@ -256,7 +256,7 @@ export class SocialRepository {
          LEFT JOIN user_resources avatar_link
            ON avatar_link.user_id = users.id AND avatar_link.usage_kind = 'avatar'
          LEFT JOIN resources avatar ON avatar.id = avatar_link.resource_id
-         LEFT JOIN character_assets assets ON assets.id = comments.object_id
+         LEFT JOIN public_assets assets ON assets.id = comments.object_id
          LEFT JOIN social_posts posts ON posts.id = comments.object_id
          WHERE comments.id = ? FOR UPDATE`,
         [input.commentId],

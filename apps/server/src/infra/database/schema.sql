@@ -374,7 +374,7 @@ CREATE TABLE IF NOT EXISTS social_post_resources (
   CONSTRAINT fk_social_post_resources_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE IF NOT EXISTS character_assets (
+CREATE TABLE IF NOT EXISTS public_assets (
   id VARCHAR(64) PRIMARY KEY,
   author_user_id VARCHAR(64) NOT NULL,
   status ENUM('draft', 'published', 'unlisted') NOT NULL DEFAULT 'draft',
@@ -386,13 +386,13 @@ CREATE TABLE IF NOT EXISTS character_assets (
   unlisted_at BIGINT NULL,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
-  INDEX idx_character_assets_author_updated (author_user_id, updated_at DESC),
-  INDEX idx_character_assets_status_published (status, published_at DESC),
-  CONSTRAINT fk_character_assets_social FOREIGN KEY (id) REFERENCES social_objects(id) ON DELETE CASCADE,
-  CONSTRAINT fk_character_assets_author FOREIGN KEY (author_user_id) REFERENCES users(id) ON DELETE CASCADE
+  INDEX idx_public_assets_author_updated (author_user_id, updated_at DESC),
+  INDEX idx_public_assets_status_published (status, published_at DESC),
+  CONSTRAINT fk_public_assets_social FOREIGN KEY (id) REFERENCES social_objects(id) ON DELETE CASCADE,
+  CONSTRAINT fk_public_assets_author FOREIGN KEY (author_user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE IF NOT EXISTS character_asset_versions (
+CREATE TABLE IF NOT EXISTS public_asset_versions (
   id VARCHAR(64) PRIMARY KEY,
   asset_id VARCHAR(64) NOT NULL,
   version_number INT UNSIGNED NOT NULL,
@@ -405,35 +405,35 @@ CREATE TABLE IF NOT EXISTS character_asset_versions (
   ) STORED,
   recommended_runtime_config JSON NULL,
   created_at BIGINT NOT NULL,
-  UNIQUE KEY uq_character_asset_version (asset_id, version_number),
-  INDEX idx_character_asset_versions_asset_created (asset_id, created_at DESC),
-  FULLTEXT INDEX ftx_character_asset_versions_search (search_text) WITH PARSER ngram,
-  CONSTRAINT fk_character_asset_versions_asset FOREIGN KEY (asset_id) REFERENCES character_assets(id) ON DELETE CASCADE
+  UNIQUE KEY uq_public_asset_version (asset_id, version_number),
+  INDEX idx_public_asset_versions_asset_created (asset_id, created_at DESC),
+  FULLTEXT INDEX ftx_public_asset_versions_search (search_text) WITH PARSER ngram,
+  CONSTRAINT fk_public_asset_versions_asset FOREIGN KEY (asset_id) REFERENCES public_assets(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE IF NOT EXISTS character_asset_version_resources (
+CREATE TABLE IF NOT EXISTS public_asset_version_resources (
   version_id VARCHAR(64) NOT NULL,
   resource_id VARCHAR(64) NOT NULL,
   usage_kind VARCHAR(48) NOT NULL,
   created_at BIGINT NOT NULL,
   PRIMARY KEY (version_id, resource_id, usage_kind),
-  INDEX idx_character_asset_version_resources_resource (resource_id),
-  CONSTRAINT fk_character_asset_version_resources_version FOREIGN KEY (version_id) REFERENCES character_asset_versions(id) ON DELETE CASCADE,
-  CONSTRAINT fk_character_asset_version_resources_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
+  INDEX idx_public_asset_version_resources_resource (resource_id),
+  CONSTRAINT fk_public_asset_version_resources_version FOREIGN KEY (version_id) REFERENCES public_asset_versions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_public_asset_version_resources_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE IF NOT EXISTS character_asset_draft_resources (
+CREATE TABLE IF NOT EXISTS public_asset_draft_resources (
   asset_id VARCHAR(64) NOT NULL,
   resource_id VARCHAR(64) NOT NULL,
   usage_kind VARCHAR(48) NOT NULL,
   created_at BIGINT NOT NULL,
   PRIMARY KEY (asset_id, resource_id, usage_kind),
-  INDEX idx_character_asset_draft_resources_resource (resource_id),
-  CONSTRAINT fk_character_asset_draft_resources_asset FOREIGN KEY (asset_id) REFERENCES character_assets(id) ON DELETE CASCADE,
-  CONSTRAINT fk_character_asset_draft_resources_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
+  INDEX idx_public_asset_draft_resources_resource (resource_id),
+  CONSTRAINT fk_public_asset_draft_resources_asset FOREIGN KEY (asset_id) REFERENCES public_assets(id) ON DELETE CASCADE,
+  CONSTRAINT fk_public_asset_draft_resources_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE IF NOT EXISTS character_asset_installations (
+CREATE TABLE IF NOT EXISTS public_asset_installations (
   id VARCHAR(64) PRIMARY KEY,
   owner_user_id VARCHAR(64) NOT NULL,
   asset_id VARCHAR(64) NOT NULL,
@@ -441,12 +441,12 @@ CREATE TABLE IF NOT EXISTS character_asset_installations (
   agent_id VARCHAR(64) NOT NULL UNIQUE,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
-  UNIQUE KEY uq_character_asset_installation_owner (owner_user_id, asset_id),
-  INDEX idx_character_asset_installations_asset (asset_id),
-  CONSTRAINT fk_character_asset_installations_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
-  CONSTRAINT fk_character_asset_installations_asset FOREIGN KEY (asset_id) REFERENCES character_assets(id) ON DELETE RESTRICT,
-  CONSTRAINT fk_character_asset_installations_version FOREIGN KEY (version_id) REFERENCES character_asset_versions(id) ON DELETE RESTRICT,
-  CONSTRAINT fk_character_asset_installations_agent FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+  UNIQUE KEY uq_public_asset_installation_owner (owner_user_id, asset_id),
+  INDEX idx_public_asset_installations_asset (asset_id),
+  CONSTRAINT fk_public_asset_installations_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_public_asset_installations_asset FOREIGN KEY (asset_id) REFERENCES public_assets(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_public_asset_installations_version FOREIGN KEY (version_id) REFERENCES public_asset_versions(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_public_asset_installations_agent FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS social_likes (

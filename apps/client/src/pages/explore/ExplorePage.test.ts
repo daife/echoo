@@ -1,17 +1,18 @@
-import type { CharacterAssetListItem } from "@echoo/shared";
+import type { PublicAssetListItem } from "@echoo/shared/public-assets";
 import { describe, expect, it, vi } from "vitest";
 import {
   CHARACTER_SEARCH_DEBOUNCE_MS,
   PRIME_FIGURE_UPDATE_WARNING,
+  assetTypeLabel,
   isCharacterSearchQueryInvalid,
-  mergeUniqueCharacterAssets,
+  mergeUniquePublicAssets,
   normalizeCharacterSearchQuery,
   requiresPrimeFigureUpdateWarning,
   scheduleCharacterSearch,
 } from "./ExplorePage";
 
 function asset(
-  type: "prime-figure" | "slice-figure",
+  type: "prime-figure" | "slice-figure" | "prime-world",
   installedVersionId?: string,
   updateAvailable = false,
 ) {
@@ -19,7 +20,7 @@ function asset(
     snapshot: { type },
     installedVersionId,
     updateAvailable,
-  } as CharacterAssetListItem;
+  } as PublicAssetListItem;
 }
 
 describe("public character update warning", () => {
@@ -41,6 +42,9 @@ describe("public character update warning", () => {
 });
 
 describe("public character catalog search", () => {
+  it("labels prime worlds separately from figure assets", () => {
+    expect(assetTypeLabel("prime-world")).toBe("本初世界");
+  });
   it("normalizes input and enforces the two-to-fifty character range", () => {
     expect(normalizeCharacterSearchQuery("  林晚   插画师 ")).toBe(
       "林晚 插画师",
@@ -68,9 +72,9 @@ describe("public character catalog search", () => {
   });
 
   it("deduplicates appended pages by asset id", () => {
-    const first = { id: "asset_1" } as CharacterAssetListItem;
-    const second = { id: "asset_2" } as CharacterAssetListItem;
-    expect(mergeUniqueCharacterAssets([first], [first, second])).toEqual([
+    const first = { id: "asset_1" } as PublicAssetListItem;
+    const second = { id: "asset_2" } as PublicAssetListItem;
+    expect(mergeUniquePublicAssets([first], [first, second])).toEqual([
       first,
       second,
     ]);

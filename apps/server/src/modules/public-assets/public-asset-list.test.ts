@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  CharacterAssetQueryError,
+  PublicAssetQueryError,
   decodeAssetCursor,
   encodeAssetCursor,
   normalizeSearchQuery,
   rowToListItem,
   truncatePreview,
-} from "./character-asset.repository.js";
+} from "./public-asset.repository.js";
 
 test("asset cursors are opaque, scoped, and reject malformed values", () => {
   const cursor = encodeAssetCursor(
@@ -20,11 +20,11 @@ test("asset cursors are opaque, scoped, and reject malformed values", () => {
   });
   assert.throws(
     () => decodeAssetCursor(cursor, "published:作者"),
-    CharacterAssetQueryError,
+    PublicAssetQueryError,
   );
   assert.throws(
     () => decodeAssetCursor("not-a-cursor", "published:林晚"),
-    CharacterAssetQueryError,
+    PublicAssetQueryError,
   );
 });
 

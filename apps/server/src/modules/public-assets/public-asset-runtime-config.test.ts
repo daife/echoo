@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildRuntimeConfigDefaults } from "../runtime-config/runtime-config.defaults.js";
-import { sanitizeRuntimeRecommendation } from "./character-asset.service.js";
+import { sanitizeRuntimeRecommendation } from "./public-asset.service.js";
 
 test("published runtime recommendations omit every credential and endpoint", () => {
   const config = buildRuntimeConfigDefaults().primeFigure;
@@ -37,7 +37,7 @@ test("slice recommendations keep portable behavior settings", () => {
   const result = sanitizeRuntimeRecommendation("slice-figure", config);
 
   assert.ok(result);
-  assert.equal(result.characterType, "slice-figure");
+  assert.equal(result.assetType, "slice-figure");
   assert.deepEqual(result.config.context, config.context);
   assert.equal(result.config.replyAutoSegment, config.replyAutoSegment);
 });

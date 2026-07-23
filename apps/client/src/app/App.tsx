@@ -6,8 +6,6 @@ import {
 } from "@phosphor-icons/react";
 import type {
   Agent,
-  CharacterAssetDraft,
-  CreateCharacterAssetDraftRequest,
   AddPrimeFigureStickerRequest,
   CreatePrimeFigureRequest,
   CreatePrimeWorldRequest,
@@ -16,6 +14,10 @@ import type {
   UpdateSliceFigureRequest,
   UpdatePrimeWorldRequest,
 } from "@echoo/shared";
+import type {
+  CreatePublicAssetDraftRequest,
+  PublicAssetDraft,
+} from "@echoo/shared/public-assets";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useCallback,
@@ -115,7 +117,7 @@ export function App() {
     );
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [editingPublicAsset, setEditingPublicAsset] =
-    useState<CharacterAssetDraft | null>(null);
+    useState<PublicAssetDraft | null>(null);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -140,7 +142,7 @@ export function App() {
   });
   const assetsQuery = useQuery({
     queryKey: assetQueryKey,
-    queryFn: () => services.characterAssetService.listMine(),
+    queryFn: () => services.publicAssetService.listMine(),
     enabled: Boolean(auth.user),
     staleTime: Infinity,
   });
@@ -155,8 +157,8 @@ export function App() {
     [agentQueryKey, queryClient],
   );
   const setPublicAssets = useCallback(
-    (update: SetStateAction<CharacterAssetDraft[]>) =>
-      queryClient.setQueryData<CharacterAssetDraft[]>(
+    (update: SetStateAction<PublicAssetDraft[]>) =>
+      queryClient.setQueryData<PublicAssetDraft[]>(
         assetQueryKey,
         (current = []) => resolveStateUpdate(update, current),
       ),
@@ -564,10 +566,10 @@ export function App() {
   };
 
   const createOrOpenPublicDraft = async (
-    input: CreateCharacterAssetDraftRequest,
+    input: CreatePublicAssetDraftRequest,
   ) => {
     const snapshot = createCurrentSnapshot();
-    const draft = await services.characterAssetService.createDraft(input);
+    const draft = await services.publicAssetService.createDraft(input);
     setPublicAssets((current) => [
       draft,
       ...current.filter((item) => item.id !== draft.id),
@@ -636,7 +638,7 @@ export function App() {
       return (
         <CharacterDetailPage
           assetId={selectedAssetId}
-          characterService={services.characterAssetService}
+          characterService={services.publicAssetService}
           socialService={services.socialService}
           isAuthenticated={Boolean(auth.user)}
           onRequireAuth={() => setView("auth")}
@@ -670,7 +672,7 @@ export function App() {
       return (
         <PublicAssetEditorPage
           draft={editingPublicAsset}
-          service={services.characterAssetService}
+          service={services.publicAssetService}
           onBack={closeSecondaryView}
           onDeleted={() => {
             setPublicAssets((current) =>
@@ -777,7 +779,7 @@ export function App() {
       );
     return (
       <HomePage
-        service={services.characterAssetService}
+        service={services.publicAssetService}
         isAuthenticated={Boolean(auth.user)}
         onCreateAgent={() => {
           setNavigationHistory((current) =>

@@ -6,7 +6,11 @@ import type { AiProviderRegistry } from "../../../ai/ai-provider.registry.js";
 import { buildRuntimeConfigDefaults } from "../../../runtime-config/runtime-config.defaults.js";
 import type { ResourceRepository } from "../../../resources/resource.repository.js";
 import { compilePrimeWorld } from "./prime-world-compiler.js";
-import { executePrimeWorldGraph, PrimeWorldExecutionFailure } from "./prime-world-executor.js";
+import {
+  executePrimeWorldGraph,
+  PrimeWorldAuthoredError,
+  PrimeWorldExecutionFailure,
+} from "./prime-world-executor.js";
 import type { PrimeWorldRepository } from "./prime-world.repository.js";
 import { executePrimeWorld } from "./prime-world.service.js";
 
@@ -281,3 +285,165 @@ test("runs the immersive novel fixture for 30 turns with rolling summaries", asy
   assert.ok((state.summaries.story?.throughSequence ?? 0) > 0);
   assert.equal(state.view.root.type === "stack" && state.view.root.children[1]?.type === "choices" ? state.view.root.children[1].choices.length : 0, 3);
 });
+
+test("repairs one invalid immersive-novel JSON response and commits the turn", async () => {
+  const state: PrimeWorldRuntimeState = {
+    schemaVersion: 1,
+    variables: structuredClone(fogHarborLettersFixture.initialState),
+    view: structuredClone(fogHarborLettersFixture.presentation.startView),
+    summaries: {},
+    updatedAt: 0,
+  };
+  let calls = 0;
+  const providers = {
+    createProvider: () => ({
+      id: "repair-test",
+      async createChatCompletion() {
+        calls += 1;
+        return {
+          providerId: "repair-test",
+          model: "main",
+          text:
+            calls === 1
+              ? "{}"
+              : JSON.stringify(validNovelOutput()),
+        };
+      },
+    }),
+  } as unknown as AiProviderRegistry;
+  await executePrimeWorldGraph(
+    compilePrimeWorld(fogHarborLettersFixture),
+    state,
+    { clientEventId: "repair", type: "input.text", payload: { text: "检查信件" } },
+    [],
+    undefined,
+    {
+      ownerUserId: "user",
+      conversationId: "conversation",
+      runId: "run-repair",
+      runtimeConfig: buildRuntimeConfigDefaults().primeWorld,
+      providers,
+      worlds: emptyWorldHistory(),
+      traceEnabled: false,
+    },
+  );
+  assert.equal(calls, 2);
+  assert.equal((state.variables.story as JsonObject).chapterIndex, 1);
+});
+
+test("reports WORLD_OUTPUT_INVALID after the repair response is still invalid", async () => {
+  const state: PrimeWorldRuntimeState = {
+    schemaVersion: 1,
+    variables: structuredClone(fogHarborLettersFixture.initialState),
+    view: structuredClone(fogHarborLettersFixture.presentation.startView),
+    summaries: {},
+    updatedAt: 0,
+  };
+  let calls = 0;
+  const providers = {
+    createProvider: () => ({
+      id: "invalid-test",
+      async createChatCompletion() {
+        calls += 1;
+        return { providerId: "invalid-test", model: "main", text: "{}" };
+      },
+    }),
+  } as unknown as AiProviderRegistry;
+  await assert.rejects(
+    executePrimeWorldGraph(
+      compilePrimeWorld(fogHarborLettersFixture),
+      state,
+      { clientEventId: "invalid", type: "input.text", payload: { text: "等待" } },
+      [],
+      undefined,
+      {
+        ownerUserId: "user",
+        conversationId: "conversation",
+        runId: "run-invalid",
+        runtimeConfig: buildRuntimeConfigDefaults().primeWorld,
+        providers,
+        worlds: emptyWorldHistory(),
+        traceEnabled: false,
+      },
+    ),
+    (error) =>
+      error instanceof PrimeWorldExecutionFailure &&
+      error.original instanceof PrimeWorldAuthoredError &&
+      error.original.code === "WORLD_OUTPUT_INVALID",
+  );
+  assert.equal(calls, 2);
+});
+
+test("reports WORLD_MODEL_ERROR without attempting output repair", async () => {
+  const state: PrimeWorldRuntimeState = {
+    schemaVersion: 1,
+    variables: structuredClone(fogHarborLettersFixture.initialState),
+    view: structuredClone(fogHarborLettersFixture.presentation.startView),
+    summaries: {},
+    updatedAt: 0,
+  };
+  let calls = 0;
+  const providers = {
+    createProvider: () => ({
+      id: "model-error-test",
+      async createChatCompletion() {
+        calls += 1;
+        throw new Error("provider unavailable");
+      },
+    }),
+  } as unknown as AiProviderRegistry;
+
+  await assert.rejects(
+    executePrimeWorldGraph(
+      compilePrimeWorld(fogHarborLettersFixture),
+      state,
+      { clientEventId: "model-error", type: "input.text", payload: { text: "等待" } },
+      [],
+      undefined,
+      {
+        ownerUserId: "user",
+        conversationId: "conversation",
+        runId: "run-model-error",
+        runtimeConfig: buildRuntimeConfigDefaults().primeWorld,
+        providers,
+        worlds: emptyWorldHistory(),
+        traceEnabled: false,
+      },
+    ),
+    (error) =>
+      error instanceof PrimeWorldExecutionFailure &&
+      error.original instanceof PrimeWorldAuthoredError &&
+      error.original.code === "WORLD_MODEL_ERROR",
+  );
+  assert.equal(calls, 1);
+});
+
+function validNovelOutput() {
+  return {
+    narrative: "雾港的灯火在潮湿石阶上摇晃，林澈把旧信纸推到灯下，等待你辨认其中被海水晕开的字迹。".repeat(3),
+    choices: [
+      { id: "inspect_letter", label: "检查信纸" },
+      { id: "ask_lin", label: "询问林澈" },
+      { id: "visit_dock", label: "前往旧码头" },
+    ],
+    statePatch: {
+      chapterIndexDelta: 1,
+      setFlags: [],
+      removeFlags: [],
+      inventoryAdd: [],
+      inventoryRemove: [],
+      characterChanges: [],
+    },
+  };
+}
+
+function emptyWorldHistory() {
+  return {
+    async readHistory() {
+      return [];
+    },
+    async readHistoryAfter() {
+      return [];
+    },
+  } as unknown as PrimeWorldRepository;
+}

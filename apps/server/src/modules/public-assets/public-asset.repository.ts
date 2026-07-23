@@ -1,12 +1,12 @@
 import type {
-  CharacterAssetDraft,
-  CharacterAssetDetail,
-  CharacterAssetListItem,
-  CharacterAssetPage,
-  CharacterAssetSnapshot,
-  CharacterAssetSummary,
+  PublicAssetDraft,
+  PublicAssetDetail,
+  PublicAssetListItem,
+  PublicAssetPage,
+  PublicAssetSnapshot,
+  PublicAssetSummary,
   PublishedRuntimeRecommendation,
-} from "@echoo/shared";
+} from "@echoo/shared/public-assets";
 import { createHash } from "node:crypto";
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 import {
@@ -17,6 +17,7 @@ import {
 } from "../../infra/database/mysql.js";
 import { createId } from "../../shared/utils/id.js";
 import { syncScheduledRuns } from "../agents/kinds/prime-figure/scheduled-run.repository.js";
+import { compilePrimeWorldJsonSchema } from "../agents/kinds/prime-world/prime-world-json-schema.js";
 import { ChangeEventRepository } from "../sync/change-event.repository.js";
 
 interface AssetRow extends RowDataPacket {
@@ -67,12 +68,12 @@ export interface AssetResourceReference {
   usageKind: string;
 }
 
-export class CharacterAssetRepository {
+export class PublicAssetRepository {
   constructor(private readonly events = new ChangeEventRepository()) {}
 
   async createDraft(input: {
     authorUserId: string;
-    snapshot: CharacterAssetSnapshot;
+    snapshot: PublicAssetSnapshot;
     recommendedRuntimeConfig: PublishedRuntimeRecommendation | null;
     resources: AssetResourceReference[];
   }) {
@@ -82,12 +83,12 @@ export class CharacterAssetRepository {
       await execute(
         `INSERT INTO social_objects
          (id, object_type, like_count, comment_count, created_at, updated_at)
-         VALUES (?, 'character_asset', 0, 0, ?, ?)`,
+         VALUES (?, 'public_asset', 0, 0, ?, ?)`,
         [assetId, now, now],
         connection,
       );
       await execute(
-        `INSERT INTO character_assets
+        `INSERT INTO public_assets
          (id, author_user_id, status, latest_version_id,
           draft_snapshot, draft_recommended_runtime_config, draft_dirty,
           published_at, unlisted_at, created_at, updated_at)
@@ -140,14 +141,14 @@ export class CharacterAssetRepository {
   async saveDraft(input: {
     ownerUserId: string;
     assetId: string;
-    snapshot: CharacterAssetSnapshot;
+    snapshot: PublicAssetSnapshot;
     recommendedRuntimeConfig: PublishedRuntimeRecommendation | null;
     resources: AssetResourceReference[];
   }) {
     return withTransaction(async (connection) => {
       const now = Date.now();
       const result = await execute(
-        `UPDATE character_assets
+        `UPDATE public_assets
             SET draft_snapshot = ?, draft_recommended_runtime_config = ?,
                 draft_dirty = TRUE, updated_at = ?
           WHERE id = ? AND author_user_id = ?`,
@@ -196,7 +197,7 @@ export class CharacterAssetRepository {
       >(
         `SELECT status, latest_version_id, draft_snapshot,
                 draft_recommended_runtime_config, draft_dirty
-           FROM character_assets
+           FROM public_assets
           WHERE id = ? AND author_user_id = ? FOR UPDATE`,
         [assetId, ownerUserId],
         connection,
@@ -205,7 +206,7 @@ export class CharacterAssetRepository {
       const now = Date.now();
       if (row.status === "unlisted" && !row.draft_dirty) {
         await execute(
-          `UPDATE character_assets SET status = 'published', unlisted_at = NULL,
+          `UPDATE public_assets SET status = 'published', unlisted_at = NULL,
                   published_at = ?, updated_at = ? WHERE id = ?`,
           [now, now, assetId],
           connection,
@@ -218,14 +219,14 @@ export class CharacterAssetRepository {
         RowDataPacket & { latest_number: number | null }
       >(
         `SELECT MAX(version_number) AS latest_number
-           FROM character_asset_versions WHERE asset_id = ?`,
+           FROM public_asset_versions WHERE asset_id = ?`,
         [assetId],
         connection,
       );
       const versionNumber = (latest?.latest_number ?? 0) + 1;
       const versionId = createId("aver");
       await execute(
-        `INSERT INTO character_asset_versions
+        `INSERT INTO public_asset_versions
          (id, asset_id, version_number, snapshot, recommended_runtime_config, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
         [
@@ -243,15 +244,15 @@ export class CharacterAssetRepository {
         connection,
       );
       await execute(
-        `INSERT INTO character_asset_version_resources
+        `INSERT INTO public_asset_version_resources
          (version_id, resource_id, usage_kind, created_at)
          SELECT ?, resource_id, usage_kind, ?
-           FROM character_asset_draft_resources WHERE asset_id = ?`,
+           FROM public_asset_draft_resources WHERE asset_id = ?`,
         [versionId, now, assetId],
         connection,
       );
       await execute(
-        `UPDATE character_assets
+        `UPDATE public_assets
             SET status = 'published', latest_version_id = ?, draft_dirty = FALSE,
                 published_at = ?, unlisted_at = NULL, updated_at = ?
           WHERE id = ?`,
@@ -274,24 +275,25 @@ export class CharacterAssetRepository {
       limit?: number;
       cursor?: string;
       query?: string;
+      type?: PublicAssetSnapshot["type"];
     } = {},
-  ): Promise<CharacterAssetPage> {
+  ): Promise<PublicAssetPage> {
     const limit = Math.min(Math.max(input.limit ?? 12, 1), 24);
     const query = normalizeSearchQuery(input.query);
-    const scope = `published:${query}`;
+    const scope = `published:${input.type ?? "all"}:${query}`;
     const cursor = decodeAssetCursor(input.cursor, scope);
     const searchJoin = query
       ? `JOIN (
            SELECT search_assets.id
-             FROM character_assets search_assets
-             JOIN character_asset_versions search_versions
+             FROM public_assets search_assets
+             JOIN public_asset_versions search_versions
                ON search_versions.id = search_assets.latest_version_id
             WHERE search_assets.status = 'published'
               AND MATCH(search_versions.search_text)
                   AGAINST (? IN NATURAL LANGUAGE MODE)
            UNION
            SELECT search_assets.id
-             FROM character_assets search_assets
+             FROM public_assets search_assets
              JOIN users search_users ON search_users.id = search_assets.author_user_id
             WHERE search_assets.status = 'published'
               AND MATCH(search_users.display_name)
@@ -302,6 +304,7 @@ export class CharacterAssetRepository {
       `${ASSET_SELECT}
        ${searchJoin}
        WHERE assets.status = 'published'
+         AND (? IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(versions.snapshot, '$.type')) = ?)
          AND (? IS NULL OR assets.published_at < ? OR
               (assets.published_at = ? AND assets.id < ?))
        ORDER BY assets.published_at DESC, assets.id DESC LIMIT ?`,
@@ -309,6 +312,8 @@ export class CharacterAssetRepository {
         viewerUserId,
         viewerUserId,
         ...(query ? [query, query] : []),
+        input.type ?? null,
+        input.type ?? null,
         cursor?.publishedAt ?? null,
         cursor?.publishedAt ?? null,
         cursor?.publishedAt ?? null,
@@ -328,7 +333,7 @@ export class CharacterAssetRepository {
   async listFeatured(
     viewerUserId: string | null,
     requestedLimit = 6,
-  ): Promise<CharacterAssetListItem[]> {
+  ): Promise<PublicAssetListItem[]> {
     const limit = Math.min(Math.max(requestedLimit || 6, 1), 12);
     const rows = await queryRows<AssetRow>(
       `${ASSET_SELECT}
@@ -343,14 +348,19 @@ export class CharacterAssetRepository {
   async listPublishedByAuthor(
     viewerUserId: string | null,
     authorUserId: string,
-    input: { limit?: number; cursor?: string } = {},
-  ): Promise<CharacterAssetPage> {
+    input: {
+      limit?: number;
+      cursor?: string;
+      type?: PublicAssetSnapshot["type"];
+    } = {},
+  ): Promise<PublicAssetPage> {
     const limit = Math.min(Math.max(input.limit ?? 24, 1), 100);
-    const scope = `author:${authorUserId}`;
+    const scope = `author:${authorUserId}:${input.type ?? "all"}`;
     const cursor = decodeAssetCursor(input.cursor, scope);
     const rows = await queryRows<AssetRow>(
       `${ASSET_SELECT}
        WHERE assets.status = 'published' AND assets.author_user_id = ?
+         AND (? IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(versions.snapshot, '$.type')) = ?)
          AND (? IS NULL OR assets.published_at < ? OR
               (assets.published_at = ? AND assets.id < ?))
        ORDER BY assets.published_at DESC, assets.id DESC LIMIT ?`,
@@ -358,6 +368,8 @@ export class CharacterAssetRepository {
         viewerUserId,
         viewerUserId,
         authorUserId,
+        input.type ?? null,
+        input.type ?? null,
         cursor?.publishedAt ?? null,
         cursor?.publishedAt ?? null,
         cursor?.publishedAt ?? null,
@@ -376,10 +388,14 @@ export class CharacterAssetRepository {
 
   async listFollowing(
     viewerUserId: string,
-    input: { limit?: number; cursor?: string } = {},
-  ): Promise<CharacterAssetPage> {
+    input: {
+      limit?: number;
+      cursor?: string;
+      type?: PublicAssetSnapshot["type"];
+    } = {},
+  ): Promise<PublicAssetPage> {
     const limit = Math.min(Math.max(input.limit ?? 24, 1), 100);
-    const scope = `following:${viewerUserId}`;
+    const scope = `following:${viewerUserId}:${input.type ?? "all"}`;
     const cursor = decodeAssetCursor(input.cursor, scope);
     const rows = await queryRows<AssetRow>(
       `${ASSET_SELECT}
@@ -390,6 +406,7 @@ export class CharacterAssetRepository {
              AND follows.followed_user_id = assets.author_user_id
          )
        )
+       AND (? IS NULL OR JSON_UNQUOTE(JSON_EXTRACT(versions.snapshot, '$.type')) = ?)
        AND (? IS NULL OR assets.published_at < ? OR
             (assets.published_at = ? AND assets.id < ?))
        ORDER BY assets.published_at DESC, assets.id DESC LIMIT ?`,
@@ -398,6 +415,8 @@ export class CharacterAssetRepository {
         viewerUserId,
         viewerUserId,
         viewerUserId,
+        input.type ?? null,
+        input.type ?? null,
         cursor?.publishedAt ?? null,
         cursor?.publishedAt ?? null,
         cursor?.publishedAt ?? null,
@@ -419,7 +438,7 @@ export class CharacterAssetRepository {
       `${ASSET_SELECT}
        WHERE assets.id = ? AND (
          assets.status = 'published' OR assets.author_user_id = ? OR
-         EXISTS (SELECT 1 FROM character_asset_installations visible_install
+         EXISTS (SELECT 1 FROM public_asset_installations visible_install
                  WHERE visible_install.asset_id = assets.id
                    AND visible_install.owner_user_id = ?)
        )`,
@@ -431,14 +450,14 @@ export class CharacterAssetRepository {
   async unlist(ownerUserId: string, assetId: string) {
     return withTransaction(async (connection) => {
       const asset = await queryOne<RowDataPacket & { id: string }>(
-        "SELECT id FROM character_assets WHERE id = ? AND author_user_id = ? FOR UPDATE",
+        "SELECT id FROM public_assets WHERE id = ? AND author_user_id = ? FOR UPDATE",
         [assetId, ownerUserId],
         connection,
       );
       if (!asset) return false;
       const now = Date.now();
       const result = await execute(
-        `UPDATE character_assets SET status = 'unlisted', unlisted_at = ?, updated_at = ?
+        `UPDATE public_assets SET status = 'unlisted', unlisted_at = ?, updated_at = ?
          WHERE id = ? AND author_user_id = ? AND status = 'published'`,
         [now, now, assetId, ownerUserId],
         connection,
@@ -454,19 +473,19 @@ export class CharacterAssetRepository {
       const asset = await queryOne<
         RowDataPacket & { status: "draft" | "published" | "unlisted" }
       >(
-        `SELECT status FROM character_assets
+        `SELECT status FROM public_assets
          WHERE id = ? AND author_user_id = ? FOR UPDATE`,
         [assetId, ownerUserId],
         connection,
       );
       if (!asset) return "not-found" as const;
-      if (!isDeletableCharacterAssetStatus(asset.status))
+      if (!isDeletablePublicAssetStatus(asset.status))
         return "not-deletable" as const;
 
       // An installation is only the update link. Removing it leaves the copied
       // agent, conversation, messages, runtime state and resource references intact.
       await execute(
-        "DELETE FROM character_asset_installations WHERE asset_id = ?",
+        "DELETE FROM public_asset_installations WHERE asset_id = ?",
         [assetId],
         connection,
       );
@@ -493,7 +512,7 @@ export class CharacterAssetRepository {
 
   async findVersion(assetId: string, versionId: string) {
     const row = await queryOne<VersionRow>(
-      `SELECT * FROM character_asset_versions WHERE asset_id = ? AND id = ?`,
+      `SELECT * FROM public_asset_versions WHERE asset_id = ? AND id = ?`,
       [assetId, versionId],
     );
     return row ? rowToVersion(row) : null;
@@ -503,7 +522,7 @@ export class CharacterAssetRepository {
     return queryOne<
       RowDataPacket & { id: string; agent_id: string; version_id: string }
     >(
-      `SELECT id, agent_id, version_id FROM character_asset_installations
+      `SELECT id, agent_id, version_id FROM public_asset_installations
        WHERE owner_user_id = ? AND asset_id = ?`,
       [ownerUserId, assetId],
     );
@@ -513,20 +532,20 @@ export class CharacterAssetRepository {
     ownerUserId: string;
     assetId: string;
     versionId: string;
-    snapshot: CharacterAssetSnapshot;
+    snapshot: PublicAssetSnapshot;
   }) {
     return withTransaction(async (connection) => {
       const existing = await queryOne<
         RowDataPacket & { id: string; agent_id: string; version_id: string }
       >(
-        `SELECT id, agent_id, version_id FROM character_asset_installations
+        `SELECT id, agent_id, version_id FROM public_asset_installations
          WHERE owner_user_id = ? AND asset_id = ? FOR UPDATE`,
         [input.ownerUserId, input.assetId],
         connection,
       );
       if (existing) return { ...existing, created: false };
       const asset = await queryOne<RowDataPacket & { status: string }>(
-        "SELECT status FROM character_assets WHERE id = ? FOR UPDATE",
+        "SELECT status FROM public_assets WHERE id = ? FOR UPDATE",
         [input.assetId],
         connection,
       );
@@ -545,7 +564,7 @@ export class CharacterAssetRepository {
         now,
       );
       await execute(
-        `INSERT INTO character_asset_installations
+        `INSERT INTO public_asset_installations
          (id, owner_user_id, asset_id, version_id, agent_id, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -590,13 +609,14 @@ export class CharacterAssetRepository {
     installationId: string;
     assetId: string;
     latestVersionId: string;
-    snapshot: CharacterAssetSnapshot;
+    snapshot: PublicAssetSnapshot;
+    worldProgressStrategy?: "preserve-compatible" | "reset";
   }) {
     return withTransaction(async (connection) => {
       const installation = await queryOne<
         RowDataPacket & { agent_id: string; version_id: string }
       >(
-        `SELECT agent_id, version_id FROM character_asset_installations
+        `SELECT agent_id, version_id FROM public_asset_installations
          WHERE id = ? AND owner_user_id = ? AND asset_id = ? FOR UPDATE`,
         [input.installationId, input.ownerUserId, input.assetId],
         connection,
@@ -616,15 +636,51 @@ export class CharacterAssetRepository {
       );
       if (!conversation) return null;
       const now = Date.now();
-      const state = reconcileInstalledPrimeRuntimeState(
-        parseJson<Record<string, unknown>>(conversation.runtime_state, {}),
-        input.snapshot,
-        now,
+      const currentState = parseJson<Record<string, unknown>>(
+        conversation.runtime_state,
+        {},
       );
-      const { memories: _memories, ...storedState } = state as Record<
-        string,
-        unknown
-      >;
+      let state: Record<string, unknown>;
+      let storedState: Record<string, unknown>;
+      if (input.snapshot.type === "prime-world") {
+        const active = await queryOne<RowDataPacket & { id: string }>(
+          `SELECT id FROM prime_world_runs
+           WHERE conversation_id = ? AND status IN ('queued', 'running') LIMIT 1`,
+          [conversation.id],
+          connection,
+        );
+        if (active) throw new Error("PUBLIC_ASSET_WORLD_RUN_ACTIVE");
+        if (input.worldProgressStrategy === "preserve-compatible") {
+          if (!input.snapshot.detail.stateSchema)
+            throw new Error("PUBLIC_ASSET_WORLD_STATE_INCOMPATIBLE");
+          const validate = compilePrimeWorldJsonSchema(
+            input.snapshot.detail.stateSchema,
+          );
+          if (!validate(currentState.variables))
+            throw new Error("PUBLIC_ASSET_WORLD_STATE_INCOMPATIBLE");
+          state = {
+            schemaVersion: 1,
+            variables: structuredClone(currentState.variables),
+            view: structuredClone(input.snapshot.detail.presentation.startView),
+            summaries:
+              currentState.summaries && typeof currentState.summaries === "object"
+                ? structuredClone(currentState.summaries)
+                : {},
+            updatedAt: now,
+          };
+        } else {
+          state = initialRuntimeState(input.snapshot, now);
+        }
+        storedState = state;
+      } else {
+        state = reconcileInstalledPrimeRuntimeState(
+          currentState,
+          input.snapshot,
+          now,
+        );
+        const { memories: _memories, ...withoutMemories } = state;
+        storedState = withoutMemories;
+      }
       await execute(
         "UPDATE agents SET type = ?, name = ?, definition = ?, updated_at = ? WHERE id = ?",
         [
@@ -648,14 +704,40 @@ export class CharacterAssetRepository {
         [JSON.stringify(storedState), now, installation.agent_id],
         connection,
       );
-      await syncScheduledRuns(connection, {
-        ownerUserId: input.ownerUserId,
-        conversationId: conversation.id,
-        state,
-        now,
-      });
+      if (input.snapshot.type === "prime-figure")
+        await syncScheduledRuns(connection, {
+          ownerUserId: input.ownerUserId,
+          conversationId: conversation.id,
+          state,
+          now,
+        });
+      if (input.snapshot.type === "prime-world") {
+        await execute(
+          "DELETE FROM prime_world_scheduled_events WHERE conversation_id = ?",
+          [conversation.id],
+          connection,
+        );
+        await execute(
+          "DELETE FROM prime_world_run_trace_entries WHERE conversation_id = ?",
+          [conversation.id],
+          connection,
+        );
+        await execute(
+          `DELETE resources FROM prime_world_run_resources resources
+           JOIN prime_world_runs runs ON runs.id = resources.run_id
+           WHERE runs.conversation_id = ?`,
+          [conversation.id],
+          connection,
+        );
+        if (input.worldProgressStrategy !== "preserve-compatible")
+          await execute(
+            "DELETE FROM prime_world_events WHERE conversation_id = ?",
+            [conversation.id],
+            connection,
+          );
+      }
       await execute(
-        `UPDATE character_asset_installations SET version_id = ?, updated_at = ?
+        `UPDATE public_asset_installations SET version_id = ?, updated_at = ?
          WHERE id = ?`,
         [input.latestVersionId, now, input.installationId],
         connection,
@@ -710,9 +792,9 @@ const DRAFT_SELECT = `SELECT assets.id, assets.author_user_id,
   assets.latest_version_id, latest.version_number AS latest_version_number,
   assets.draft_snapshot, assets.draft_recommended_runtime_config,
   assets.draft_dirty, assets.created_at, assets.updated_at
- FROM character_assets assets
+ FROM public_assets assets
  JOIN users ON users.id = assets.author_user_id
- LEFT JOIN character_asset_versions latest ON latest.id = assets.latest_version_id`;
+ LEFT JOIN public_asset_versions latest ON latest.id = assets.latest_version_id`;
 
 const ASSET_SELECT = `SELECT assets.id, assets.author_user_id,
   users.display_name, assets.status, assets.latest_version_id,
@@ -725,23 +807,23 @@ const ASSET_SELECT = `SELECT assets.id, assets.author_user_id,
   installations.id AS installation_id,
   installed_versions.version_number AS installed_version_number,
   assets.published_at, assets.updated_at
- FROM character_assets assets
+ FROM public_assets assets
  JOIN users ON users.id = assets.author_user_id
  JOIN social_objects social ON social.id = assets.id
- JOIN character_asset_versions versions ON versions.id = assets.latest_version_id
- LEFT JOIN character_asset_installations installations
+ JOIN public_asset_versions versions ON versions.id = assets.latest_version_id
+ LEFT JOIN public_asset_installations installations
    ON installations.asset_id = assets.id AND installations.owner_user_id = ?
- LEFT JOIN character_asset_versions installed_versions
+ LEFT JOIN public_asset_versions installed_versions
    ON installed_versions.id = installations.version_id`;
 
-function rowToSummary(row: AssetRow): CharacterAssetSummary {
+function rowToSummary(row: AssetRow): PublicAssetSummary {
   return {
     id: row.id,
     author: { id: row.author_user_id, displayName: row.display_name },
     status: row.status,
     latestVersionId: row.latest_version_id,
     latestVersionNumber: row.version_number,
-    snapshot: parseJson<CharacterAssetSnapshot>(row.snapshot, null as never),
+    snapshot: parseJson<PublicAssetSnapshot>(row.snapshot, null as never),
     hasRecommendedRuntimeConfig: Boolean(row.recommended_runtime_config),
     likeCount: row.like_count,
     commentCount: row.comment_count,
@@ -762,8 +844,8 @@ function rowToSummary(row: AssetRow): CharacterAssetSummary {
   };
 }
 
-export function rowToListItem(row: AssetRow): CharacterAssetListItem {
-  const snapshot = parseJson<CharacterAssetSnapshot>(
+export function rowToListItem(row: AssetRow): PublicAssetListItem {
+  const snapshot = parseJson<PublicAssetSnapshot>(
     row.snapshot,
     null as never,
   );
@@ -780,7 +862,10 @@ export function rowToListItem(row: AssetRow): CharacterAssetListItem {
       attributes: snapshot.attributes.slice(0, 2),
       tags: snapshot.tags.slice(0, 3),
       preview: truncatePreview(
-        snapshot.introduction || snapshot.detail.persona,
+        snapshot.introduction ||
+          (snapshot.type === "prime-world"
+            ? snapshot.detail.presentation.startView.title ?? snapshot.name
+            : snapshot.detail.persona),
         160,
       ),
     },
@@ -830,7 +915,7 @@ export function decodeAssetCursor(value: string | undefined, scope: string) {
       throw new Error();
     return { publishedAt: Number(parsed.p), id: parsed.id };
   } catch {
-    throw new CharacterAssetQueryError("分页游标无效或与当前查询不匹配。");
+    throw new PublicAssetQueryError("分页游标无效或与当前查询不匹配。");
   }
 }
 
@@ -849,9 +934,9 @@ export function truncatePreview(value: string, maxLength: number) {
     : `${normalized.slice(0, maxLength - 1)}…`;
 }
 
-export class CharacterAssetQueryError extends Error {}
+export class PublicAssetQueryError extends Error {}
 
-function rowToDetail(row: AssetRow): CharacterAssetDetail {
+function rowToDetail(row: AssetRow): PublicAssetDetail {
   const summary = rowToSummary(row);
   return {
     ...summary,
@@ -873,12 +958,12 @@ function rowToDetail(row: AssetRow): CharacterAssetDetail {
   };
 }
 
-function rowToDraft(row: DraftRow): CharacterAssetDraft {
+function rowToDraft(row: DraftRow): PublicAssetDraft {
   return {
     id: row.id,
     author: { id: row.author_user_id, displayName: row.display_name },
     status: row.status,
-    snapshot: parseJson<CharacterAssetSnapshot>(
+    snapshot: parseJson<PublicAssetSnapshot>(
       row.draft_snapshot,
       null as never,
     ),
@@ -909,13 +994,13 @@ async function replaceDraftResources(
   now: number,
 ) {
   await execute(
-    "DELETE FROM character_asset_draft_resources WHERE asset_id = ?",
+    "DELETE FROM public_asset_draft_resources WHERE asset_id = ?",
     [assetId],
     connection,
   );
   for (const resource of resources)
     await execute(
-      `INSERT INTO character_asset_draft_resources
+      `INSERT INTO public_asset_draft_resources
        (asset_id, resource_id, usage_kind, created_at) VALUES (?, ?, ?, ?)`,
       [assetId, resource.resourceId, resource.usageKind, now],
       connection,
@@ -927,7 +1012,7 @@ function rowToVersion(row: VersionRow) {
     id: row.id,
     assetId: row.asset_id,
     versionNumber: row.version_number,
-    snapshot: parseJson<CharacterAssetSnapshot>(row.snapshot, null as never),
+    snapshot: parseJson<PublicAssetSnapshot>(row.snapshot, null as never),
     recommendedRuntimeConfig: row.recommended_runtime_config
       ? parseJson<PublishedRuntimeRecommendation>(
           row.recommended_runtime_config,
@@ -943,7 +1028,7 @@ async function insertSnapshotAgent(
   ownerUserId: string,
   agentId: string,
   conversationId: string,
-  snapshot: CharacterAssetSnapshot,
+  snapshot: PublicAssetSnapshot,
   sourcePublicAssetId: string,
   now: number,
 ) {
@@ -974,7 +1059,8 @@ async function insertSnapshotAgent(
       agentId,
       snapshot.type,
       snapshot.name,
-      snapshot.introduction || snapshot.detail.persona,
+      snapshot.introduction ||
+        (snapshot.type === "prime-world" ? snapshot.name : snapshot.detail.persona),
       now,
       now,
     ],
@@ -992,15 +1078,16 @@ async function insertSnapshotAgent(
     [agentId, ownerUserId, conversationId, JSON.stringify(storedState), now],
     connection,
   );
-  await syncScheduledRuns(connection, {
-    ownerUserId,
-    conversationId,
-    state,
-    now,
-  });
+  if (snapshot.type === "prime-figure")
+    await syncScheduledRuns(connection, {
+      ownerUserId,
+      conversationId,
+      state,
+      now,
+    });
 }
 
-function snapshotToDefinition(snapshot: CharacterAssetSnapshot) {
+function snapshotToDefinition(snapshot: PublicAssetSnapshot) {
   return {
     type: snapshot.type,
     name: snapshot.name,
@@ -1018,7 +1105,15 @@ function snapshotToDefinition(snapshot: CharacterAssetSnapshot) {
   };
 }
 
-function initialRuntimeState(snapshot: CharacterAssetSnapshot, now: number) {
+function initialRuntimeState(snapshot: PublicAssetSnapshot, now: number) {
+  if (snapshot.type === "prime-world")
+    return {
+      schemaVersion: 1,
+      variables: structuredClone(snapshot.detail.initialState),
+      view: structuredClone(snapshot.detail.presentation.startView),
+      summaries: {},
+      updatedAt: now,
+    };
   if (snapshot.type !== "prime-figure") return {};
   return {
     variables: Object.fromEntries(
@@ -1041,7 +1136,7 @@ function initialRuntimeState(snapshot: CharacterAssetSnapshot, now: number) {
 
 export function reconcileInstalledPrimeRuntimeState(
   current: Record<string, unknown>,
-  snapshot: CharacterAssetSnapshot,
+  snapshot: PublicAssetSnapshot,
   now: number,
 ) {
   if (snapshot.type !== "prime-figure") return current;
@@ -1073,7 +1168,7 @@ async function copyVersionResourceReferences(
   await execute(
     `INSERT INTO agent_resources (agent_id, resource_id, usage_kind, created_at)
      SELECT ?, resource_id, usage_kind, ?
-     FROM character_asset_version_resources WHERE version_id = ?`,
+     FROM public_asset_version_resources WHERE version_id = ?`,
     [agentId, now, versionId],
     connection,
   );
@@ -1089,7 +1184,7 @@ function parseJson<T>(value: unknown, fallback: T): T {
   }
 }
 
-export function isDeletableCharacterAssetStatus(
+export function isDeletablePublicAssetStatus(
   status: "draft" | "published" | "unlisted",
 ) {
   return status === "draft" || status === "unlisted";

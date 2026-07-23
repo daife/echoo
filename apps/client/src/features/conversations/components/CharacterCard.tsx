@@ -84,7 +84,7 @@ export function CharacterCard({
         <button
           type="button"
           onClick={onOpenDetail}
-          aria-label={`查看 ${agent.name} 的公共角色详情`}
+          aria-label={`查看 ${agent.name} 的公共资产详情`}
           className="block w-full text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#c7b9ed]"
         >
           {identity}
