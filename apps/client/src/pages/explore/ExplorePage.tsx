@@ -6,10 +6,7 @@ import {
   MagnifyingGlass,
   SealCheck,
 } from "@phosphor-icons/react";
-import type {
-  Agent,
-  SocialPostSummary,
-} from "@echoo/shared";
+import type { Agent, SocialPostSummary } from "@echoo/shared";
 import type { PublicAssetListItem } from "@echoo/shared/public-assets";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
@@ -116,7 +113,9 @@ export function PublicAssetCatalog({
           !cancelled &&
           !(reason instanceof DOMException && reason.name === "AbortError")
         )
-          setError(reason instanceof Error ? reason.message : "加载公共资产失败。");
+          setError(
+            reason instanceof Error ? reason.message : "加载公共资产失败。",
+          );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -166,12 +165,14 @@ export function PublicAssetCatalog({
         </div>
       </header>
       <div className="flex flex-wrap gap-2">
-        {([
-          ["all", "全部"],
-          ["slice-figure", "切片角色"],
-          ["prime-figure", "本初角色"],
-          ["prime-world", "本初世界"],
-        ] as const).map(([value, label]) => (
+        {(
+          [
+            ["all", "全部"],
+            ["slice-figure", "切片角色"],
+            ["prime-figure", "本初角色"],
+            ["prime-world", "本初世界"],
+          ] as const
+        ).map(([value, label]) => (
           <button
             key={value}
             type="button"
@@ -303,11 +304,9 @@ export function PublicAssetCatalog({
               );
               setNextCursor(page.nextCursor);
             } catch (reason) {
-              if (
-                !(
-                  reason instanceof DOMException && reason.name === "AbortError"
-                )
-              )
+              if (!(
+                reason instanceof DOMException && reason.name === "AbortError"
+              ))
                 setLoadMoreError(
                   reason instanceof Error ? reason.message : "加载更多失败。",
                 );
@@ -337,12 +336,14 @@ export function ExplorePage({
   onOpenUser,
   onAgentInstalled,
   onRequireAuth,
+  refreshVersion = 0,
 }: {
   onOpenPost: (postId: string) => void;
   onOpenAsset: (assetId: string) => void;
   onOpenUser: (userId: string) => void;
   onAgentInstalled: (agent: Agent) => void;
   onRequireAuth: () => void;
+  refreshVersion?: number;
 }) {
   const auth = useAuth();
   const { socialService, publicAssetService } = useServices();
@@ -395,7 +396,14 @@ export function ExplorePage({
     return () => {
       cancelled = true;
     };
-  }, [auth.user, creationType, publicAssetService, socialService, tab]);
+  }, [
+    auth.user,
+    creationType,
+    publicAssetService,
+    refreshVersion,
+    socialService,
+    tab,
+  ]);
 
   return (
     <section className="mx-auto max-w-5xl space-y-7 pb-24">
@@ -428,12 +436,14 @@ export function ExplorePage({
       </div>
       {tab === "creations" ? (
         <div className="flex flex-wrap gap-2">
-          {([
-            ["all", "全部"],
-            ["slice-figure", "切片角色"],
-            ["prime-figure", "本初角色"],
-            ["prime-world", "本初世界"],
-          ] as const).map(([value, label]) => (
+          {(
+            [
+              ["all", "全部"],
+              ["slice-figure", "切片角色"],
+              ["prime-figure", "本初角色"],
+              ["prime-world", "本初世界"],
+            ] as const
+          ).map(([value, label]) => (
             <button
               key={value}
               type="button"
@@ -650,7 +660,8 @@ function PublicAssetCard({
         ) : null}
         <div className="absolute inset-0 bg-gradient-to-t from-[#111114] via-transparent to-transparent" />
         <span className="absolute left-5 top-5 flex items-center gap-2 rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[10px] text-white/65">
-          <SealCheck size={14} />v{asset.latestVersionNumber} · {assetTypeLabel(snapshot.type)}
+          <SealCheck size={14} />v{asset.latestVersionNumber} ·{" "}
+          {assetTypeLabel(snapshot.type)}
         </span>
         <div className="absolute bottom-5 left-6 right-6">
           <h2 className="text-3xl font-semibold text-white">{snapshot.name}</h2>
@@ -764,9 +775,7 @@ export function scheduleCharacterSearch(
   return () => globalThis.clearTimeout(timer);
 }
 
-export function assetTypeLabel(
-  type: PublicAssetListItem["snapshot"]["type"],
-) {
+export function assetTypeLabel(type: PublicAssetListItem["snapshot"]["type"]) {
   return type === "prime-figure"
     ? "本初角色"
     : type === "prime-world"

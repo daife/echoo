@@ -13,6 +13,8 @@ import {
   PaymentsApi,
   ChannelsApi,
   PrimeWorldApi,
+  ConversationsApi,
+  NotificationsApi,
 } from "@echoo/api-client";
 import { AgentService } from "../../services/AgentService";
 import { AuthService } from "../../services/AuthService";
@@ -24,6 +26,8 @@ import { SocialService } from "../../services/SocialService";
 import { RewardsService } from "../../services/RewardsService";
 import { RechargeService } from "../../services/RechargeService";
 import { PrimeWorldService } from "../../services/PrimeWorldService";
+import { ConversationService } from "../../services/ConversationService";
+import { NotificationService } from "../../services/NotificationService";
 
 export function initApp(runtime: RuntimeBundle) {
   let refreshPromise: Promise<string | null> | null = null;
@@ -42,15 +46,15 @@ export function initApp(runtime: RuntimeBundle) {
   });
 
   return {
+    conversationService: new ConversationService(new ConversationsApi(api)),
+    notificationService: new NotificationService(new NotificationsApi(api)),
     agentService: new AgentService(new AgentsApi(api)),
     primeWorldService: new PrimeWorldService(
       new PrimeWorldApi(api),
       new ResourcesApi(api),
       runtime.message,
     ),
-    publicAssetService: new PublicAssetService(
-      new PublicAssetsApi(api),
-    ),
+    publicAssetService: new PublicAssetService(new PublicAssetsApi(api)),
     authService: new AuthService(
       new AuthApi(api),
       runtime.auth,

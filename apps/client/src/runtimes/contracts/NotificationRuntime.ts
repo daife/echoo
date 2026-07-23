@@ -1,6 +1,10 @@
-import type { NotificationPayload } from "@echoo/shared";
+import type {
+  NotificationPayload,
+  NotificationPermissionState,
+} from "@echoo/shared/notifications";
 
 export interface NotificationRuntime {
+  getPermissionState(): Promise<NotificationPermissionState>;
   requestPermission(): Promise<boolean>;
-  showMessageNotification(payload: NotificationPayload): Promise<void>;
+  showNotification(payload: NotificationPayload): Promise<void>;
 }

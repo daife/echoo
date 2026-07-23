@@ -73,4 +73,28 @@ describe("ConversationRail identity", () => {
     expect(html).toContain("text-white/62");
     expect(html).not.toContain("bg-white text-[#09090b]");
   });
+
+  it("shows an accessible dot instead of a numeric badge for unread messages", () => {
+    const html = renderToStaticMarkup(
+      <ConversationRail
+        agents={[agent]}
+        conversations={[
+          {
+            id: agent.conversationId,
+            title: agent.name,
+            type: "slice-figure",
+            unreadCount: 3,
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        ]}
+        onOpenAgent={vi.fn()}
+        onOpenBindings={vi.fn()}
+        onOpenChat={vi.fn()}
+      />,
+    );
+    expect(html).toContain("小霁，有新消息");
+    expect(html).toContain("bg-[#ff5b63]");
+    expect(html).not.toContain(">3<");
+  });
 });

@@ -9,6 +9,8 @@ import { AgentRepository } from "../agents/agent.repository.js";
 import { PublicAssetService } from "../public-assets/public-asset.service.js";
 import { MessageRepository } from "../messaging/message.repository.js";
 import { ResourceRepository } from "../resources/resource.repository.js";
+import { ConversationRepository } from "../conversations/conversation.repository.js";
+import { NotificationRepository } from "../notifications/notification.repository.js";
 import {
   ChangeEventRepository,
   type ChangeEventRow,
@@ -21,18 +23,27 @@ export class SyncService {
     private readonly messages = new MessageRepository(),
     private readonly resources = new ResourceRepository(),
     private readonly assets = new PublicAssetService(),
+    private readonly conversations = new ConversationRepository(),
+    private readonly notifications = new NotificationRepository(),
   ) {}
 
   async bootstrap(ownerUserId: string): Promise<SyncBootstrap> {
-    const [agents, assets, cursor] = await Promise.all([
-      this.agents.listByOwner(ownerUserId),
-      this.assets.listMine(ownerUserId),
-      this.events.head(ownerUserId),
-    ]);
-    return { agents, assets, cursor };
+    const [agents, assets, conversations, notificationState, cursor] =
+      await Promise.all([
+        this.agents.listByOwner(ownerUserId),
+        this.assets.listMine(ownerUserId),
+        this.conversations.listByOwner(ownerUserId),
+        this.notifications.getState(ownerUserId),
+        this.events.head(ownerUserId),
+      ]);
+    return { agents, assets, conversations, notificationState, cursor };
   }
 
-  async list(ownerUserId: string, after = 0, requestedLimit = 500): Promise<SyncPage> {
+  async list(
+    ownerUserId: string,
+    after = 0,
+    requestedLimit = 500,
+  ): Promise<SyncPage> {
     const limit = Math.min(Math.max(Math.trunc(requestedLimit), 1), 500);
     const [headCursor, oldestCursor] = await Promise.all([
       this.events.head(ownerUserId),
@@ -79,7 +90,10 @@ export class SyncService {
 
   private async readEntity(row: ChangeEventRow): Promise<SyncEntity | null> {
     if (row.entity_type === "agent") {
-      const value = await this.agents.findById(row.owner_user_id, row.entity_id);
+      const value = await this.agents.findById(
+        row.owner_user_id,
+        row.entity_id,
+      );
       return value ? { entityType: "agent", value } : null;
     }
     if (row.entity_type === "message") {
@@ -98,13 +112,29 @@ export class SyncService {
         resourceId: resource.id,
         status: resource.status,
         mimeType: resource.mimeType,
-        ...(resource.byteSize !== undefined ? { byteSize: resource.byteSize } : {}),
+        ...(resource.byteSize !== undefined
+          ? { byteSize: resource.byteSize }
+          : {}),
         ...(resource.durationSeconds !== undefined
           ? { durationSeconds: resource.durationSeconds }
           : {}),
       };
       return { entityType: "resource", value };
     }
+    if (row.entity_type === "conversation") {
+      const value = await this.conversations.findByIdForOwner(
+        row.owner_user_id,
+        row.entity_id,
+      );
+      return value ? { entityType: "conversation", value } : null;
+    }
+    if (row.entity_type === "notification-state") {
+      return {
+        entityType: "notification-state",
+        value: await this.notifications.getState(row.owner_user_id),
+      };
+    }
+    if (row.entity_type !== "asset") return null;
     try {
       return {
         entityType: "asset",

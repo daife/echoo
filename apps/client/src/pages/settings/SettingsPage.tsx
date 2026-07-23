@@ -5,7 +5,8 @@ import type {
   UserRuntimeConfigView,
   WalletView,
 } from "@echoo/shared";
-import { ArrowLeft } from "@phosphor-icons/react";
+import type { NotificationPermissionState } from "@echoo/shared/notifications";
+import { ArrowLeft, BellSimple } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import {
@@ -24,11 +25,16 @@ export function SettingsPage({
   rewardsService,
   rechargeService,
   onBack,
+  notificationPermission,
 }: {
   runtimeConfigService: RuntimeConfigService;
   rewardsService: RewardsService;
   rechargeService: RechargeService;
   onBack: () => void;
+  notificationPermission: {
+    state: NotificationPermissionState;
+    request: () => Promise<boolean>;
+  };
 }) {
   const auth = useAuth();
   const [config, setConfig] = useState<UserRuntimeConfigView | null>(null);
@@ -99,7 +105,9 @@ export function SettingsPage({
     setError(null);
     setNotice(null);
     try {
-      const next = await runtimeConfigService.updateUserConfig({ primeWorld: patch });
+      const next = await runtimeConfigService.updateUserConfig({
+        primeWorld: patch,
+      });
       setConfig(next);
       setNotice(saveNotice("本初世界全局配置已保存。", next));
     } catch (caught) {
@@ -133,6 +141,30 @@ export function SettingsPage({
           onClick={() => void auth.signOut()}
         >
           退出登录
+        </button>
+      </div>
+      <div className="glass-panel flex flex-col gap-4 rounded-2xl p-5 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.035] text-white/65">
+            <BellSimple size={18} weight="fill" />
+          </span>
+          <div>
+            <h2 className="font-medium text-white">系统通知</h2>
+            <p className="mt-1 text-sm text-white/42">
+              {notificationPermissionLabel(notificationPermission.state)}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={
+            notificationPermission.state === "granted" ||
+            notificationPermission.state === "unsupported"
+          }
+          className="rounded-full border border-white/10 px-4 py-2 text-sm text-white/65 transition hover:border-white/20 hover:text-white disabled:cursor-default disabled:opacity-40"
+          onClick={() => void notificationPermission.request()}
+        >
+          {notificationPermission.state === "granted" ? "已开启" : "开启通知"}
         </button>
       </div>
       <div className="glass-panel rounded-2xl p-5">
@@ -185,10 +217,7 @@ export function SettingsPage({
         service={rechargeService}
         onWalletChanged={refreshWallet}
       />
-      <RewardCenter
-        service={rewardsService}
-        onWalletChanged={refreshWallet}
-      />
+      <RewardCenter service={rewardsService} onWalletChanged={refreshWallet} />
       <div className="glass-panel rounded-2xl p-5 md:p-6">
         <div className="mb-6">
           <h2 className="text-xl font-semibold text-white">用户全局运行配置</h2>
@@ -242,7 +271,12 @@ export function SettingsPage({
           />
         ) : null}
         {config && section === "prime-world" ? (
-          <PrimeWorldRuntimeConfigForm value={config.primeWorld} onSave={updateWorld} error={error} notice={notice}/>
+          <PrimeWorldRuntimeConfigForm
+            value={config.primeWorld}
+            onSave={updateWorld}
+            error={error}
+            notice={notice}
+          />
         ) : null}
         {!config && error ? (
           <p className="text-sm text-red-200/75">{error}</p>
@@ -250,6 +284,14 @@ export function SettingsPage({
       </div>
     </section>
   );
+}
+
+function notificationPermissionLabel(state: NotificationPermissionState) {
+  if (state === "granted") return "新消息和新动态会通过系统通知提醒你。";
+  if (state === "denied")
+    return "通知已被系统阻止，请在系统或浏览器设置中允许。";
+  if (state === "unsupported") return "当前环境不支持系统通知。";
+  return "开启后，应用在后台时也能收到提醒。";
 }
 
 function saveNotice(base: string, config: UserRuntimeConfigView) {

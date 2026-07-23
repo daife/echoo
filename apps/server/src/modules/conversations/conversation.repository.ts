@@ -45,17 +45,65 @@ export class ConversationRepository {
     incrementUnread?: boolean;
     unreadIncrement?: number;
   }) {
-    await execute(
-      `UPDATE conversations SET last_message_preview = ?, unread_count = unread_count + ?, updated_at = ?
-       WHERE owner_user_id = ? AND id = ?`,
-      [
-        truncatePreview(input.preview),
-        input.unreadIncrement ?? (input.incrementUnread ? 1 : 0),
-        input.updatedAt,
-        input.ownerUserId,
-        input.conversationId,
-      ],
-    );
+    const unreadIncrement =
+      input.unreadIncrement ?? (input.incrementUnread ? 1 : 0);
+    await withTransaction(async (connection) => {
+      await execute(
+        `UPDATE conversations SET last_message_preview = ?, unread_count = unread_count + ?, updated_at = ?
+         WHERE owner_user_id = ? AND id = ?`,
+        [
+          truncatePreview(input.preview),
+          unreadIncrement,
+          input.updatedAt,
+          input.ownerUserId,
+          input.conversationId,
+        ],
+        connection,
+      );
+      if (unreadIncrement > 0)
+        await this.events.append(
+          {
+            ownerUserId: input.ownerUserId,
+            entityType: "conversation",
+            entityId: input.conversationId,
+            conversationId: input.conversationId,
+            operation: "upsert",
+            createdAt: input.updatedAt,
+          },
+          connection,
+        );
+    });
+  }
+
+  async markRead(ownerUserId: string, conversationId: string) {
+    return withTransaction(async (connection) => {
+      const row = await queryOne<ConversationRow>(
+        `SELECT * FROM conversations
+         WHERE owner_user_id = ? AND id = ? FOR UPDATE`,
+        [ownerUserId, conversationId],
+        connection,
+      );
+      if (!row) return null;
+      if (row.unread_count > 0) {
+        await execute(
+          `UPDATE conversations SET unread_count = 0
+           WHERE owner_user_id = ? AND id = ?`,
+          [ownerUserId, conversationId],
+          connection,
+        );
+        await this.events.append(
+          {
+            ownerUserId,
+            entityType: "conversation",
+            entityId: conversationId,
+            conversationId,
+            operation: "upsert",
+          },
+          connection,
+        );
+      }
+      return rowToConversation({ ...row, unread_count: 0 });
+    });
   }
   async deleteForOwner(ownerUserId: string, conversationId: string) {
     return withTransaction(async (connection) => {

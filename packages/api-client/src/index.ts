@@ -13,3 +13,5 @@ export * from "./users";
 export * from "./rewards";
 export * from "./payments";
 export * from "./channels";
+export * from "./conversations";
+export * from "./notifications";

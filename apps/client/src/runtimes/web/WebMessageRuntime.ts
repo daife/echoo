@@ -299,6 +299,28 @@ export class WebMessageRuntime implements MessageRuntime {
             createdAt: now,
           }),
         );
+        bootstrap.conversations.forEach((value) =>
+          this.applySyncChange({
+            cursor: bootstrap.cursor,
+            entityType: "conversation",
+            entityId: value.id,
+            conversationId: value.id,
+            operation: "upsert",
+            entity: { entityType: "conversation", value },
+            createdAt: now,
+          }),
+        );
+        this.applySyncChange({
+          cursor: bootstrap.cursor,
+          entityType: "notification-state",
+          entityId: "activity",
+          operation: "upsert",
+          entity: {
+            entityType: "notification-state",
+            value: bootstrap.notificationState,
+          },
+          createdAt: now,
+        });
         cursor = bootstrap.cursor;
         break;
       }

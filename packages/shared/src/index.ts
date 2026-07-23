@@ -3,7 +3,6 @@ export * from "./constants/messageStatus.js";
 export * from "./constants/storageKeys.js";
 export * from "./constants/syncKeys.js";
 export * from "./protocol/app-ws-events.js";
-export * from "./protocol/notification-payload.js";
 export * from "./prompts/figure-system-prompt.js";
 export * from "./types/auth.js";
 export * from "./types/agent.js";

@@ -13,6 +13,10 @@
     "./public-assets": {
       "types": "./dist/domains/public-assets/index.d.ts",
       "import": "./dist/domains/public-assets/index.js"
+    },
+    "./notifications": {
+      "types": "./dist/domains/notifications/index.d.ts",
+      "import": "./dist/domains/notifications/index.js"
     }
   },
   "scripts": {

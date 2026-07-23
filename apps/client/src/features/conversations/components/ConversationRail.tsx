@@ -1,9 +1,10 @@
 import { LinkSimple } from "@phosphor-icons/react";
-import type { Agent } from "@echoo/shared";
+import type { Agent, Conversation } from "@echoo/shared";
 import { IdentityAvatar } from "../../../shared/components/IdentityAvatar";
 
 export function ConversationRail({
   agents,
+  conversations = [],
   selectedAgentId,
   layout = "desktop",
   isBindingsActive = false,
@@ -12,6 +13,7 @@ export function ConversationRail({
   onOpenChat,
 }: {
   agents: Agent[];
+  conversations?: Conversation[];
   selectedAgentId?: string;
   layout?: "desktop" | "mobile";
   isBindingsActive?: boolean;
@@ -19,12 +21,21 @@ export function ConversationRail({
   onOpenBindings: () => void;
   onOpenChat: () => void;
 }) {
-  const visibleConversations = agents.map((agent) => ({
-    name: agent.name,
-    text: agent.introduction || getAgentFallbackText(agent),
-    unread: 0,
-    agent,
-  }));
+  const byId = new Map(
+    conversations.map((conversation) => [conversation.id, conversation]),
+  );
+  const visibleConversations = agents.map((agent) => {
+    const conversation = byId.get(agent.conversationId);
+    return {
+      name: agent.name,
+      text:
+        conversation?.lastMessagePreview ??
+        agent.introduction ??
+        getAgentFallbackText(agent),
+      unread: (conversation?.unreadCount ?? 0) > 0,
+      agent,
+    };
+  });
 
   return (
     <aside
@@ -89,6 +100,7 @@ export function ConversationRail({
               <button
                 key={conversation.agent.id}
                 aria-current={active ? "page" : undefined}
+                aria-label={`${conversation.name}${conversation.unread ? "，有新消息" : ""}`}
                 className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition active:translate-y-px ${
                   active
                     ? "border-white/70 bg-white/[0.035] text-white"
@@ -110,10 +122,11 @@ export function ConversationRail({
                     <div className="truncate text-sm font-medium text-white">
                       {conversation.name}
                     </div>
-                    {conversation.unread > 0 ? (
-                      <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-[#09090b]">
-                        {conversation.unread}
-                      </span>
+                    {conversation.unread ? (
+                      <span
+                        aria-hidden="true"
+                        className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#ff5b63] shadow-[0_0_0_3px_rgba(255,91,99,0.12)]"
+                      />
                     ) : null}
                   </div>
                   <p

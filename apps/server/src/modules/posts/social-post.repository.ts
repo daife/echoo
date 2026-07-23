@@ -7,6 +7,7 @@ import {
   withTransaction,
 } from "../../infra/database/mysql.js";
 import { createId } from "../../shared/utils/id.js";
+import { NotificationRepository } from "../notifications/notification.repository.js";
 
 interface PostRow extends RowDataPacket {
   id: string;
@@ -30,10 +31,12 @@ interface ImageRow extends RowDataPacket {
 }
 
 export class SocialPostRepository {
+  constructor(private readonly notifications = new NotificationRepository()) {}
+
   async create(authorUserId: string, body: string, resourceIds: string[]) {
     const id = createId("post");
     const now = Date.now();
-    await withTransaction(async (connection) => {
+    const notifiedFollowers = await withTransaction(async (connection) => {
       await execute(
         `INSERT INTO social_objects
          (id, object_type, like_count, comment_count, created_at, updated_at)
@@ -48,7 +51,13 @@ export class SocialPostRepository {
         connection,
       );
       await replaceImages(connection, id, resourceIds, now);
+      return this.notifications.markActivityUnreadForFollowers(
+        authorUserId,
+        now,
+        connection,
+      );
     });
+    if (notifiedFollowers) this.notifications.wakeDispatcher();
     return id;
   }
 

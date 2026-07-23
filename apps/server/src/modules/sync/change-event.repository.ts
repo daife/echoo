@@ -50,13 +50,17 @@ export class ChangeEventRepository {
       ],
       connection,
     );
+    this.wake();
+    return result.insertId;
+  }
+
+  wake() {
     const wakeTimer = setTimeout(() => {
       void getRedis()
-        .then((redis) => redis.publish(CHANGE_EVENT_WAKE_CHANNEL, String(result.insertId)))
+        .then((redis) => redis.publish(CHANGE_EVENT_WAKE_CHANNEL, "1"))
         .catch(() => undefined);
     }, 25);
     wakeTimer.unref();
-    return result.insertId;
   }
 
   listAfter(ownerUserId: string, after: number, limit: number) {
@@ -104,17 +108,20 @@ export class ChangeEventRepository {
   }
 
   async outboxMetrics(now = Date.now()) {
-    const row = await queryOne<RowDataPacket & {
-      pending: number;
-      oldest_created_at: number | null;
-    }>(
+    const row = await queryOne<
+      RowDataPacket & {
+        pending: number;
+        oldest_created_at: number | null;
+      }
+    >(
       `SELECT COUNT(*) AS pending, MIN(created_at) AS oldest_created_at
        FROM change_events WHERE published_at IS NULL`,
     );
     const oldest = row?.oldest_created_at;
     return {
       pending: Number(row?.pending ?? 0),
-      oldestPendingAgeMs: oldest == null ? 0 : Math.max(0, now - Number(oldest)),
+      oldestPendingAgeMs:
+        oldest == null ? 0 : Math.max(0, now - Number(oldest)),
     };
   }
 }

@@ -33,6 +33,8 @@ import { useAuth } from "./providers/AuthProvider";
 import { useRuntime } from "./providers/RuntimeProvider";
 import { BindingsPanel } from "../features/bindings/components/BindingsPanel";
 import { ConversationRail } from "../features/conversations/components/ConversationRail";
+import { NotificationPermissionPrompt } from "../features/notifications/NotificationPermissionPrompt";
+import { useNotificationCenter } from "../features/notifications/useNotificationCenter";
 import { AuthPage } from "../pages/auth/AuthPage";
 import { CreateAgentPage } from "../pages/create-agent/CreateAgentPage";
 import { ExplorePage } from "../pages/explore/ExplorePage";
@@ -189,6 +191,12 @@ export function App() {
   );
   const showMobileConversationList =
     !!auth.user && shouldShowMobileConversationList(view, !!selectedAgent);
+  const notificationCenter = useNotificationCenter({
+    userId: auth.user?.id,
+    activeView: view,
+    activeConversationId:
+      view === "messages" ? selectedAgent?.conversationId : undefined,
+  });
 
   useLayoutEffect(() => {
     const position = pendingScrollPositionRef.current;
@@ -375,12 +383,16 @@ export function App() {
     void services.agentService.cacheAgents(auth.user.id, myAgents);
   }, [auth.user, myAgents, services.agentService]);
 
-  const openAgent = useCallback((agent: Agent) => {
-    setNavigationHistory([]);
-    setActivePrimaryView("messages");
-    setSelectedAgent(agent);
-    setView("messages");
-  }, []);
+  const openAgent = useCallback(
+    (agent: Agent) => {
+      notificationCenter.markConversationRead(agent.conversationId);
+      setNavigationHistory([]);
+      setActivePrimaryView("messages");
+      setSelectedAgent(agent);
+      setView("messages");
+    },
+    [notificationCenter.markConversationRead],
+  );
 
   const handleAgentInstalled = useCallback((agent: Agent) => {
     setMyAgents((current) => [
@@ -686,6 +698,7 @@ export function App() {
           onOpenUser={openPublicProfile}
           onAgentInstalled={handleAgentInstalled}
           onRequireAuth={() => setView("auth")}
+          refreshVersion={notificationCenter.activityRefreshVersion}
         />
       );
     if (view === "public-editor" && editingPublicAsset)
@@ -820,6 +833,10 @@ export function App() {
           rewardsService={services.rewardsService}
           rechargeService={services.rechargeService}
           onBack={closeSettings}
+          notificationPermission={{
+            state: notificationCenter.permissionState,
+            request: notificationCenter.requestPermission,
+          }}
         />
       );
     return (
@@ -854,6 +871,7 @@ export function App() {
     publicAssets,
     editingPublicAsset,
     openConversationList,
+    openAgent,
     openSettings,
     protectedView,
     selectedAgent,
@@ -861,6 +879,9 @@ export function App() {
     selectedAssetId,
     selectedUserId,
     navigationHistory,
+    notificationCenter.activityRefreshVersion,
+    notificationCenter.permissionState,
+    notificationCenter.requestPermission,
     view,
   ]);
 
@@ -887,11 +908,17 @@ export function App() {
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = activeNavView === item.id;
+              const unread =
+                item.id === "messages"
+                  ? notificationCenter.hasUnreadMessages
+                  : item.id === "explore"
+                    ? notificationCenter.notificationState.activityUnread
+                    : false;
               return (
                 <button
                   key={item.id}
-                  aria-label={item.label}
-                  className={`flex h-11 w-11 items-center justify-center rounded-lg transition active:translate-y-px ${
+                  aria-label={`${item.label}${unread ? "，有新内容" : ""}`}
+                  className={`relative flex h-11 w-11 items-center justify-center rounded-lg transition active:translate-y-px ${
                     active
                       ? "bg-white text-[#09090b] luminous-ring"
                       : "text-white/50 hover:bg-white/[0.06] hover:text-white"
@@ -899,6 +926,7 @@ export function App() {
                   onClick={() => navigatePrimary(item.id)}
                 >
                   <Icon size={22} weight={active ? "fill" : "regular"} />
+                  {unread ? <UnreadDot /> : null}
                 </button>
               );
             })}
@@ -908,6 +936,7 @@ export function App() {
         {showConversationRail ? (
           <ConversationRail
             agents={myAgents}
+            conversations={notificationCenter.conversations}
             selectedAgentId={
               view === "messages" ? selectedAgent?.id : undefined
             }
@@ -921,6 +950,7 @@ export function App() {
         {showMobileConversationList ? (
           <ConversationRail
             agents={myAgents}
+            conversations={notificationCenter.conversations}
             selectedAgentId={
               view === "messages" ? selectedAgent?.id : undefined
             }
@@ -947,11 +977,17 @@ export function App() {
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = activeNavView === item.id;
+            const unread =
+              item.id === "messages"
+                ? notificationCenter.hasUnreadMessages
+                : item.id === "explore"
+                  ? notificationCenter.notificationState.activityUnread
+                  : false;
             return (
               <button
                 key={item.id}
-                aria-label={item.label}
-                className={`flex h-11 w-11 items-center justify-center rounded-full transition active:scale-95 ${
+                aria-label={`${item.label}${unread ? "，有新内容" : ""}`}
+                className={`relative flex h-11 w-11 items-center justify-center rounded-full transition active:scale-95 ${
                   active
                     ? "bg-white text-[#09090b]"
                     : "text-white/55 hover:text-white"
@@ -963,12 +999,31 @@ export function App() {
                 }
               >
                 <Icon size={22} weight={active ? "fill" : "regular"} />
+                {unread ? <UnreadDot /> : null}
               </button>
             );
           })}
         </nav>
       ) : null}
+      {notificationCenter.shouldPromptPermission ? (
+        <NotificationPermissionPrompt
+          onEnable={async () => {
+            if (await notificationCenter.requestPermission())
+              notificationCenter.dismissPrompt();
+          }}
+          onDismiss={notificationCenter.dismissPrompt}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function UnreadDot() {
+  return (
+    <span
+      aria-hidden="true"
+      className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-[#0d0d10] bg-[#ff5b63]"
+    />
   );
 }
 

@@ -3,6 +3,7 @@ package com.echoo.keepalive.socket
 import android.content.Context
 import com.echoo.keepalive.auth.AndroidTokenStore
 import com.echoo.keepalive.notify.NotifyHelper
+import com.echoo.keepalive.notify.NotificationChannels
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -137,18 +138,41 @@ object SocketManager {
         val cursor = change.optLong("cursor")
         if (cursor <= AndroidTokenStore.cursor(context)) return
         AndroidTokenStore.saveCursor(context, cursor)
-        if (change.optString("entityType") != "message" || change.optString("operation") != "upsert") return
-        val message = change.optJSONObject("entity")?.optJSONObject("value") ?: return
-        if (message.optString("role") != "assistant") return
-        val content = message.optJSONObject("content")
-        val id = message.optString("id")
-        if (id.isBlank()) return
-        NotifyHelper.showMessageNotification(
-            context,
-            "Echoo",
-            content?.optString("text")?.takeIf { it.isNotBlank() } ?: "New message",
-            id
-        )
+        if (change.optString("operation") != "upsert") return
+        val entity = change.optJSONObject("entity") ?: return
+        val value = entity.optJSONObject("value") ?: return
+        when (change.optString("entityType")) {
+            "conversation" -> {
+                val id = value.optString("id")
+                if (id.isBlank()) return
+                val notificationId = "conversation:$id"
+                if (value.optInt("unreadCount") <= 0) {
+                    NotifyHelper.cancel(context, notificationId)
+                    return
+                }
+                val name = value.optString("title").ifBlank { "角色" }
+                NotifyHelper.showNotification(
+                    context,
+                    notificationId,
+                    NotificationChannels.MESSAGE_CHANNEL_ID,
+                    "Echoo",
+                    "${name}发来一条新消息"
+                )
+            }
+            "notification-state" -> {
+                if (!value.optBoolean("activityUnread")) {
+                    NotifyHelper.cancel(context, "activity")
+                    return
+                }
+                NotifyHelper.showNotification(
+                    context,
+                    "activity",
+                    NotificationChannels.ACTIVITY_CHANNEL_ID,
+                    "Echoo",
+                    "你有一条新的动态待查看"
+                )
+            }
+        }
     }
 
     private fun ensureAccessToken(context: Context): String? {

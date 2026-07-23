@@ -30,6 +30,7 @@ import { registerSocialRoutes } from "./modules/social/social.controller.js";
 import { registerSocialPostRoutes } from "./modules/posts/social-post.controller.js";
 import { registerUsersRoutes } from "./modules/users/users.controller.js";
 import { registerSyncRoutes } from "./modules/sync/sync.controller.js";
+import { registerNotificationRoutes } from "./modules/notifications/notification.controller.js";
 import { ChangeEventDispatcher } from "./modules/sync/change-event.dispatcher.js";
 import { ChangeEventRepository } from "./modules/sync/change-event.repository.js";
 import { wsSessionManager } from "./modules/realtime/ws-session-manager.js";
@@ -124,6 +125,7 @@ export async function buildApp() {
   await app.register(registerSocialPostRoutes, { prefix: "/api" });
   await app.register(registerUsersRoutes, { prefix: "/api" });
   await app.register(registerSyncRoutes, { prefix: "/api" });
+  await app.register(registerNotificationRoutes, { prefix: "/api" });
   await app.register(registerAdminRoutes, { prefix: "/api/admin" });
   await app.register(registerRealtimeGateway);
   app.addHook("onReady", async () => {

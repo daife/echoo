@@ -13,6 +13,10 @@ export class ConversationsService {
     return this.repository.listByOwner(ownerUserId);
   }
 
+  markRead(ownerUserId: string, conversationId: string) {
+    return this.repository.markRead(ownerUserId, conversationId);
+  }
+
   async deleteConversation(ownerUserId: string, conversationId: string) {
     if (!(await this.repository.findByIdForOwner(ownerUserId, conversationId)))
       return false;

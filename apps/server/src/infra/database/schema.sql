@@ -355,6 +355,15 @@ CREATE TABLE IF NOT EXISTS user_follows (
   CONSTRAINT chk_user_follows_not_self CHECK (follower_user_id <> followed_user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS user_notification_states (
+  user_id VARCHAR(64) PRIMARY KEY,
+  activity_unread BOOLEAN NOT NULL DEFAULT FALSE,
+  activity_updated_at BIGINT NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  CONSTRAINT fk_user_notification_states_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS social_posts (
   id VARCHAR(64) PRIMARY KEY,
   author_user_id VARCHAR(64) NOT NULL,
@@ -670,7 +679,7 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE TABLE IF NOT EXISTS change_events (
   seq BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   owner_user_id VARCHAR(64) NOT NULL,
-  entity_type ENUM('agent', 'message', 'resource', 'asset') NOT NULL,
+  entity_type ENUM('agent', 'message', 'resource', 'asset', 'conversation', 'notification-state') NOT NULL,
   entity_id VARCHAR(96) NOT NULL,
   conversation_id VARCHAR(64) NULL,
   operation ENUM('upsert', 'delete') NOT NULL,

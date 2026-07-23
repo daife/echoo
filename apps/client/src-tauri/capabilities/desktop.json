@@ -3,5 +3,5 @@
   "identifier": "desktop",
   "description": "Desktop realtime and storage permissions",
   "windows": ["main"],
-  "permissions": ["core:default", "keepalive:default"]
+  "permissions": ["core:default", "keepalive:default", "notification:default"]
 }
