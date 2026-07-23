@@ -25,8 +25,25 @@ export class ResourcesApi {
     return this.client.post<MediaUploadTicket>("/resources/uploads", input);
   }
 
-  upload(ticket: MediaUploadTicket, blob: Blob) {
-    return this.client.putBinary(ticket.uploadUrl, blob, ticket.uploadHeaders);
+  async upload(ticket: MediaUploadTicket, blob: Blob) {
+    try {
+      await this.client.putBinary(
+        ticket.uploadUrl,
+        blob,
+        ticket.uploadHeaders,
+      );
+    } catch (error) {
+      // A presigned object-storage URL can reject an embedded WebView origin even
+      // when the same bucket CORS policy accepts the public web application.
+      // The authenticated API upload route is deliberately kept as a fallback
+      // for native shells and for temporarily unavailable direct uploads.
+      if (!/^https?:\/\//i.test(ticket.uploadUrl)) throw error;
+      await this.client.putBinary(
+        `resources/${ticket.resourceId}/content`,
+        blob,
+        { "Content-Type": "application/octet-stream" },
+      );
+    }
   }
 
   complete(resourceId: string) {

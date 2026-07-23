@@ -290,10 +290,23 @@ Cloudflare Origin Certificate 只被 Cloudflare 信任；直接用服务器 IP �
 ```json
 [
   {
-    "AllowedOrigins": ["https://www.echooo.uk"],
-    "AllowedMethods": ["GET", "PUT", "HEAD"],
-    "AllowedHeaders": ["Content-Type"],
-    "ExposeHeaders": ["ETag"],
+    "AllowedOrigins": [
+      "https://echooo.uk",
+      "https://www.echooo.uk",
+      "https://app.echooo.uk",
+      "https://tauri.localhost"
+    ],
+    "AllowedMethods": [
+      "GET",
+      "PUT",
+      "HEAD"
+    ],
+    "AllowedHeaders": [
+      "Content-Type"
+    ],
+    "ExposeHeaders": [
+      "ETag"
+    ],
     "MaxAgeSeconds": 3600
   }
 ]
