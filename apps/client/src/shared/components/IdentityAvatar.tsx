@@ -26,8 +26,8 @@ export function IdentityAvatar({
           <MediaAsset
             mediaUrl={mediaUrl}
             variant={variant}
-            containerClassName="h-full w-full bg-transparent"
-            className="h-full w-full object-cover"
+            containerClassName="h-full w-full overflow-hidden rounded-full bg-transparent"
+            className="h-full w-full rounded-full object-cover"
             alt={alt}
             fallbackLabel=""
           />

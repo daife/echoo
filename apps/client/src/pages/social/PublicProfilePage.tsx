@@ -166,23 +166,10 @@ export function PublicProfilePage({
         </button>
       </div>
       {tab === "creations" ? (
-        <div className="flex flex-wrap gap-2">
-          {([
-            ["all", "全部"],
-            ["slice-figure", "切片角色"],
-            ["prime-figure", "本初角色"],
-            ["prime-world", "本初世界"],
-          ] as const).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setAssetType(value)}
-              className={`rounded-full border px-4 py-2 text-xs ${assetType === value ? "border-white bg-white text-black" : "border-white/10 text-white/50"}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <PublicProfileAssetFilters
+          assetType={assetType}
+          onChange={setAssetType}
+        />
       ) : null}
       {tab === "posts" ? (
         <div className="mx-auto max-w-3xl space-y-5">
@@ -255,6 +242,34 @@ export function PublicProfilePage({
         />
       ) : null}
     </section>
+  );
+}
+
+export function PublicProfileAssetFilters({
+  assetType,
+  onChange,
+}: {
+  assetType: "all" | Agent["type"];
+  onChange: (assetType: "all" | Agent["type"]) => void;
+}) {
+  return (
+    <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
+      {([
+        ["all", "全部"],
+        ["slice-figure", "切片角色"],
+        ["prime-figure", "本初角色"],
+        ["prime-world", "本初世界"],
+      ] as const).map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => onChange(value)}
+          className={`shrink-0 rounded-full border px-4 py-2 text-xs ${assetType === value ? "border-white bg-white text-black" : "border-white/10 text-white/50"}`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
   );
 }
 
