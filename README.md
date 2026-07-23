@@ -31,6 +31,10 @@ pnpm dev:server
 Environment variables, administrator settings, and user runtime settings are
 separated by lifecycle and ownership. See [docs/configuration.md](docs/configuration.md).
 
+For the Ubuntu production deployment of `www.echooo.uk` (Nginx, systemd,
+Docker Compose, and Cloudflare R2), see
+[docs/production-deployment.md](docs/production-deployment.md).
+
 The client uses the Luminous Monochrome design direction from `reference/frontend-refer`.
 The Android keepalive plugin owns the connection only while the WebView is in the background. Foreground restoration stops the native socket first and uses the durable cursor stream to fill the handoff window.
 
