@@ -164,7 +164,7 @@ export function PublicAssetCatalog({
           ) : null}
         </div>
       </header>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
         {(
           [
             ["all", "全部"],
@@ -177,7 +177,7 @@ export function PublicAssetCatalog({
             key={value}
             type="button"
             onClick={() => setAssetType(value)}
-            className={`rounded-full border px-4 py-2 text-xs ${assetType === value ? "border-white bg-white text-black" : "border-white/10 text-white/50"}`}
+            className={`shrink-0 rounded-full border px-4 py-2 text-xs ${assetType === value ? "border-white bg-white text-black" : "border-white/10 text-white/50"}`}
           >
             {label}
           </button>
@@ -435,7 +435,7 @@ export function ExplorePage({
         </button>
       </div>
       {tab === "creations" ? (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
           {(
             [
               ["all", "全部"],
@@ -448,7 +448,7 @@ export function ExplorePage({
               key={value}
               type="button"
               onClick={() => setCreationType(value)}
-              className={`rounded-full border px-4 py-2 text-xs ${creationType === value ? "border-white bg-white text-black" : "border-white/10 text-white/50"}`}
+              className={`shrink-0 rounded-full border px-4 py-2 text-xs ${creationType === value ? "border-white bg-white text-black" : "border-white/10 text-white/50"}`}
             >
               {label}
             </button>
