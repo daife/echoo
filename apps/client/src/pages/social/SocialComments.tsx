@@ -2,6 +2,7 @@ import { PaperPlaneTilt } from "@phosphor-icons/react";
 import type { SocialComment } from "@echoo/shared";
 import { useEffect, useMemo, useState } from "react";
 import type { SocialService } from "../../services/SocialService";
+import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
 import { formatDate } from "./PostCard";
 
 export function SocialComments({
@@ -98,9 +99,15 @@ export function SocialComments({
         <button
           type="button"
           onClick={() => onOpenUser?.(comment.author.id)}
-          className="font-medium text-white/72 hover:text-white"
+          className="flex items-center gap-2 font-medium text-white/72 hover:text-white"
         >
-          {comment.author.displayName}
+          <IdentityAvatar
+            mediaUrl={comment.author.avatarUrl}
+            alt=""
+            className="h-7 w-7"
+            isAdmin={comment.author.isAdmin}
+          />
+          <span>{comment.author.displayName}</span>
         </button>
         <span className="text-white/25">{formatDate(comment.createdAt)}</span>
       </div>

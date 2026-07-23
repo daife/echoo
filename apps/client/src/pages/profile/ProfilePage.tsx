@@ -109,6 +109,7 @@ export function ProfilePage({
             alt={auth.user ? `${auth.user.displayName}的头像` : "用户头像"}
             variant="display"
             className="h-36 w-36 border-white/18 shadow-[0_0_48px_rgba(255,255,255,0.12)] md:h-40 md:w-40"
+            isAdmin={auth.user?.isAdmin}
           />
           <h1 className="mt-6 text-4xl font-semibold text-white md:text-5xl">
             {auth.user?.displayName ?? ""}
@@ -665,6 +666,7 @@ export function ProfileEditorDialog({
             alt={`${displayName || user.displayName}的头像预览`}
             variant="display"
             className="h-28 w-28 border-white/18 shadow-[0_0_34px_rgba(255,255,255,0.09)]"
+            isAdmin={user.isAdmin}
           />
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             <label className="cursor-pointer rounded-full bg-white px-4 py-2 text-xs font-medium text-[#09090b] transition active:scale-95 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-white">

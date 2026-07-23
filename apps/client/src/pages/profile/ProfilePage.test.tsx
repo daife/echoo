@@ -14,6 +14,7 @@ vi.mock("../../app/providers/AuthProvider", () => ({
       email: "aether@example.test",
       displayName: "Aether",
       signature: "安静地共创角色。",
+      isAdmin: false,
       createdAt: 1,
     },
   }),
@@ -72,6 +73,7 @@ describe("ProfileEditorDialog", () => {
           displayName: "Aether",
           signature: "安静地共创角色。",
           avatarUrl: "/api/resources/avatar/file",
+          isAdmin: false,
           createdAt: 1,
         }}
         onClose={vi.fn()}

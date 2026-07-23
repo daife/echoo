@@ -85,10 +85,16 @@ export function PostDetailPage({
                   mediaUrl={post.author.avatarUrl}
                   alt=""
                   className="h-11 w-11"
+                  isAdmin={post.author.isAdmin}
                 />
                 <span>
-                  <span className="block text-sm font-medium text-white">
-                    {post.author.displayName}
+                  <span className="flex items-center gap-2 text-sm font-medium text-white">
+                    <span>{post.author.displayName}</span>
+                    {post.author.isAdmin ? (
+                      <span className="rounded-full bg-[#d8c7ff]/12 px-2 py-0.5 text-[10px] font-semibold text-[#d8c7ff]">
+                        管理员
+                      </span>
+                    ) : null}
                   </span>
                   <span className="text-[11px] text-white/30">
                     {formatDate(post.createdAt)}

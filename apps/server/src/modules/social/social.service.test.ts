@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  SocialActionForbiddenError,
-  SocialService,
-} from "./social.service.js";
+import { SocialActionForbiddenError, SocialService } from "./social.service.js";
 
 test("generic social actions accept public posts", async () => {
   const repository = {
@@ -22,6 +19,7 @@ test("generic social actions accept public posts", async () => {
       author_user_id: "user_2",
       display_name: "Reader",
       avatar_url: null,
+      is_admin: 1,
       parent_comment_id: null,
       body: "hello",
       status: "visible",
@@ -42,6 +40,7 @@ test("generic social actions accept public posts", async () => {
   });
   assert.equal(comment.body, "hello");
   assert.equal(comment.canEdit, true);
+  assert.equal(comment.author.isAdmin, true);
 });
 
 test("public assets reuse likes and comments while blocking new activity after unlisting", async () => {
@@ -62,6 +61,7 @@ test("public assets reuse likes and comments while blocking new activity after u
       author_user_id: "reader",
       display_name: "Reader",
       avatar_url: null,
+      is_admin: 0,
       parent_comment_id: null,
       body: "很好玩",
       status: "visible",

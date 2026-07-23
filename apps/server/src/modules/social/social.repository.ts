@@ -22,6 +22,7 @@ interface CommentRow extends RowDataPacket {
   author_user_id: string;
   display_name: string;
   avatar_url: string | null;
+  is_admin: number;
   parent_comment_id: string | null;
   body: string;
   status: SocialComment["status"];
@@ -103,7 +104,7 @@ export class SocialRepository {
     limit: number;
   }): Promise<SocialCommentPage> {
     const rows = await queryRows<CommentRow>(
-      `SELECT comments.*, users.display_name, avatar.public_path AS avatar_url,
+      `SELECT comments.*, users.display_name, users.is_admin, avatar.public_path AS avatar_url,
               COALESCE(assets.author_user_id, posts.author_user_id) AS object_owner_user_id
        FROM social_comments comments
        JOIN users ON users.id = comments.author_user_id
@@ -131,7 +132,7 @@ export class SocialRepository {
     const visibleRows = rows.slice(0, input.limit);
     const replies = visibleRows.length
       ? await queryRows<CommentRow>(
-          `SELECT comments.*, users.display_name, avatar.public_path AS avatar_url,
+          `SELECT comments.*, users.display_name, users.is_admin, avatar.public_path AS avatar_url,
                   COALESCE(assets.author_user_id, posts.author_user_id) AS object_owner_user_id
            FROM social_comments comments
            JOIN users ON users.id = comments.author_user_id
@@ -219,7 +220,7 @@ export class SocialRepository {
 
   async findComment(commentId: string) {
     return queryOne<CommentRow>(
-      `SELECT comments.*, users.display_name, avatar.public_path AS avatar_url,
+      `SELECT comments.*, users.display_name, users.is_admin, avatar.public_path AS avatar_url,
               COALESCE(assets.author_user_id, posts.author_user_id) AS object_owner_user_id
        FROM social_comments comments
        JOIN users ON users.id = comments.author_user_id
@@ -249,7 +250,7 @@ export class SocialRepository {
   }) {
     return withTransaction(async (connection) => {
       const row = await queryOne<CommentRow>(
-        `SELECT comments.*, users.display_name, avatar.public_path AS avatar_url,
+        `SELECT comments.*, users.display_name, users.is_admin, avatar.public_path AS avatar_url,
                 COALESCE(assets.author_user_id, posts.author_user_id) AS object_owner_user_id
          FROM social_comments comments
          JOIN users ON users.id = comments.author_user_id
@@ -293,6 +294,7 @@ export function rowToComment(row: CommentRow, viewerUserId: string | null) {
       id: row.author_user_id,
       displayName: row.display_name,
       ...(row.avatar_url ? { avatarUrl: row.avatar_url } : {}),
+      isAdmin: Boolean(row.is_admin),
     },
     ...(row.parent_comment_id
       ? { parentCommentId: row.parent_comment_id }

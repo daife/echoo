@@ -12,6 +12,7 @@ export interface UserProfile {
   displayName: string;
   avatarUrl?: string;
   signature: string;
+  isAdmin: boolean;
   emailVerifiedAt?: number;
   createdAt: number;
 }

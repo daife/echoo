@@ -4,9 +4,13 @@ CREATE TABLE IF NOT EXISTS users (
   display_name VARCHAR(120) NOT NULL,
   signature VARCHAR(160) NOT NULL DEFAULT '',
   password_hash VARCHAR(255) NOT NULL,
+  is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+  is_default_follow BOOLEAN NOT NULL DEFAULT FALSE,
   email_verified_at BIGINT NULL,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
+  INDEX idx_users_admin_default_follow (is_admin, is_default_follow),
+  CONSTRAINT chk_users_default_follow_admin CHECK (is_default_follow = FALSE OR is_admin = TRUE),
   FULLTEXT INDEX ftx_users_display_name (display_name) WITH PARSER ngram
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 

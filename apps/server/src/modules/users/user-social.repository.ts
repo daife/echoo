@@ -16,6 +16,7 @@ interface PublicUserRow extends RowDataPacket {
   display_name: string;
   signature: string;
   avatar_url: string | null;
+  is_admin: number;
   created_at: number;
   follower_count: number;
   following_count: number;
@@ -116,7 +117,7 @@ export class UserSocialRepository {
   }
 }
 
-const PUBLIC_USER_SELECT = `SELECT users.id, users.display_name, users.signature,
+const PUBLIC_USER_SELECT = `SELECT users.id, users.display_name, users.signature, users.is_admin,
   avatar.public_path AS avatar_url, users.created_at,
   (SELECT COUNT(*) FROM user_follows followers WHERE followers.followed_user_id = users.id) AS follower_count,
   (SELECT COUNT(*) FROM user_follows following WHERE following.follower_user_id = users.id) AS following_count,
@@ -139,6 +140,7 @@ function rowToProfile(
     id: row.id,
     displayName: row.display_name,
     ...(row.avatar_url ? { avatarUrl: row.avatar_url } : {}),
+    isAdmin: Boolean(row.is_admin),
     signature: row.signature,
     createdAt: row.created_at,
     followerCount: Number(row.follower_count),

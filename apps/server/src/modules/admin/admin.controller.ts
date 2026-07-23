@@ -6,24 +6,18 @@ import {
   type ModelRecommendationCategory,
 } from "@echoo/shared";
 import type { FastifyInstance } from "fastify";
-import type { RowDataPacket } from "mysql2";
 import { z } from "zod";
 import { environment } from "../../infra/config/environment.js";
-import { queryRows } from "../../infra/database/mysql.js";
-import { BillingService, formatMicroUsd } from "../billing/billing.service.js";
+import { BillingService } from "../billing/billing.service.js";
 import { isRecommendationCategory } from "../platform-catalog/platform-catalog.controller.js";
 import { PlatformCatalogService } from "../platform-catalog/platform-catalog.service.js";
 import { RuntimeConfigService } from "../runtime-config/runtime-config.service.js";
 import { PlatformSettingsService } from "../platform-settings/platform-settings.service.js";
 import { RechargeService } from "../payments/recharge.service.js";
-
-interface AdminUserRow extends RowDataPacket {
-  id: string;
-  email: string;
-  display_name: string;
-  created_at: number;
-  balance_micro_usd: number;
-}
+import {
+  AdminAccountService,
+  InvalidAccountFlagsError,
+} from "./admin-account.service.js";
 
 const adjustmentSchema = z.object({
   amountUsd: z.string().trim().min(1).max(40),
@@ -48,6 +42,17 @@ const recommendationsSchema = z.object({
 const presetNameSchema = z.object({
   name: z.string().trim().min(1).max(80),
 });
+
+const accountFlagsSchema = z
+  .object({
+    isAdmin: z.boolean().optional(),
+    isDefaultFollow: z.boolean().optional(),
+  })
+  .refine(
+    (value) =>
+      value.isAdmin !== undefined || value.isDefaultFollow !== undefined,
+    "至少需要提供一个账号标记。",
+  );
 
 const adminSettingsSchema = z.object({
   billingMultiplier: z.number().optional(),
@@ -74,6 +79,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   const runtimeConfigs = new RuntimeConfigService();
   const platformSettings = new PlatformSettingsService();
   const recharge = new RechargeService({ settings: platformSettings });
+  const adminAccounts = new AdminAccountService();
 
   app.post<{ Body: { password?: string } }>(
     "/login",
@@ -98,25 +104,47 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get<{ Querystring: { q?: string } }>("/users", async (request, reply) => {
-    if (!(await request.requireAdmin(reply))) return;
-    const q = (request.query.q ?? "").trim();
-    const rows = await queryRows<AdminUserRow>(
-      `SELECT u.id, u.email, u.display_name, u.created_at,
-              COALESCE(a.balance_micro_usd, 0) balance_micro_usd
-         FROM users u LEFT JOIN billing_accounts a ON a.owner_user_id = u.id
-        WHERE (? = '' OR u.email LIKE ? OR u.display_name LIKE ?)
-        ORDER BY u.created_at DESC LIMIT 200`,
-      [q, `%${q}%`, `%${q}%`],
-    );
-    return rows.map((row) => ({
-      id: row.id,
-      email: row.email,
-      displayName: row.display_name,
-      balanceUsd: formatMicroUsd(row.balance_micro_usd),
-      createdAt: row.created_at,
-    }));
-  });
+  app.get<{ Querystring: { q?: string; role?: string } }>(
+    "/users",
+    async (request, reply) => {
+      if (!(await request.requireAdmin(reply))) return;
+      if (request.query.role && request.query.role !== "admin")
+        return reply.code(400).send({
+          error: "INVALID_USER_ROLE_FILTER",
+          message: "用户角色筛选无效。",
+        });
+      return adminAccounts.listUsers({
+        query: request.query.q,
+        adminsOnly: request.query.role === "admin",
+      });
+    },
+  );
+
+  app.patch<{ Params: { userId: string }; Body: unknown }>(
+    "/users/:userId/account-flags",
+    async (request, reply) => {
+      if (!(await request.requireAdmin(reply))) return;
+      try {
+        const result = await adminAccounts.updateAccountFlags(
+          request.params.userId,
+          accountFlagsSchema.parse(request.body),
+        );
+        if (!result)
+          return reply
+            .code(404)
+            .send({ error: "USER_NOT_FOUND", message: "用户不存在。" });
+        return result;
+      } catch (error) {
+        return reply.code(400).send({
+          error:
+            error instanceof InvalidAccountFlagsError
+              ? "INVALID_ACCOUNT_FLAGS"
+              : "INVALID_ACCOUNT_FLAGS_REQUEST",
+          message: errorMessage(error),
+        });
+      }
+    },
+  );
 
   app.get<{ Params: { userId: string } }>(
     "/users/:userId/wallet",

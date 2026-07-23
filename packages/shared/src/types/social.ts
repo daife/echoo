@@ -2,6 +2,7 @@ export interface SocialAuthor {
   id: string;
   displayName: string;
   avatarUrl?: string;
+  isAdmin: boolean;
 }
 
 export interface SocialComment {
@@ -61,6 +62,7 @@ export interface PublicUserProfile {
   id: string;
   displayName: string;
   avatarUrl?: string;
+  isAdmin: boolean;
   signature: string;
   createdAt: number;
   followerCount: number;

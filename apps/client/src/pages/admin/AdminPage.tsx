@@ -15,12 +15,14 @@ import {
   SliceRuntimeConfigForm,
 } from "../../features/runtime-config/RuntimeConfigForms";
 
-type AdminUser = {
+export type AdminUser = {
   id: string;
   email: string;
   displayName: string;
   balanceUsd: string;
   createdAt: number;
+  isAdmin: boolean;
+  isDefaultFollow: boolean;
 };
 
 type CatalogModel = {
@@ -125,6 +127,7 @@ function AdminConsole({
 }) {
   const [section, setSection] = useState<
     | "billing"
+    | "accounts"
     | "rewards"
     | "models"
     | "recommendations"
@@ -151,6 +154,7 @@ function AdminConsole({
           {(
             [
               ["billing", "用户与余额"],
+              ["accounts", "账号管理"],
               ["rewards", "奖励配置"],
               ["models", "OpenRouter 模型"],
               ["recommendations", "推荐与计费"],
@@ -169,6 +173,9 @@ function AdminConsole({
         {section === "billing" ? (
           <BillingPanel token={token} onExpired={onExpired} />
         ) : null}
+        {section === "accounts" ? (
+          <AccountManagementPanel token={token} onExpired={onExpired} />
+        ) : null}
         {section === "rewards" ? (
           <RewardSettingsPanel token={token} onExpired={onExpired} />
         ) : null}
@@ -184,6 +191,186 @@ function AdminConsole({
       </div>
     </main>
   );
+}
+
+function AccountManagementPanel({ token, onExpired }: PanelProps) {
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [admins, setAdmins] = useState<AdminUser[]>([]);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const defaultFollowCandidates = filterDefaultFollowCandidates(admins);
+
+  const loadUsers = async () => {
+    setUsers(
+      await authed<AdminUser[]>(token, `/users?q=${encodeURIComponent(query)}`),
+    );
+  };
+  const loadAdmins = async () => {
+    setAdmins(await authed<AdminUser[]>(token, "/users?role=admin"));
+  };
+  const refresh = async () => {
+    try {
+      await Promise.all([loadUsers(), loadAdmins()]);
+    } catch (error) {
+      handlePanelError(error, setStatus, onExpired);
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  const updateFlags = async (
+    user: AdminUser,
+    patch: { isAdmin?: boolean; isDefaultFollow?: boolean },
+  ) => {
+    if (
+      user.isDefaultFollow &&
+      patch.isAdmin === false &&
+      !window.confirm(
+        `“${user.displayName}”当前是新用户默认关注账号。取消管理员身份会同时关闭默认关注，确定继续吗？`,
+      )
+    )
+      return;
+    setBusyUserId(user.id);
+    setStatus("");
+    try {
+      await authed(token, `/users/${user.id}/account-flags`, {
+        method: "PATCH",
+        body: patch,
+      });
+      await refresh();
+      setStatus(
+        patch.isDefaultFollow !== undefined
+          ? "新用户默认关注设置已更新。"
+          : "管理员身份已更新。",
+      );
+    } catch (error) {
+      handlePanelError(error, setStatus, onExpired);
+    } finally {
+      setBusyUserId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+          <div>
+            <h2 className="text-xl font-semibold">管理员账号</h2>
+            <p className="mt-2 text-sm leading-6 text-white/40">
+              管理员身份用于公开认证标识，不授予管理后台访问权限。
+            </p>
+          </div>
+          <form
+            className="mt-5 flex gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void refresh();
+            }}
+          >
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜索邮箱或昵称"
+              className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2"
+            />
+            <button className="rounded-lg bg-white px-4 text-sm font-medium text-black">
+              搜索
+            </button>
+          </form>
+          <div className="mt-4 divide-y divide-white/6">
+            {users.map((user) => (
+              <div
+                key={user.id}
+                className="flex items-center justify-between gap-4 py-3"
+              >
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2">
+                    <strong className="truncate text-sm text-white">
+                      {user.displayName}
+                    </strong>
+                    {user.isAdmin ? (
+                      <small className="rounded-full bg-[#d8c7ff]/12 px-2 py-0.5 text-[10px] text-[#d8c7ff]">
+                        管理员
+                      </small>
+                    ) : null}
+                  </span>
+                  <small className="block truncate text-white/40">
+                    {user.email}
+                  </small>
+                </span>
+                <button
+                  type="button"
+                  disabled={busyUserId === user.id}
+                  onClick={() =>
+                    void updateFlags(user, { isAdmin: !user.isAdmin })
+                  }
+                  className={`shrink-0 rounded-lg px-3 py-2 text-xs disabled:opacity-40 ${user.isAdmin ? "border border-white/12 text-white/60" : "bg-white text-black"}`}
+                >
+                  {user.isAdmin ? "取消管理员" : "设为管理员"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+          <div>
+            <h2 className="text-xl font-semibold">新用户默认关注</h2>
+            <p className="mt-2 text-sm leading-6 text-white/40">
+              这里只列出管理员账号；设置仅影响之后注册的新用户，用户仍可取消关注。
+            </p>
+          </div>
+          <div className="mt-5 divide-y divide-white/6">
+            {defaultFollowCandidates.length ? (
+              defaultFollowCandidates.map((user) => (
+                <div
+                  key={user.id}
+                  className="flex items-center justify-between gap-4 py-3"
+                >
+                  <span className="min-w-0">
+                    <strong className="block truncate text-sm text-white">
+                      {user.displayName}
+                    </strong>
+                    <small className="block truncate text-white/40">
+                      {user.email}
+                    </small>
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={user.isDefaultFollow}
+                    disabled={busyUserId === user.id}
+                    onClick={() =>
+                      void updateFlags(user, {
+                        isDefaultFollow: !user.isDefaultFollow,
+                      })
+                    }
+                    className={`relative h-7 w-12 shrink-0 rounded-full transition disabled:opacity-40 ${user.isDefaultFollow ? "bg-[#d8c7ff]" : "bg-white/12"}`}
+                  >
+                    <span
+                      className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${user.isDefaultFollow ? "left-6" : "left-1"}`}
+                    />
+                  </button>
+                </div>
+              ))
+            ) : (
+              <p className="py-8 text-center text-sm text-white/35">
+                暂无管理员账号，请先从左侧添加。
+              </p>
+            )}
+          </div>
+        </section>
+      </div>
+      {status ? <p className="text-sm text-white/55">{status}</p> : null}
+    </div>
+  );
+}
+
+export function filterDefaultFollowCandidates(users: AdminUser[]) {
+  return users.filter((user) => user.isAdmin);
 }
 
 function RuntimeDefaultsPanel({ token, onExpired }: PanelProps) {

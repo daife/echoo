@@ -104,6 +104,7 @@ export function PublicProfilePage({
           alt=""
           className="mx-auto h-28 w-28"
           variant="display"
+          isAdmin={profile.isAdmin}
         />
         <h1 className="mt-5 text-4xl font-semibold text-white">
           {profile.displayName}
@@ -301,6 +302,7 @@ function FollowListDialog({
                 mediaUrl={item.avatarUrl}
                 alt=""
                 className="h-10 w-10"
+                isAdmin={item.isAdmin}
               />
               <span>
                 <span className="block text-sm text-white/80">

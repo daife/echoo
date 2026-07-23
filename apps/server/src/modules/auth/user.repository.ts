@@ -30,6 +30,7 @@ interface AuthUserRow extends RowDataPacket {
   signature: string;
   avatar_url: string | null;
   password_hash: string;
+  is_admin: number;
   created_at: number;
   updated_at: number;
   email_verified_at: number | null;
@@ -69,16 +70,30 @@ export class UserRepository {
       email: input.email.toLowerCase(),
       displayName: input.displayName,
       signature: "",
+      isAdmin: false,
       passwordHash: input.passwordHash,
       createdAt: now,
       updatedAt: now,
     };
-    await execute(
-      `INSERT INTO users
-       (id, email, display_name, password_hash, email_verified_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, NULL, ?, ?)`,
-      [user.id, user.email, user.displayName, user.passwordHash, now, now],
-    );
+    await withTransaction(async (connection) => {
+      await execute(
+        `INSERT INTO users
+         (id, email, display_name, password_hash, email_verified_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, NULL, ?, ?)`,
+        [user.id, user.email, user.displayName, user.passwordHash, now, now],
+        connection,
+      );
+      await execute(
+        `INSERT IGNORE INTO user_follows
+         (follower_user_id, followed_user_id, created_at)
+         SELECT ?, default_account.id, ? FROM users default_account
+         WHERE default_account.is_admin = TRUE
+           AND default_account.is_default_follow = TRUE
+           AND default_account.id <> ?`,
+        [user.id, now, user.id],
+        connection,
+      );
+    });
     return user;
   }
 
@@ -224,6 +239,7 @@ function rowToUser(row: AuthUserRow | null): AuthUser | null {
     email: row.email,
     displayName: row.display_name,
     signature: row.signature,
+    isAdmin: Boolean(row.is_admin),
     passwordHash: row.password_hash,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

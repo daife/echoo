@@ -13,6 +13,7 @@ interface PostRow extends RowDataPacket {
   author_user_id: string;
   display_name: string;
   avatar_url: string | null;
+  is_admin: number;
   body: string;
   like_count: number;
   comment_count: number;
@@ -199,6 +200,7 @@ export class SocialPostRepository {
         id: row.author_user_id,
         displayName: row.display_name,
         ...(row.avatar_url ? { avatarUrl: row.avatar_url } : {}),
+        isAdmin: Boolean(row.is_admin),
       },
       body: row.body,
       images: byPost.get(row.id) ?? [],
@@ -213,7 +215,7 @@ export class SocialPostRepository {
   }
 }
 
-const POST_SELECT = `SELECT posts.id, posts.author_user_id, users.display_name,
+const POST_SELECT = `SELECT posts.id, posts.author_user_id, users.display_name, users.is_admin,
   avatar.public_path AS avatar_url, posts.body, social.like_count,
   social.comment_count,
   EXISTS(SELECT 1 FROM social_likes likes
