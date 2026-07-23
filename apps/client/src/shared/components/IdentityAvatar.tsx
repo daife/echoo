@@ -17,7 +17,7 @@ export function IdentityAvatar({
 }) {
   return (
     <div
-      className={cn("relative shrink-0", className)}
+      className={cn("relative shrink-0 rounded-full", className)}
       data-identity-avatar={mediaUrl ? "image" : "empty"}
       data-admin-avatar={isAdmin ? "true" : undefined}
     >

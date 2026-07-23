@@ -85,6 +85,8 @@ describe("ProfileEditorDialog", () => {
     expect(html).toContain("安静地共创角色。");
     expect(html).toContain("选择图片");
     expect(html).toContain("移除头像");
+    expect(html).toContain("max-w-[17rem] grid-cols-2");
+    expect(html).toContain("flex h-10 cursor-pointer items-center justify-center");
     expect(html).toContain("保存修改");
   });
 });

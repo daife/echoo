@@ -668,8 +668,8 @@ export function ProfileEditorDialog({
             className="h-28 w-28 border-white/18 shadow-[0_0_34px_rgba(255,255,255,0.09)]"
             isAdmin={user.isAdmin}
           />
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            <label className="cursor-pointer rounded-full bg-white px-4 py-2 text-xs font-medium text-[#09090b] transition active:scale-95 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-white">
+          <div className="mt-4 grid w-full max-w-[17rem] grid-cols-2 gap-2">
+            <label className="flex h-10 cursor-pointer items-center justify-center rounded-full bg-white px-4 text-center text-xs font-medium leading-none text-[#09090b] transition active:scale-95 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-white">
               {isProcessingImage ? "正在处理…" : "选择图片"}
               <input
                 className="sr-only"
@@ -693,7 +693,7 @@ export function ProfileEditorDialog({
                     avatar: undefined,
                   }));
                 }}
-                className="flex items-center gap-1.5 rounded-full border border-white/10 px-4 py-2 text-xs text-white/58 transition hover:bg-white/[0.05] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white disabled:opacity-40"
+                className="flex h-10 items-center justify-center gap-1.5 rounded-full border border-white/10 px-4 text-xs leading-none text-white/58 transition hover:bg-white/[0.05] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white disabled:opacity-40"
               >
                 <Trash size={14} />
                 移除头像

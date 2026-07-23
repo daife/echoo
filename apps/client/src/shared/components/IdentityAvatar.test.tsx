@@ -12,6 +12,7 @@ describe("IdentityAvatar", () => {
       />,
     );
 
+    expect(html).toContain("relative shrink-0 rounded-full");
     expect(html).toContain("overflow-hidden rounded-full bg-transparent");
     expect(html).toContain("rounded-full object-cover");
   });

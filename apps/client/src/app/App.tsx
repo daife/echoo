@@ -896,7 +896,7 @@ export function App() {
         className={`relative z-10 grid max-w-none grid-cols-1 md:gap-4 md:px-4 md:pb-6 md:pt-6 ${
           isMobileChatFullscreen
             ? "px-0 pb-0 pt-0"
-            : `px-5 pt-5 ${showMobileBottomNav ? "pb-28" : "pb-5"}`
+            : `px-5 pt-[max(1.25rem,env(safe-area-inset-top))] ${showMobileBottomNav ? "pb-28" : "pb-5"}`
         } md:h-[100dvh] md:min-h-0 ${isViewportPanel ? "h-[100dvh] min-h-0" : "min-h-[100dvh]"} ${
           showConversationRail
             ? "md:grid-cols-[64px_280px_minmax(0,1fr)]"

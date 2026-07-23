@@ -27,22 +27,28 @@ export function CharacterCard({
   const identity = (
     <>
       <div
-        className={`relative aspect-[16/10] min-h-48 overflow-hidden bg-gradient-to-br ${agent.gradient}`}
+        className={`relative isolate aspect-[16/10] min-h-48 overflow-hidden bg-gradient-to-br ${agent.gradient}`}
       >
         {agent.coverResourcePath ? (
           <MediaAsset
             className="absolute inset-0 h-full w-full object-cover opacity-70 transition duration-500 group-hover:scale-[1.02] group-hover:opacity-80"
+            containerClassName="absolute inset-0 overflow-hidden"
             mediaUrl={agent.coverResourcePath}
             variant="display"
             alt=""
           />
         ) : null}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#121214] via-transparent to-black/10" />
-        <IdentityAvatar
-          mediaUrl={agent.avatarResourcePath}
-          alt={agent.name}
-          className="absolute bottom-5 left-5 h-20 w-20 border-white/20 bg-[#17171c] shadow-[0_16px_38px_rgba(0,0,0,0.32)]"
-        />
+        <div className="absolute inset-0 z-10 bg-gradient-to-t from-[#121214] via-transparent to-black/10" />
+        <div
+          className="absolute inset-x-0 bottom-0 z-20 p-5"
+          data-character-card-avatar-anchor
+        >
+          <IdentityAvatar
+            mediaUrl={agent.avatarResourcePath}
+            alt={agent.name}
+            className="h-20 w-20 border-white/20 bg-[#17171c] shadow-[0_16px_38px_rgba(0,0,0,0.32)]"
+          />
+        </div>
       </div>
       <div className="p-5 pb-4">
         <div className="flex items-start justify-between gap-4">

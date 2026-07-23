@@ -118,17 +118,17 @@ export function SettingsPage({
 
   return (
     <section className="space-y-6">
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-3">
         <button
           aria-label="返回"
-          className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-lg text-white/48 transition hover:bg-white/[0.06] hover:text-white active:translate-y-px"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-white/48 transition hover:bg-white/[0.06] hover:text-white active:translate-y-px"
           type="button"
           onClick={onBack}
         >
           <ArrowLeft size={19} />
         </button>
-        <div>
-          <h1 className="mt-2 text-4xl font-semibold text-white">设置</h1>
+        <div className="flex h-10 items-center">
+          <h1 className="text-4xl font-semibold leading-none text-white">设置</h1>
         </div>
       </div>
       <div className="glass-panel flex flex-col gap-4 rounded-2xl p-5 md:flex-row md:items-center md:justify-between">

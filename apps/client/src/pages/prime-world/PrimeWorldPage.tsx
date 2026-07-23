@@ -24,6 +24,7 @@ import type { PrimeWorldService } from "../../services/PrimeWorldService";
 import { PrimeWorldEditorPage } from "./PrimeWorldEditorPage";
 import { usePushToTalk } from "../../features/messages/usePushToTalk";
 import { PrimeWorldAudioPlayer } from "./PrimeWorldAudioPlayer";
+import { ConversationHeaderTitle } from "../../features/messages/components/ConversationHeaderTitle";
 
 export function PrimeWorldPage({
   agent,
@@ -288,22 +289,22 @@ export function PrimeWorldPage({
     },
   });
   return (
-    <section className="mx-auto flex h-full min-h-0 max-w-5xl flex-col gap-5 py-4 md:py-8">
-      <header className="flex items-center justify-between gap-3 border-b border-white/10 pb-4">
-        <div className="flex items-center gap-3">
+    <section className="mx-auto flex h-full min-h-0 max-w-5xl flex-col gap-5 pb-4 md:py-8">
+      <header className="flex items-center justify-between gap-3 border-b border-white/10 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] md:px-0 md:pb-4 md:pt-0">
+        <div className="flex min-w-0 items-center gap-3">
           <button
             aria-label="返回会话"
-            className="grid h-9 w-9 place-items-center rounded-lg text-white/65 hover:bg-white/10"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-white/65 hover:bg-white/10"
             onClick={onBack}
           >
             <ArrowLeft size={19} />
           </button>
-          <div>
-            <p className="text-xs text-white/45">本初世界</p>
-            <h1 className="text-xl font-semibold text-white">{agent.name}</h1>
-          </div>
+          <ConversationHeaderTitle
+            title={agent.name}
+            subtitle="本初世界"
+          />
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <PrimeWorldDeleteButton
             disabled={isDeletingConversation}
             onClick={deleteConversation}

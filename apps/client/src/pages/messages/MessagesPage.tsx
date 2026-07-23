@@ -66,6 +66,7 @@ import {
   RUNTIME_ERROR_TOAST_DURATION_MS,
   RuntimeErrorToast,
 } from "../../features/messages/components/RuntimeErrorToast";
+import { ConversationHeaderTitle } from "../../features/messages/components/ConversationHeaderTitle";
 
 export type UpdateAgentHandlers = {
   "slice-figure": (
@@ -433,7 +434,7 @@ export function MessagesPage({
 
   return (
     <section className="grid h-full w-full min-h-0 min-w-0 grid-rows-[auto_1fr_auto] overflow-hidden bg-[#0d0d10]/92 md:rounded-[1.25rem] md:shadow-[0_28px_90px_rgba(0,0,0,0.28)]">
-      <header className="flex items-center justify-between border-b border-white/8 px-4 py-3 md:px-5">
+      <header className="flex items-center justify-between border-b border-white/8 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] md:px-5 md:py-3">
         <div className="flex min-w-0 items-center gap-3">
           <button
             aria-label="返回会话列表"
@@ -443,14 +444,7 @@ export function MessagesPage({
           >
             <ArrowLeft size={18} />
           </button>
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold tracking-[-0.015em] text-white">
-              {title}
-            </h1>
-            <p className="truncate text-xs leading-4 text-white/45">
-              {subtitle}
-            </p>
-          </div>
+          <ConversationHeaderTitle title={title} subtitle={subtitle} />
         </div>
         <div className="relative flex items-center gap-1" ref={settingsRef}>
           <button
