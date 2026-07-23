@@ -1,10 +1,15 @@
 import { hostname } from "node:os";
-import { createRedisWorker, getRedis } from "../../infra/redis/redis.js";
+import {
+  acknowledgeAndDeleteStreamEntry,
+  createRedisWorker,
+  getRedis,
+} from "../../infra/redis/redis.js";
 import { ResourceRepository } from "./resource.repository.js";
 
 const STREAM = "echoo:resource-cleanup";
 const GROUP = "echoo-resource-cleanup-workers";
 const GRACE_MS = 24 * 60 * 60_000;
+const STREAM_MAX_LENGTH = 1_000;
 
 export class ResourceCleanupQueue {
   private running = false;
@@ -21,7 +26,18 @@ export class ResourceCleanupQueue {
       EX: 65 * 60,
     });
     if (!leader) return;
-    await redis.xAdd(STREAM, "*", { cutoff: String(Date.now() - GRACE_MS) });
+    await redis.xAdd(
+      STREAM,
+      "*",
+      { cutoff: String(Date.now() - GRACE_MS) },
+      {
+        TRIM: {
+          strategy: "MAXLEN",
+          strategyModifier: "~",
+          threshold: STREAM_MAX_LENGTH,
+        },
+      },
+    );
   }
 
   async start() {
@@ -52,7 +68,7 @@ export class ResourceCleanupQueue {
             cutoff,
           ))
             await this.resources.deleteOrphanedResource(resource.id);
-          await redis.xAck(STREAM, GROUP, entry.id);
+          await acknowledgeAndDeleteStreamEntry(redis, STREAM, GROUP, entry.id);
         }
       }
     }

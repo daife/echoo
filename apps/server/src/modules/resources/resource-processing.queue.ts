@@ -1,10 +1,16 @@
 import { hostname } from "node:os";
-import { createRedisWorker, getRedis } from "../../infra/redis/redis.js";
+import {
+  acknowledgeAndDeleteStreamEntry,
+  createRedisWorker,
+  getRedis,
+} from "../../infra/redis/redis.js";
 import { createId } from "../../shared/utils/id.js";
 import { ResourceRepository } from "./resource.repository.js";
 
 const STREAM = "echoo:resource-processing";
+const FAILED_STREAM = "echoo:resource-processing:failed";
 const GROUP = "echoo-resource-workers";
+const FAILED_STREAM_MAX_LENGTH = 10_000;
 
 export class ResourceProcessingQueue {
   private running = false;
@@ -94,7 +100,7 @@ export class ResourceProcessingQueue {
       PX: 5 * 60_000,
     });
     if (!acquired) {
-      await redis.xAck(STREAM, GROUP, entryId);
+      await acknowledgeAndDeleteStreamEntry(redis, STREAM, GROUP, entryId);
       return;
     }
     try {
@@ -107,14 +113,25 @@ export class ResourceProcessingQueue {
       }
       else {
         await this.resources.markProcessingFailed(resourceId);
-        await redis.xAdd("echoo:resource-processing:failed", "*", {
-          resourceId,
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
+        await redis.xAdd(
+          FAILED_STREAM,
+          "*",
+          {
+            resourceId,
+            error: error instanceof Error ? error.message : "Unknown error",
+          },
+          {
+            TRIM: {
+              strategy: "MAXLEN",
+              strategyModifier: "~",
+              threshold: FAILED_STREAM_MAX_LENGTH,
+            },
+          },
+        );
       }
     } finally {
       if ((await redis.get(lockKey)) === token) await redis.del(lockKey);
-      await redis.xAck(STREAM, GROUP, entryId);
+      await acknowledgeAndDeleteStreamEntry(redis, STREAM, GROUP, entryId);
     }
   }
 
@@ -124,7 +141,7 @@ export class ResourceProcessingQueue {
     return {
       pending: Array.isArray(pending) ? Number(pending[0] ?? 0) : 0,
       retries: this.retryCount,
-      failed: Number(await redis.xLen("echoo:resource-processing:failed")),
+      failed: Number(await redis.xLen(FAILED_STREAM)),
     };
   }
 }

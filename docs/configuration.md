@@ -23,6 +23,12 @@ Echoo 的配置分为三层。部署配置来自仓库根目录 `.env`，管理�
 
 `.env.example` 是完整变量清单；本地 `.env` 可以只覆盖部署所需值。旧的 `OPENROUTER_API_KEY`、`FISH_AUDIO_API_KEY`、`DEFAULT_*` 等名称不再读取。
 
+## Redis 内存保护
+
+根目录 `docker-compose.yml` 将 Redis 的 `maxmemory` 设置为 768 MB，并保留 `noeviction` 策略，避免任务队列、锁或缓存键被静默淘汰。Redis 容器另设 1 GB 硬上限，为连接、内存碎片和 AOF 操作预留空间。达到 Redis 上限后，新增写入会明确失败；应结合监控告警处理，而不是依赖数据淘汰。
+
+任务 Stream 在消费确认后删除对应条目，同时为积压队列和失败队列设置近似长度上限。调整 Redis 上限时，进程 `maxmemory` 应继续低于容器内存限制。
+
 ## 手机局域网调试
 
 将 `.env` 中的 `VITE_API_BASE_URL`、`VITE_WS_URL`、`CLIENT_URL` 和 `OPENROUTER_SITE_URL` 里的示例地址替换为电脑当前的局域网 IP。先启动服务端，再运行 `pnpm --filter @echoo/client dev`，最后在手机访问 `http://<电脑局域网 IP>:5173`。

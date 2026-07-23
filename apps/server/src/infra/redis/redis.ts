@@ -40,6 +40,15 @@ export async function createRedisWorker() {
   return dedicated;
 }
 
+export async function acknowledgeAndDeleteStreamEntry(
+  redis: RedisClientType,
+  stream: string,
+  group: string,
+  entryId: string,
+) {
+  await redis.multi().xAck(stream, group, entryId).xDel(stream, entryId).exec();
+}
+
 export async function closeRedis() {
   await Promise.allSettled(
     Array.from(dedicatedWorkers, (dedicated) =>

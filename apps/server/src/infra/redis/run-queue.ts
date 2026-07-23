@@ -1,11 +1,17 @@
 import { hostname } from "node:os";
 import { environment } from "../config/environment.js";
 import { createId } from "../../shared/utils/id.js";
-import { getRedis, getRedisWorker } from "./redis.js";
+import {
+  acknowledgeAndDeleteStreamEntry,
+  getRedis,
+  getRedisWorker,
+} from "./redis.js";
 
 const STREAM = "echoo:agent-runs";
+const FAILED_STREAM = "echoo:agent-runs:failed";
 const GROUP = "echoo-server";
 const CANCELLED_TTL_SECONDS = 24 * 60 * 60;
+const FAILED_STREAM_MAX_LENGTH = 10_000;
 
 export interface AgentRunJob {
   id?: string;
@@ -162,13 +168,24 @@ export class AgentRunQueue {
         await delay(retryDelay(job.attempts ?? 0));
         await this.enqueue({ ...job, attempts: (job.attempts ?? 0) + 1 });
       } else {
-        await redis.xAdd("echoo:agent-runs:failed", "*", {
-          job: JSON.stringify(job),
-          error: error instanceof Error ? error.message : "Unknown run error",
-        });
+        await redis.xAdd(
+          FAILED_STREAM,
+          "*",
+          {
+            job: JSON.stringify(job),
+            error: error instanceof Error ? error.message : "Unknown run error",
+          },
+          {
+            TRIM: {
+              strategy: "MAXLEN",
+              strategyModifier: "~",
+              threshold: FAILED_STREAM_MAX_LENGTH,
+            },
+          },
+        );
       }
     }
-    await redis.xAck(STREAM, GROUP, entryId);
+    await acknowledgeAndDeleteStreamEntry(redis, STREAM, GROUP, entryId);
   }
 
   private async process(
@@ -251,7 +268,7 @@ export class AgentRunQueue {
     return {
       pending: Array.isArray(pending) ? Number(pending[0] ?? 0) : 0,
       retries: this.retryCount,
-      failed: Number(await redis.xLen("echoo:agent-runs:failed")),
+      failed: Number(await redis.xLen(FAILED_STREAM)),
     };
   }
 }
