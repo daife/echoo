@@ -761,6 +761,10 @@ export function App() {
             agent={selectedAgent}
             service={services.primeWorldService}
             onBack={closeConversation}
+            onDelete={async (conversationId) => {
+              await services.messageService.deleteConversation(conversationId);
+              handleConversationDeleted(conversationId);
+            }}
             onSave={async (detail, preserveRuntimeState) => {
               await updatePrimeWorld(selectedAgent.id, {
                 name: selectedAgent.name,

@@ -10,6 +10,7 @@ import {
   Play,
   Microphone,
   SlidersHorizontal,
+  Trash,
 } from "@phosphor-icons/react";
 import {
   useCallback,
@@ -28,11 +29,13 @@ export function PrimeWorldPage({
   agent,
   service,
   onBack,
+  onDelete,
   onSave,
 }: {
   agent: PrimeWorldAgent;
   service: PrimeWorldService;
   onBack: () => void;
+  onDelete: (conversationId: string) => Promise<void>;
   onSave: (
     detail: PrimeWorldAgent["detail"],
     preserveRuntimeState: boolean,
@@ -45,6 +48,7 @@ export function PrimeWorldPage({
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [offlineReadOnly, setOfflineReadOnly] = useState(false);
   const [resourceUrls, setResourceUrls] = useState(new Map<string, string>());
   const [temporaryText, setTemporaryText] = useState<Record<string, string>>(
@@ -251,6 +255,16 @@ export function PrimeWorldPage({
     const text = input.trim();
     if (text && !busy) void dispatch("input.text", { text });
   };
+  const deleteConversation = () => {
+    if (isDeletingConversation) return;
+    void requestPrimeWorldConversationDeletion({
+      conversationId: agent.conversationId,
+      onDelete,
+      confirmDeletion: (message) => window.confirm(message),
+      onDeletingChange: setIsDeletingConversation,
+      onError: setError,
+    });
+  };
   const pushToTalk = usePushToTalk({
     disabled: false,
     maxRecordingSeconds: 120,
@@ -290,6 +304,10 @@ export function PrimeWorldPage({
           </div>
         </div>
         <div className="flex gap-2">
+          <PrimeWorldDeleteButton
+            disabled={isDeletingConversation}
+            onClick={deleteConversation}
+          />
           <button
             className="hidden h-9 w-9 place-items-center rounded-lg text-white/70 hover:bg-white/10 md:grid"
             title="编辑定义"
@@ -420,6 +438,51 @@ export function PrimeWorldPage({
         </p>
       ) : null}
     </section>
+  );
+}
+
+export const PRIME_WORLD_DELETE_CONFIRMATION =
+  "确定要删除这个会话吗？会话与消息将从服务器永久删除。";
+
+export async function requestPrimeWorldConversationDeletion(input: {
+  conversationId: string;
+  onDelete: (conversationId: string) => Promise<void>;
+  confirmDeletion: (message: string) => boolean;
+  onDeletingChange: (deleting: boolean) => void;
+  onError: (message: string | null) => void;
+}) {
+  if (!input.confirmDeletion(PRIME_WORLD_DELETE_CONFIRMATION)) return false;
+  input.onError(null);
+  input.onDeletingChange(true);
+  try {
+    await input.onDelete(input.conversationId);
+    return true;
+  } catch (error) {
+    input.onError(error instanceof Error ? error.message : "删除会话失败。");
+    return false;
+  } finally {
+    input.onDeletingChange(false);
+  }
+}
+
+export function PrimeWorldDeleteButton({
+  disabled,
+  onClick,
+}: {
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-label="删除会话"
+      className="grid h-9 w-9 place-items-center rounded-lg text-red-200/75 transition hover:bg-red-400/10 hover:text-red-100 disabled:opacity-40"
+      disabled={disabled}
+      title="删除会话"
+      type="button"
+      onClick={onClick}
+    >
+      <Trash size={18} />
+    </button>
   );
 }
 
