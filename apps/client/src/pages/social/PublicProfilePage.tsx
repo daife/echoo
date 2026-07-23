@@ -278,7 +278,7 @@ function FollowListDialog({
     ).then((page) => setItems(page.items));
   }, [direction, socialService, userId]);
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm">
+    <div className="app-overlay fixed inset-0 grid place-items-center bg-black/70 p-4 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111114] p-5">
         <div className="flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-lg font-semibold text-white">

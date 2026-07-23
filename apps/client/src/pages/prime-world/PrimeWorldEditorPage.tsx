@@ -287,12 +287,12 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#0b0b0d]">
-      <header className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+      <header className="flex flex-col gap-3 border-b border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-[11px] uppercase tracking-[.18em] text-white/35">{conversationId ? `Revision ${detail.definitionRevision}` : "New world"}</p>
           <h2 className="font-semibold text-white">世界工作流</h2>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="no-scrollbar flex min-w-0 items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
           <div className="flex rounded-lg border border-white/10 p-1">
             <ModeButton active={mode === "graph"} onClick={() => setMode("graph")} icon={<FlowArrow size={15} />} label="画布" />
             <ModeButton active={mode === "json"} onClick={() => setMode("json")} icon={<BracketsCurly size={15} />} label="JSON" />
@@ -333,7 +333,7 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
               保留运行状态
             </label>
           ) : null}
-          <button type="button" className="flex h-9 items-center gap-2 rounded-lg bg-white px-3 text-sm font-medium text-black disabled:opacity-50" disabled={saving || !jsonValid} onClick={() => void save()}>
+          <button type="button" className="flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg bg-white px-3 text-sm font-medium text-black disabled:opacity-50" disabled={saving || !jsonValid} onClick={() => void save()}>
             <FloppyDisk size={16} />
             {saving ? "校验中" : saveLabel}
           </button>
@@ -355,9 +355,10 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
           }}
         />
       ) : (
-        <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[13rem_minmax(0,1fr)_22rem]">
+        <div className="min-h-0 min-w-0 flex-1 overflow-x-auto">
+          <div className="grid h-full min-h-0 min-w-[56rem] grid-cols-[13rem_minmax(0,1fr)_22rem] md:min-w-0">
           <aside className="overflow-y-auto border-r border-white/10 p-3">
-            <label className="flex h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[.03] px-2 text-white/45">
+            <label className="input-focus-shell flex h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[.03] px-2 text-white/45">
               <MagnifyingGlass size={14} />
               <input className="min-w-0 bg-transparent text-xs text-white outline-none" placeholder="筛选节点" value={filter} onChange={(event) => setFilter(event.target.value)} />
             </label>
@@ -507,6 +508,7 @@ export function PrimeWorldEditorPage({ detail, conversationId, service, onSave, 
               </div>
             )}
           </aside>
+          </div>
         </div>
       )}
       <footer className="max-h-32 overflow-y-auto border-t border-white/10 bg-black/20 px-4 py-2">

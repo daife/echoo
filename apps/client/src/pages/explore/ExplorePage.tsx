@@ -149,7 +149,7 @@ export function PublicAssetCatalog({
           </h2>
         </div>
         <div>
-          <label className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3">
+          <label className="input-focus-shell flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3">
             <MagnifyingGlass size={18} className="text-white/40" />
             <input
               value={query}

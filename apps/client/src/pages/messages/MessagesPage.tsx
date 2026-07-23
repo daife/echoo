@@ -836,7 +836,7 @@ function RuntimeConfigDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 px-4 py-8 backdrop-blur-sm">
+    <div className="app-overlay fixed inset-0 grid place-items-center bg-black/55 px-4 backdrop-blur-sm md:py-8">
       <div className="max-h-[92dvh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-white/10 bg-[#101014] p-5 shadow-[0_24px_100px_rgba(0,0,0,0.55)] md:p-7">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
@@ -1013,7 +1013,7 @@ function EditSliceFigureDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 px-4 py-8 backdrop-blur-sm">
+    <div className="app-overlay fixed inset-0 grid place-items-center bg-black/55 px-4 backdrop-blur-sm md:py-8">
       <form
         className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/10 bg-[#101014] p-5 shadow-[0_24px_100px_rgba(0,0,0,0.55)] md:p-7"
         onSubmit={submit}
@@ -1121,7 +1121,7 @@ function EditPrimeFigureDialog({
   }, [loadSnapshot]);
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 px-4 py-8 backdrop-blur-sm">
+    <div className="app-overlay fixed inset-0 grid place-items-center bg-black/55 px-4 backdrop-blur-sm md:py-8">
       <div className="max-h-[90dvh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-[#101014]">
         {snapshot ? (
           <PrimeFigureForm
@@ -1418,7 +1418,7 @@ function EditMessageDialog({
   const [text, setText] = useState(initialText);
   const [error, setError] = useState<string | null>(null);
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 px-4 backdrop-blur-sm">
+    <div className="app-overlay fixed inset-0 grid place-items-center bg-black/55 px-4 backdrop-blur-sm">
       <form
         className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#101014] p-5 shadow-[0_24px_100px_rgba(0,0,0,0.55)]"
         onSubmit={async (event) => {

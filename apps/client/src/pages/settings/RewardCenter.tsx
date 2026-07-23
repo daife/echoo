@@ -292,7 +292,7 @@ export function RewardCenter({
           role="dialog"
           aria-modal="true"
           aria-label="确认推广结算"
-          className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-5 backdrop-blur-sm"
+          className="app-overlay fixed inset-0 grid place-items-center bg-black/70 p-5 backdrop-blur-sm"
         >
           <div className="w-full max-w-md rounded-2xl border border-white/12 bg-[#151519] p-6 shadow-2xl">
             <p className="text-xs uppercase tracking-[0.18em] text-white/35">

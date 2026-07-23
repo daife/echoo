@@ -284,7 +284,7 @@ export function WorldUpdateDialog({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm"
+      className="app-overlay fixed inset-0 grid place-items-center bg-black/70 p-4 backdrop-blur-sm"
       role="presentation"
     >
       <div

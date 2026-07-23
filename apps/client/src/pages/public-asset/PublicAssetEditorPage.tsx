@@ -99,8 +99,8 @@ export function PublicAssetEditorPage({
 
   return (
     <section className="space-y-7 pb-20">
-      <header className="sticky top-5 z-30 rounded-2xl border border-white/10 bg-[#0d0d10]/90 p-5 backdrop-blur-2xl">
-        <div className="flex flex-wrap items-center gap-4">
+      <header className="sticky top-3 z-30 rounded-2xl border border-white/10 bg-[#0d0d10]/90 p-4 backdrop-blur-2xl md:top-5 md:p-5">
+        <div className="grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-4 md:flex md:flex-wrap md:gap-4">
           <button
             type="button"
             onClick={onBack}
@@ -108,8 +108,8 @@ export function PublicAssetEditorPage({
           >
             <ArrowLeft size={18} />
           </button>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
+          <div className="min-w-0 md:flex-1">
+            <div className="flex min-w-0 items-center gap-2">
               <h1 className="truncate text-xl font-semibold text-white">
                 {draft.snapshot.name}
               </h1>
@@ -124,43 +124,45 @@ export function PublicAssetEditorPage({
                 : ""}
             </p>
           </div>
-          {draft.status === "published" ? (
+          <div className="col-span-2 flex items-center justify-end gap-2 border-t border-white/8 pt-3 md:ml-auto md:border-0 md:pt-0">
+            {draft.status === "published" ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void unlist()}
+                className="flex items-center gap-2 rounded-full px-3 py-2 text-xs text-white/48 hover:bg-white/[0.05] hover:text-white disabled:opacity-40 md:px-4"
+              >
+                <Archive size={15} /> 下架
+              </button>
+            ) : null}
+            {draft.status === "draft" || draft.status === "unlisted" ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void deletePermanently()}
+                className="flex items-center gap-2 rounded-full px-3 py-2 text-xs text-red-200/65 hover:bg-red-400/10 hover:text-red-100 disabled:opacity-40 md:px-4"
+              >
+                <Trash size={15} />
+                {draft.status === "draft" ? "删除草稿" : "彻底删除"}
+              </button>
+            ) : null}
             <button
               type="button"
-              disabled={busy}
-              onClick={() => void unlist()}
-              className="flex items-center gap-2 rounded-full px-4 py-2 text-xs text-white/48 hover:bg-white/[0.05] hover:text-white disabled:opacity-40"
+              disabled={
+                busy ||
+                (draft.status === "published" && !draft.hasUnpublishedChanges)
+              }
+              onClick={() => void publish()}
+              className="flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-xs font-medium text-black disabled:cursor-default disabled:bg-white/10 disabled:text-white/35 md:px-5"
             >
-              <Archive size={15} /> 下架
+              <UploadSimple size={15} />
+              {draft.status === "unlisted" && !draft.hasUnpublishedChanges
+                ? "重新上架"
+                : draft.latestVersionNumber
+                  ? "发布新版本"
+                  : "首次发布"}
             </button>
-          ) : null}
-          {draft.status === "draft" || draft.status === "unlisted" ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void deletePermanently()}
-              className="flex items-center gap-2 rounded-full px-4 py-2 text-xs text-red-200/65 hover:bg-red-400/10 hover:text-red-100 disabled:opacity-40"
-            >
-              <Trash size={15} />
-              {draft.status === "draft" ? "删除草稿" : "彻底删除"}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            disabled={
-              busy ||
-              (draft.status === "published" && !draft.hasUnpublishedChanges)
-            }
-            onClick={() => void publish()}
-            className="flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-xs font-medium text-black disabled:cursor-default disabled:bg-white/10 disabled:text-white/35"
-          >
-            <UploadSimple size={15} />
-            {draft.status === "unlisted" && !draft.hasUnpublishedChanges
-              ? "重新上架"
-              : draft.latestVersionNumber
-                ? "发布新版本"
-                : "首次发布"}
-          </button>
+          </div>
         </div>
         {notice ? <p className="mt-3 text-xs text-white/52">{notice}</p> : null}
       </header>
@@ -333,7 +335,7 @@ function WorldDraftForm({
           />
         </label>
       </div>
-      <div className="overflow-hidden rounded-2xl border border-white/8 bg-[#0b0b0d]">
+      <div className="h-[min(46rem,calc(100dvh-2rem))] min-h-[32rem] overflow-hidden rounded-2xl border border-white/8 bg-[#0b0b0d]">
         <PrimeWorldEditorPage
           detail={draft.snapshot.detail}
           service={primeWorldService}

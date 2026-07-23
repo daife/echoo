@@ -1,7 +1,7 @@
 import {
   DEFAULT_SLICE_FIGURE_MEMORY_SUMMARY_PROMPT,
   DEFAULT_SLICE_FIGURE_SYSTEM_PROMPT,
-  fogHarborLettersFixture,
+  createDefaultPrimeWorldDetail,
   type CreatePrimeFigureRequest,
   type CreatePrimeWorldRequest,
   type CreateSliceFigureRequest,
@@ -778,7 +778,7 @@ function createEmptySnapshot(type: PublicAssetType): PublicAssetSnapshot {
   return {
     ...base,
     type: "prime-world",
-    detail: structuredClone(fogHarborLettersFixture),
+    detail: createDefaultPrimeWorldDetail(),
   };
 }
 

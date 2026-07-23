@@ -572,7 +572,7 @@ function MediaViewer({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] grid place-items-center bg-black/88 p-4 backdrop-blur-md"
+      className="app-overlay fixed inset-0 grid place-items-center bg-black/88 p-4 backdrop-blur-md"
       role="dialog"
       aria-modal="true"
       aria-label={`${alt}放大预览`}

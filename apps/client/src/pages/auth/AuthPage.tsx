@@ -212,7 +212,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
           {auth.authMode === "register" ? (
             <label className="block">
               <span className="mb-2 block text-sm text-white/55">显示名称</span>
-              <div className="flex w-full min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4">
+              <div className="input-focus-shell flex w-full min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4">
                 <UserCircle size={18} className="text-white/35" />
                 <input
                   className="h-12 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30"
@@ -227,7 +227,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
           {auth.authMode !== "reset" && auth.authMode !== "verify" ? (
             <label className="block">
               <span className="mb-2 block text-sm text-white/55">邮箱</span>
-              <div className="flex w-full min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4">
+              <div className="input-focus-shell flex w-full min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4">
                 <Key size={18} className="text-white/35" />
                 <input
                   className="h-12 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30"
@@ -244,7 +244,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
           {auth.authMode !== "forgot" && auth.authMode !== "verify" ? (
             <label className="block">
               <span className="mb-2 block text-sm text-white/55">密码</span>
-              <div className="flex w-full min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4">
+              <div className="input-focus-shell flex w-full min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4">
                 <LockKey size={18} className="text-white/35" />
                 <input
                   className="h-12 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/30"

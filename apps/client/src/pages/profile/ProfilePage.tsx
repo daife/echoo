@@ -26,6 +26,7 @@ import { imageFileToUpload } from "../../shared/utils/imageCompression";
 import { useServices } from "../../app/providers/ServicesProvider";
 import { PostComposer } from "../social/PostComposer";
 import { PostCard } from "../social/PostCard";
+import { createOptions } from "../create-agent/createAgentOptions";
 
 export function ProfilePage({
   agents,
@@ -404,7 +405,7 @@ export function PublicAssetCreateDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/65 px-4 py-8 backdrop-blur-sm"
+      className="app-overlay fixed inset-0 grid place-items-center bg-black/65 px-4 backdrop-blur-sm md:py-8"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !isSubmitting) onClose();
@@ -472,23 +473,30 @@ export function PublicAssetCreateDialog({
             <legend className="text-sm font-medium text-white/72">
               资产类型
             </legend>
-            <div className="mt-3 grid grid-cols-3 gap-3">
-              {(
-                [
-                  ["slice-figure", "切片角色"],
-                  ["prime-figure", "本初角色"],
-                  ["prime-world", "本初世界"],
-                ] as const
-              ).map(([value, label]) => (
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              {createOptions.map((option) => {
+                const Icon = option.icon;
+                const active = type === option.type;
+                return (
                 <button
-                  key={value}
+                  key={option.type}
                   type="button"
-                  onClick={() => setType(value)}
-                  className={`rounded-xl border px-4 py-4 text-left text-sm transition ${type === value ? "border-white/24 bg-white/[0.09] text-white" : "border-white/8 text-white/48 hover:border-white/16"}`}
+                  onClick={() => setType(option.type)}
+                  className={`rounded-xl border p-4 text-left transition ${active ? "border-white/24 bg-white/[0.09] text-white" : "border-white/8 text-white/48 hover:border-white/16"}`}
                 >
-                  {label}
+                  <div className="flex items-center justify-between gap-3">
+                    <Icon size={20} weight="duotone" />
+                    <span className="text-xs">{option.label}</span>
+                  </div>
+                  <span className="mt-4 block text-sm font-medium text-white">
+                    {option.title}
+                  </span>
+                  <span className="mt-2 block text-xs leading-5 text-white/42 sm:hidden">
+                    {option.description}
+                  </span>
                 </button>
-              ))}
+                );
+              })}
             </div>
           </fieldset>
         ) : (
@@ -622,14 +630,14 @@ export function ProfileEditorDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/65 px-4 py-8 backdrop-blur-sm"
+      className="app-overlay fixed inset-0 grid place-items-center bg-black/65 px-4 backdrop-blur-sm md:py-8"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !isSaving) onClose();
       }}
     >
       <form
-        className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-[#101014] p-5 shadow-[0_28px_100px_rgba(0,0,0,0.58)] md:p-7"
+        className="w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-[#101014] p-5 shadow-[0_28px_100px_rgba(0,0,0,0.58)] md:max-h-[92dvh] md:p-7"
         onSubmit={submit}
         aria-label="编辑个人资料"
       >

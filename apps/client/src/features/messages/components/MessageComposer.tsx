@@ -345,7 +345,7 @@ export function MessageComposer({
         </div>
       ) : null}
       <form
-        className="flex w-full min-w-0 items-center gap-1.5 rounded-xl border border-white/10 bg-[#121216] p-2 shadow-[0_14px_38px_rgba(0,0,0,0.22)] transition focus-within:border-white/30 sm:gap-2"
+        className="input-focus-shell flex w-full min-w-0 items-center gap-1.5 rounded-xl border border-white/10 bg-[#121216] p-2 shadow-[0_14px_38px_rgba(0,0,0,0.22)] transition focus-within:border-white/30 sm:gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           void submitText();

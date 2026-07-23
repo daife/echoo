@@ -151,5 +151,9 @@ test("creates a runnable prime-world public draft from the default fixture", asy
   if (created.snapshot.type === "prime-world") {
     assert.ok(created.snapshot.detail.workflow.nodes.length > 0);
     assert.ok(created.snapshot.detail.workflow.edges.length > 0);
+    assert.deepEqual(created.snapshot.detail.workflow.editor.positions.start, {
+      x: 40,
+      y: 20,
+    });
   }
 });

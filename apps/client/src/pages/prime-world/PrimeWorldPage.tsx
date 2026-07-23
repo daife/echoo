@@ -274,7 +274,7 @@ export function PrimeWorldPage({
     },
   });
   return (
-    <section className="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-5xl flex-col gap-5 py-4 md:py-8">
+    <section className="mx-auto flex h-full min-h-0 max-w-5xl flex-col gap-5 py-4 md:py-8">
       <header className="flex items-center justify-between gap-3 border-b border-white/10 pb-4">
         <div className="flex items-center gap-3">
           <button
@@ -311,7 +311,7 @@ export function PrimeWorldPage({
       {editing ? (
         createPortal(
           <div
-            className="fixed inset-0 z-[100] h-[100dvh] w-[100dvw] bg-[#0b0b0d]"
+            className="app-overlay app-overlay-fullscreen fixed inset-0 h-[100dvh] w-[100dvw] bg-[#0b0b0d]"
             role="dialog"
             aria-modal="true"
             aria-label="世界工作流编辑器"
@@ -344,7 +344,7 @@ export function PrimeWorldPage({
               {view.title}
             </div>
           ) : null}
-          <div className="flex-1 p-5 md:p-8">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 md:p-8">
             <WorldElement
               element={view.root}
               disabled={busy || offlineReadOnly}

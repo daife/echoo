@@ -54,10 +54,34 @@ button {
 }
 
 button:focus-visible,
-input:focus-visible,
-textarea:focus-visible {
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus-visible,
+textarea:focus-visible,
+select:focus-visible {
   outline: 2px solid rgb(255 255 255 / 0.72);
   outline-offset: 2px;
+}
+
+/* Composite fields keep icons and inline actions inside one focus surface. */
+.input-focus-shell {
+  transition:
+    border-color 180ms ease,
+    outline-color 180ms ease;
+}
+
+.input-focus-shell:has(
+    :is(input, textarea, select):not([type="checkbox"]):not([type="radio"]):not(
+        [type="file"]
+      ):focus-visible
+  ) {
+  outline: 2px solid rgb(255 255 255 / 0.72);
+  outline-offset: 2px;
+}
+
+.input-focus-shell
+  :is(input, textarea, select):not([type="checkbox"]):not([type="radio"]):not(
+    [type="file"]
+  ):focus-visible {
+  outline: none;
 }
 
 ::selection {
@@ -81,4 +105,44 @@ textarea:focus-visible {
 
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* Full-screen application overlays must own the mobile viewport. */
+.app-overlay {
+  z-index: 100;
+  min-height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.app-overlay-fullscreen {
+  align-items: initial;
+  overflow: hidden;
+  padding: 0;
+}
+
+body:has(.app-overlay) .app-mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .app-overlay {
+    align-items: start;
+  }
+
+  .app-overlay-fullscreen {
+    align-items: initial;
+  }
+
+  .app-overlay > :is(form, [role="dialog"]) {
+    max-height: calc(
+      100dvh - max(1rem, env(safe-area-inset-top)) - max(
+          1rem,
+          env(safe-area-inset-bottom)
+        )
+    );
+    overflow-y: auto;
+  }
 }
