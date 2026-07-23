@@ -109,9 +109,13 @@ docker compose up -d mysql redis
 
 不要运行 `pnpm dev`，它仅用于开发，会启动 Vite 和带文件监听的服务端。
 
+生产服务器内存通常较小，根目录 `pnpm build` 会通过 Turbo 同时调度多个
+TypeScript/Vite 构建任务。为避免客户端和服务端构建同时占满内存，生产机上应
+限制 Turbo 为单任务串行构建：
+
 ```bash
 cd /root/echoo
-CI=true pnpm build
+CI=true pnpm exec turbo build --concurrency=1
 
 install -d -m 755 /var/www/echooo
 rsync -a --delete apps/client/dist/ /var/www/echooo/
@@ -305,11 +309,16 @@ Bucket 保持私有。客户端仅获取有效期十分钟的预签名 URL；Ech
 cd /root/echoo
 git pull
 CI=true pnpm install --frozen-lockfile
-CI=true pnpm build
+CI=true pnpm exec turbo build --concurrency=1
 rsync -a --delete apps/client/dist/ /var/www/echooo/
 systemctl restart echoo
 nginx -t && systemctl reload nginx
 ```
+
+`--concurrency=1` 会降低并行度，但可以显著降低构建期间的峰值内存，适合在生产
+服务器上直接编译。若服务器仍然因内存不足而变慢或被 OOM killer 终止，推荐在
+CI 或本地完成构建，再将 `apps/client/dist/`、`apps/server/dist/` 和对应的生产
+依赖部署到服务器；不要把生产服务器作为构建机。
 
 常用检查命令：
 
