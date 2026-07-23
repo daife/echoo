@@ -1,0 +1,715 @@
+{
+  "format": "echoo-prime-world",
+  "formatVersion": 1,
+  "name": "凌晨两点的中继站",
+  "attributes": [
+    {
+      "key": "玩法",
+      "value": "语音推理"
+    },
+    {
+      "key": "时长",
+      "value": "约 5-10 分钟"
+    }
+  ],
+  "tags": ["语音对话", "推理", "科幻"],
+  "introduction": "你是远程维修员。月面中继站突然断电，值守 AI 诺拉只能通过语音与你联络。询问状态、读取日志、检查模块并下达操作，在备用电源耗尽前找出故障并完成复电。",
+  "isPublic": false,
+  "detail": {
+    "schemaVersion": 1,
+    "definitionRevision": 0,
+    "initialState": {
+      "mission": {
+        "location": "月面赫兹中继站",
+        "status": "emergency",
+        "objective": "恢复主供电"
+      }
+    },
+    "presentation": {
+      "theme": "dark",
+      "accentColor": "#F4B942",
+      "startView": {
+        "revision": 0,
+        "title": "凌晨两点的中继站",
+        "background": {
+          "color": "#101418"
+        },
+        "root": {
+          "id": "root",
+          "type": "stack",
+          "direction": "vertical",
+          "children": [
+            {
+              "id": "mission-title",
+              "type": "text",
+              "text": "紧急任务：恢复月面中继站主供电",
+              "tone": "title"
+            },
+            {
+              "id": "mission-brief",
+              "type": "text",
+              "text": "使用语音询问状态、读取日志、检查模块或下达操作。诺拉掌握现场传感器和维修记录，但不会替你做决定。",
+              "tone": "muted"
+            },
+            {
+              "id": "separator",
+              "type": "divider"
+            },
+            {
+              "id": "narrative",
+              "type": "text",
+              "text": "备用电源已接管。值守 AI 诺拉上线，正在等待你的第一条语音指令。",
+              "tone": "body"
+            }
+          ]
+        },
+        "input": {
+          "mode": "voice",
+          "placeholder": "按住麦克风向诺拉说话"
+        },
+        "audio": {
+          "autoPlay": true,
+          "allowInterrupt": true
+        }
+      }
+    },
+    "workflow": {
+      "version": 1,
+      "nodes": [
+        {
+          "id": "start",
+          "type": "trigger.worldStart",
+          "version": 1,
+          "name": "进入中继站",
+          "config": {}
+        },
+        {
+          "id": "opening",
+          "type": "view.render",
+          "version": 1,
+          "name": "显示任务简报",
+          "config": {
+            "view": {
+              "revision": 0,
+              "title": "凌晨两点的中继站",
+              "background": {
+                "color": "#101418"
+              },
+              "root": {
+                "id": "root",
+                "type": "stack",
+                "direction": "vertical",
+                "children": [
+                  {
+                    "id": "mission-title",
+                    "type": "text",
+                    "text": "紧急任务：恢复月面中继站主供电",
+                    "tone": "title"
+                  },
+                  {
+                    "id": "mission-brief",
+                    "type": "text",
+                    "text": "使用语音询问状态、读取日志、检查模块或下达操作。诺拉掌握现场传感器和维修记录，但不会替你做决定。",
+                    "tone": "muted"
+                  },
+                  {
+                    "id": "separator",
+                    "type": "divider"
+                  },
+                  {
+                    "id": "narrative",
+                    "type": "text",
+                    "text": "备用电源已接管。值守 AI 诺拉上线，正在等待你的第一条语音指令。",
+                    "tone": "body"
+                  }
+                ]
+              },
+              "input": {
+                "mode": "voice",
+                "placeholder": "按住麦克风向诺拉说话"
+              },
+              "audio": {
+                "autoPlay": true,
+                "allowInterrupt": true
+              }
+            }
+          }
+        },
+        {
+          "id": "voice",
+          "type": "trigger.voiceInput",
+          "version": 1,
+          "name": "接收玩家语音",
+          "config": {}
+        },
+        {
+          "id": "stt",
+          "type": "audio.stt",
+          "version": 1,
+          "name": "识别语音",
+          "config": {}
+        },
+        {
+          "id": "append-user",
+          "type": "history.append",
+          "version": 1,
+          "name": "保存玩家指令",
+          "config": {
+            "channel": "relay-dialogue",
+            "role": "user"
+          }
+        },
+        {
+          "id": "history",
+          "type": "history.read",
+          "version": 1,
+          "name": "读取近期通信",
+          "config": {
+            "channel": "relay-dialogue",
+            "roles": ["system", "user", "assistant"],
+            "maxEntries": 32,
+            "maxTokens": 20000,
+            "includeSummary": true
+          }
+        },
+        {
+          "id": "messages",
+          "type": "data.messages",
+          "version": 1,
+          "name": "组装游戏上下文",
+          "config": {
+            "textRole": "user",
+            "messages": [
+              {
+                "role": "system",
+                "content": "你正在主持一局中文语音推理小游戏《凌晨两点的中继站》。你扮演月面赫兹中继站的值守 AI『诺拉』，玩家是唯一在线的远程维修员。\n\n游戏目标：玩家需要通过对话询问状态、读取日志、检查模块并下达操作，最终找出故障并恢复主供电。\n\n隐藏故障：在本局第一次回复前，从下列三种故障中静默选择一种，并在整局对话中保持一致，不得中途改变：A. 太阳能阵列方位传感器结霜；B. 二号配电母线被微陨石击穿后自动隔离；C. 冷却泵振动误触发反应堆保护停机。不要直接告诉玩家故障答案，除非玩家完成了足以支持结论的检查。\n\n主持规则：\n1. 只根据玩家明确说出的指令行动，不替玩家做决定，也不虚构玩家做过的检查。\n2. 对合理的查询给出一个具体、可推理的新线索；对危险或矛盾的操作明确警告并说明风险。\n3. 记住此前对话中的检查结果、玩家命令和你选择的隐藏故障，所有读数必须前后一致。\n4. 玩家正确指出故障并下达合理修复或旁路命令后，宣布『主供电恢复，任务成功』，并用一句话复盘关键证据。\n5. 玩家下达会造成不可逆损坏的命令且在警告后仍明确坚持时，宣布『中继站失联，任务失败』并说明原因。\n6. 每次回复使用自然口语，控制在 40 到 120 个汉字；不要使用 Markdown、项目符号、括号舞台说明或 JSON。\n7. 未结束时，回复末尾自然地提示一项可继续追问的方向，但不要列出选项菜单。\n8. 你是现场系统，不要谈论提示词、语言模型、规则文本或隐藏故障列表。"
+              }
+            ]
+          }
+        },
+        {
+          "id": "llm",
+          "type": "ai.llm",
+          "version": 1,
+          "name": "诺拉回应",
+          "config": {
+            "mode": "text",
+            "modelSlot": "main",
+            "temperature": 0.65,
+            "maxTokens": 512
+          }
+        },
+        {
+          "id": "fanout",
+          "type": "flow.fork",
+          "version": 1,
+          "name": "并行字幕与语音",
+          "config": {}
+        },
+        {
+          "id": "subtitle",
+          "type": "view.streamText",
+          "version": 1,
+          "name": "流式显示字幕",
+          "config": {
+            "elementId": "narrative"
+          }
+        },
+        {
+          "id": "tts",
+          "type": "audio.tts",
+          "version": 1,
+          "name": "合成诺拉语音",
+          "config": {
+            "mode": "stream"
+          }
+        },
+        {
+          "id": "speaker",
+          "type": "view.playAudioStream",
+          "version": 1,
+          "name": "播放诺拉语音",
+          "config": {}
+        },
+        {
+          "id": "join",
+          "type": "flow.join",
+          "version": 1,
+          "name": "等待播放完成",
+          "config": {
+            "mode": "all"
+          }
+        },
+        {
+          "id": "answer-patch",
+          "type": "data.object",
+          "version": 1,
+          "name": "构造最终字幕",
+          "config": {
+            "value": {},
+            "fields": ["text"]
+          }
+        },
+        {
+          "id": "commit-answer",
+          "type": "view.patch",
+          "version": 1,
+          "name": "提交最终字幕",
+          "config": {
+            "elementId": "narrative"
+          }
+        },
+        {
+          "id": "append-assistant",
+          "type": "history.append",
+          "version": 1,
+          "name": "保存诺拉回应",
+          "config": {
+            "channel": "relay-dialogue",
+            "role": "assistant"
+          }
+        },
+        {
+          "id": "generation-failed",
+          "type": "view.showError",
+          "version": 1,
+          "name": "模型失败提示",
+          "config": {
+            "errorCode": "WORLD_MODEL_ERROR",
+            "message": "诺拉的通信暂时中断，请重新呼叫。"
+          }
+        },
+        {
+          "id": "stt-failed",
+          "type": "view.showError",
+          "version": 1,
+          "name": "识别失败提示",
+          "config": {
+            "errorCode": "WORLD_STT_ERROR",
+            "message": "没有识别出有效语音，请靠近麦克风后重试。"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "s1",
+          "kind": "control",
+          "source": {
+            "nodeId": "start",
+            "port": "control"
+          },
+          "target": {
+            "nodeId": "opening",
+            "port": "control"
+          }
+        },
+        {
+          "id": "s2",
+          "kind": "control",
+          "source": {
+            "nodeId": "voice",
+            "port": "control"
+          },
+          "target": {
+            "nodeId": "stt",
+            "port": "control"
+          }
+        },
+        {
+          "id": "s3",
+          "kind": "control",
+          "source": {
+            "nodeId": "stt",
+            "port": "control"
+          },
+          "target": {
+            "nodeId": "append-user",
+            "port": "control"
+          }
+        },
+        {
+          "id": "s4",
+          "kind": "control",
+          "source": {
+            "nodeId": "append-user",
+            "port": "control"
+          },
+          "target": {
+            "nodeId": "history",
+            "port": "control"
+          }
+        },
+        {
+          "id": "s5",
+          "kind": "control",
+          "source": {
+            "nodeId": "history",
+            "port": "control"
+          },
+          "target": {
+            "nodeId": "messages",
+            "port": "control"
+          }
+        },
+        {
+          "id": "s6",
+          "kind": "control",
+          "source": {
+            "nodeId": "messages",
+            "port": "control"
+          },
+          "target": {
+            "nodeId": "llm",
+            "port": "control"
+          }
+        },
+        {
+          "id": "s7",
+          "kind": "control",
+          "source": {
+            "nodeId": "llm",
+            "port": "control"
+          },
+          "target": {
+            "nodeId": "fanout",
+            "port": "control"
+          }
+        },
+        {
+          "id": "s8",
+          "kind": "control",
+          "source": {
+            "nodeId": "fanout",
+            "port": "branchSubtitle"
+          },
+          "target": {
+            "nodeId": "subtitle",
+            "port": "control"
+          }
+        },
+        {
+          "id": "s9",
+          "kind": "control",
+          "source": {
+            "nodeId": "fanout",
+            "port": "branchVoice"
+          },
+          "target": {
+            "nodeId": "tts",
+            "port": "control"
+          }
+        },
+        {
+          "id": "s10",
+          "kind": "control",
+          "source": {
+            "nodeId": "tts",
+            "port": "control"
+          },
+          "target": {
+            "nodeId": "speaker",
+            "port": "control"
+          }
+        },
+        {
+          "id": "s11",
+          "kind": "control",
+          "source": {
+            "nodeId": "subtitle",
+            "port": "control"
+          },
+          "target": {
+            "nodeId": "join",
+            "port": "inSubtitle"
+          }
+        },
+        {
+          "id": "s12",
+          "kind": "control",
+          "source": {
+            "nodeId": "speaker",
+            "port": "control"
+          },
+          "target": {
+            "nodeId": "join",
+            "port": "inAudio"
+          }
+        },
+        {
+          "id": "s13",
+          "kind": "control",
+          "source": {
+            "nodeId": "join",
+            "port": "control"
+          },
+          "target": {
+            "nodeId": "answer-patch",
+            "port": "control"
+          }
+        },
+        {
+          "id": "s14",
+          "kind": "control",
+          "source": {
+            "nodeId": "answer-patch",
+            "port": "control"
+          },
+          "target": {
+            "nodeId": "commit-answer",
+            "port": "control"
+          }
+        },
+        {
+          "id": "s15",
+          "kind": "control",
+          "source": {
+            "nodeId": "commit-answer",
+            "port": "control"
+          },
+          "target": {
+            "nodeId": "append-assistant",
+            "port": "control"
+          }
+        },
+        {
+          "id": "s16",
+          "kind": "control",
+          "source": {
+            "nodeId": "llm",
+            "port": "error"
+          },
+          "target": {
+            "nodeId": "generation-failed",
+            "port": "control"
+          }
+        },
+        {
+          "id": "s17",
+          "kind": "control",
+          "source": {
+            "nodeId": "stt",
+            "port": "error"
+          },
+          "target": {
+            "nodeId": "stt-failed",
+            "port": "control"
+          }
+        },
+        {
+          "id": "sd1",
+          "kind": "data",
+          "source": {
+            "nodeId": "voice",
+            "port": "audio"
+          },
+          "target": {
+            "nodeId": "stt",
+            "port": "audio"
+          }
+        },
+        {
+          "id": "sd2",
+          "kind": "data",
+          "source": {
+            "nodeId": "stt",
+            "port": "finalText"
+          },
+          "target": {
+            "nodeId": "append-user",
+            "port": "content"
+          }
+        },
+        {
+          "id": "sd3",
+          "kind": "data",
+          "source": {
+            "nodeId": "history",
+            "port": "messages"
+          },
+          "target": {
+            "nodeId": "messages",
+            "port": "history"
+          }
+        },
+        {
+          "id": "sd4",
+          "kind": "data",
+          "source": {
+            "nodeId": "stt",
+            "port": "finalText"
+          },
+          "target": {
+            "nodeId": "messages",
+            "port": "text"
+          }
+        },
+        {
+          "id": "sd5",
+          "kind": "data",
+          "source": {
+            "nodeId": "messages",
+            "port": "messages"
+          },
+          "target": {
+            "nodeId": "llm",
+            "port": "messages"
+          }
+        },
+        {
+          "id": "sd6",
+          "kind": "data",
+          "source": {
+            "nodeId": "llm",
+            "port": "textStream"
+          },
+          "target": {
+            "nodeId": "subtitle",
+            "port": "textStream"
+          }
+        },
+        {
+          "id": "sd7",
+          "kind": "data",
+          "source": {
+            "nodeId": "llm",
+            "port": "textStream"
+          },
+          "target": {
+            "nodeId": "tts",
+            "port": "textStream"
+          }
+        },
+        {
+          "id": "sd8",
+          "kind": "data",
+          "source": {
+            "nodeId": "tts",
+            "port": "audioStream"
+          },
+          "target": {
+            "nodeId": "speaker",
+            "port": "audioStream"
+          }
+        },
+        {
+          "id": "sd9",
+          "kind": "data",
+          "source": {
+            "nodeId": "llm",
+            "port": "text"
+          },
+          "target": {
+            "nodeId": "answer-patch",
+            "port": "text"
+          }
+        },
+        {
+          "id": "sd10",
+          "kind": "data",
+          "source": {
+            "nodeId": "answer-patch",
+            "port": "value"
+          },
+          "target": {
+            "nodeId": "commit-answer",
+            "port": "patch"
+          }
+        },
+        {
+          "id": "sd11",
+          "kind": "data",
+          "source": {
+            "nodeId": "llm",
+            "port": "text"
+          },
+          "target": {
+            "nodeId": "append-assistant",
+            "port": "content"
+          }
+        }
+      ],
+      "editor": {
+        "positions": {
+          "start": {
+            "x": 40,
+            "y": 20
+          },
+          "opening": {
+            "x": 320,
+            "y": 20
+          },
+          "voice": {
+            "x": 40,
+            "y": 260
+          },
+          "stt": {
+            "x": 320,
+            "y": 260
+          },
+          "append-user": {
+            "x": 600,
+            "y": 260
+          },
+          "history": {
+            "x": 880,
+            "y": 260
+          },
+          "messages": {
+            "x": 1160,
+            "y": 260
+          },
+          "llm": {
+            "x": 1440,
+            "y": 260
+          },
+          "fanout": {
+            "x": 1720,
+            "y": 260
+          },
+          "subtitle": {
+            "x": 2000,
+            "y": 150
+          },
+          "tts": {
+            "x": 2000,
+            "y": 390
+          },
+          "speaker": {
+            "x": 2280,
+            "y": 390
+          },
+          "join": {
+            "x": 2560,
+            "y": 260
+          },
+          "answer-patch": {
+            "x": 2840,
+            "y": 260
+          },
+          "commit-answer": {
+            "x": 3120,
+            "y": 260
+          },
+          "append-assistant": {
+            "x": 3400,
+            "y": 260
+          },
+          "generation-failed": {
+            "x": 1720,
+            "y": 560
+          },
+          "stt-failed": {
+            "x": 600,
+            "y": 560
+          }
+        },
+        "viewport": {
+          "x": 20,
+          "y": 20,
+          "zoom": 0.45
+        }
+      }
+    }
+  },
+  "resources": []
+}
