@@ -136,7 +136,7 @@ export function App() {
   );
   const agentsQuery = useQuery({
     queryKey: agentQueryKey,
-    queryFn: () => services.agentService.listMyAgents(),
+    queryFn: () => services.agentService.listMyAgents(auth.user?.id),
     enabled: Boolean(auth.user),
     staleTime: Infinity,
   });
@@ -282,6 +282,10 @@ export function App() {
   );
 
   useEffect(() => {
+    services.primeWorldService.configureSession(auth.user?.id);
+  }, [auth.user?.id, services.primeWorldService]);
+
+  useEffect(() => {
     if (
       auth.authLinkParams.resetToken ||
       auth.authLinkParams.verificationToken
@@ -365,6 +369,11 @@ export function App() {
       void runtime.message.stopRealtime();
     };
   }, [auth.user, runtime.message]);
+
+  useEffect(() => {
+    if (!auth.user) return;
+    void services.agentService.cacheAgents(auth.user.id, myAgents);
+  }, [auth.user, myAgents, services.agentService]);
 
   const openAgent = useCallback((agent: Agent) => {
     setNavigationHistory([]);
@@ -470,16 +479,27 @@ export function App() {
   const createPrimeWorld = async (input: CreatePrimeWorldRequest) => {
     const created = await services.agentService.createPrimeWorld(input);
     const agent = created.agent;
-    setMyAgents((current) => [agent, ...current.filter((item) => item.id !== agent.id)]);
+    setMyAgents((current) => [
+      agent,
+      ...current.filter((item) => item.id !== agent.id),
+    ]);
     openAgent(agent);
     return agent;
   };
 
-  const updatePrimeWorld = async (agentId: string, input: UpdatePrimeWorldRequest) => {
-    const updated = await services.agentService.updatePrimeWorld(agentId, input);
+  const updatePrimeWorld = async (
+    agentId: string,
+    input: UpdatePrimeWorldRequest,
+  ) => {
+    const updated = await services.agentService.updatePrimeWorld(
+      agentId,
+      input,
+    );
     const agent = updated.agent;
-    setMyAgents((current) => current.map((item) => item.id === agent.id ? agent : item));
-    setSelectedAgent((current) => current?.id === agent.id ? agent : current);
+    setMyAgents((current) =>
+      current.map((item) => (item.id === agent.id ? agent : item)),
+    );
+    setSelectedAgent((current) => (current?.id === agent.id ? agent : current));
     return agent;
   };
 
@@ -721,9 +741,13 @@ export function App() {
             "prime-world": createPrimeWorld,
           }}
           importPrimeWorld={async (bundle) => {
-            const created = await services.primeWorldService.importBundle(bundle);
+            const created =
+              await services.primeWorldService.importBundle(bundle);
             const agent = created.agent;
-            setMyAgents((current) => [agent, ...current.filter((item) => item.id !== agent.id)]);
+            setMyAgents((current) => [
+              agent,
+              ...current.filter((item) => item.id !== agent.id),
+            ]);
             openAgent(agent);
             return agent;
           }}
@@ -732,7 +756,24 @@ export function App() {
       );
     if (view === "messages") {
       if (selectedAgent?.type === "prime-world")
-        return <PrimeWorldPage agent={selectedAgent} service={services.primeWorldService} onBack={closeConversation} onSave={async (detail, preserveRuntimeState) => { await updatePrimeWorld(selectedAgent.id, { name: selectedAgent.name, attributes: selectedAgent.attributes, tags: selectedAgent.tags, introduction: selectedAgent.introduction, isPublic: selectedAgent.isPublic, detail, preserveRuntimeState }); }} />;
+        return (
+          <PrimeWorldPage
+            agent={selectedAgent}
+            service={services.primeWorldService}
+            onBack={closeConversation}
+            onSave={async (detail, preserveRuntimeState) => {
+              await updatePrimeWorld(selectedAgent.id, {
+                name: selectedAgent.name,
+                attributes: selectedAgent.attributes,
+                tags: selectedAgent.tags,
+                introduction: selectedAgent.introduction,
+                isPublic: selectedAgent.isPublic,
+                detail,
+                preserveRuntimeState,
+              });
+            }}
+          />
+        );
       return (
         <MessagesPage
           agent={selectedAgent ?? undefined}

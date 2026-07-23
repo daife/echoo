@@ -60,6 +60,66 @@ export interface PrimeWorldResourceDraft extends PrimeWorldRunResource {}
 type TraceDraft = Omit<PrimeWorldRunTraceEntry, "sequence" | "runId">;
 
 export class PrimeWorldRepository {
+  async compactAndPruneRuns(input: {
+    compactBefore: number;
+    deleteBefore: number;
+    limit?: number;
+  }) {
+    const limit = Math.min(1_000, Math.max(1, input.limit ?? 500));
+    return withTransaction(async (connection) => {
+      const compactRows = await queryRows<RunRow>(
+        `SELECT * FROM prime_world_runs
+         WHERE status IN ('completed', 'failed', 'cancelled')
+           AND finished_at IS NOT NULL AND finished_at < ? AND compacted_at IS NULL
+         ORDER BY finished_at ASC LIMIT ? FOR UPDATE SKIP LOCKED`,
+        [input.compactBefore, limit],
+        connection,
+      );
+      const compactIds = compactRows.map((row) => row.id);
+      if (compactIds.length) {
+        const placeholders = compactIds.map(() => "?").join(",");
+        await execute(
+          `DELETE FROM prime_world_run_trace_entries WHERE run_id IN (${placeholders})`,
+          compactIds,
+          connection,
+        );
+        await execute(
+          `UPDATE prime_world_runs SET definition_json = JSON_OBJECT(), compacted_at = ?
+           WHERE id IN (${placeholders})`,
+          [Date.now(), ...compactIds],
+          connection,
+        );
+      }
+
+      const deleteRows = await queryRows<RunRow>(
+        `SELECT * FROM prime_world_runs
+         WHERE status IN ('completed', 'failed', 'cancelled')
+           AND finished_at IS NOT NULL AND finished_at < ?
+         ORDER BY finished_at ASC LIMIT ? FOR UPDATE SKIP LOCKED`,
+        [input.deleteBefore, limit],
+        connection,
+      );
+      const deleteIds = deleteRows.map((row) => row.id);
+      if (deleteIds.length) {
+        const placeholders = deleteIds.map(() => "?").join(",");
+        await execute(
+          `UPDATE prime_world_history_entries SET run_id = NULL
+           WHERE run_id IN (${placeholders})`,
+          deleteIds,
+          connection,
+        );
+        await execute(
+          `DELETE events FROM prime_world_events events
+           JOIN prime_world_runs runs ON runs.event_id = events.id
+           WHERE runs.id IN (${placeholders})`,
+          deleteIds,
+          connection,
+        );
+      }
+      return { compacted: compactIds.length, deleted: deleteIds.length };
+    });
+  }
+
   async createEventAndRun(input: {
     ownerUserId: string;
     conversationId: string;
@@ -239,7 +299,13 @@ export class PrimeWorldRepository {
       `SELECT seq, role, content_json, token_estimate FROM prime_world_history_entries
        WHERE owner_user_id = ? AND conversation_id = ? AND channel = ? AND seq > ?
        ORDER BY seq ASC LIMIT ?`,
-      [ownerUserId, conversationId, channel, afterSequence, Math.min(128, Math.max(1, limit))],
+      [
+        ownerUserId,
+        conversationId,
+        channel,
+        afterSequence,
+        Math.min(128, Math.max(1, limit)),
+      ],
     );
     return rows.map((row) => ({
       role: row.role,
@@ -322,7 +388,16 @@ export class PrimeWorldRepository {
            (id, owner_user_id, conversation_id, trigger_key, due_at, payload_json, status, lease_until, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, 'scheduled', NULL, ?, ?)
            ON DUPLICATE KEY UPDATE due_at = VALUES(due_at), payload_json = VALUES(payload_json), status = 'scheduled', lease_until = NULL, updated_at = VALUES(updated_at)`,
-          [createId("pws"), input.ownerUserId, input.conversationId, timer.triggerKey, timer.dueAt!, JSON.stringify(timer.payload ?? {}), now, now],
+          [
+            createId("pws"),
+            input.ownerUserId,
+            input.conversationId,
+            timer.triggerKey,
+            timer.dueAt!,
+            JSON.stringify(timer.payload ?? {}),
+            now,
+            now,
+          ],
           connection,
         );
       }
@@ -330,7 +405,13 @@ export class PrimeWorldRepository {
         await execute(
           `INSERT IGNORE INTO prime_world_run_resources (run_id, resource_id, node_id, port, created_at)
            VALUES (?, ?, ?, ?, ?)`,
-          [input.runId, resource.resourceId, resource.nodeId, resource.port, now],
+          [
+            input.runId,
+            resource.resourceId,
+            resource.nodeId,
+            resource.port,
+            now,
+          ],
           connection,
         );
       await saveTraceEntries(connection, {
@@ -361,10 +442,18 @@ export class PrimeWorldRepository {
   async listTrace(ownerUserId: string, conversationId: string, runId: string) {
     const rows = await queryRows<
       RowDataPacket & {
-        seq: number; node_id: string; node_type: string; phase: PrimeWorldRunTraceEntry["phase"];
-        started_at: number; finished_at: number | null; duration_ms: number | null;
-        input_summary_json: unknown; output_summary_json: unknown; usage_json: unknown;
-        error_code: string | null; error_detail: string | null;
+        seq: number;
+        node_id: string;
+        node_type: string;
+        phase: PrimeWorldRunTraceEntry["phase"];
+        started_at: number;
+        finished_at: number | null;
+        duration_ms: number | null;
+        input_summary_json: unknown;
+        output_summary_json: unknown;
+        usage_json: unknown;
+        error_code: string | null;
+        error_detail: string | null;
       }
     >(
       `SELECT trace.* FROM prime_world_run_trace_entries trace
@@ -374,20 +463,43 @@ export class PrimeWorldRepository {
       [ownerUserId, conversationId, runId],
     );
     return rows.map((row) => ({
-      sequence: Number(row.seq), runId, nodeId: row.node_id, nodeType: row.node_type,
-      phase: row.phase, startedAt: Number(row.started_at),
-      ...(row.finished_at === null ? {} : { finishedAt: Number(row.finished_at) }),
-      ...(row.duration_ms === null ? {} : { durationMs: Number(row.duration_ms) }),
-      ...(row.input_summary_json ? { inputSummary: parseObject(row.input_summary_json) } : {}),
-      ...(row.output_summary_json ? { outputSummary: parseObject(row.output_summary_json) } : {}),
+      sequence: Number(row.seq),
+      runId,
+      nodeId: row.node_id,
+      nodeType: row.node_type,
+      phase: row.phase,
+      startedAt: Number(row.started_at),
+      ...(row.finished_at === null
+        ? {}
+        : { finishedAt: Number(row.finished_at) }),
+      ...(row.duration_ms === null
+        ? {}
+        : { durationMs: Number(row.duration_ms) }),
+      ...(row.input_summary_json
+        ? { inputSummary: parseObject(row.input_summary_json) }
+        : {}),
+      ...(row.output_summary_json
+        ? { outputSummary: parseObject(row.output_summary_json) }
+        : {}),
       ...(row.usage_json ? { usage: parseObject(row.usage_json) } : {}),
       ...(row.error_code ? { errorCode: row.error_code } : {}),
       ...(row.error_detail ? { errorDetail: row.error_detail } : {}),
     })) satisfies PrimeWorldRunTraceEntry[];
   }
 
-  async listRunResources(ownerUserId: string, conversationId: string, runId: string) {
-    const rows = await queryRows<RowDataPacket & { node_id: string; port: string; resource_id: string; mime_type: string }>(
+  async listRunResources(
+    ownerUserId: string,
+    conversationId: string,
+    runId: string,
+  ) {
+    const rows = await queryRows<
+      RowDataPacket & {
+        node_id: string;
+        port: string;
+        resource_id: string;
+        mime_type: string;
+      }
+    >(
       `SELECT outputs.node_id, outputs.port, outputs.resource_id, resources.mime_type
        FROM prime_world_run_resources outputs
        JOIN prime_world_runs runs ON runs.id = outputs.run_id
@@ -395,7 +507,12 @@ export class PrimeWorldRepository {
        WHERE runs.owner_user_id = ? AND runs.conversation_id = ? AND runs.id = ?`,
       [ownerUserId, conversationId, runId],
     );
-    return rows.map((row) => ({ nodeId: row.node_id, port: row.port, resourceId: row.resource_id, mimeType: row.mime_type }));
+    return rows.map((row) => ({
+      nodeId: row.node_id,
+      port: row.port,
+      resourceId: row.resource_id,
+      mimeType: row.mime_type,
+    }));
   }
 
   async fail(ownerUserId: string, runId: string, code: string, detail: string) {
@@ -454,10 +571,15 @@ export class PrimeWorldRepository {
 
   async claimDueTimers(now = Date.now(), limit = 50) {
     return withTransaction(async (connection) => {
-      const rows = await queryRows<RowDataPacket & {
-        id: string; owner_user_id: string; conversation_id: string;
-        trigger_key: string; payload_json: unknown;
-      }>(
+      const rows = await queryRows<
+        RowDataPacket & {
+          id: string;
+          owner_user_id: string;
+          conversation_id: string;
+          trigger_key: string;
+          payload_json: unknown;
+        }
+      >(
         `SELECT id, owner_user_id, conversation_id, trigger_key, payload_json
          FROM prime_world_scheduled_events
          WHERE (status = 'scheduled' AND due_at <= ?) OR (status = 'leased' AND lease_until <= ?)
@@ -539,13 +661,27 @@ export class PrimeWorldRepository {
       await execute(
         `INSERT INTO prime_world_events (id, owner_user_id, conversation_id, client_event_id, type, payload_json, created_at)
          VALUES (?, ?, ?, ?, 'world.start', '{}', ?)`,
-        [eventId, input.ownerUserId, input.conversationId, `reset:${runId}`, now],
+        [
+          eventId,
+          input.ownerUserId,
+          input.conversationId,
+          `reset:${runId}`,
+          now,
+        ],
         connection,
       );
       await execute(
         `INSERT INTO prime_world_runs (id, event_id, owner_user_id, conversation_id, definition_revision, definition_json, status, created_at)
          VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)`,
-        [runId, eventId, input.ownerUserId, input.conversationId, input.definition.definitionRevision, JSON.stringify(input.definition), now],
+        [
+          runId,
+          eventId,
+          input.ownerUserId,
+          input.conversationId,
+          input.definition.definitionRevision,
+          JSON.stringify(input.definition),
+          now,
+        ],
         connection,
       );
       return { runId };

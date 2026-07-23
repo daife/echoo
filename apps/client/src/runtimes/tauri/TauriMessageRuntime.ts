@@ -1,4 +1,8 @@
-import type { Message, PrimeWorldRealtimeEvent, SyncChange } from "@echoo/shared";
+import type {
+  Message,
+  PrimeWorldRealtimeEvent,
+  SyncChange,
+} from "@echoo/shared";
 import type {
   AuthRuntime,
   ConversationAgentActivityEvent,
@@ -33,7 +37,10 @@ export class TauriMessageRuntime implements MessageRuntime {
 
   async stopRealtime(): Promise<void> {
     this.started = false;
-    document.removeEventListener("visibilitychange", this.handleVisibilityChange);
+    document.removeEventListener(
+      "visibilitychange",
+      this.handleVisibilityChange,
+    );
     await this.handoff;
     await this.realtime.stopRealtime();
     await tauriInvoke("plugin:keepalive|stop").catch(() => undefined);
@@ -47,6 +54,12 @@ export class TauriMessageRuntime implements MessageRuntime {
 
   getSyncStatus() {
     return this.realtime.getSyncStatus();
+  }
+
+  onSyncStatusChange(
+    handler: (status: "stopped" | "connecting" | "syncing" | "live") => void,
+  ) {
+    return this.realtime.onSyncStatusChange(handler);
   }
 
   getSyncCursor() {
@@ -177,7 +190,9 @@ interface NativeHandoff {
 
 function tokenExpiresAt(token: string) {
   try {
-    const payload = JSON.parse(atob(token.split(".")[1] ?? "")) as { exp?: number };
+    const payload = JSON.parse(atob(token.split(".")[1] ?? "")) as {
+      exp?: number;
+    };
     return (payload.exp ?? 0) * 1000;
   } catch {
     return 0;

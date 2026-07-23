@@ -9,6 +9,7 @@ import { closeRedis, getRedis } from "./infra/redis/redis.js";
 import { registerAgentRoutes } from "./modules/agents/agents.controller.js";
 import { registerPrimeWorldRoutes } from "./modules/agents/kinds/prime-world/prime-world.controller.js";
 import { PrimeWorldService } from "./modules/agents/kinds/prime-world/prime-world.service.js";
+import { PrimeWorldRetentionScheduler } from "./modules/agents/kinds/prime-world/prime-world-retention.scheduler.js";
 import { PrimeFigureWakeupScheduler } from "./modules/agents/kinds/prime-figure/prime-figure-silence.scheduler.js";
 import { registerAuthDecorators } from "./modules/auth/auth.decorators.js";
 import { registerAuthRoutes } from "./modules/auth/auth.controller.js";
@@ -54,6 +55,7 @@ export async function buildApp() {
   const primeWakeupScheduler = new PrimeFigureWakeupScheduler();
   const runQueue = new AgentRunQueue();
   const worldRunService = new PrimeWorldService();
+  const worldRetentionScheduler = new PrimeWorldRetentionScheduler();
   let worldRecoveryTimer: ReturnType<typeof setInterval> | undefined;
   let worldScheduleTimer: ReturnType<typeof setInterval> | undefined;
   const resourceQueue = new ResourceProcessingQueue();
@@ -156,9 +158,16 @@ export async function buildApp() {
       .catch((error) =>
         app.log.warn(error, "Prime world queued-run recovery unavailable"),
       );
-    void worldRunService.dispatchDueTimers().catch((error) =>
-      app.log.warn(error, "Prime world timer recovery unavailable"),
-    );
+    void worldRunService
+      .dispatchDueTimers()
+      .catch((error) =>
+        app.log.warn(error, "Prime world timer recovery unavailable"),
+      );
+    void worldRetentionScheduler
+      .start()
+      .catch((error) =>
+        app.log.warn(error, "Prime world retention unavailable"),
+      );
     worldRecoveryTimer = setInterval(() => {
       void worldRunService
         .recoverQueuedRuns()
@@ -168,9 +177,11 @@ export async function buildApp() {
     }, 30_000);
     worldRecoveryTimer.unref();
     worldScheduleTimer = setInterval(() => {
-      void worldRunService.dispatchDueTimers().catch((error) =>
-        app.log.warn(error, "Prime world timer dispatch failed"),
-      );
+      void worldRunService
+        .dispatchDueTimers()
+        .catch((error) =>
+          app.log.warn(error, "Prime world timer dispatch failed"),
+        );
     }, 1_000);
     worldScheduleTimer.unref();
     void resourceQueue
@@ -191,6 +202,7 @@ export async function buildApp() {
     runQueue.stop();
     if (worldRecoveryTimer) clearInterval(worldRecoveryTimer);
     if (worldScheduleTimer) clearInterval(worldScheduleTimer);
+    worldRetentionScheduler.stop();
     resourceQueue.stop();
     resourceCleanupQueue.stop();
     wechatService.stopAll();

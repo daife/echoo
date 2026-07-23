@@ -98,6 +98,21 @@ export class MediaCache {
     return request;
   }
 
+  getByResourceId(
+    resourceId: string,
+    variant: MediaVariant = "display",
+    signal?: AbortSignal,
+  ) {
+    return this.get(resourcePath(resourceId), variant, signal);
+  }
+
+  getDirectUrlByResourceId(
+    resourceId: string,
+    variant: MediaVariant = "display",
+  ) {
+    return this.getDirectUrl(resourcePath(resourceId), variant);
+  }
+
   async getDirectUrl(mediaUrl: string, variant: MediaVariant = "original") {
     const resourceId = getResourceId(mediaUrl);
     if (!resourceId || !this.session) return resolveMediaUrl(mediaUrl);
@@ -518,6 +533,10 @@ export function getResourceId(mediaUrl?: string) {
 
 export function getCacheableMediaKey(mediaUrl: string) {
   return getResourceId(mediaUrl) ? resolveMediaUrl(mediaUrl)! : null;
+}
+
+function resourcePath(resourceId: string) {
+  return `/api/resources/${encodeURIComponent(resourceId)}/file`;
 }
 
 function getApiOrigin() {

@@ -69,14 +69,21 @@ export class WebMessageRuntime implements MessageRuntime {
   private readonly audioFailedHandlers = new Set<
     (event: MessageAudioFailedEvent) => void
   >();
-  private readonly primeWorldHandlers = new Set<(event: PrimeWorldRealtimeEvent) => void>();
-  private readonly primeWorldAudioHandlers = new Set<(event: PrimeWorldAudioChunkEvent) => void>();
+  private readonly primeWorldHandlers = new Set<
+    (event: PrimeWorldRealtimeEvent) => void
+  >();
+  private readonly primeWorldAudioHandlers = new Set<
+    (event: PrimeWorldAudioChunkEvent) => void
+  >();
+  private readonly syncStatusHandlers = new Set<
+    (status: "stopped" | "connecting" | "syncing" | "live") => void
+  >();
 
   constructor(private readonly auth: AuthRuntime) {}
 
   async startRealtime(): Promise<void> {
     this.shouldReconnect = true;
-    this.syncStatus = "connecting";
+    this.setSyncStatus("connecting");
     this.clearReconnectTimer();
     if (this.socket && this.socket.readyState <= WebSocket.OPEN)
       return this.connectPromise ?? Promise.resolve();
@@ -127,7 +134,7 @@ export class WebMessageRuntime implements MessageRuntime {
     socket.onclose = () => {
       if (this.socket !== socket) return;
       this.socket = null;
-      this.syncStatus = "connecting";
+      this.setSyncStatus("connecting");
       this.clearActiveConversations();
       this.scheduleReconnect();
     };
@@ -161,7 +168,9 @@ export class WebMessageRuntime implements MessageRuntime {
         return;
       }
       if (payload.type.startsWith("world.")) {
-        this.primeWorldHandlers.forEach((handler) => handler(payload as PrimeWorldRealtimeEvent));
+        this.primeWorldHandlers.forEach((handler) =>
+          handler(payload as PrimeWorldRealtimeEvent),
+        );
         return;
       }
       if (payload.type === "conversation.agent_activity") {
@@ -211,12 +220,20 @@ export class WebMessageRuntime implements MessageRuntime {
     this.clearActiveConversations();
     this.socket?.close(1000, "client stop");
     this.socket = null;
-    this.syncStatus = "stopped";
+    this.setSyncStatus("stopped");
     this.pendingSyncChanges.length = 0;
   }
 
   getSyncStatus() {
     return this.syncStatus;
+  }
+
+  onSyncStatusChange(
+    handler: (status: "stopped" | "connecting" | "syncing" | "live") => void,
+  ) {
+    this.syncStatusHandlers.add(handler);
+    handler(this.syncStatus);
+    return () => this.syncStatusHandlers.delete(handler);
   }
 
   async getSyncCursor() {
@@ -241,7 +258,7 @@ export class WebMessageRuntime implements MessageRuntime {
   }
 
   private async catchUp(headCursor: number, token: string) {
-    this.syncStatus = "syncing";
+    this.setSyncStatus("syncing");
     let cursor = Number(localStorage.getItem(syncCursorKey(token)) ?? 0);
     for (;;) {
       const response = await fetch(
@@ -296,7 +313,13 @@ export class WebMessageRuntime implements MessageRuntime {
       .forEach((change) => {
         if (change.cursor > cursor) this.applySyncChange(change);
       });
-    this.syncStatus = "live";
+    this.setSyncStatus("live");
+  }
+
+  private setSyncStatus(status: "stopped" | "connecting" | "syncing" | "live") {
+    if (this.syncStatus === status) return;
+    this.syncStatus = status;
+    this.syncStatusHandlers.forEach((handler) => handler(status));
   }
 
   private applySyncChange(change: SyncChange) {

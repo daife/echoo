@@ -49,6 +49,36 @@ export async function initializeDatabase() {
       await connection.query(
         "ALTER TABLE agents ADD COLUMN source_public_asset_id VARCHAR(64) NULL AFTER definition",
       );
+    const [worldCompactionColumns] = await connection.query<RowDataPacket[]>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = DATABASE() AND table_name = 'prime_world_runs'
+         AND column_name = 'compacted_at'`,
+    );
+    if (!worldCompactionColumns.length)
+      await connection.query(
+        "ALTER TABLE prime_world_runs ADD COLUMN compacted_at BIGINT NULL AFTER error_detail",
+      );
+    const [historyRunColumn] = await connection.query<
+      Array<RowDataPacket & { is_nullable: "YES" | "NO" }>
+    >(
+      `SELECT is_nullable FROM information_schema.columns
+       WHERE table_schema = DATABASE()
+         AND table_name = 'prime_world_history_entries'
+         AND column_name = 'run_id'`,
+    );
+    if (historyRunColumn[0]?.is_nullable === "NO") {
+      await connection.query(
+        "ALTER TABLE prime_world_history_entries DROP FOREIGN KEY fk_prime_world_history_run",
+      );
+      await connection.query(
+        "ALTER TABLE prime_world_history_entries MODIFY run_id VARCHAR(64) NULL",
+      );
+      await connection.query(
+        `ALTER TABLE prime_world_history_entries
+         ADD CONSTRAINT fk_prime_world_history_run
+         FOREIGN KEY (run_id) REFERENCES prime_world_runs(id) ON DELETE SET NULL`,
+      );
+    }
     const [billingKindColumns] = await connection.query<RowDataPacket[]>(
       `SELECT data_type FROM information_schema.columns
        WHERE table_schema = DATABASE() AND table_name = 'billing_ledger'

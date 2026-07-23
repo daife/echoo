@@ -13,23 +13,31 @@ export class PrimeWorldAudioPlayer {
     this.expectedSequence = 0;
     this.missingChunk = false;
     this.audio = new Audio();
-    if (typeof MediaSource === "undefined" || !MediaSource.isTypeSupported(mimeType)) return;
+    if (
+      typeof MediaSource === "undefined" ||
+      !MediaSource.isTypeSupported(mimeType)
+    )
+      return;
     const mediaSource = new MediaSource();
     this.mediaSource = mediaSource;
     this.objectUrl = URL.createObjectURL(mediaSource);
     this.audio.src = this.objectUrl;
-    mediaSource.addEventListener("sourceopen", () => {
-      if (this.mediaSource !== mediaSource) return;
-      try {
-        this.sourceBuffer = mediaSource.addSourceBuffer(mimeType);
-        this.sourceBuffer.mode = "sequence";
-        this.sourceBuffer.addEventListener("updateend", () => this.flush());
-        this.flush();
-        void this.audio?.play().catch(() => undefined);
-      } catch {
-        this.sourceBuffer = null;
-      }
-    }, { once: true });
+    mediaSource.addEventListener(
+      "sourceopen",
+      () => {
+        if (this.mediaSource !== mediaSource) return;
+        try {
+          this.sourceBuffer = mediaSource.addSourceBuffer(mimeType);
+          this.sourceBuffer.mode = "sequence";
+          this.sourceBuffer.addEventListener("updateend", () => this.flush());
+          this.flush();
+          void this.audio?.play().catch(() => undefined);
+        } catch {
+          this.sourceBuffer = null;
+        }
+      },
+      { once: true },
+    );
   }
 
   append(sequence: number, data: Uint8Array) {
@@ -44,6 +52,7 @@ export class PrimeWorldAudioPlayer {
   async complete(fallbackUrl?: string) {
     if (this.missingChunk && fallbackUrl) {
       this.stop();
+      if (fallbackUrl.startsWith("blob:")) this.objectUrl = fallbackUrl;
       this.audio = new Audio(fallbackUrl);
       await this.audio.play().catch(() => undefined);
       return;
@@ -51,7 +60,8 @@ export class PrimeWorldAudioPlayer {
     if (this.mediaSource && this.sourceBuffer) {
       const finish = () => {
         if (this.queue.length || this.sourceBuffer?.updating) return;
-        if (this.mediaSource?.readyState === "open") this.mediaSource.endOfStream();
+        if (this.mediaSource?.readyState === "open")
+          this.mediaSource.endOfStream();
       };
       this.sourceBuffer.addEventListener("updateend", finish, { once: true });
       finish();
@@ -83,8 +93,18 @@ export class PrimeWorldAudioPlayer {
   }
 
   private flush() {
-    if (!this.sourceBuffer || this.sourceBuffer.updating || !this.queue.length || this.missingChunk) return;
+    if (
+      !this.sourceBuffer ||
+      this.sourceBuffer.updating ||
+      !this.queue.length ||
+      this.missingChunk
+    )
+      return;
     const next = this.queue.shift()!;
-    try { this.sourceBuffer.appendBuffer(next); } catch { this.missingChunk = true; }
+    try {
+      this.sourceBuffer.appendBuffer(next);
+    } catch {
+      this.missingChunk = true;
+    }
   }
 }

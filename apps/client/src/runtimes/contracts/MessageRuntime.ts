@@ -1,4 +1,9 @@
-import type { AppWsServerEvent, Message, PrimeWorldRealtimeEvent, SyncChange } from "@echoo/shared";
+import type {
+  AppWsServerEvent,
+  Message,
+  PrimeWorldRealtimeEvent,
+  SyncChange,
+} from "@echoo/shared";
 
 export type MessageDeltaEvent = Extract<
   AppWsServerEvent,
@@ -47,6 +52,9 @@ export interface MessageRuntime {
   stopRealtime(): Promise<void>;
   getStatus(): Promise<"running" | "stopped" | "unsupported">;
   getSyncStatus(): "stopped" | "connecting" | "syncing" | "live";
+  onSyncStatusChange(
+    handler: (status: "stopped" | "connecting" | "syncing" | "live") => void,
+  ): () => void;
   getSyncCursor(): Promise<number>;
   onSyncChange(handler: (change: SyncChange) => void): () => void;
   onSyncReset(handler: () => void): () => void;
@@ -72,6 +80,10 @@ export interface MessageRuntime {
   onMessageAudioFailed(
     handler: (event: MessageAudioFailedEvent) => void,
   ): () => void;
-  onPrimeWorldEvent(handler: (event: PrimeWorldRealtimeEvent) => void): () => void;
-  onPrimeWorldAudioChunk(handler: (event: PrimeWorldAudioChunkEvent) => void): () => void;
+  onPrimeWorldEvent(
+    handler: (event: PrimeWorldRealtimeEvent) => void,
+  ): () => void;
+  onPrimeWorldAudioChunk(
+    handler: (event: PrimeWorldAudioChunkEvent) => void,
+  ): () => void;
 }

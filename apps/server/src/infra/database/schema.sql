@@ -196,6 +196,7 @@ CREATE TABLE IF NOT EXISTS prime_world_runs (
   state_version_after BIGINT UNSIGNED NULL,
   error_code VARCHAR(80) NULL,
   error_detail VARCHAR(2000) NULL,
+  compacted_at BIGINT NULL,
   started_at BIGINT NULL,
   finished_at BIGINT NULL,
   created_at BIGINT NOT NULL,
@@ -210,7 +211,7 @@ CREATE TABLE IF NOT EXISTS prime_world_history_entries (
   id VARCHAR(64) NOT NULL UNIQUE,
   owner_user_id VARCHAR(64) NOT NULL,
   conversation_id VARCHAR(64) NOT NULL,
-  run_id VARCHAR(64) NOT NULL,
+  run_id VARCHAR(64) NULL,
   node_id VARCHAR(120) NOT NULL,
   channel VARCHAR(80) NOT NULL,
   role VARCHAR(20) NOT NULL,
@@ -221,7 +222,7 @@ CREATE TABLE IF NOT EXISTS prime_world_history_entries (
   INDEX idx_prime_world_history_read (conversation_id, channel, seq),
   CONSTRAINT fk_prime_world_history_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_prime_world_history_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
-  CONSTRAINT fk_prime_world_history_run FOREIGN KEY (run_id) REFERENCES prime_world_runs(id) ON DELETE CASCADE
+  CONSTRAINT fk_prime_world_history_run FOREIGN KEY (run_id) REFERENCES prime_world_runs(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS prime_world_scheduled_events (

@@ -123,10 +123,7 @@ export function buildEnvironment() {
       "RESOURCE_S3_FORCE_PATH_STYLE",
       false,
     ),
-    resourceS3DirectUploads: booleanValue(
-      "RESOURCE_S3_DIRECT_UPLOADS",
-      false,
-    ),
+    resourceS3DirectUploads: booleanValue("RESOURCE_S3_DIRECT_UPLOADS", false),
     resourceS3DirectDownloads: booleanValue(
       "RESOURCE_S3_DIRECT_DOWNLOADS",
       false,
@@ -164,6 +161,21 @@ export function buildEnvironment() {
       integer: true,
       minimum: 100,
     }),
+    primeWorldFullRunRetentionMs: numberValue(
+      "PRIME_WORLD_FULL_RUN_RETENTION_MS",
+      7 * 24 * 60 * 60_000,
+      { integer: true, minimum: 60_000 },
+    ),
+    primeWorldRunRetentionMs: numberValue(
+      "PRIME_WORLD_RUN_RETENTION_MS",
+      30 * 24 * 60 * 60_000,
+      { integer: true, minimum: 60_000 },
+    ),
+    primeWorldCleanupIntervalMs: numberValue(
+      "PRIME_WORLD_CLEANUP_INTERVAL_MS",
+      60 * 60_000,
+      { integer: true, minimum: 60_000 },
+    ),
   });
 }
 

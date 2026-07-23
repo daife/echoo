@@ -2,6 +2,11 @@
 
 且为了防止触发pnpm的交互式依赖检查，需要携带CI=true
 
+Windows 测试内存约定：
+- 避免通过 `pnpm --filter @echoo/server test -- <file>` 定向运行服务端测试；当前 runner 会忽略文件过滤并并发启动全仓 `tsx/esbuild`，可能耗尽内存。
+- 服务端定向测试使用 `CI=true TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm --filter @echoo/server exec tsx --test --test-concurrency=1 <test-file>`。
+- 客户端定向 Vitest 使用 `CI=true TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm --filter @echoo/client exec vitest run <test-files> --pool=threads --maxWorkers=1`；全量测试也应限制 worker 或顺序执行，避免与构建、类型检查并发运行。
+
 借助codegraph mcp快速辅助理解代码
 
 由于项目还在开发阶段，一般情况不用考虑旧数据库兼容
