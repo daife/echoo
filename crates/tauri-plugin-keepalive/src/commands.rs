@@ -23,6 +23,16 @@ struct StartArgs {
 }
 
 #[cfg(target_os = "android")]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShowNotificationArgs {
+    id: String,
+    kind: String,
+    title: String,
+    body: String,
+}
+
+#[cfg(target_os = "android")]
 #[tauri::command(rename_all = "camelCase")]
 pub async fn start<R: Runtime>(
     _app: AppHandle<R>,
@@ -107,4 +117,66 @@ pub async fn handoff() -> Result<serde_json::Value, String> {
         "expiresAt": 0,
         "cursor": 0
     }))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn prepare_notifications<R: Runtime>(
+    _app: AppHandle<R>,
+    keepalive: State<'_, KeepAlive<R>>,
+) -> Result<(), String> {
+    keepalive.run("prepareNotifications", ())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+pub async fn prepare_notifications() -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command(rename_all = "camelCase")]
+pub async fn show_notification<R: Runtime>(
+    _app: AppHandle<R>,
+    keepalive: State<'_, KeepAlive<R>>,
+    id: String,
+    kind: String,
+    title: String,
+    body: String,
+) -> Result<(), String> {
+    keepalive.run(
+        "showNotification",
+        ShowNotificationArgs {
+            id,
+            kind,
+            title,
+            body,
+        },
+    )
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+pub async fn show_notification(
+    _id: String,
+    _kind: String,
+    _title: String,
+    _body: String,
+) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn open_notification_settings<R: Runtime>(
+    _app: AppHandle<R>,
+    keepalive: State<'_, KeepAlive<R>>,
+) -> Result<(), String> {
+    keepalive.run("openNotificationSettings", ())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+pub async fn open_notification_settings() -> Result<(), String> {
+    Ok(())
 }

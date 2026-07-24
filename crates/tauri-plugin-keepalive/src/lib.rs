@@ -4,11 +4,22 @@ mod desktop;
 mod mobile;
 mod models;
 
-pub use commands::{handoff, start, status, stop};
+pub use commands::{
+    handoff, open_notification_settings, prepare_notifications, show_notification, start, status,
+    stop,
+};
 
 pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
-    let builder = tauri::plugin::Builder::new("keepalive")
-        .invoke_handler(tauri::generate_handler![start, stop, status, handoff]);
+    let builder =
+        tauri::plugin::Builder::new("keepalive").invoke_handler(tauri::generate_handler![
+            start,
+            stop,
+            status,
+            handoff,
+            prepare_notifications,
+            show_notification,
+            open_notification_settings
+        ]);
 
     #[cfg(target_os = "android")]
     let builder = builder.setup(|app, api| {

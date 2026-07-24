@@ -2193,16 +2193,34 @@
           "markdownDescription": "Denies the unminimize command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the Echoo keepalive plugin\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-status`\n- `allow-handoff`",
+          "description": "Default permissions for the Echoo keepalive plugin\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-status`\n- `allow-handoff`\n- `allow-prepare-notifications`\n- `allow-show-notification`\n- `allow-open-notification-settings`",
           "type": "string",
           "const": "keepalive:default",
-          "markdownDescription": "Default permissions for the Echoo keepalive plugin\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-status`\n- `allow-handoff`"
+          "markdownDescription": "Default permissions for the Echoo keepalive plugin\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-status`\n- `allow-handoff`\n- `allow-prepare-notifications`\n- `allow-show-notification`\n- `allow-open-notification-settings`"
         },
         {
           "description": "Enables the handoff command without any pre-configured scope.",
           "type": "string",
           "const": "keepalive:allow-handoff",
           "markdownDescription": "Enables the handoff command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_notification_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "keepalive:allow-open-notification-settings",
+          "markdownDescription": "Enables the open_notification_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the prepare_notifications command without any pre-configured scope.",
+          "type": "string",
+          "const": "keepalive:allow-prepare-notifications",
+          "markdownDescription": "Enables the prepare_notifications command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the show_notification command without any pre-configured scope.",
+          "type": "string",
+          "const": "keepalive:allow-show-notification",
+          "markdownDescription": "Enables the show_notification command without any pre-configured scope."
         },
         {
           "description": "Enables the start command without any pre-configured scope.",
@@ -2227,6 +2245,24 @@
           "type": "string",
           "const": "keepalive:deny-handoff",
           "markdownDescription": "Denies the handoff command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_notification_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "keepalive:deny-open-notification-settings",
+          "markdownDescription": "Denies the open_notification_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the prepare_notifications command without any pre-configured scope.",
+          "type": "string",
+          "const": "keepalive:deny-prepare-notifications",
+          "markdownDescription": "Denies the prepare_notifications command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the show_notification command without any pre-configured scope.",
+          "type": "string",
+          "const": "keepalive:deny-show-notification",
+          "markdownDescription": "Denies the show_notification command without any pre-configured scope."
         },
         {
           "description": "Denies the start command without any pre-configured scope.",

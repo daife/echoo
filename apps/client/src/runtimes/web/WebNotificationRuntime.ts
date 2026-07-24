@@ -5,6 +5,8 @@ import type {
 import type { NotificationRuntime } from "../contracts";
 
 export class WebNotificationRuntime implements NotificationRuntime {
+  readonly permissionRequestMode = "manual" as const;
+
   async getPermissionState(): Promise<NotificationPermissionState> {
     if (!("Notification" in globalThis)) return "unsupported";
     return Notification.permission === "default"

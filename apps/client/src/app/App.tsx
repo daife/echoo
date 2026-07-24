@@ -838,6 +838,7 @@ export function App() {
           notificationPermission={{
             state: notificationCenter.permissionState,
             request: notificationCenter.requestPermission,
+            openSettings: notificationCenter.openNotificationSettings,
           }}
         />
       );
@@ -884,6 +885,7 @@ export function App() {
     notificationCenter.activityRefreshVersion,
     notificationCenter.permissionState,
     notificationCenter.requestPermission,
+    notificationCenter.openNotificationSettings,
     view,
   ]);
 

@@ -34,6 +34,7 @@ export function SettingsPage({
   notificationPermission: {
     state: NotificationPermissionState;
     request: () => Promise<boolean>;
+    openSettings?: () => Promise<void>;
   };
 }) {
   const auth = useAuth();
@@ -157,14 +158,24 @@ export function SettingsPage({
         </div>
         <button
           type="button"
-          disabled={
-            notificationPermission.state === "granted" ||
-            notificationPermission.state === "unsupported"
-          }
+          disabled={notificationPermission.state === "unsupported"}
           className="rounded-full border border-white/10 px-4 py-2 text-sm text-white/65 transition hover:border-white/20 hover:text-white disabled:cursor-default disabled:opacity-40"
-          onClick={() => void notificationPermission.request()}
+          onClick={() =>
+            void (notificationPermission.openSettings &&
+            notificationPermission.state !== "prompt"
+              ? notificationPermission.openSettings()
+              : notificationPermission.request())
+          }
         >
-          {notificationPermission.state === "granted" ? "已开启" : "开启通知"}
+          {notificationPermission.state === "granted" &&
+          notificationPermission.openSettings
+            ? "通知设置"
+            : notificationPermission.state === "granted"
+              ? "已开启"
+              : notificationPermission.state === "denied" &&
+                  notificationPermission.openSettings
+                ? "前往系统设置"
+                : "开启通知"}
         </button>
       </div>
       <div className="glass-panel rounded-2xl p-5">

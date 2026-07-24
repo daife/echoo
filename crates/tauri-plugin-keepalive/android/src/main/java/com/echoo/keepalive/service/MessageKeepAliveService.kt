@@ -1,12 +1,9 @@
 package com.echoo.keepalive.service
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -20,7 +17,6 @@ import com.echoo.keepalive.socket.SocketManager
 class MessageKeepAliveService : Service(), DefaultLifecycleObserver {
     companion object {
         const val ACTION_START = "com.echoo.keepalive.START"
-        private const val CHANNEL_ID = "keep_alive_channel"
         private const val NOTIFICATION_ID = 1001
         @Volatile var isRunning = false
             private set
@@ -29,9 +25,8 @@ class MessageKeepAliveService : Service(), DefaultLifecycleObserver {
     override fun onCreate() {
         super<Service>.onCreate()
         isRunning = true
-        createChannel()
-        NotificationChannels.createMessageChannel(this)
-        NotificationChannels.createActivityChannel(this)
+        NotificationChannels.prepare(this)
+        NotificationChannels.createServiceChannel(this)
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
     }
 
@@ -71,7 +66,7 @@ class MessageKeepAliveService : Service(), DefaultLifecycleObserver {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
         }
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(this, NotificationChannels.SERVICE_CHANNEL_ID)
             .setContentTitle("Echoo")
             .setContentText("正在后台接收新消息")
             .setSmallIcon(android.R.drawable.stat_notify_chat)
@@ -89,17 +84,6 @@ class MessageKeepAliveService : Service(), DefaultLifecycleObserver {
             notification,
             ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING
         )
-    }
-
-    private fun createChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Echoo 后台消息服务",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        }
     }
 
     private fun isAppInForeground() = ProcessLifecycleOwner.get().lifecycle

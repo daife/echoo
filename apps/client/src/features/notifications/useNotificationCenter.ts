@@ -7,11 +7,18 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRuntime } from "../../app/providers/RuntimeProvider";
 import { useServices } from "../../app/providers/ServicesProvider";
+import type {
+  MessageRuntime,
+  NotificationRuntime,
+} from "../../runtimes/contracts";
 
 const EMPTY_NOTIFICATION_STATE: NotificationState = {
   activityUnread: false,
   activityUpdatedAt: 0,
 };
+
+const AUTO_PERMISSION_REQUEST_KEY =
+  "notification.permission-auto-requested.v1";
 
 export function useNotificationCenter(input: {
   userId?: string;
@@ -134,7 +141,17 @@ export function useNotificationCenter(input: {
     const dismissKey = permissionPromptKey(input.userId);
     setPromptDismissed(localStorage.getItem(dismissKey) === "1");
     let cancelled = false;
-    const syncPermission = async () => {
+    const syncPermission = async (allowAutomaticRequest = false) => {
+      if (allowAutomaticRequest) {
+        const state = await initializeNotificationPermission({
+          notification: runtime.notification,
+          message: runtime.message,
+          storage: localStorage,
+          isCancelled: () => cancelled,
+        });
+        if (!cancelled) setPermissionState(state);
+        return;
+      }
       const state = await runtime.notification.getPermissionState();
       if (cancelled) return;
       setPermissionState(state);
@@ -145,7 +162,7 @@ export function useNotificationCenter(input: {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") void syncPermission();
     };
-    void syncPermission();
+    void syncPermission(true);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       cancelled = true;
@@ -304,6 +321,7 @@ export function useNotificationCenter(input: {
     markConversationRead,
     markActivityRead,
     requestPermission,
+    openNotificationSettings: runtime.notification.openSettings,
     dismissPrompt,
   };
 }
@@ -317,6 +335,31 @@ export function upsertConversation(
 
 export function hasUnreadConversations(conversations: Conversation[]) {
   return conversations.some((conversation) => conversation.unreadCount > 0);
+}
+
+export async function initializeNotificationPermission(input: {
+  notification: NotificationRuntime;
+  message: Pick<MessageRuntime, "setBackgroundNotificationsEnabled">;
+  storage: Pick<Storage, "getItem" | "setItem">;
+  isCancelled?: () => boolean;
+}) {
+  let state = await input.notification.getPermissionState();
+  const shouldRequestAutomatically =
+    state === "prompt" &&
+    input.notification.permissionRequestMode === "automatic" &&
+    input.storage.getItem(AUTO_PERMISSION_REQUEST_KEY) !== "1";
+
+  if (shouldRequestAutomatically) {
+    input.storage.setItem(AUTO_PERMISSION_REQUEST_KEY, "1");
+    const granted = await input.notification.requestPermission();
+    state = granted
+      ? "granted"
+      : await input.notification.getPermissionState();
+  }
+
+  if (!input.isCancelled?.())
+    await input.message.setBackgroundNotificationsEnabled(state === "granted");
+  return state;
 }
 
 function permissionPromptKey(userId: string) {

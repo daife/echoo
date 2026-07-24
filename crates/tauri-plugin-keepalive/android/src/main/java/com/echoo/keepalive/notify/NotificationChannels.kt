@@ -11,8 +11,23 @@ import android.os.Build
 object NotificationChannels {
     const val MESSAGE_CHANNEL_ID = "message_heads_up_v1"
     const val ACTIVITY_CHANNEL_ID = "activity_channel"
+    const val SERVICE_CHANNEL_ID = "keep_alive_channel"
+
+    private const val LEGACY_MESSAGE_CHANNEL_ID = "message_channel"
+    private const val TAURI_DEFAULT_CHANNEL_ID = "default"
 
     private val MESSAGE_VIBRATION_PATTERN = longArrayOf(0, 240, 120, 240)
+
+    fun prepare(context: Context) {
+        createMessageChannel(context)
+        createActivityChannel(context)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.getSystemService(NotificationManager::class.java).apply {
+                deleteNotificationChannel(LEGACY_MESSAGE_CHANNEL_ID)
+                deleteNotificationChannel(TAURI_DEFAULT_CHANNEL_ID)
+            }
+        }
+    }
 
     fun createMessageChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -42,9 +57,27 @@ object NotificationChannels {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 ACTIVITY_CHANNEL_ID,
-                "Echoo activity",
+                "Echoo 动态",
                 NotificationManager.IMPORTANCE_DEFAULT
-            )
+            ).apply {
+                description = "提醒新的动态"
+            }
+            context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+    }
+
+    fun createServiceChannel(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                SERVICE_CHANNEL_ID,
+                "Echoo 后台消息服务",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "保持后台消息连接"
+                enableVibration(false)
+                setShowBadge(false)
+                setSound(null, null)
+            }
             context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }

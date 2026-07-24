@@ -2,4 +2,12 @@
 
 [default]
 description = "Default permissions for the Echoo keepalive plugin"
-permissions = ["allow-start", "allow-stop", "allow-status", "allow-handoff"]
+permissions = [
+  "allow-start",
+  "allow-stop",
+  "allow-status",
+  "allow-handoff",
+  "allow-prepare-notifications",
+  "allow-show-notification",
+  "allow-open-notification-settings",
+]
