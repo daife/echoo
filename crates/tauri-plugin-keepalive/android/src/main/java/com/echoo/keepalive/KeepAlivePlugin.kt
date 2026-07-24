@@ -25,15 +25,6 @@ internal class StartArgs {
 @TauriPlugin
 class KeepAlivePlugin(private val activity: Activity) : Plugin(activity) {
     @Command
-    fun background(invoke: Invoke) {
-        if (activity.moveTaskToBack(true)) {
-            invoke.resolve()
-        } else {
-            invoke.reject("Failed to move the Android task to the background")
-        }
-    }
-
-    @Command
     fun start(invoke: Invoke) {
         val args = invoke.parseArgs(StartArgs::class.java)
         AndroidTokenStore.save(

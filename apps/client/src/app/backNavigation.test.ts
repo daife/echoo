@@ -3,7 +3,6 @@ import { WebAppNavigationRuntime } from "../runtimes/web/WebAppNavigationRuntime
 import {
   BACK_HANDLER_PRIORITY,
   BackHandlerRegistry,
-  dispatchBack,
   resolveAppBackAction,
   type AppView,
 } from "./backNavigation";
@@ -48,19 +47,35 @@ describe("Android back handler registry", () => {
 
   it("treats a busy no-op handler as consumed instead of falling through", () => {
     const registry = new BackHandlerRegistry();
-    const fallback = vi.fn();
     registry.register(() => undefined, BACK_HANDLER_PRIORITY.dialog);
 
-    expect(dispatchBack(registry, fallback)).toBe(true);
-    expect(fallback).not.toHaveBeenCalled();
+    expect(registry.dispatch()).toBe(true);
   });
 
-  it("runs the background fallback exactly once at the root", () => {
+  it("reports handler count changes so native listening can follow the stack", () => {
     const registry = new BackHandlerRegistry();
-    const fallback = vi.fn();
+    const subscriber = vi.fn();
+    const unsubscribe = registry.subscribe(subscriber);
 
-    expect(dispatchBack(registry, fallback)).toBe(false);
-    expect(fallback).toHaveBeenCalledTimes(1);
+    const unregister = registry.register(() => undefined);
+    expect(registry.getHandlerCount()).toBe(1);
+    expect(registry.hasHandlers()).toBe(true);
+    unregister();
+    expect(registry.getHandlerCount()).toBe(0);
+    expect(registry.hasHandlers()).toBe(false);
+    expect(subscriber).toHaveBeenCalledTimes(2);
+
+    unsubscribe();
+    registry.register(() => undefined);
+    expect(subscriber).toHaveBeenCalledTimes(2);
+  });
+
+  it("has no handler at a root view, leaving the event to Android", () => {
+    const registry = new BackHandlerRegistry();
+
+    expect(registry.getHandlerCount()).toBe(0);
+    expect(registry.hasHandlers()).toBe(false);
+    expect(registry.dispatch()).toBe(false);
   });
 });
 
@@ -102,7 +117,6 @@ describe("web app navigation runtime", () => {
     const handler = vi.fn();
     const unlisten = await runtime.listenBackButton(handler);
 
-    await runtime.moveToBackground();
     unlisten();
 
     expect(handler).not.toHaveBeenCalled();

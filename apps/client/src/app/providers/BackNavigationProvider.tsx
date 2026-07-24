@@ -6,13 +6,13 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useSyncExternalStore,
   type PropsWithChildren,
 } from "react";
 import { useRuntime } from "./RuntimeProvider";
 import {
   BACK_HANDLER_PRIORITY,
   BackHandlerRegistry,
-  dispatchBack,
   type BackHandler,
 } from "../backNavigation";
 
@@ -27,25 +27,27 @@ const BackNavigationContext = createContext<BackNavigationContextValue>({
 export function BackNavigationProvider({ children }: PropsWithChildren) {
   const { appNavigation } = useRuntime();
   const registryRef = useRef(new BackHandlerRegistry());
+  const registry = registryRef.current;
+  const hasHandlers = useSyncExternalStore(
+    registry.subscribe,
+    registry.hasHandlers,
+    registry.hasHandlers,
+  );
   const register = useCallback(
     (handler: BackHandler, priority: number) =>
-      registryRef.current.register(handler, priority),
-    [],
+      registry.register(handler, priority),
+    [registry],
   );
   const value = useMemo(() => ({ register }), [register]);
 
   useEffect(() => {
+    if (!hasHandlers) return;
+
     let cancelled = false;
     let unlisten: (() => void | Promise<void>) | undefined;
-    const handleNativeBack = () =>
-      dispatchBack(
-        registryRef.current,
-        () => appNavigation.moveToBackground(),
-        (error) => console.error("Failed to move app to background", error),
-      );
 
     void appNavigation
-      .listenBackButton(handleNativeBack)
+      .listenBackButton(() => registry.dispatch())
       .then((cleanup) => {
         if (cancelled) void cleanup();
         else unlisten = cleanup;
@@ -58,7 +60,7 @@ export function BackNavigationProvider({ children }: PropsWithChildren) {
       cancelled = true;
       if (unlisten) void unlisten();
     };
-  }, [appNavigation]);
+  }, [appNavigation, hasHandlers, registry]);
 
   return (
     <BackNavigationContext.Provider value={value}>

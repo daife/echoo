@@ -1,2 +1,2 @@
 description = "Default permissions for the Echoo keepalive plugin"
-permissions = ["allow-start", "allow-stop", "allow-status", "allow-handoff", "allow-background"]
+permissions = ["allow-start", "allow-stop", "allow-status", "allow-handoff"]

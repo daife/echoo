@@ -8,4 +8,11 @@ class MainActivity : TauriActivity() {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
   }
+
+  @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+  override fun onBackPressed() {
+    if (!moveTaskToBack(true)) {
+      super.onBackPressed()
+    }
+  }
 }

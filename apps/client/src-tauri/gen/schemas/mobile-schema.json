@@ -2193,12 +2193,6 @@
           "markdownDescription": "Denies the unminimize command without any pre-configured scope."
         },
         {
-          "description": "Enables the background command without any pre-configured scope.",
-          "type": "string",
-          "const": "keepalive:allow-background",
-          "markdownDescription": "Enables the background command without any pre-configured scope."
-        },
-        {
           "description": "Enables the handoff command without any pre-configured scope.",
           "type": "string",
           "const": "keepalive:allow-handoff",
@@ -2221,12 +2215,6 @@
           "type": "string",
           "const": "keepalive:allow-stop",
           "markdownDescription": "Enables the stop command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the background command without any pre-configured scope.",
-          "type": "string",
-          "const": "keepalive:deny-background",
-          "markdownDescription": "Denies the background command without any pre-configured scope."
         },
         {
           "description": "Denies the handoff command without any pre-configured scope.",

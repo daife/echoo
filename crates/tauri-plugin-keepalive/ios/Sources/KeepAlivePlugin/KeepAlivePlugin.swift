@@ -2,10 +2,6 @@ import Tauri
 import WebKit
 
 class KeepAlivePlugin: Plugin {
-  @objc public func background(_ invoke: Invoke) throws {
-    invoke.resolve()
-  }
-
   @objc public func start(_ invoke: Invoke) throws {
     invoke.resolve()
   }

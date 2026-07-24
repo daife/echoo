@@ -17,6 +17,7 @@ interface BackHandlerEntry {
 export class BackHandlerRegistry {
   private nextId = 1;
   private readonly entries = new Map<number, BackHandlerEntry>();
+  private readonly subscribers = new Set<() => void>();
 
   constructor(
     private readonly onError: (error: unknown) => void = (error) =>
@@ -29,7 +30,24 @@ export class BackHandlerRegistry {
   ) {
     const id = this.nextId++;
     this.entries.set(id, { id, priority, handler });
-    return () => this.entries.delete(id);
+    this.notifySubscribers();
+    return () => {
+      if (!this.entries.delete(id)) return;
+      this.notifySubscribers();
+    };
+  }
+
+  subscribe = (subscriber: () => void) => {
+    this.subscribers.add(subscriber);
+    return () => this.subscribers.delete(subscriber);
+  };
+
+  getHandlerCount = () => this.entries.size;
+
+  hasHandlers = () => this.entries.size > 0;
+
+  private notifySubscribers() {
+    for (const subscriber of this.subscribers) subscriber();
   }
 
   dispatch() {
@@ -50,21 +68,6 @@ export class BackHandlerRegistry {
     }
     return true;
   }
-}
-
-export function dispatchBack(
-  registry: BackHandlerRegistry,
-  fallback: BackHandler,
-  onError: (error: unknown) => void = (error) =>
-    console.error("Android back fallback failed", error),
-) {
-  if (registry.dispatch()) return true;
-  try {
-    void Promise.resolve(fallback()).catch(onError);
-  } catch (error) {
-    onError(error);
-  }
-  return false;
 }
 
 export type AppView =
