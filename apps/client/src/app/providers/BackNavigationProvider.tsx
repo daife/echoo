@@ -37,6 +37,23 @@ export function NavigationLayerActivityProvider({
   );
 }
 
+export function NavigationLayer({
+  active,
+  children,
+}: PropsWithChildren<{ active: boolean }>) {
+  return (
+    <div
+      className="h-full min-h-0"
+      hidden={!active}
+      aria-hidden={!active || undefined}
+    >
+      <NavigationLayerActivityProvider active={active}>
+        {children}
+      </NavigationLayerActivityProvider>
+    </div>
+  );
+}
+
 export function BackNavigationProvider({ children }: PropsWithChildren) {
   const { appNavigation } = useRuntime();
   const registryRef = useRef(new BackHandlerRegistry());

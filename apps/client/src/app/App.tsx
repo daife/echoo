@@ -65,7 +65,7 @@ import {
 } from "./navigationHistory";
 import { resolveAppBackAction, type AppView } from "./backNavigation";
 import {
-  NavigationLayerActivityProvider,
+  NavigationLayer,
   useBackHandler,
 } from "./providers/BackNavigationProvider";
 
@@ -997,15 +997,9 @@ export function App() {
           {navigationLayers.map((entry, index) => {
             const active = index === navigationLayers.length - 1;
             return (
-              <div
-                key={entry.entryId}
-                hidden={!active}
-                aria-hidden={!active || undefined}
-              >
-                <NavigationLayerActivityProvider active={active}>
-                  {renderPage(entry.location)}
-                </NavigationLayerActivityProvider>
-              </div>
+              <NavigationLayer key={entry.entryId} active={active}>
+                {renderPage(entry.location)}
+              </NavigationLayer>
             );
           })}
         </main>
