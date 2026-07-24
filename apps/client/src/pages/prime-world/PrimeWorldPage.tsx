@@ -1,11 +1,14 @@
 import type {
   JsonObject,
   PrimeWorldAgent,
+  PrimeWorldRun,
+  PrimeWorldRuntimeState,
   WorldView,
   WorldViewElement,
 } from "@echoo/shared";
 import {
   ArrowLeft,
+  ArrowCounterClockwise,
   PaperPlaneRight,
   Play,
   Microphone,
@@ -46,6 +49,7 @@ export function PrimeWorldPage({
     agent.detail.presentation.startView,
   );
   const [busy, setBusy] = useState(false);
+  const [hasStarted, setHasStarted] = useState<boolean | null>(null);
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -76,6 +80,7 @@ export function PrimeWorldPage({
       setOfflineReadOnly(snapshot.cached);
       setTemporaryText({});
       const run = snapshot.run;
+      setHasStarted(isPrimeWorldStarted(snapshot.state, run));
       if (run?.status === "queued" || run?.status === "running") {
         activeRun.current = run.id;
         setBusy(true);
@@ -140,6 +145,7 @@ export function PrimeWorldPage({
             terminalRuns.current.delete(event.runId);
             activeRun.current = event.runId;
             setBusy(true);
+            setHasStarted(true);
             setTemporaryText({});
             textSequences.current.clear();
             player.current.stop();
@@ -245,7 +251,10 @@ export function PrimeWorldPage({
         expectedViewRevision: view.revision,
         interruptCurrent: type !== "world.start",
       });
-      if (!terminalRuns.current.has(run.id)) activeRun.current = run.id;
+      if (!terminalRuns.current.has(run.id)) {
+        activeRun.current = run.id;
+        setHasStarted(true);
+      }
       setInput("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "世界运行失败。");
@@ -264,6 +273,22 @@ export function PrimeWorldPage({
       confirmDeletion: (message) => window.confirm(message),
       onDeletingChange: setIsDeletingConversation,
       onError: setError,
+    });
+  };
+  const resetConversation = () => {
+    if (busy) return;
+    void requestPrimeWorldConversationReset({
+      conversationId: agent.conversationId,
+      onReset: (conversationId) => service.reset(conversationId),
+      confirmReset: (message) => window.confirm(message),
+      onResettingChange: setBusy,
+      onError: setError,
+    }).then((runId) => {
+      if (!runId) return;
+      if (!terminalRuns.current.has(runId)) {
+        activeRun.current = runId;
+        setHasStarted(true);
+      }
     });
   };
   const pushToTalk = usePushToTalk({
@@ -317,14 +342,26 @@ export function PrimeWorldPage({
           >
             <SlidersHorizontal size={18} />
           </button>
-          <button
-            className="flex h-9 items-center gap-2 rounded-lg bg-white px-3 text-sm font-medium text-black disabled:opacity-50"
-            disabled={busy || offlineReadOnly}
-            onClick={() => void dispatch("world.start")}
-          >
-            <Play size={15} weight="fill" />
-            开始
-          </button>
+          {hasStarted === false ? (
+            <button
+              className="flex h-9 items-center gap-2 rounded-lg bg-white px-3 text-sm font-medium text-black disabled:opacity-50"
+              disabled={busy || offlineReadOnly}
+              onClick={() => void dispatch("world.start")}
+            >
+              <Play size={15} weight="fill" />
+              开始
+            </button>
+          ) : hasStarted ? (
+            <button
+              className="flex h-9 items-center gap-2 rounded-lg border border-white/15 px-3 text-sm font-medium text-white/75 transition hover:bg-white/10 disabled:opacity-50"
+              disabled={busy || offlineReadOnly}
+              title="清除当前进度并重新开始"
+              onClick={resetConversation}
+            >
+              <ArrowCounterClockwise size={16} />
+              重新开始
+            </button>
+          ) : null}
         </div>
       </header>
       {editing ? (
@@ -444,6 +481,40 @@ export function PrimeWorldPage({
 
 export const PRIME_WORLD_DELETE_CONFIRMATION =
   "确定要删除这个会话吗？会话与消息将从服务器永久删除。";
+
+export const PRIME_WORLD_RESET_CONFIRMATION =
+  "重新开始会清除当前世界的剧情进度、历史记录和定时事件。确定继续吗？";
+
+export function isPrimeWorldStarted(
+  state: Pick<PrimeWorldRuntimeState, "startedAt">,
+  run?: Pick<PrimeWorldRun, "status">,
+) {
+  return (
+    state.startedAt !== undefined ||
+    run?.status === "queued" ||
+    run?.status === "running"
+  );
+}
+
+export async function requestPrimeWorldConversationReset(input: {
+  conversationId: string;
+  onReset: (conversationId: string) => Promise<{ runId: string }>;
+  confirmReset: (message: string) => boolean;
+  onResettingChange: (resetting: boolean) => void;
+  onError: (message: string | null) => void;
+}) {
+  if (!input.confirmReset(PRIME_WORLD_RESET_CONFIRMATION)) return null;
+  input.onError(null);
+  input.onResettingChange(true);
+  try {
+    const reset = await input.onReset(input.conversationId);
+    return reset.runId;
+  } catch (error) {
+    input.onError(error instanceof Error ? error.message : "重新开始失败。");
+    input.onResettingChange(false);
+    return null;
+  }
+}
 
 export async function requestPrimeWorldConversationDeletion(input: {
   conversationId: string;

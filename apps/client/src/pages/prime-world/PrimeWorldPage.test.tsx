@@ -2,9 +2,78 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
   PRIME_WORLD_DELETE_CONFIRMATION,
+  PRIME_WORLD_RESET_CONFIRMATION,
   PrimeWorldDeleteButton,
+  isPrimeWorldStarted,
   requestPrimeWorldConversationDeletion,
+  requestPrimeWorldConversationReset,
 } from "./PrimeWorldPage";
+
+describe("PrimeWorld lifecycle actions", () => {
+  it("only treats a persisted or active world as started", () => {
+    expect(isPrimeWorldStarted({})).toBe(false);
+    expect(isPrimeWorldStarted({}, { status: "failed" })).toBe(false);
+    expect(isPrimeWorldStarted({}, { status: "queued" })).toBe(true);
+    expect(isPrimeWorldStarted({ startedAt: 123 })).toBe(true);
+  });
+
+  it("does not reset without destructive confirmation", async () => {
+    const onReset = vi.fn();
+    const onResettingChange = vi.fn();
+    const onError = vi.fn();
+
+    const runId = await requestPrimeWorldConversationReset({
+      conversationId: "conversation_world",
+      onReset,
+      confirmReset: vi.fn(() => false),
+      onResettingChange,
+      onError,
+    });
+
+    expect(runId).toBeNull();
+    expect(onReset).not.toHaveBeenCalled();
+    expect(onResettingChange).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("starts the reset run after confirmation", async () => {
+    const onReset = vi.fn().mockResolvedValue({ runId: "run_reset" });
+    const onResettingChange = vi.fn();
+    const onError = vi.fn();
+    const confirmReset = vi.fn(() => true);
+
+    const runId = await requestPrimeWorldConversationReset({
+      conversationId: "conversation_world",
+      onReset,
+      confirmReset,
+      onResettingChange,
+      onError,
+    });
+
+    expect(runId).toBe("run_reset");
+    expect(confirmReset).toHaveBeenCalledWith(PRIME_WORLD_RESET_CONFIRMATION);
+    expect(onReset).toHaveBeenCalledWith("conversation_world");
+    expect(onError).toHaveBeenCalledWith(null);
+    expect(onResettingChange).toHaveBeenCalledWith(true);
+  });
+
+  it("restores the controls when resetting fails", async () => {
+    const onResettingChange = vi.fn();
+    const onError = vi.fn();
+
+    const runId = await requestPrimeWorldConversationReset({
+      conversationId: "conversation_world",
+      onReset: vi.fn().mockRejectedValue(new Error("重置请求失败。")),
+      confirmReset: () => true,
+      onResettingChange,
+      onError,
+    });
+
+    expect(runId).toBeNull();
+    expect(onError).toHaveBeenLastCalledWith("重置请求失败。");
+    expect(onResettingChange.mock.calls).toEqual([[true], [false]]);
+  });
+});
 
 describe("PrimeWorld conversation deletion", () => {
   it("renders a labelled destructive action and disables it while deleting", () => {

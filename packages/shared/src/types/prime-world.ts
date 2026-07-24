@@ -138,6 +138,7 @@ export interface PrimeWorldDetail {
 
 export interface PrimeWorldRuntimeState {
   schemaVersion: 1;
+  startedAt?: number;
   variables: JsonObject;
   view: WorldView;
   summaries: Record<

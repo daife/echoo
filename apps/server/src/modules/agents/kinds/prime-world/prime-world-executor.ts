@@ -119,6 +119,7 @@ export async function executePrimeWorldGraph(
   const runtime = new WorldExecution(compiled, draft, event, history, signal, services);
   try {
     await runtime.run();
+    draft.startedAt ??= Date.now();
     return runtime.result();
   } catch (error) {
     throw new PrimeWorldExecutionFailure(error, runtime.result());

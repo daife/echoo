@@ -194,6 +194,40 @@ test("round-trips complete audio through explicit stream conversion", async () =
   assert.deepEqual(result.resources.map((resource) => resource.resourceId), ["generated-audio"]);
 });
 
+test("starts the immersive novel fixture only once", async () => {
+  const state: PrimeWorldRuntimeState = {
+    schemaVersion: 1,
+    variables: structuredClone(fogHarborLettersFixture.initialState),
+    view: structuredClone(fogHarborLettersFixture.presentation.startView),
+    summaries: {},
+    updatedAt: 0,
+  };
+  const compiled = compilePrimeWorld(fogHarborLettersFixture);
+
+  await executePrimeWorldGraph(
+    compiled,
+    state,
+    { clientEventId: "first-start", type: "world.start" },
+    [],
+  );
+  assert.equal((state.variables.story as JsonObject).started, true);
+  assert.equal(state.view.revision, 1);
+  assert.equal(typeof state.startedAt, "number");
+
+  const progressedView = structuredClone(state.view);
+  if (progressedView.root.type === "stack" && progressedView.root.children[0]?.type === "text")
+    progressedView.root.children[0].text = "剧情已经推进。";
+  state.view = progressedView;
+
+  await executePrimeWorldGraph(
+    compiled,
+    state,
+    { clientEventId: "second-start", type: "world.start" },
+    [],
+  );
+  assert.deepEqual(state.view, progressedView);
+});
+
 test("runs the immersive novel fixture for 30 turns with rolling summaries", async () => {
   const state: PrimeWorldRuntimeState = {
     schemaVersion: 1,
@@ -279,11 +313,22 @@ test("runs the immersive novel fixture for 30 turns with rolling summaries", asy
     }
   }
   const story = state.variables.story as Record<string, unknown>;
+  assert.equal(story.started, true);
   assert.equal(story.chapterIndex, 30);
+  assert.equal(typeof state.startedAt, "number");
   assert.equal(stored.length, 60);
   assert.ok(summaries > 0);
   assert.ok((state.summaries.story?.throughSequence ?? 0) > 0);
   assert.equal(state.view.root.type === "stack" && state.view.root.children[1]?.type === "choices" ? state.view.root.children[1].choices.length : 0, 3);
+
+  const progressedView = structuredClone(state.view);
+  await executePrimeWorldGraph(
+    compiled,
+    state,
+    { clientEventId: "repeat-start", type: "world.start" },
+    [],
+  );
+  assert.deepEqual(state.view, progressedView);
 });
 
 test("repairs one invalid immersive-novel JSON response and commits the turn", async () => {
