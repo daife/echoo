@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { Agent } from "@echoo/shared";
+import { createDefaultPrimeWorldDetail, type Agent } from "@echoo/shared";
 import type { PublicAssetDraft } from "@echoo/shared/public-assets";
 import {
   PublicAssetForbiddenError,
@@ -156,4 +156,95 @@ test("creates a runnable prime-world public draft from the default fixture", asy
       y: 20,
     });
   }
+});
+
+test("applies a resource-bearing bundle to a prime-world public draft", async () => {
+  const detail = createDefaultPrimeWorldDetail();
+  const draft: PublicAssetDraft = {
+    id: "asset_world",
+    author: { id: "user_1", displayName: "Creator" },
+    status: "draft",
+    snapshot: {
+      type: "prime-world",
+      name: "旧世界",
+      attributes: [],
+      tags: [],
+      introduction: "",
+      detail,
+    },
+    hasUnpublishedChanges: true,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const assets = {
+    findDraftForAuthor: async () => draft,
+    saveDraft: async (input: { snapshot: PublicAssetDraft["snapshot"] }) => {
+      draft.snapshot = input.snapshot;
+    },
+  };
+  const resources = {
+    savePrimeWorldBundleResource: async () => ({
+      id: "resource-saved",
+      publicPath: "/resources/saved.png",
+    }),
+    findById: async () => ({
+      id: "resource-saved",
+      ownerUserId: "user_1",
+      publicPath: "/resources/saved.png",
+    }),
+    deleteOwnedByPublicPath: async () => undefined,
+  };
+  const service = new PublicAssetService(
+    assets as never,
+    {} as never,
+    resources as never,
+    {} as never,
+  );
+  const importedDetail = createDefaultPrimeWorldDetail();
+  importedDetail.presentation.startView.background = {
+    resourceId: "bundle:resource-1",
+  };
+  const saved = await service.saveDraftBundle("user_1", draft.id, {
+    format: "echoo-prime-world",
+    formatVersion: 1,
+    name: "新世界",
+    attributes: [{ key: "时代", value: "未来" }],
+    tags: ["冒险"],
+    introduction: "bundle 世界",
+    isPublic: false,
+    detail: importedDetail,
+    resources: [{
+      key: "resource-1",
+      usageKind: "world",
+      mimeType: "image/png",
+      fileName: "saved.png",
+      dataBase64: "AA==",
+    }],
+  });
+  assert.equal(saved.snapshot.name, "新世界");
+  assert.deepEqual(saved.snapshot.tags, ["冒险"]);
+  assert.equal(
+    saved.snapshot.type === "prime-world"
+      ? saved.snapshot.detail.presentation.startView.background?.resourceId
+      : undefined,
+    "resource-saved",
+  );
+});
+
+test("rejects applying a world bundle to another public asset type", async () => {
+  const service = new PublicAssetService(
+    {
+      findDraftForAuthor: async () => ({
+        id: "asset_figure",
+        snapshot: { type: "slice-figure" },
+      }),
+    } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+  await assert.rejects(
+    service.saveDraftBundle("user_1", "asset_figure", {}),
+    PublicAssetForbiddenError,
+  );
 });

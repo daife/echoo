@@ -1,10 +1,11 @@
-import { ArrowLeft, Heart, NotePencil, Trash } from "@phosphor-icons/react";
+import { Heart, NotePencil, Trash } from "@phosphor-icons/react";
 import type { SocialPostSummary } from "@echoo/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { SocialService } from "../../services/SocialService";
 import { MediaAsset } from "../../features/media/MediaAsset";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
+import { BackButton } from "../../shared/components/BackButton";
 import { PostComposer } from "./PostComposer";
 import { SocialComments } from "./SocialComments";
 import { formatDate } from "./PostCard";
@@ -62,14 +63,7 @@ export function PostDetailPage({
 
   return (
     <section className="mx-auto max-w-3xl pb-24">
-      <button
-        type="button"
-        onClick={onBack}
-        className="mb-6 flex items-center gap-2 text-sm text-white/48 hover:text-white"
-      >
-        <ArrowLeft size={17} />
-        返回
-      </button>
+      <BackButton className="mb-6" onClick={onBack} />
       {editing ? (
         <PostComposer
           service={service}

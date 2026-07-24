@@ -1,7 +1,8 @@
-import { ArrowLeft, Link, Trash, WechatLogo } from "@phosphor-icons/react";
+import { Link, Trash, WechatLogo } from "@phosphor-icons/react";
 import type { Agent } from "@echoo/shared";
 import type { ChannelsApi } from "@echoo/api-client";
 import { useEffect, useMemo, useState } from "react";
+import { BackButton } from "../../../shared/components/BackButton";
 
 export function BindingsPanel({
   onBack,
@@ -88,22 +89,20 @@ export function BindingsPanel({
     }
   };
   return (
-    <section className="h-full min-h-0 overflow-y-auto rounded-2xl border border-white/8 bg-[#0d0d10]/80 p-6 md:p-8">
-      <div className="flex items-start gap-3">
-        <button
-          aria-label="返回"
-          className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-lg text-white/48 transition hover:bg-white/[0.06] hover:text-white"
-          type="button"
-          onClick={onBack}
-        >
-          <ArrowLeft size={19} />
-        </button>
-        <div className="w-full max-w-2xl">
-          <p className="text-xs uppercase tracking-[0.22em] text-white/38">
-            绑定
-          </p>
-          <h1 className="mt-2 text-4xl font-semibold text-white">角色接口</h1>
-          <div className="mt-8 rounded-2xl border border-white/8 bg-white/[0.025] p-6">
+    <section className="h-full min-h-0 overflow-y-auto rounded-2xl border border-white/8 bg-[#0d0d10]/80 p-4 md:p-8">
+      <div className="w-full max-w-2xl">
+        <header className="flex items-center gap-3">
+          <BackButton onClick={onBack} />
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold leading-tight text-white md:text-4xl">
+              角色接口
+            </h1>
+            <p className="mt-1 text-xs uppercase tracking-[0.22em] text-white/38">
+              绑定
+            </p>
+          </div>
+        </header>
+        <div className="mt-6 rounded-2xl border border-white/8 bg-white/[0.025] p-4 md:mt-8 md:p-6">
             <div className="flex items-center gap-3">
               <WechatLogo size={28} className="text-emerald-300" />
               <div>
@@ -150,12 +149,12 @@ export function BindingsPanel({
                 </p>
               </div>
             )}
-            <div className="mt-6 flex gap-3">
+            <div className="mt-6 grid grid-cols-2 gap-3 sm:flex">
               <button
                 type="button"
                 disabled={busy || !selectedConversationId}
                 onClick={() => void start()}
-                className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-40"
+                className="inline-flex min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-white px-3 py-2.5 text-sm font-medium text-black disabled:opacity-40 sm:px-4"
               >
                 <Link size={17} />
                 {binding ? "切换角色" : "绑定微信"}
@@ -165,14 +164,13 @@ export function BindingsPanel({
                   type="button"
                   disabled={busy}
                   onClick={() => void unbind()}
-                  className="inline-flex items-center gap-2 rounded-lg border border-red-300/20 px-4 py-2 text-sm text-red-200 disabled:opacity-40"
+                  className="inline-flex min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-red-300/20 px-3 py-2.5 text-sm text-red-200 transition hover:bg-red-300/[0.06] disabled:opacity-40 sm:px-4"
                 >
                   <Trash size={17} />
                   解绑
                 </button>
               )}
             </div>
-          </div>
         </div>
       </div>
     </section>

@@ -4,6 +4,7 @@ import {
   createPrimeFigureSchema,
   createPrimeWorldSchema,
   createSliceFigureSchema,
+  primeWorldExportBundleSchema,
 } from "@echoo/shared";
 import type {
   CreatePrimeFigureRequest,
@@ -21,6 +22,7 @@ import {
   PublicAssetQueryError,
   PublicAssetService,
 } from "./public-asset.service.js";
+import { PrimeWorldCompileError } from "../agents/kinds/prime-world/prime-world-compiler.js";
 
 const publicListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(24).default(12),
@@ -190,6 +192,33 @@ export async function registerPublicAssetRoutes(app: FastifyInstance) {
   );
 
   app.patch<{ Params: { assetId: string }; Body: unknown }>(
+    "/public-assets/:assetId/draft/content/bundle",
+    { bodyLimit: 96 * 1024 * 1024 },
+    async (request, reply) => {
+      const userId = await request.requireUserId(reply);
+      if (!userId) return;
+      const parsed = z
+        .object({ bundle: primeWorldExportBundleSchema })
+        .strict()
+        .safeParse(request.body);
+      if (!parsed.success)
+        return reply.code(400).send({
+          error: "BUNDLE_INVALID",
+          message: parsed.error.issues[0]?.message ?? "bundle JSON 无效。",
+        });
+      try {
+        return await assets.saveDraftBundle(
+          userId,
+          request.params.assetId,
+          parsed.data.bundle,
+        );
+      } catch (error) {
+        return assetError(reply, error);
+      }
+    },
+  );
+
+  app.patch<{ Params: { assetId: string }; Body: unknown }>(
     "/public-assets/:assetId/draft/recommendation",
     async (request, reply) => {
       const userId = await request.requireUserId(reply);
@@ -293,6 +322,20 @@ export async function registerPublicAssetRoutes(app: FastifyInstance) {
 }
 
 function assetError(reply: FastifyReply, error: unknown) {
+  if (error instanceof PrimeWorldCompileError)
+    return reply.code(400).send({
+      error: error.code,
+      message: error.message,
+      issue: error.validationIssue,
+    });
+  if (
+    error instanceof Error &&
+    /^(?:DUPLICATE_BUNDLE_RESOURCE|BUNDLE_RESOURCE_MISSING|WORLD_RESOURCE_NOT_READY)/.test(error.message)
+  )
+    return reply.code(400).send({
+      error: "BUNDLE_INVALID",
+      message: error.message,
+    });
   if (error instanceof PublicAssetQueryError)
     return reply
       .code(400)

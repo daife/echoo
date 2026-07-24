@@ -1,6 +1,5 @@
 import {
   ArrowClockwise,
-  ArrowLeft,
   DownloadSimple,
   Heart,
 } from "@phosphor-icons/react";
@@ -11,6 +10,7 @@ import { useEffect, useState } from "react";
 import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
 import { useBackHandler } from "../../app/providers/BackNavigationProvider";
 import { MediaAsset } from "../../features/media/MediaAsset";
+import { BackButton } from "../../shared/components/BackButton";
 import type { PublicAssetService } from "../../services/PublicAssetService";
 import type { SocialService } from "../../services/SocialService";
 import {
@@ -75,14 +75,7 @@ export function CharacterDetailPage({
   if (!asset)
     return (
       <section className="mx-auto max-w-4xl pb-24">
-        <button
-          type="button"
-          onClick={onBack}
-          className="mb-6 flex items-center gap-2 text-sm text-white/48 hover:text-white"
-        >
-          <ArrowLeft size={17} />
-          返回
-        </button>
+        <BackButton className="mb-6" onClick={onBack} />
         <div className="rounded-2xl border border-white/8 bg-[#111114] py-20 text-center text-sm text-white/40">
           {error ?? "正在加载公共资产……"}
         </div>
@@ -115,14 +108,7 @@ export function CharacterDetailPage({
   };
   return (
     <section className="mx-auto max-w-4xl pb-24">
-      <button
-        type="button"
-        onClick={onBack}
-        className="mb-6 flex items-center gap-2 text-sm text-white/48 hover:text-white"
-      >
-        <ArrowLeft size={17} />
-        返回
-      </button>
+      <BackButton className="mb-6" onClick={onBack} />
       <article className="overflow-hidden rounded-2xl border border-white/8 bg-[#111114]">
         <div className="relative min-h-80 overflow-hidden bg-[#18171d]">
           {snapshot.coverResourcePath ? (

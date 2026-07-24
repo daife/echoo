@@ -1,7 +1,6 @@
 import {
   Brain,
   CirclesThreePlus,
-  ArrowLeft,
   Plus,
   Sparkle,
   Trash,
@@ -31,6 +30,7 @@ import { useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { imageFileToUpload } from "../../shared/utils/imageCompression";
 import { MediaAsset } from "../../features/media/MediaAsset";
+import { BackButton } from "../../shared/components/BackButton";
 import type { PrimeWorldService } from "../../services/PrimeWorldService";
 import { PrimeWorldCreateForm } from "./PrimeWorldCreateForm";
 import { createOptions } from "./createAgentOptions";
@@ -58,19 +58,12 @@ export function CreateAgentPage({
     <section className="space-y-8">
       <div className="glass-panel overflow-hidden rounded-2xl p-6 md:p-10">
         <div className="mb-5 flex items-center gap-3 text-sm text-white/50 md:mb-8">
-          <button
-            aria-label="返回"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-white/55 transition hover:bg-white/[0.06] hover:text-white"
-            type="button"
-            onClick={onBack}
-          >
-            <ArrowLeft size={18} />
-          </button>
+          <BackButton onClick={onBack} />
           <Sparkle size={18} />
           创建原创会话
         </div>
         <h1 className="max-w-3xl text-4xl font-semibold leading-[1.05] text-white md:text-6xl">
-          创建你自己喜爱的角色
+          创建你自己喜爱的角色或世界
         </h1>
       </div>
 

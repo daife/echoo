@@ -55,6 +55,12 @@ export class PublicAssetService {
   ) {
     return this.api.saveDraftContent(assetId, input);
   }
+  saveDraftBundle(
+    assetId: string,
+    input: Parameters<PublicAssetsApi["saveDraftBundle"]>[1],
+  ) {
+    return this.api.saveDraftBundle(assetId, input);
+  }
   saveDraftRecommendation(
     assetId: string,
     input: Parameters<PublicAssetsApi["saveDraftRecommendation"]>[1],

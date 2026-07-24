@@ -6,6 +6,7 @@ import type {
   PrimeWorldDetail,
   SliceFigureDetail,
 } from "../../types/agent.js";
+import type { PrimeWorldExportBundle } from "../../types/prime-world.js";
 
 export type PublicAssetType = AgentType;
 export type PublicAssetStatus = "draft" | "published" | "unlisted";
@@ -125,6 +126,10 @@ export interface PublicAssetDraft {
 export interface SavePublicAssetRecommendationRequest {
   enabled: boolean;
   config?: Record<string, unknown>;
+}
+
+export interface SavePrimeWorldBundleDraftRequest {
+  bundle: PrimeWorldExportBundle;
 }
 
 export interface PublishPublicAssetResponse {

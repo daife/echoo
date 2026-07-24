@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   Archive,
   FloppyDisk,
   Trash,
@@ -13,6 +12,7 @@ import type {
   PrimeFigureRuntimeConfigView,
   PrimeWorldRuntimeConfigPatch,
   PrimeWorldRuntimeConfigView,
+  PrimeWorldExportBundle,
   SliceFigureRuntimeConfigPatch,
   SliceFigureRuntimeConfigView,
 } from "@echoo/shared";
@@ -32,6 +32,12 @@ import {
 import type { PublicAssetService } from "../../services/PublicAssetService";
 import { useServices } from "../../app/providers/ServicesProvider";
 import { PrimeWorldEditorPage } from "../prime-world/PrimeWorldEditorPage";
+import { BackButton } from "../../shared/components/BackButton";
+import {
+  PrimeWorldBundleInput,
+  PrimeWorldMetadataFields,
+  parsePrimeWorldBundleText,
+} from "../create-agent/PrimeWorldAuthoringFields";
 
 export function PublicAssetEditorPage({
   draft,
@@ -101,13 +107,7 @@ export function PublicAssetEditorPage({
     <section className="space-y-7 pb-20">
       <header className="sticky top-3 z-30 rounded-2xl border border-white/10 bg-[#0d0d10]/90 p-4 backdrop-blur-2xl md:top-5 md:p-5">
         <div className="grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-4 md:flex md:flex-wrap md:gap-4">
-          <button
-            type="button"
-            onClick={onBack}
-            className="grid h-10 w-10 place-items-center rounded-full text-white/55 hover:bg-white/[0.06] hover:text-white"
-          >
-            <ArrowLeft size={18} />
-          </button>
+          <BackButton onClick={onBack} />
           <div className="min-w-0 md:flex-1">
             <div className="flex min-w-0 items-center gap-2">
               <h1 className="truncate text-xl font-semibold text-white">
@@ -306,52 +306,74 @@ function WorldDraftForm({
   const [introduction, setIntroduction] = useState(
     draft.snapshot.introduction,
   );
-  const [tags, setTags] = useState(draft.snapshot.tags.join("、"));
+  const [attributes, setAttributes] = useState(draft.snapshot.attributes);
+  const [tags, setTags] = useState(draft.snapshot.tags);
+  const [detail, setDetail] = useState(draft.snapshot.detail);
+  const [bundle, setBundle] = useState<PrimeWorldExportBundle | null>(null);
+  const [bundleText, setBundleText] = useState("");
+  const [editorRevision, setEditorRevision] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const applyBundle = () => {
+    try {
+      const parsed = parsePrimeWorldBundleText(bundleText);
+      setBundle(parsed);
+      setName(parsed.name);
+      setAttributes(parsed.attributes ?? []);
+      setTags(parsed.tags ?? []);
+      setIntroduction(parsed.introduction ?? "");
+      setDetail(parsed.detail);
+      setEditorRevision((current) => current + 1);
+      setError(null);
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `bundle JSON 无效：${cause.message}`
+          : "bundle JSON 无效。",
+      );
+    }
+  };
   return (
     <div className="space-y-5">
-      <div className="glass-panel grid gap-4 rounded-2xl p-6 md:grid-cols-2">
-        <label className="text-xs text-white/50">
-          世界名称
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none"
-          />
-        </label>
-        <label className="text-xs text-white/50">
-          标签（顿号或逗号分隔）
-          <input
-            value={tags}
-            onChange={(event) => setTags(event.target.value)}
-            className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none"
-          />
-        </label>
-        <label className="text-xs text-white/50 md:col-span-2">
-          简介
-          <textarea
-            value={introduction}
-            onChange={(event) => setIntroduction(event.target.value)}
-            className="mt-2 min-h-24 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none"
-          />
-        </label>
+      <div className="glass-panel space-y-4 rounded-2xl p-5 md:p-6">
+        <PrimeWorldBundleInput
+          value={bundleText}
+          onChange={setBundleText}
+          onApply={applyBundle}
+        />
+        <PrimeWorldMetadataFields
+          name={name}
+          tags={tags}
+          introduction={introduction}
+          onNameChange={setName}
+          onTagsChange={setTags}
+          onIntroductionChange={setIntroduction}
+        />
+        {error ? <p className="text-sm text-red-300">{error}</p> : null}
       </div>
       <div className="h-[min(46rem,calc(100dvh-2rem))] min-h-[32rem] overflow-hidden rounded-2xl border border-white/8 bg-[#0b0b0d]">
         <PrimeWorldEditorPage
-          detail={draft.snapshot.detail}
+          key={editorRevision}
+          detail={detail}
           service={primeWorldService}
           saveLabel="校验并保存世界草稿"
           onSave={async (detail) => {
+            const metadata = {
+              name: name.trim(),
+              attributes,
+              tags: tags.map((tag) => tag.trim()).filter(Boolean),
+              introduction: introduction.trim(),
+              detail,
+            };
+            if (bundle) {
+              onSaved(await service.saveDraftBundle(draft.id, {
+                bundle: { ...bundle, ...metadata },
+              }));
+              return;
+            }
             const payload: CreatePrimeWorldRequest = {
               type: "prime-world",
-              name: name.trim(),
-              attributes: draft.snapshot.attributes,
-              tags: tags
-                .split(/[、,，]/)
-                .map((tag) => tag.trim())
-                .filter(Boolean),
-              introduction: introduction.trim(),
+              ...metadata,
               isPublic: false,
-              detail,
             };
             onSaved(await service.saveDraftContent(draft.id, payload));
           }}

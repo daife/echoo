@@ -30,6 +30,7 @@ import type {
 import { compilePrimeWorld } from "../agents/kinds/prime-world/prime-world-compiler.js";
 import { collectPrimeWorldResourceIds } from "../agents/kinds/prime-world/prime-world-node-registry.js";
 import { compilePrimeWorldJsonSchema } from "../agents/kinds/prime-world/prime-world-json-schema.js";
+import { materializePrimeWorldBundle } from "../agents/kinds/prime-world/prime-world-bundle.js";
 import {
   PublicAssetQueryError,
   PublicAssetRepository,
@@ -170,6 +171,27 @@ export class PublicAssetService {
       resources,
     });
     return this.getDraft(ownerUserId, assetId);
+  }
+
+  async saveDraftBundle(ownerUserId: string, assetId: string, input: unknown) {
+    const draft = await this.getDraft(ownerUserId, assetId);
+    if (draft.snapshot.type !== "prime-world")
+      throw new PublicAssetForbiddenError("只有本初世界草稿可以应用 bundle。");
+    const materialized = await materializePrimeWorldBundle(
+      ownerUserId,
+      input,
+      this.resources,
+    );
+    try {
+      return await this.saveDraftContent(
+        ownerUserId,
+        assetId,
+        materialized.request,
+      );
+    } catch (error) {
+      await materialized.cleanup();
+      throw error;
+    }
   }
 
   async saveDraftRecommendation(

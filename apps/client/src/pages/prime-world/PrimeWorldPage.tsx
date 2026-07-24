@@ -7,7 +7,6 @@ import type {
   WorldViewElement,
 } from "@echoo/shared";
 import {
-  ArrowLeft,
   ArrowCounterClockwise,
   PaperPlaneRight,
   Play,
@@ -30,6 +29,7 @@ import { PrimeWorldEditorPage } from "./PrimeWorldEditorPage";
 import { usePushToTalk } from "../../features/messages/usePushToTalk";
 import { PrimeWorldAudioPlayer } from "./PrimeWorldAudioPlayer";
 import { ConversationHeaderTitle } from "../../features/messages/components/ConversationHeaderTitle";
+import { BackButton } from "../../shared/components/BackButton";
 
 export function PrimeWorldPage({
   agent,
@@ -323,13 +323,7 @@ export function PrimeWorldPage({
     <section className="mx-auto flex h-full min-h-0 max-w-5xl flex-col gap-5 pb-4 md:py-8">
       <header className="flex items-center justify-between gap-3 border-b border-white/10 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] md:px-0 md:pb-4 md:pt-0">
         <div className="flex min-w-0 items-center gap-3">
-          <button
-            aria-label="返回会话"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-white/65 hover:bg-white/10"
-            onClick={onBack}
-          >
-            <ArrowLeft size={19} />
-          </button>
+          <BackButton label="返回会话" onClick={onBack} />
           <ConversationHeaderTitle
             title={agent.name}
             subtitle="本初世界"

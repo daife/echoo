@@ -1,4 +1,4 @@
-import { primeWorldExportBundleSchema, primeWorldViewSchema } from "@echoo/shared";
+import { primeWorldViewSchema } from "@echoo/shared";
 import type {
   JsonObject,
   JsonValue,
@@ -26,6 +26,10 @@ import {
   validatePrimeWorldDefinition,
   type CompiledPrimeWorld,
 } from "./prime-world-compiler.js";
+import {
+  materializePrimeWorldBundle,
+  rewritePrimeWorldResourceIds,
+} from "./prime-world-bundle.js";
 import { PrimeWorldRepository } from "./prime-world.repository.js";
 import {
   executePrimeWorldGraph,
@@ -117,35 +121,16 @@ export class PrimeWorldService {
       replacements.set(resourceId, key);
       resources.push({ key, usageKind: "world", mimeType: value.record.mimeType, fileName: value.record.originalFileName, dataBase64: value.data.toString("base64") });
     }
-    rewriteResourceIds(detail as unknown as JsonValue, (id) => replacements.has(id) ? `bundle:${replacements.get(id)}` : id);
+    rewritePrimeWorldResourceIds(detail as unknown as JsonValue, (id) => replacements.has(id) ? `bundle:${replacements.get(id)}` : id);
     return { format: "echoo-prime-world", formatVersion: 1, name: agent.name, attributes: agent.attributes, tags: agent.tags, introduction: agent.introduction, isPublic: agent.isPublic, detail, resources };
   }
 
   async importBundle(ownerUserId: string, input: unknown) {
-    const bundle = primeWorldExportBundleSchema.parse(input) as PrimeWorldExportBundle;
-    const saved: Awaited<ReturnType<ResourceRepository["savePrimeWorldBundleResource"]>>[] = [];
+    const materialized = await materializePrimeWorldBundle(ownerUserId, input, this.resources);
     try {
-      const map = new Map<string, string>();
-      for (const resource of bundle.resources) {
-        if (map.has(resource.key)) throw new Error(`DUPLICATE_BUNDLE_RESOURCE:${resource.key}`);
-        const data = Buffer.from(resource.dataBase64, "base64");
-        const value = await this.resources.savePrimeWorldBundleResource(ownerUserId, resource.mimeType, resource.fileName, data);
-        saved.push(value);
-        map.set(resource.key, value.id);
-      }
-      const detail = structuredClone(bundle.detail);
-      detail.definitionRevision = 1;
-      rewriteResourceIds(detail as unknown as JsonValue, (id) => {
-        if (!id.startsWith("bundle:")) return id;
-        const mapped = map.get(id.slice(7));
-        if (!mapped) throw new Error(`BUNDLE_RESOURCE_MISSING:${id}`);
-        return mapped;
-      });
-      compilePrimeWorld(detail);
-      const agent = await this.agents.create(ownerUserId, { type: "prime-world", name: bundle.name, attributes: bundle.attributes, tags: bundle.tags, introduction: bundle.introduction, isPublic: bundle.isPublic, detail });
-      return agent;
+      return await this.agents.create(ownerUserId, materialized.request);
     } catch (error) {
-      await Promise.allSettled(saved.map((resource) => this.resources.deleteOwnedByPublicPath(ownerUserId, resource.publicPath)));
+      await materialized.cleanup();
       throw error;
     }
   }
@@ -745,17 +730,6 @@ function randomInRange(min: number, max: number, integer: boolean) {
     throw new Error("INVALID_RANDOM_RANGE");
   const value = min + Math.random() * (max - min);
   return integer ? Math.floor(value) : value;
-}
-function rewriteResourceIds(value: JsonValue, rewrite: (id: string) => string) {
-  if (!value || typeof value !== "object") return;
-  if (Array.isArray(value)) {
-    value.forEach((item) => rewriteResourceIds(item, rewrite));
-    return;
-  }
-  for (const [key, child] of Object.entries(value)) {
-    if (key === "resourceId" && typeof child === "string") value[key] = rewrite(child);
-    else rewriteResourceIds(child, rewrite);
-  }
 }
 class WorldRunCancelled extends Error {}
 

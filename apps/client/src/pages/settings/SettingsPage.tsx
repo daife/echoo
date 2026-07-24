@@ -6,7 +6,7 @@ import type {
   WalletView,
 } from "@echoo/shared";
 import type { NotificationPermissionState } from "@echoo/shared/notifications";
-import { ArrowLeft, BellSimple } from "@phosphor-icons/react";
+import { BellSimple } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import {
@@ -17,6 +17,7 @@ import {
 import type { RuntimeConfigService } from "../../services/RuntimeConfigService";
 import type { RewardsService } from "../../services/RewardsService";
 import type { RechargeService } from "../../services/RechargeService";
+import { BackButton } from "../../shared/components/BackButton";
 import { RewardCenter } from "./RewardCenter";
 import { RechargePanel } from "./RechargePanel";
 
@@ -120,14 +121,7 @@ export function SettingsPage({
   return (
     <section className="space-y-6">
       <div className="flex items-center gap-3">
-        <button
-          aria-label="返回"
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-white/48 transition hover:bg-white/[0.06] hover:text-white active:translate-y-px"
-          type="button"
-          onClick={onBack}
-        >
-          <ArrowLeft size={19} />
-        </button>
+        <BackButton onClick={onBack} />
         <div className="flex h-10 items-center">
           <h1 className="text-4xl font-semibold leading-none text-white">设置</h1>
         </div>

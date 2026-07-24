@@ -1,6 +1,5 @@
 import {
   ArrowDown,
-  ArrowLeft,
   Copy,
   GearSix,
   PencilSimple,
@@ -30,6 +29,7 @@ import {
 import { useLayoutEffect, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAuth } from "../../app/providers/AuthProvider";
+import { BackButton } from "../../shared/components/BackButton";
 import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
 import { useBackHandler } from "../../app/providers/BackNavigationProvider";
 import {
@@ -442,14 +442,7 @@ export function MessagesPage({
     <section className="grid h-full w-full min-h-0 min-w-0 grid-rows-[auto_1fr_auto] overflow-hidden bg-[#0d0d10]/92 md:rounded-[1.25rem] md:shadow-[0_28px_90px_rgba(0,0,0,0.28)]">
       <header className="flex items-center justify-between border-b border-white/8 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] md:px-5 md:py-3">
         <div className="flex min-w-0 items-center gap-3">
-          <button
-            aria-label="返回会话列表"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-white/48 transition hover:bg-white/[0.06] hover:text-white active:translate-y-px"
-            type="button"
-            onClick={onBack}
-          >
-            <ArrowLeft size={18} />
-          </button>
+          <BackButton label="返回会话列表" onClick={onBack} />
           <ConversationHeaderTitle title={title} subtitle={subtitle} />
         </div>
         <div className="relative flex items-center gap-1" ref={settingsRef}>

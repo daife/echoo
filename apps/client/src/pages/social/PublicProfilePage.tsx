@@ -1,4 +1,4 @@
-import { ArrowLeft, UsersThree, X } from "@phosphor-icons/react";
+import { UsersThree, X } from "@phosphor-icons/react";
 import type { Agent, PublicUserProfile } from "@echoo/shared";
 import type { PublicAssetListItem } from "@echoo/shared/public-assets";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,6 +8,7 @@ import { useBackHandler } from "../../app/providers/BackNavigationProvider";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { useServices } from "../../app/providers/ServicesProvider";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
+import { BackButton } from "../../shared/components/BackButton";
 import { PostCard } from "./PostCard";
 import { PostComposer } from "./PostComposer";
 import {
@@ -98,14 +99,7 @@ export function PublicProfilePage({
     );
   return (
     <section className="mx-auto max-w-5xl space-y-7 pb-24">
-      <button
-        type="button"
-        onClick={onBack}
-        className="flex items-center gap-2 text-sm text-white/48 hover:text-white"
-      >
-        <ArrowLeft size={17} />
-        返回
-      </button>
+      <BackButton onClick={onBack} />
       <header className="rounded-2xl border border-white/8 bg-white/[0.025] p-7 text-center md:p-10">
         <IdentityAvatar
           mediaUrl={profile.avatarUrl}

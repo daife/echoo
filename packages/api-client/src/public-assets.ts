@@ -10,6 +10,7 @@ import type {
   InstallPublicAssetRequest,
   PublishPublicAssetResponse,
   SavePublicAssetRecommendationRequest,
+  SavePrimeWorldBundleDraftRequest,
 } from "@echoo/shared/public-assets";
 import type {
   CreatePrimeFigureRequest,
@@ -157,6 +158,18 @@ export class PublicAssetsApi {
     return this.client
       .patch<PublicAssetDraft>(
         `/public-assets/${assetId}/draft/content`,
+        input,
+      )
+      .then((draft) => this.normalizeDraft(draft));
+  }
+
+  saveDraftBundle(
+    assetId: string,
+    input: SavePrimeWorldBundleDraftRequest,
+  ): Promise<PublicAssetDraft> {
+    return this.client
+      .patch<PublicAssetDraft>(
+        `/public-assets/${assetId}/draft/content/bundle`,
         input,
       )
       .then((draft) => this.normalizeDraft(draft));
