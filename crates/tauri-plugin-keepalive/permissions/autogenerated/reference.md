@@ -10,6 +10,32 @@
 <tr>
 <td>
 
+`keepalive:allow-background`
+
+</td>
+<td>
+
+Enables the background command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`keepalive:deny-background`
+
+</td>
+<td>
+
+Denies the background command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `keepalive:allow-handoff`
 
 </td>

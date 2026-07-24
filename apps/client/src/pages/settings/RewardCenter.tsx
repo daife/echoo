@@ -4,6 +4,8 @@ import type {
   RewardCenterView,
 } from "@echoo/shared";
 import { useEffect, useState, type FormEvent } from "react";
+import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
+import { useBackHandler } from "../../app/providers/BackNavigationProvider";
 import type { RewardsService } from "../../services/RewardsService";
 
 export function RewardCenter({
@@ -20,6 +22,15 @@ export function RewardCenter({
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  useBackHandler(
+    () => {
+      if (busy !== "settle") setQuote(null);
+    },
+    {
+      enabled: quote !== null,
+      priority: BACK_HANDLER_PRIORITY.dialog,
+    },
+  );
 
   const load = async () => setCenter(await service.getCenter());
 

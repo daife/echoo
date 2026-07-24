@@ -62,20 +62,11 @@ import {
   type NavigationSnapshot,
   type ScrollPosition,
 } from "./navigationHistory";
-
-type AppView =
-  | "home"
-  | "messages"
-  | "bindings"
-  | "settings"
-  | "explore"
-  | "profile"
-  | "create"
-  | "public-editor"
-  | "post-detail"
-  | "character-detail"
-  | "public-profile"
-  | "auth";
+import {
+  resolveAppBackAction,
+  type AppView,
+} from "./backNavigation";
+import { useBackHandler } from "./providers/BackNavigationProvider";
 
 interface ViewLocation {
   view: AppView;
@@ -437,6 +428,17 @@ export function App() {
   const closeBindings = useCallback(() => {
     setView(bindingsReturnView);
   }, [bindingsReturnView]);
+
+  const appBackAction = resolveAppBackAction(view, Boolean(selectedAgent));
+  useBackHandler(
+    () => {
+      if (appBackAction === "close-conversation") closeConversation();
+      else if (appBackAction === "close-bindings") closeBindings();
+      else if (appBackAction === "close-settings") closeSettings();
+      else if (appBackAction === "close-secondary") closeSecondaryView();
+    },
+    { enabled: appBackAction !== null },
+  );
 
   const handleConversationDeleted = useCallback((conversationId: string) => {
     setMyAgents((current) =>

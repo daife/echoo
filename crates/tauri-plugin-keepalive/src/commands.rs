@@ -24,3 +24,8 @@ pub async fn handoff() -> Result<serde_json::Value, String> {
         "cursor": 0
     }))
 }
+
+#[tauri::command]
+pub async fn background() -> Result<(), String> {
+    Ok(())
+}

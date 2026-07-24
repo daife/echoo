@@ -7,6 +7,8 @@ import {
 import type { Agent } from "@echoo/shared";
 import type { PublicAssetSummary } from "@echoo/shared/public-assets";
 import { useEffect, useState } from "react";
+import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
+import { useBackHandler } from "../../app/providers/BackNavigationProvider";
 import { MediaAsset } from "../../features/media/MediaAsset";
 import type { PublicAssetService } from "../../services/PublicAssetService";
 import type { SocialService } from "../../services/SocialService";
@@ -40,6 +42,15 @@ export function CharacterDetailPage({
   const [busy, setBusy] = useState(false);
   const [worldUpdateOpen, setWorldUpdateOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useBackHandler(
+    () => {
+      if (!busy) setWorldUpdateOpen(false);
+    },
+    {
+      enabled: worldUpdateOpen,
+      priority: BACK_HANDLER_PRIORITY.dialog,
+    },
+  );
   useEffect(() => {
     let cancelled = false;
     void characterService

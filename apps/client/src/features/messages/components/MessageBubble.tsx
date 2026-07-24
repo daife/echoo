@@ -18,6 +18,8 @@ import type {
 } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { BACK_HANDLER_PRIORITY } from "../../../app/backNavigation";
+import { useBackHandler } from "../../../app/providers/BackNavigationProvider";
 import { MediaAsset, useMediaDirectUrl } from "../../media/MediaAsset";
 import {
   sanitizeVoiceTranscript,
@@ -98,6 +100,14 @@ export function MessageBubble({
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
   const [isMediaOpen, setIsMediaOpen] = useState(false);
+  useBackHandler(() => setIsActionOpen(false), {
+    enabled: isActionOpen,
+    priority: BACK_HANDLER_PRIORITY.popover,
+  });
+  useBackHandler(() => setIsMediaOpen(false), {
+    enabled: isMediaOpen,
+    priority: BACK_HANDLER_PRIORITY.fullscreen,
+  });
   const pressTimerRef = useRef<number | null>(null);
   const didLongPressRef = useRef(false);
   const menuRef = useRef<HTMLDivElement | null>(null);

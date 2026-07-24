@@ -6,6 +6,8 @@ import type {
 } from "@echoo/shared";
 import type { PublicAssetListItem } from "@echoo/shared/public-assets";
 import { useEffect, useMemo, useState } from "react";
+import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
+import { useBackHandler } from "../../app/providers/BackNavigationProvider";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { useServices } from "../../app/providers/ServicesProvider";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
@@ -36,6 +38,10 @@ export function PublicProfilePage({
   const [assetType, setAssetType] = useState<"all" | Agent["type"]>("all");
   const [list, setList] = useState<"followers" | "following" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useBackHandler(() => setList(null), {
+    enabled: list !== null,
+    priority: BACK_HANDLER_PRIORITY.dialog,
+  });
   const filteredAssets = useMemo(
     () =>
       assetType === "all"

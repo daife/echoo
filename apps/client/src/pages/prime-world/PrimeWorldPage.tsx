@@ -23,6 +23,8 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
+import { useBackHandler } from "../../app/providers/BackNavigationProvider";
 import type { PrimeWorldService } from "../../services/PrimeWorldService";
 import { PrimeWorldEditorPage } from "./PrimeWorldEditorPage";
 import { usePushToTalk } from "../../features/messages/usePushToTalk";
@@ -56,6 +58,10 @@ export function PrimeWorldPage({
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [offlineReadOnly, setOfflineReadOnly] = useState(false);
   const [resourceUrls, setResourceUrls] = useState(new Map<string, string>());
+  useBackHandler(() => setEditing(false), {
+    enabled: editing,
+    priority: BACK_HANDLER_PRIORITY.fullscreen,
+  });
   const [temporaryText, setTemporaryText] = useState<Record<string, string>>(
     {},
   );

@@ -1,4 +1,6 @@
 import { BellSimple, X } from "@phosphor-icons/react";
+import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
+import { useBackHandler } from "../../app/providers/BackNavigationProvider";
 
 export function NotificationPermissionPrompt({
   onEnable,
@@ -7,6 +9,8 @@ export function NotificationPermissionPrompt({
   onEnable: () => void | Promise<void>;
   onDismiss: () => void;
 }) {
+  useBackHandler(onDismiss, { priority: BACK_HANDLER_PRIORITY.prompt });
+
   return (
     <aside className="fixed bottom-24 right-5 z-[70] w-[min(360px,calc(100%-40px))] overflow-hidden rounded-2xl border border-white/12 bg-[#121217]/95 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-2xl md:bottom-6">
       <button

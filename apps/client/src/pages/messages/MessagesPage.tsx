@@ -30,6 +30,8 @@ import {
 import { useLayoutEffect, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAuth } from "../../app/providers/AuthProvider";
+import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
+import { useBackHandler } from "../../app/providers/BackNavigationProvider";
 import {
   MessageBubble,
   type MessageBubbleModel,
@@ -133,6 +135,10 @@ export function MessagesPage({
     id: string;
     text: string;
   } | null>(null);
+  useBackHandler(() => setIsSettingsOpen(false), {
+    enabled: isSettingsOpen,
+    priority: BACK_HANDLER_PRIORITY.popover,
+  });
   const settingsRef = useRef<HTMLDivElement | null>(null);
   const {
     messages,
@@ -772,6 +778,12 @@ function RuntimeConfigDialog({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
+  useBackHandler(
+    () => {
+      if (!switching) onClose();
+    },
+    { priority: BACK_HANDLER_PRIORITY.dialog },
+  );
   useEffect(() => {
     let cancelled = false;
     setResponse(null);
@@ -985,6 +997,12 @@ function EditSliceFigureDialog({
       ? JSON.stringify(agent.detail.unlockConditions, null, 2)
       : "",
   );
+  useBackHandler(
+    () => {
+      if (!isSubmitting) onClose();
+    },
+    { priority: BACK_HANDLER_PRIORITY.dialog },
+  );
 
   const updateField = (
     key: keyof CreateSliceFigureRequest,
@@ -1096,6 +1114,7 @@ function EditPrimeFigureDialog({
     null,
   );
   const [loadError, setLoadError] = useState<string | null>(null);
+  useBackHandler(onClose, { priority: BACK_HANDLER_PRIORITY.dialog });
 
   useEffect(() => {
     let cancelled = false;
@@ -1411,6 +1430,12 @@ function EditMessageDialog({
 }) {
   const [text, setText] = useState(initialText);
   const [error, setError] = useState<string | null>(null);
+  useBackHandler(
+    () => {
+      if (!isSubmitting) onClose();
+    },
+    { priority: BACK_HANDLER_PRIORITY.dialog },
+  );
   return (
     <div className="app-overlay fixed inset-0 grid place-items-center bg-black/55 px-4 backdrop-blur-sm">
       <form

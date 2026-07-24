@@ -1,4 +1,5 @@
 import type { RuntimeBundle } from "../factory/RuntimeBundle";
+import { WebAppNavigationRuntime } from "./WebAppNavigationRuntime";
 import { WebAuthRuntime } from "./WebAuthRuntime";
 import { WebLinkRuntime } from "./WebLinkRuntime";
 import { WebMessageRuntime } from "./WebMessageRuntime";
@@ -9,6 +10,7 @@ export function createWebRuntime(): RuntimeBundle {
   const auth = new WebAuthRuntime();
   const storage = new WebStorageRuntime();
   return {
+    appNavigation: new WebAppNavigationRuntime(),
     auth,
     storage,
     link: new WebLinkRuntime(),

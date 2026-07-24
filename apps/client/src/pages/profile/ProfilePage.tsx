@@ -21,6 +21,8 @@ import type {
 import { CharacterCard } from "../../features/conversations/components/CharacterCard";
 import { useEffect, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
+import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
+import { useBackHandler } from "../../app/providers/BackNavigationProvider";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
 import { imageFileToUpload } from "../../shared/utils/imageCompression";
 import { useServices } from "../../app/providers/ServicesProvider";
@@ -403,6 +405,12 @@ export function PublicAssetCreateDialog({
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useBackHandler(
+    () => {
+      if (!isSubmitting) onClose();
+    },
+    { priority: BACK_HANDLER_PRIORITY.dialog },
+  );
 
   return (
     <div
@@ -576,6 +584,12 @@ export function ProfileEditorDialog({
     avatar?: string;
   }>({});
   const [saveError, setSaveError] = useState<string | null>(null);
+  useBackHandler(
+    () => {
+      if (!isSaving) onClose();
+    },
+    { priority: BACK_HANDLER_PRIORITY.dialog },
+  );
   const previewUrl =
     avatar && typeof avatar === "object"
       ? `data:${avatar.mimeType};base64,${avatar.dataBase64}`
