@@ -50,6 +50,7 @@ export type PrimeWorldAudioChunkEvent = {
 export interface MessageRuntime {
   startRealtime(): Promise<void>;
   stopRealtime(): Promise<void>;
+  setBackgroundNotificationsEnabled(enabled: boolean): Promise<void>;
   getStatus(): Promise<"running" | "stopped" | "unsupported">;
   getSyncStatus(): "stopped" | "connecting" | "syncing" | "live";
   onSyncStatusChange(

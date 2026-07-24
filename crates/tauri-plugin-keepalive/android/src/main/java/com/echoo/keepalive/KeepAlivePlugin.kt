@@ -20,6 +20,9 @@ internal class StartArgs {
     lateinit var apiBaseUrl: String
     var expiresAt: Long = 0
     var cursor: Long = 0
+    var ensureService: Boolean = true
+    var activateSocket: Boolean = false
+    var resumeOnly: Boolean = false
 }
 
 @TauriPlugin
@@ -36,10 +39,22 @@ class KeepAlivePlugin(private val activity: Activity) : Plugin(activity) {
             args.wsUrl,
             args.apiBaseUrl
         )
-        activity.getSharedPreferences("keep_alive", Activity.MODE_PRIVATE)
-            .edit()
-            .putBoolean("enabled", true)
-            .apply()
+        if (args.activateSocket) SocketManager.start(activity.applicationContext)
+        if (!args.ensureService) {
+            invoke.resolve()
+            return
+        }
+
+        val preferences = activity.getSharedPreferences("keep_alive", Activity.MODE_PRIVATE)
+        if (args.resumeOnly && !preferences.getBoolean("enabled", false)) {
+            invoke.resolve()
+            return
+        }
+        if (!args.resumeOnly) {
+            preferences.edit()
+                .putBoolean("enabled", true)
+                .apply()
+        }
 
         val intent = Intent(activity, MessageKeepAliveService::class.java).apply {
             action = MessageKeepAliveService.ACTION_START
@@ -56,32 +71,24 @@ class KeepAlivePlugin(private val activity: Activity) : Plugin(activity) {
             .putBoolean("enabled", false)
             .apply()
 
-        val intent = Intent(activity, MessageKeepAliveService::class.java).apply {
-            action = MessageKeepAliveService.ACTION_STOP
-        }
-
-        activity.startService(intent)
+        SocketManager.stop()
+        activity.stopService(Intent(activity, MessageKeepAliveService::class.java))
+        AndroidTokenStore.clear(activity)
         invoke.resolve()
     }
 
     @Command
     fun status(invoke: Invoke) {
-        val running = activity.getSharedPreferences("keep_alive", Activity.MODE_PRIVATE)
+        val enabled = activity.getSharedPreferences("keep_alive", Activity.MODE_PRIVATE)
             .getBoolean("enabled", false)
+        val running = enabled && MessageKeepAliveService.isRunning
         invoke.resolveObject(if (running) "running" else "stopped")
     }
 
     @Command
     fun handoff(invoke: Invoke) {
         val state = AndroidTokenStore.snapshot(activity)
-        activity.getSharedPreferences("keep_alive", Activity.MODE_PRIVATE)
-            .edit()
-            .putBoolean("enabled", false)
-            .apply()
         SocketManager.stop()
-        activity.startService(Intent(activity, MessageKeepAliveService::class.java).apply {
-            action = MessageKeepAliveService.ACTION_STOP
-        })
         invoke.resolveObject(state)
     }
 }

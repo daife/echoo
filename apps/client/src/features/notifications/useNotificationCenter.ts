@@ -133,8 +133,25 @@ export function useNotificationCenter(input: {
     if (!input.userId) return;
     const dismissKey = permissionPromptKey(input.userId);
     setPromptDismissed(localStorage.getItem(dismissKey) === "1");
-    void runtime.notification.getPermissionState().then(setPermissionState);
-  }, [input.userId, runtime.notification]);
+    let cancelled = false;
+    const syncPermission = async () => {
+      const state = await runtime.notification.getPermissionState();
+      if (cancelled) return;
+      setPermissionState(state);
+      await runtime.message.setBackgroundNotificationsEnabled(
+        state === "granted",
+      );
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") void syncPermission();
+    };
+    void syncPermission();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [input.userId, runtime.message, runtime.notification]);
 
   useEffect(() => {
     if (!input.userId) return;
@@ -260,11 +277,13 @@ export function useNotificationCenter(input: {
 
   const requestPermission = useCallback(async () => {
     const granted = await runtime.notification.requestPermission();
-    setPermissionState(
-      granted ? "granted" : await runtime.notification.getPermissionState(),
-    );
+    const state = granted
+      ? "granted"
+      : await runtime.notification.getPermissionState();
+    setPermissionState(state);
+    await runtime.message.setBackgroundNotificationsEnabled(granted);
     return granted;
-  }, [runtime.notification]);
+  }, [runtime.message, runtime.notification]);
 
   const dismissPrompt = useCallback(() => {
     if (input.userId)

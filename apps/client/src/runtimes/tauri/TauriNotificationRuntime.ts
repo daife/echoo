@@ -8,13 +8,15 @@ export class TauriNotificationRuntime implements NotificationRuntime {
   private lastPermissionState: NotificationPermissionState | null = null;
 
   async getPermissionState(): Promise<NotificationPermissionState> {
-    if (this.lastPermissionState === "denied") return "denied";
     try {
       const { isPermissionGranted } =
         await import("@tauri-apps/plugin-notification");
-      this.lastPermissionState = (await isPermissionGranted())
-        ? "granted"
-        : "prompt";
+      if (await isPermissionGranted()) {
+        this.lastPermissionState = "granted";
+        return this.lastPermissionState;
+      }
+      if (this.lastPermissionState !== "denied")
+        this.lastPermissionState = "prompt";
       return this.lastPermissionState;
     } catch {
       return "unsupported";

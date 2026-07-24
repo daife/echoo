@@ -224,6 +224,8 @@ export class WebMessageRuntime implements MessageRuntime {
     this.pendingSyncChanges.length = 0;
   }
 
+  async setBackgroundNotificationsEnabled(_enabled: boolean): Promise<void> {}
+
   getSyncStatus() {
     return this.syncStatus;
   }

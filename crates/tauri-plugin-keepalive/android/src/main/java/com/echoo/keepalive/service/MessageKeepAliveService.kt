@@ -1,87 +1,83 @@
 package com.echoo.keepalive.service
 
-import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.echoo.keepalive.socket.SocketManager
 
-class MessageKeepAliveService : Service() {
+class MessageKeepAliveService : Service(), DefaultLifecycleObserver {
     companion object {
         const val ACTION_START = "com.echoo.keepalive.START"
-        const val ACTION_STOP = "com.echoo.keepalive.STOP"
         private const val CHANNEL_ID = "keep_alive_channel"
         private const val NOTIFICATION_ID = 1001
-
-        fun scheduleRestart(context: Context) {
-            val enabled = context.getSharedPreferences("keep_alive", Context.MODE_PRIVATE)
-                .getBoolean("enabled", false)
-            if (!enabled) return
-
-            val intent = Intent(context, RestartReceiver::class.java)
-            val pendingIntent = PendingIntent.getBroadcast(
-                context,
-                2001,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            alarmManager.setAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                System.currentTimeMillis() + 5_000,
-                pendingIntent
-            )
-        }
+        @Volatile var isRunning = false
+            private set
     }
 
     override fun onCreate() {
-        super.onCreate()
+        super<Service>.onCreate()
+        isRunning = true
         createChannel()
+        ProcessLifecycleOwner.get().lifecycle.addObserver(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            SocketManager.stop()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return START_NOT_STICKY
-        }
-
         startAsForeground()
-        SocketManager.start(applicationContext)
+        if (isAppInForeground()) SocketManager.stop()
+        else SocketManager.start(applicationContext)
         return START_STICKY
     }
 
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        super.onTaskRemoved(rootIntent)
-        scheduleRestart(applicationContext)
+    override fun onStart(owner: LifecycleOwner) {
+        SocketManager.stop()
+    }
+
+    override fun onStop(owner: LifecycleOwner) {
+        val enabled = getSharedPreferences("keep_alive", MODE_PRIVATE)
+            .getBoolean("enabled", false)
+        if (enabled) SocketManager.start(applicationContext)
     }
 
     override fun onDestroy() {
-        super.onDestroy()
+        ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
         SocketManager.stop()
-        val enabled = getSharedPreferences("keep_alive", MODE_PRIVATE).getBoolean("enabled", false)
-        if (enabled) scheduleRestart(applicationContext)
+        isRunning = false
+        super<Service>.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun startAsForeground() {
+        val openIntent = packageManager.getLaunchIntentForPackage(packageName)
+        val pendingIntent = openIntent?.let {
+            PendingIntent.getActivity(
+                this,
+                1001,
+                it,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Echoo realtime is running")
-            .setContentText("Keeping message connection alive")
+            .setContentTitle("Echoo")
+            .setContentText("正在后台接收新消息")
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .apply { if (pendingIntent != null) setContentIntent(pendingIntent) }
             .build()
 
         ServiceCompat.startForeground(
@@ -96,10 +92,13 @@ class MessageKeepAliveService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Echoo realtime service",
+                "Echoo 后台消息服务",
                 NotificationManager.IMPORTANCE_LOW
             )
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
+
+    private fun isAppInForeground() = ProcessLifecycleOwner.get().lifecycle
+        .currentState.isAtLeast(Lifecycle.State.STARTED)
 }

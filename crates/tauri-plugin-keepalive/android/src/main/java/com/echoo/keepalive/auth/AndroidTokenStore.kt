@@ -54,4 +54,8 @@ object AndroidTokenStore {
             .putLong("expires_at", expiresAt)
             .apply()
     }
+
+    fun clear(context: Context) {
+        preferences(context).edit().clear().apply()
+    }
 }

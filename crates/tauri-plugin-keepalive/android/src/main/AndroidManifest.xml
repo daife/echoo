@@ -10,8 +10,5 @@
       android:exported="false"
       android:foregroundServiceType="remoteMessaging" />
 
-    <receiver
-      android:name=".service.RestartReceiver"
-      android:exported="false" />
   </application>
 </manifest>

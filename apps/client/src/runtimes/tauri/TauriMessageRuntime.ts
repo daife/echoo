@@ -21,6 +21,7 @@ import { tauriInvoke } from "./tauriInvoke";
 export class TauriMessageRuntime implements MessageRuntime {
   private readonly realtime: WebMessageRuntime;
   private started = false;
+  private backgroundNotificationsEnabled = false;
   private handoff: Promise<void> = Promise.resolve();
   private readonly handleVisibilityChange = () => this.queueHandoff();
 
@@ -37,13 +38,24 @@ export class TauriMessageRuntime implements MessageRuntime {
 
   async stopRealtime(): Promise<void> {
     this.started = false;
+    this.backgroundNotificationsEnabled = false;
     document.removeEventListener(
       "visibilitychange",
       this.handleVisibilityChange,
     );
     await this.handoff;
     await this.realtime.stopRealtime();
-    await tauriInvoke("plugin:keepalive|stop").catch(() => undefined);
+    await tauriInvoke("plugin:keepalive|stop").catch(reportKeepAliveError);
+  }
+
+  async setBackgroundNotificationsEnabled(enabled: boolean): Promise<void> {
+    if (!isAndroid()) return;
+    this.backgroundNotificationsEnabled = enabled;
+    if (!enabled) {
+      await tauriInvoke("plugin:keepalive|stop").catch(reportKeepAliveError);
+      return;
+    }
+    if (this.started && !document.hidden) await this.queueHandoff();
   }
 
   async getStatus(): Promise<"running" | "stopped" | "unsupported"> {
@@ -67,39 +79,60 @@ export class TauriMessageRuntime implements MessageRuntime {
   }
 
   private queueHandoff() {
-    this.handoff = this.handoff.then(() => this.applyConnectionOwner());
+    this.handoff = this.handoff
+      .catch(reportKeepAliveError)
+      .then(() => this.applyConnectionOwner())
+      .catch(reportKeepAliveError);
     return this.handoff;
   }
 
   private async applyConnectionOwner() {
     if (!this.started) return;
-    const useNative = /Android/i.test(navigator.userAgent) && document.hidden;
-    if (!useNative) {
-      if (/Android/i.test(navigator.userAgent)) {
-        const state = await tauriInvoke<NativeHandoff>(
-          "plugin:keepalive|handoff",
-        ).catch(() => null);
-        if (state?.accessToken && state.refreshToken) {
-          await this.auth.saveTokens({
-            accessToken: state.accessToken,
-            refreshToken: state.refreshToken,
-            expiresAt: state.expiresAt,
-          });
-          await this.realtime.setSyncCursor(state.cursor);
-        }
-      } else {
-        await tauriInvoke("plugin:keepalive|stop").catch(() => undefined);
-      }
+    if (!isAndroid()) {
+      await tauriInvoke("plugin:keepalive|stop").catch(() => undefined);
       await this.realtime.startRealtime();
       return;
     }
 
+    if (document.hidden) {
+      await this.realtime.stopRealtime();
+      if (this.backgroundNotificationsEnabled)
+        await this.updateNativeConnection(false, true);
+      return;
+    }
+
+    const state = await tauriInvoke<NativeHandoff>(
+      "plugin:keepalive|handoff",
+    ).catch((error) => {
+      reportKeepAliveError(error);
+      return null;
+    });
+    if (state?.accessToken && state.refreshToken) {
+      await this.auth.saveTokens({
+        accessToken: state.accessToken,
+        refreshToken: state.refreshToken,
+        expiresAt: state.expiresAt,
+      });
+      await this.realtime.setSyncCursor(state.cursor);
+    }
+    await this.realtime.startRealtime();
+    if (this.backgroundNotificationsEnabled) {
+      await this.updateNativeConnection(true, false);
+    } else {
+      await this.updateNativeConnection(true, false, true);
+    }
+  }
+
+  private async updateNativeConnection(
+    ensureService: boolean,
+    activateSocket: boolean,
+    resumeOnly = false,
+  ) {
     const [accessToken, refreshToken, cursor] = await Promise.all([
       this.auth.getAccessToken(),
       this.auth.getRefreshToken(),
       this.realtime.getSyncCursor(),
     ]);
-    await this.realtime.stopRealtime();
     if (!accessToken || !refreshToken) return;
     await tauriInvoke("plugin:keepalive|start", {
       accessToken,
@@ -109,7 +142,10 @@ export class TauriMessageRuntime implements MessageRuntime {
       wsUrl: import.meta.env.VITE_WS_URL ?? "ws://localhost:8787/ws",
       apiBaseUrl:
         import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787/api",
-    }).catch(() => undefined);
+      ensureService,
+      activateSocket,
+      resumeOnly,
+    });
   }
 
   onSyncChange(handler: (change: SyncChange) => void) {
@@ -190,11 +226,24 @@ interface NativeHandoff {
 
 function tokenExpiresAt(token: string) {
   try {
-    const payload = JSON.parse(atob(token.split(".")[1] ?? "")) as {
+    const encoded = (token.split(".")[1] ?? "")
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+    const payload = JSON.parse(
+      atob(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, "=")),
+    ) as {
       exp?: number;
     };
     return (payload.exp ?? 0) * 1000;
   } catch {
     return 0;
   }
+}
+
+function isAndroid() {
+  return /Android/i.test(navigator.userAgent);
+}
+
+function reportKeepAliveError(error: unknown) {
+  console.error("Android keep-alive operation failed", error);
 }

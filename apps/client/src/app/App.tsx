@@ -367,7 +367,7 @@ export function App() {
       unsubscribeReset();
       void runtime.message.stopRealtime();
     };
-  }, [auth.user, runtime.message]);
+  }, [auth.user?.id, runtime.message]);
 
   useEffect(() => {
     if (!auth.user) return;
