@@ -6,6 +6,7 @@ import {
 } from "@phosphor-icons/react";
 import type { Agent } from "@echoo/shared";
 import type { PublicAssetSummary } from "@echoo/shared/public-assets";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
 import { useBackHandler } from "../../app/providers/BackNavigationProvider";
@@ -18,6 +19,7 @@ import {
   requiresPrimeFigureUpdateWarning,
 } from "../explore/ExplorePage";
 import { SocialComments } from "./SocialComments";
+import { patchAssetInSocialCaches } from "./socialQueryCache";
 
 export function CharacterDetailPage({
   assetId,
@@ -28,6 +30,7 @@ export function CharacterDetailPage({
   onBack,
   onOpenUser,
   onAgentInstalled,
+  viewerId,
 }: {
   assetId: string;
   characterService: PublicAssetService;
@@ -37,7 +40,9 @@ export function CharacterDetailPage({
   onBack: () => void;
   onOpenUser: (userId: string) => void;
   onAgentInstalled: (agent: Agent) => void;
+  viewerId: string;
 }) {
+  const queryClient = useQueryClient();
   const [asset, setAsset] = useState<PublicAssetSummary | null>(null);
   const [busy, setBusy] = useState(false);
   const [worldUpdateOpen, setWorldUpdateOpen] = useState(false);
@@ -84,23 +89,21 @@ export function CharacterDetailPage({
       </section>
     );
   const snapshot = asset.snapshot;
-  const applyAsset = async (
-    strategy?: "preserve-compatible" | "reset",
-  ) => {
+  const applyAsset = async (strategy?: "preserve-compatible" | "reset") => {
     setWorldUpdateOpen(false);
     setBusy(true);
     setError(null);
     try {
       const result = asset.installedVersionId
-        ? await characterService.updateInstallation(
-            asset.id,
-            false,
-            strategy,
-          )
+        ? await characterService.updateInstallation(asset.id, false, strategy)
         : await characterService.install(asset.id, false);
       onAgentInstalled(result.agent);
       setAsset({
         ...asset,
+        installedVersionId: result.installedVersionId,
+        updateAvailable: false,
+      });
+      patchAssetInSocialCaches(queryClient, viewerId, asset.id, {
         installedVersionId: result.installedVersionId,
         updateAvailable: false,
       });
@@ -164,7 +167,8 @@ export function CharacterDetailPage({
           <p className="text-sm leading-7 text-white/62">
             {snapshot.introduction ||
               (snapshot.type === "prime-world"
-                ? snapshot.detail.presentation.startView.title ?? snapshot.name
+                ? (snapshot.detail.presentation.startView.title ??
+                  snapshot.name)
                 : snapshot.detail.persona)}
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
@@ -188,13 +192,28 @@ export function CharacterDetailPage({
                   viewerHasLiked: liked,
                   likeCount: Math.max(0, asset.likeCount + (liked ? 1 : -1)),
                 });
+                patchAssetInSocialCaches(queryClient, viewerId, asset.id, {
+                  viewerHasLiked: liked,
+                  likeCount: Math.max(0, asset.likeCount + (liked ? 1 : -1)),
+                });
                 try {
                   const result = await socialService.setLiked(asset.id, liked);
+                  patchAssetInSocialCaches(
+                    queryClient,
+                    viewerId,
+                    asset.id,
+                    result,
+                  );
                   setAsset((current) =>
                     current ? { ...current, ...result } : current,
                   );
                 } catch {
                   setAsset(asset);
+                  patchAssetInSocialCaches(queryClient, viewerId, asset.id, {
+                    viewerHasLiked: asset.viewerHasLiked,
+                    likeCount: asset.likeCount,
+                    commentCount: asset.commentCount,
+                  });
                 }
               }}
               className={`flex items-center gap-2 text-sm ${asset.viewerHasLiked ? "text-[#c7b9ed]" : "text-white/45"}`}
@@ -255,7 +274,7 @@ export function CharacterDetailPage({
               service={socialService}
               isAuthenticated={isAuthenticated}
               onRequireAuth={onRequireAuth}
-              onCountChange={(delta) =>
+              onCountChange={(delta) => {
                 setAsset((current) =>
                   current
                     ? {
@@ -263,8 +282,17 @@ export function CharacterDetailPage({
                         commentCount: Math.max(0, current.commentCount + delta),
                       }
                     : current,
-                )
-              }
+                );
+                patchAssetInSocialCaches(
+                  queryClient,
+                  viewerId,
+                  asset.id,
+                  (current) => ({
+                    ...current,
+                    commentCount: Math.max(0, current.commentCount + delta),
+                  }),
+                );
+              }}
               onOpenUser={onOpenUser}
             />
           </div>
@@ -304,7 +332,10 @@ export function WorldUpdateDialog({
         aria-labelledby="world-update-title"
         className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#111114] p-6 shadow-[0_28px_100px_rgba(0,0,0,0.58)]"
       >
-        <h2 id="world-update-title" className="text-xl font-semibold text-white">
+        <h2
+          id="world-update-title"
+          className="text-xl font-semibold text-white"
+        >
           更新本初世界
         </h2>
         <p className="mt-2 text-sm leading-6 text-white/48">

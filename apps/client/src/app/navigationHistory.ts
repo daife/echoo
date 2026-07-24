@@ -5,21 +5,28 @@ export interface ScrollPosition {
   windowTop: number;
 }
 
-export interface NavigationSnapshot<TLocation> {
+export interface NavigationEntry<TLocation> {
+  entryId: string;
   location: TLocation;
   primaryView: PrimaryNavigationView;
   scrollPosition: ScrollPosition;
 }
 
+export type NavigationStack<TLocation> = NavigationEntry<TLocation>[];
+
+// Kept as an alias so callers outside the navigation owner can migrate without
+// creating a second representation of navigation history.
+export type NavigationSnapshot<TLocation> = NavigationEntry<TLocation>;
+
 export function pushNavigationSnapshot<TLocation>(
-  history: NavigationSnapshot<TLocation>[],
-  snapshot: NavigationSnapshot<TLocation>,
+  history: NavigationStack<TLocation>,
+  snapshot: NavigationEntry<TLocation>,
 ) {
   return [...history, snapshot];
 }
 
 export function popNavigationSnapshot<TLocation>(
-  history: NavigationSnapshot<TLocation>[],
+  history: NavigationStack<TLocation>,
 ) {
   return {
     snapshot: history.at(-1),
@@ -28,7 +35,7 @@ export function popNavigationSnapshot<TLocation>(
 }
 
 export function takePrimaryOriginSnapshot<TLocation>(
-  history: NavigationSnapshot<TLocation>[],
+  history: NavigationStack<TLocation>,
   primaryView: PrimaryNavigationView,
 ) {
   return history.find((entry) => entry.primaryView === primaryView);

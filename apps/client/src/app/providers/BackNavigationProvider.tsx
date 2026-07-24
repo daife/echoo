@@ -24,6 +24,19 @@ const BackNavigationContext = createContext<BackNavigationContextValue>({
   register: () => () => undefined,
 });
 
+const NavigationLayerActivityContext = createContext(true);
+
+export function NavigationLayerActivityProvider({
+  active,
+  children,
+}: PropsWithChildren<{ active: boolean }>) {
+  return (
+    <NavigationLayerActivityContext.Provider value={active}>
+      {children}
+    </NavigationLayerActivityContext.Provider>
+  );
+}
+
 export function BackNavigationProvider({ children }: PropsWithChildren) {
   const { appNavigation } = useRuntime();
   const registryRef = useRef(new BackHandlerRegistry());
@@ -74,6 +87,7 @@ export function useBackHandler(
   options: { enabled?: boolean; priority?: number } = {},
 ) {
   const { register } = useContext(BackNavigationContext);
+  const layerActive = useContext(NavigationLayerActivityContext);
   const handlerRef = useRef(handler);
   const enabled = options.enabled ?? true;
   const priority = options.priority ?? BACK_HANDLER_PRIORITY.page;
@@ -83,7 +97,7 @@ export function useBackHandler(
   }, [handler]);
 
   useLayoutEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !layerActive) return;
     return register(() => handlerRef.current(), priority);
-  }, [enabled, priority, register]);
+  }, [enabled, layerActive, priority, register]);
 }

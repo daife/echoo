@@ -1,5 +1,6 @@
 import { ArrowLeft, Heart, NotePencil, Trash } from "@phosphor-icons/react";
 import type { SocialPostSummary } from "@echoo/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { SocialService } from "../../services/SocialService";
 import { MediaAsset } from "../../features/media/MediaAsset";
@@ -7,6 +8,10 @@ import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
 import { PostComposer } from "./PostComposer";
 import { SocialComments } from "./SocialComments";
 import { formatDate } from "./PostCard";
+import {
+  patchPostInSocialCaches,
+  removePostFromSocialCaches,
+} from "./socialQueryCache";
 
 export function PostDetailPage({
   postId,
@@ -16,6 +21,7 @@ export function PostDetailPage({
   onBack,
   onOpenUser,
   onDeleted,
+  viewerId,
 }: {
   postId: string;
   service: SocialService;
@@ -24,7 +30,9 @@ export function PostDetailPage({
   onBack: () => void;
   onOpenUser: (userId: string) => void;
   onDeleted: () => void;
+  viewerId: string;
 }) {
+  const queryClient = useQueryClient();
   const [post, setPost] = useState<SocialPostSummary | null>(null);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +77,7 @@ export function PostDetailPage({
           onCancel={() => setEditing(false)}
           onSaved={(value) => {
             setPost(value);
+            patchPostInSocialCaches(queryClient, viewerId, value.id, value);
             setEditing(false);
           }}
         />
@@ -117,6 +126,11 @@ export function PostDetailPage({
                     if (!window.confirm("确定删除这条动态吗？")) return;
                     try {
                       await service.deletePost(post.id);
+                      removePostFromSocialCaches(
+                        queryClient,
+                        viewerId,
+                        post.id,
+                      );
                       onDeleted();
                     } catch (reason) {
                       setError(
@@ -168,13 +182,24 @@ export function PostDetailPage({
                   viewerHasLiked: liked,
                   likeCount: Math.max(0, post.likeCount + (liked ? 1 : -1)),
                 });
+                patchPostInSocialCaches(queryClient, viewerId, post.id, {
+                  viewerHasLiked: liked,
+                  likeCount: Math.max(0, post.likeCount + (liked ? 1 : -1)),
+                });
                 try {
                   const result = await service.setLiked(post.id, liked);
+                  patchPostInSocialCaches(
+                    queryClient,
+                    viewerId,
+                    post.id,
+                    result,
+                  );
                   setPost((current) =>
                     current ? { ...current, ...result } : current,
                   );
                 } catch {
                   setPost(post);
+                  patchPostInSocialCaches(queryClient, viewerId, post.id, post);
                 }
               }}
               className={`mb-6 flex items-center gap-2 text-sm ${post.viewerHasLiked ? "text-[#c7b9ed]" : "text-white/45"}`}
@@ -190,7 +215,7 @@ export function PostDetailPage({
               service={service}
               isAuthenticated={isAuthenticated}
               onRequireAuth={onRequireAuth}
-              onCountChange={(delta) =>
+              onCountChange={(delta) => {
                 setPost((current) =>
                   current
                     ? {
@@ -198,8 +223,17 @@ export function PostDetailPage({
                         commentCount: Math.max(0, current.commentCount + delta),
                       }
                     : current,
-                )
-              }
+                );
+                patchPostInSocialCaches(
+                  queryClient,
+                  viewerId,
+                  post.id,
+                  (current) => ({
+                    ...current,
+                    commentCount: Math.max(0, current.commentCount + delta),
+                  }),
+                );
+              }}
               onOpenUser={onOpenUser}
             />
           </div>

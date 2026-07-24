@@ -8,6 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import type { Agent, SocialPostSummary } from "@echoo/shared";
 import type { PublicAssetListItem } from "@echoo/shared/public-assets";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { useServices } from "../../app/providers/ServicesProvider";
@@ -15,6 +16,13 @@ import { MediaAsset } from "../../features/media/MediaAsset";
 import type { PublicAssetService } from "../../services/PublicAssetService";
 import { PostCard } from "../social/PostCard";
 import { PostComposer } from "../social/PostComposer";
+import {
+  patchAssetInSocialCaches,
+  patchPostInSocialCaches,
+  prependPostToSocialCache,
+  socialQueryKeys,
+  type SocialListPage,
+} from "../social/socialQueryCache";
 
 export const PRIME_FIGURE_UPDATE_WARNING =
   "更新本初角色会覆盖当前的角色设定、日程、行程、当前情境、参数值、情绪与关系状态；聊天记录和长期记忆会保留。建议先进入该角色会话，从右上角菜单导出角色 JSON 备份。\n\n仍要更新到最新版吗？";
@@ -347,63 +355,54 @@ export function ExplorePage({
 }) {
   const auth = useAuth();
   const { socialService, publicAssetService } = useServices();
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<"creations" | "posts">("creations");
   const [creationType, setCreationType] = useState<"all" | Agent["type"]>(
     "all",
   );
-  const [assets, setAssets] = useState<PublicAssetListItem[]>([]);
-  const [posts, setPosts] = useState<SocialPostSummary[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [nextCursor, setNextCursor] = useState<string>();
-  const visibleAssets = useMemo(
-    () =>
-      creationType === "all"
-        ? assets
-        : assets.filter((asset) => asset.snapshot.type === creationType),
-    [assets, creationType],
+  const [actionError, setActionError] = useState<string | null>(null);
+  const lastRefreshVersionRef = useRef(refreshVersion);
+  const viewerId = auth.user?.id ?? "anonymous";
+  const assetsQueryKey = socialQueryKeys.followingAssets(
+    viewerId,
+    creationType,
   );
+  const postsQueryKey = socialQueryKeys.followingPosts(viewerId);
+  const assetsQuery = useQuery({
+    queryKey: assetsQueryKey,
+    queryFn: () =>
+      publicAssetService.listFollowing({
+        limit: 24,
+        type: creationType === "all" ? undefined : creationType,
+      }),
+    enabled: Boolean(auth.user) && tab === "creations",
+    staleTime: 60_000,
+  });
+  const postsQuery = useQuery({
+    queryKey: postsQueryKey,
+    queryFn: () => socialService.listFollowingPosts({ limit: 20 }),
+    enabled: Boolean(auth.user) && tab === "posts",
+    staleTime: 60_000,
+  });
+  const visibleAssets = assetsQuery.data?.items ?? [];
+  const posts = postsQuery.data?.items ?? [];
+  const activeQuery = tab === "creations" ? assetsQuery : postsQuery;
+  const loading = activeQuery.isPending;
+  const error =
+    actionError ??
+    (activeQuery.error instanceof Error ? activeQuery.error.message : null);
+  const nextCursor = activeQuery.data?.nextCursor;
 
   useEffect(() => {
-    if (!auth.user) return;
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    const request =
-      tab === "creations"
-        ? publicAssetService.listFollowing({
-            limit: 24,
-            type: creationType === "all" ? undefined : creationType,
-          })
-        : socialService.listFollowingPosts({ limit: 20 });
-    void request
-      .then((page) => {
-        if (cancelled) return;
-        if (tab === "creations")
-          setAssets((page as { items: PublicAssetListItem[] }).items);
-        else setPosts((page as { items: SocialPostSummary[] }).items);
-        setNextCursor((page as { nextCursor?: string }).nextCursor);
-      })
-      .catch((reason) => {
-        if (!cancelled)
-          setError(
-            reason instanceof Error ? reason.message : "关注内容加载失败。",
-          );
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    auth.user,
-    creationType,
-    publicAssetService,
-    refreshVersion,
-    socialService,
-    tab,
-  ]);
+    if (!auth.user || lastRefreshVersionRef.current === refreshVersion) return;
+    lastRefreshVersionRef.current = refreshVersion;
+    void queryClient.invalidateQueries({
+      queryKey: ["social-lists", "posts", viewerId, "following"],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["social-lists", "assets", viewerId, "following"],
+    });
+  }, [auth.user, queryClient, refreshVersion, viewerId]);
 
   return (
     <section className="mx-auto max-w-5xl space-y-7 pb-24">
@@ -474,10 +473,7 @@ export function ExplorePage({
           <PostComposer
             service={socialService}
             onSaved={(post) =>
-              setPosts((current) => [
-                post,
-                ...current.filter((item) => item.id !== post.id),
-              ])
+              prependPostToSocialCache(queryClient, postsQueryKey, post)
             }
           />
           {loading ? (
@@ -491,32 +487,24 @@ export function ExplorePage({
                 onOpenUser={onOpenUser}
                 onToggleLike={async () => {
                   const liked = !post.viewerHasLiked;
-                  setPosts((current) =>
-                    current.map((item) =>
-                      item.id === post.id
-                        ? {
-                            ...item,
-                            viewerHasLiked: liked,
-                            likeCount: Math.max(
-                              0,
-                              item.likeCount + (liked ? 1 : -1),
-                            ),
-                          }
-                        : item,
-                    ),
-                  );
+                  patchPostInSocialCaches(queryClient, viewerId, post.id, {
+                    viewerHasLiked: liked,
+                    likeCount: Math.max(0, post.likeCount + (liked ? 1 : -1)),
+                  });
                   try {
                     const result = await socialService.setLiked(post.id, liked);
-                    setPosts((current) =>
-                      current.map((item) =>
-                        item.id === post.id ? { ...item, ...result } : item,
-                      ),
+                    patchPostInSocialCaches(
+                      queryClient,
+                      viewerId,
+                      post.id,
+                      result,
                     );
                   } catch {
-                    setPosts((current) =>
-                      current.map((item) =>
-                        item.id === post.id ? post : item,
-                      ),
+                    patchPostInSocialCaches(
+                      queryClient,
+                      viewerId,
+                      post.id,
+                      post,
                     );
                   }
                 }}
@@ -539,10 +527,11 @@ export function ExplorePage({
               onToggleLike={async () => {
                 const liked = !asset.viewerHasLiked;
                 const result = await socialService.setLiked(asset.id, liked);
-                setAssets((current) =>
-                  current.map((item) =>
-                    item.id === asset.id ? { ...item, ...result } : item,
-                  ),
+                patchAssetInSocialCaches(
+                  queryClient,
+                  viewerId,
+                  asset.id,
+                  result,
                 );
               }}
               onInstall={async () => {
@@ -567,19 +556,12 @@ export function ExplorePage({
                       )
                     : await publicAssetService.install(asset.id, false);
                   onAgentInstalled(result.agent);
-                  setAssets((current) =>
-                    current.map((item) =>
-                      item.id === asset.id
-                        ? {
-                            ...item,
-                            installedVersionId: result.installedVersionId,
-                            updateAvailable: false,
-                          }
-                        : item,
-                    ),
-                  );
+                  patchAssetInSocialCaches(queryClient, viewerId, asset.id, {
+                    installedVersionId: result.installedVersionId,
+                    updateAvailable: false,
+                  });
                 } catch (reason) {
-                  setError(
+                  setActionError(
                     reason instanceof Error ? reason.message : "添加资产失败。",
                   );
                 }
@@ -606,16 +588,30 @@ export function ExplorePage({
                     cursor: nextCursor,
                   });
             if (tab === "creations")
-              setAssets((current) => [
-                ...current,
-                ...(page as { items: PublicAssetListItem[] }).items,
-              ]);
+              queryClient.setQueryData<SocialListPage<PublicAssetListItem>>(
+                assetsQueryKey,
+                (current) => ({
+                  ...page,
+                  items: mergeUniquePublicAssets(
+                    current?.items ?? [],
+                    (page as SocialListPage<PublicAssetListItem>).items,
+                  ),
+                }),
+              );
             else
-              setPosts((current) => [
-                ...current,
-                ...(page as { items: SocialPostSummary[] }).items,
-              ]);
-            setNextCursor(page.nextCursor);
+              queryClient.setQueryData<SocialListPage<SocialPostSummary>>(
+                postsQueryKey,
+                (current) => ({
+                  ...page,
+                  items: [
+                    ...(current?.items ?? []),
+                    ...(page as SocialListPage<SocialPostSummary>).items.filter(
+                      (post) =>
+                        !current?.items.some((item) => item.id === post.id),
+                    ),
+                  ],
+                }),
+              );
           }}
           className="w-full rounded-xl border border-white/8 py-3 text-sm text-white/45 hover:text-white"
         >

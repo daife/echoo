@@ -5,16 +5,19 @@ import { CharacterDetailPage, WorldUpdateDialog } from "./CharacterDetailPage";
 describe("CharacterDetailPage unavailable state", () => {
   it("keeps a return action while the source asset is loading or unavailable", () => {
     const html = renderToStaticMarkup(
-      <CharacterDetailPage
-        assetId="asset_missing"
-        characterService={{ get: vi.fn() } as never}
-        socialService={{} as never}
-        isAuthenticated
-        onRequireAuth={vi.fn()}
-        onBack={vi.fn()}
-        onOpenUser={vi.fn()}
-        onAgentInstalled={vi.fn()}
-      />,
+      <QueryClientProvider client={new QueryClient()}>
+        <CharacterDetailPage
+          assetId="asset_missing"
+          characterService={{ get: vi.fn() } as never}
+          socialService={{} as never}
+          isAuthenticated
+          onRequireAuth={vi.fn()}
+          onBack={vi.fn()}
+          onOpenUser={vi.fn()}
+          onAgentInstalled={vi.fn()}
+          viewerId="viewer-1"
+        />
+      </QueryClientProvider>,
     );
 
     expect(html).toContain("返回");
@@ -53,3 +56,4 @@ describe("WorldUpdateDialog", () => {
     expect(html).toContain("重置进度");
   });
 });
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

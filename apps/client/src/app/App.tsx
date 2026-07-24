@@ -59,14 +59,15 @@ import {
   popNavigationSnapshot,
   pushNavigationSnapshot,
   takePrimaryOriginSnapshot,
+  type NavigationEntry,
   type NavigationSnapshot,
   type ScrollPosition,
 } from "./navigationHistory";
+import { resolveAppBackAction, type AppView } from "./backNavigation";
 import {
-  resolveAppBackAction,
-  type AppView,
-} from "./backNavigation";
-import { useBackHandler } from "./providers/BackNavigationProvider";
+  NavigationLayerActivityProvider,
+  useBackHandler,
+} from "./providers/BackNavigationProvider";
 
 interface ViewLocation {
   view: AppView;
@@ -114,6 +115,9 @@ export function App() {
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const nextNavigationEntryIdRef = useRef(1);
+  const [currentEntryId, setCurrentEntryId] = useState("navigation-0");
+  const navigationOwnerRef = useRef(auth.user?.id);
   const [navigationHistory, setNavigationHistory] = useState<
     NavigationSnapshot<ViewLocation>[]
   >([]);
@@ -157,13 +161,6 @@ export function App() {
       ),
     [assetQueryKey, queryClient],
   );
-  const protectedView =
-    view === "messages" ||
-    view === "bindings" ||
-    view === "settings" ||
-    view === "profile" ||
-    view === "create" ||
-    view === "public-editor";
   const showConversationRail = shouldShowDesktopConversationRail(
     view,
     !!auth.user,
@@ -217,6 +214,19 @@ export function App() {
     [],
   );
 
+  const beginNavigationEntry = useCallback(() => {
+    setCurrentEntryId(`navigation-${nextNavigationEntryIdRef.current++}`);
+  }, []);
+
+  useEffect(() => {
+    if (navigationOwnerRef.current === auth.user?.id) return;
+    navigationOwnerRef.current = auth.user?.id;
+    setNavigationHistory([]);
+    beginNavigationEntry();
+    queryClient.removeQueries({ queryKey: ["social-lists"] });
+    queryClient.removeQueries({ queryKey: ["social-profile"] });
+  }, [auth.user?.id, beginNavigationEntry, queryClient]);
+
   const currentLocation = useCallback(
     (): ViewLocation => ({
       view,
@@ -229,11 +239,12 @@ export function App() {
 
   const createCurrentSnapshot = useCallback(
     (): NavigationSnapshot<ViewLocation> => ({
+      entryId: currentEntryId,
       location: currentLocation(),
       primaryView: activePrimaryView,
       scrollPosition: captureScrollPosition(),
     }),
-    [activePrimaryView, captureScrollPosition, currentLocation],
+    [activePrimaryView, captureScrollPosition, currentEntryId, currentLocation],
   );
 
   const restoreSnapshot = useCallback(
@@ -242,6 +253,7 @@ export function App() {
       setSelectedAssetId(snapshot.location.assetId);
       setSelectedUserId(snapshot.location.userId);
       setActivePrimaryView(snapshot.primaryView);
+      setCurrentEntryId(snapshot.entryId);
       pendingScrollPositionRef.current = snapshot.scrollPosition;
       setView(snapshot.location.view);
     },
@@ -254,10 +266,11 @@ export function App() {
     if (result.snapshot) restoreSnapshot(result.snapshot);
     else {
       setActivePrimaryView("home");
+      beginNavigationEntry();
       pendingScrollPositionRef.current = { mainTop: 0, windowTop: 0 };
       setView("home");
     }
-  }, [navigationHistory, restoreSnapshot]);
+  }, [beginNavigationEntry, navigationHistory, restoreSnapshot]);
 
   const navigatePrimary = useCallback(
     (target: PrimaryNavigationView) => {
@@ -274,10 +287,16 @@ export function App() {
       setSelectedPostId(null);
       setSelectedAssetId(null);
       setSelectedUserId(null);
+      beginNavigationEntry();
       pendingScrollPositionRef.current = { mainTop: 0, windowTop: 0 };
       setView(target);
     },
-    [activePrimaryView, navigationHistory, restoreSnapshot],
+    [
+      activePrimaryView,
+      beginNavigationEntry,
+      navigationHistory,
+      restoreSnapshot,
+    ],
   );
 
   useEffect(() => {
@@ -380,9 +399,10 @@ export function App() {
       setNavigationHistory([]);
       setActivePrimaryView("messages");
       setSelectedAgent(agent);
+      beginNavigationEntry();
       setView("messages");
     },
-    [notificationCenter.markConversationRead],
+    [beginNavigationEntry, notificationCenter.markConversationRead],
   );
 
   const handleAgentInstalled = useCallback((agent: Agent) => {
@@ -396,8 +416,9 @@ export function App() {
     setNavigationHistory([]);
     setActivePrimaryView("messages");
     setSelectedAgent(null);
+    beginNavigationEntry();
     setView("messages");
-  }, []);
+  }, [beginNavigationEntry]);
 
   const closeConversation = useCallback(() => {
     setSelectedAgent(null);
@@ -409,8 +430,9 @@ export function App() {
       pushNavigationSnapshot(current, createCurrentSnapshot()),
     );
     pendingScrollPositionRef.current = { mainTop: 0, windowTop: 0 };
+    beginNavigationEntry();
     setView("settings");
-  }, [createCurrentSnapshot]);
+  }, [beginNavigationEntry, createCurrentSnapshot]);
 
   const closeSettings = useCallback(() => {
     const result = popNavigationSnapshot(navigationHistory);
@@ -440,17 +462,21 @@ export function App() {
     { enabled: appBackAction !== null },
   );
 
-  const handleConversationDeleted = useCallback((conversationId: string) => {
-    setMyAgents((current) =>
-      current.filter((agent) => agent.conversationId !== conversationId),
-    );
-    setSelectedAgent((current) =>
-      current?.conversationId === conversationId ? null : current,
-    );
-    setNavigationHistory([]);
-    setActivePrimaryView("home");
-    setView("home");
-  }, []);
+  const handleConversationDeleted = useCallback(
+    (conversationId: string) => {
+      setMyAgents((current) =>
+        current.filter((agent) => agent.conversationId !== conversationId),
+      );
+      setSelectedAgent((current) =>
+        current?.conversationId === conversationId ? null : current,
+      );
+      setNavigationHistory([]);
+      setActivePrimaryView("home");
+      beginNavigationEntry();
+      setView("home");
+    },
+    [beginNavigationEntry],
+  );
 
   const createSliceFigure = async (input: CreateSliceFigureRequest) => {
     try {
@@ -613,22 +639,26 @@ export function App() {
     );
     setEditingPublicAsset(draft);
     pendingScrollPositionRef.current = { mainTop: 0, windowTop: 0 };
+    beginNavigationEntry();
     setView("public-editor");
   };
 
   const openPost = (postId: string) => {
     rememberCurrentLocation();
     setSelectedPostId(postId);
+    beginNavigationEntry();
     setView("post-detail");
   };
   const openAsset = (assetId: string) => {
     rememberCurrentLocation();
     setSelectedAssetId(assetId);
+    beginNavigationEntry();
     setView("character-detail");
   };
   const openPublicProfile = (userId: string) => {
     rememberCurrentLocation();
     setSelectedUserId(userId);
+    beginNavigationEntry();
     setView("public-profile");
   };
   function rememberCurrentLocation() {
@@ -639,7 +669,9 @@ export function App() {
   }
   const closeDetail = closeSecondaryView;
 
-  const ActivePage = useMemo(() => {
+  const renderPage = (location: ViewLocation) => {
+    const pageView = location.view;
+    const pageProtected = isProtectedView(pageView);
     if (auth.isLoading) {
       return (
         <div className="grid min-h-[calc(100dvh-8rem)] place-items-center">
@@ -649,29 +681,32 @@ export function App() {
         </div>
       );
     }
-    if (view === "auth" || (protectedView && !auth.user)) {
+    if (pageView === "auth" || (pageProtected && !auth.user)) {
       return (
         <AuthPage
-          onAuthenticated={() => setView(view === "auth" ? "messages" : view)}
+          onAuthenticated={() =>
+            setView(pageView === "auth" ? "messages" : pageView)
+          }
         />
       );
     }
-    if (view === "post-detail" && selectedPostId)
+    if (pageView === "post-detail" && location.postId)
       return (
         <PostDetailPage
-          postId={selectedPostId}
+          postId={location.postId}
           service={services.socialService}
           isAuthenticated={Boolean(auth.user)}
           onRequireAuth={() => setView("auth")}
           onBack={closeDetail}
           onOpenUser={openPublicProfile}
           onDeleted={closeDetail}
+          viewerId={auth.user?.id ?? "anonymous"}
         />
       );
-    if (view === "character-detail" && selectedAssetId)
+    if (pageView === "character-detail" && location.assetId)
       return (
         <CharacterDetailPage
-          assetId={selectedAssetId}
+          assetId={location.assetId}
           characterService={services.publicAssetService}
           socialService={services.socialService}
           isAuthenticated={Boolean(auth.user)}
@@ -679,20 +714,22 @@ export function App() {
           onBack={closeDetail}
           onOpenUser={openPublicProfile}
           onAgentInstalled={handleAgentInstalled}
+          viewerId={auth.user?.id ?? "anonymous"}
         />
       );
-    if (view === "public-profile" && selectedUserId)
+    if (pageView === "public-profile" && location.userId)
       return (
         <PublicProfilePage
-          userId={selectedUserId}
+          userId={location.userId}
           onBack={closeDetail}
           onOpenPost={openPost}
           onOpenAsset={openAsset}
           onOpenUser={openPublicProfile}
           onRequireAuth={() => setView("auth")}
+          refreshVersion={notificationCenter.activityRefreshVersion}
         />
       );
-    if (view === "explore")
+    if (pageView === "explore")
       return (
         <ExplorePage
           onOpenPost={openPost}
@@ -703,7 +740,7 @@ export function App() {
           refreshVersion={notificationCenter.activityRefreshVersion}
         />
       );
-    if (view === "public-editor" && editingPublicAsset)
+    if (pageView === "public-editor" && editingPublicAsset)
       return (
         <PublicAssetEditorPage
           draft={editingPublicAsset}
@@ -724,7 +761,7 @@ export function App() {
           }}
         />
       );
-    if (view === "profile")
+    if (pageView === "profile")
       return (
         <ProfilePage
           agents={myAgents}
@@ -739,6 +776,7 @@ export function App() {
             );
             setEditingPublicAsset(asset);
             pendingScrollPositionRef.current = { mainTop: 0, windowTop: 0 };
+            beginNavigationEntry();
             setView("public-editor");
           }}
           onOpenAsset={openAsset}
@@ -746,7 +784,7 @@ export function App() {
           onOpenUser={openPublicProfile}
         />
       );
-    if (view === "create")
+    if (pageView === "create")
       return (
         <CreateAgentPage
           primeWorldService={services.primeWorldService}
@@ -769,7 +807,7 @@ export function App() {
           onBack={closeSecondaryView}
         />
       );
-    if (view === "messages") {
+    if (pageView === "messages") {
       if (selectedAgent?.type === "prime-world")
         return (
           <PrimeWorldPage
@@ -820,7 +858,7 @@ export function App() {
         />
       );
     }
-    if (view === "bindings")
+    if (pageView === "bindings")
       return (
         <BindingsPanel
           onBack={closeBindings}
@@ -828,7 +866,7 @@ export function App() {
           channelsApi={services.channelsApi}
         />
       );
-    if (view === "settings")
+    if (pageView === "settings")
       return (
         <SettingsPage
           runtimeConfigService={services.runtimeConfigService}
@@ -851,6 +889,7 @@ export function App() {
             pushNavigationSnapshot(current, createCurrentSnapshot()),
           );
           pendingScrollPositionRef.current = { mainTop: 0, windowTop: 0 };
+          beginNavigationEntry();
           setView("create");
         }}
         onAgentInstalled={handleAgentInstalled}
@@ -859,35 +898,18 @@ export function App() {
         onOpenUser={openPublicProfile}
       />
     );
-  }, [
-    auth.isLoading,
-    auth.user,
-    closeBindings,
-    closeConversation,
-    closeSecondaryView,
-    closeSettings,
-    createCurrentSnapshot,
-    handleConversationDeleted,
-    handleAgentInstalled,
-    isLoadingAgents,
-    myAgents,
-    publicAssets,
-    editingPublicAsset,
-    openConversationList,
-    openAgent,
-    openSettings,
-    protectedView,
-    selectedAgent,
-    selectedPostId,
-    selectedAssetId,
-    selectedUserId,
-    navigationHistory,
-    notificationCenter.activityRefreshVersion,
-    notificationCenter.permissionState,
-    notificationCenter.requestPermission,
-    notificationCenter.openNotificationSettings,
-    view,
-  ]);
+  };
+
+  const activeLocation = currentLocation();
+  const navigationLayers: NavigationEntry<ViewLocation>[] = [
+    ...navigationHistory,
+    {
+      entryId: currentEntryId,
+      location: activeLocation,
+      primaryView: activePrimaryView,
+      scrollPosition: captureScrollPosition(),
+    },
+  ];
 
   return (
     <div className="relative min-h-[100dvh] overflow-hidden bg-[#09090b] text-[#e5e2e1]">
@@ -972,7 +994,20 @@ export function App() {
             showMobileConversationList ? "hidden md:block" : ""
           }`}
         >
-          {ActivePage}
+          {navigationLayers.map((entry, index) => {
+            const active = index === navigationLayers.length - 1;
+            return (
+              <div
+                key={entry.entryId}
+                hidden={!active}
+                aria-hidden={!active || undefined}
+              >
+                <NavigationLayerActivityProvider active={active}>
+                  {renderPage(entry.location)}
+                </NavigationLayerActivityProvider>
+              </div>
+            );
+          })}
         </main>
       </div>
 
@@ -1045,4 +1080,15 @@ function resolveStateUpdate<T>(update: SetStateAction<T>, current: T): T {
   return typeof update === "function"
     ? (update as (value: T) => T)(current)
     : update;
+}
+
+function isProtectedView(view: AppView) {
+  return (
+    view === "messages" ||
+    view === "bindings" ||
+    view === "settings" ||
+    view === "profile" ||
+    view === "create" ||
+    view === "public-editor"
+  );
 }

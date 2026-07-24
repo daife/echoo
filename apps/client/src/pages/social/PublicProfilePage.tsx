@@ -1,11 +1,8 @@
 import { ArrowLeft, UsersThree, X } from "@phosphor-icons/react";
-import type {
-  Agent,
-  PublicUserProfile,
-  SocialPostSummary,
-} from "@echoo/shared";
+import type { Agent, PublicUserProfile } from "@echoo/shared";
 import type { PublicAssetListItem } from "@echoo/shared/public-assets";
-import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
 import { useBackHandler } from "../../app/providers/BackNavigationProvider";
 import { useAuth } from "../../app/providers/AuthProvider";
@@ -13,6 +10,11 @@ import { useServices } from "../../app/providers/ServicesProvider";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
 import { PostCard } from "./PostCard";
 import { PostComposer } from "./PostComposer";
+import {
+  patchPostInSocialCaches,
+  prependPostToSocialCache,
+  socialQueryKeys,
+} from "./socialQueryCache";
 
 export function PublicProfilePage({
   userId,
@@ -21,6 +23,7 @@ export function PublicProfilePage({
   onOpenAsset,
   onOpenUser,
   onRequireAuth,
+  refreshVersion = 0,
 }: {
   userId: string;
   onBack: () => void;
@@ -28,70 +31,69 @@ export function PublicProfilePage({
   onOpenAsset: (assetId: string) => void;
   onOpenUser: (userId: string) => void;
   onRequireAuth: () => void;
+  refreshVersion?: number;
 }) {
   const auth = useAuth();
   const { socialService, publicAssetService } = useServices();
-  const [profile, setProfile] = useState<PublicUserProfile | null>(null);
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<"creations" | "posts">("creations");
-  const [posts, setPosts] = useState<SocialPostSummary[]>([]);
-  const [assets, setAssets] = useState<PublicAssetListItem[]>([]);
   const [assetType, setAssetType] = useState<"all" | Agent["type"]>("all");
   const [list, setList] = useState<"followers" | "following" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const lastRefreshVersionRef = useRef(refreshVersion);
+  const viewerId = auth.user?.id ?? "anonymous";
+  const profileQueryKey = socialQueryKeys.profile(userId, viewerId);
+  const postsQueryKey = socialQueryKeys.userPosts(userId, viewerId);
+  const assetsQueryKey = socialQueryKeys.userAssets(
+    userId,
+    viewerId,
+    assetType,
+  );
+  const profileQuery = useQuery({
+    queryKey: profileQueryKey,
+    queryFn: () => socialService.getUser(userId),
+    staleTime: 60_000,
+  });
+  const postsQuery = useQuery({
+    queryKey: postsQueryKey,
+    queryFn: () => socialService.listUserPosts(userId),
+    enabled: tab === "posts",
+    staleTime: 60_000,
+  });
+  const assetsQuery = useQuery({
+    queryKey: assetsQueryKey,
+    queryFn: () =>
+      publicAssetService.listByUser(userId, {
+        type: assetType === "all" ? undefined : assetType,
+      }),
+    enabled: tab === "creations",
+    staleTime: 60_000,
+  });
+  const profile = profileQuery.data;
+  const posts = postsQuery.data?.items ?? [];
+  const assets = assetsQuery.data?.items ?? [];
   useBackHandler(() => setList(null), {
     enabled: list !== null,
     priority: BACK_HANDLER_PRIORITY.dialog,
   });
-  const filteredAssets = useMemo(
-    () =>
-      assetType === "all"
-        ? assets
-        : assets.filter((asset) => asset.snapshot.type === assetType),
-    [assetType, assets],
-  );
-
   useEffect(() => {
-    let cancelled = false;
-    setProfile(null);
-    setError(null);
-    void socialService
-      .getUser(userId)
-      .then((value) => {
-        if (!cancelled) setProfile(value);
-      })
-      .catch((reason) => {
-        if (!cancelled)
-          setError(reason instanceof Error ? reason.message : "用户加载失败。");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [socialService, userId]);
-  useEffect(() => {
-    let cancelled = false;
-    if (tab === "posts") setPosts([]);
-    else setAssets([]);
-    const request =
-      tab === "posts"
-        ? socialService.listUserPosts(userId)
-        : publicAssetService.listByUser(userId, {
-            type: assetType === "all" ? undefined : assetType,
-          });
-    void request.then((page) => {
-      if (cancelled) return;
-      if (tab === "posts")
-        setPosts((page as { items: SocialPostSummary[] }).items);
-      else setAssets((page as { items: PublicAssetListItem[] }).items);
+    if (lastRefreshVersionRef.current === refreshVersion) return;
+    lastRefreshVersionRef.current = refreshVersion;
+    void queryClient.invalidateQueries({
+      queryKey: ["social-lists", "posts", viewerId, "user", userId],
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [assetType, publicAssetService, socialService, tab, userId]);
-
+    void queryClient.invalidateQueries({
+      queryKey: ["social-lists", "assets", viewerId, "user", userId],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["social-profile", userId, viewerId],
+    });
+  }, [queryClient, refreshVersion, userId, viewerId]);
   if (!profile)
     return (
       <div className="py-20 text-center text-sm text-white/40">
-        {error ?? "正在加载用户主页……"}
+        {profileQuery.error instanceof Error
+          ? profileQuery.error.message
+          : "正在加载用户主页……"}
       </div>
     );
   return (
@@ -137,7 +139,7 @@ export function PublicProfilePage({
                 profile.id,
                 !profile.viewerIsFollowing,
               );
-              setProfile({
+              queryClient.setQueryData(profileQueryKey, {
                 ...profile,
                 viewerIsFollowing: result.following,
                 followerCount: result.followerCount,
@@ -182,10 +184,14 @@ export function PublicProfilePage({
           {profile.isSelf ? (
             <PostComposer
               service={socialService}
-              onSaved={(post) => setPosts((current) => [post, ...current])}
+              onSaved={(post) =>
+                prependPostToSocialCache(queryClient, postsQueryKey, post)
+              }
             />
           ) : null}
-          {posts.length ? (
+          {postsQuery.isPending ? (
+            <Empty text="正在加载动态……" />
+          ) : posts.length ? (
             posts.map((post) => (
               <PostCard
                 key={post.id}
@@ -198,10 +204,11 @@ export function PublicProfilePage({
                     post.id,
                     !post.viewerHasLiked,
                   );
-                  setPosts((current) =>
-                    current.map((item) =>
-                      item.id === post.id ? { ...item, ...result } : item,
-                    ),
+                  patchPostInSocialCaches(
+                    queryClient,
+                    viewerId,
+                    post.id,
+                    result,
                   );
                 }}
               />
@@ -210,9 +217,11 @@ export function PublicProfilePage({
             <Empty text="还没有发布动态。" />
           )}
         </div>
-      ) : filteredAssets.length ? (
+      ) : assetsQuery.isPending ? (
+        <Empty text="正在加载创作……" />
+      ) : assets.length ? (
         <div className="grid gap-4 md:grid-cols-2">
-          {filteredAssets.map((asset) => (
+          {assets.map((asset) => (
             <button
               key={asset.id}
               type="button"
@@ -234,7 +243,11 @@ export function PublicProfilePage({
           ))}
         </div>
       ) : (
-        <Empty text={assets.length ? "该类型还没有公开创作。" : "还没有公开创作。"} />
+        <Empty
+          text={
+            assetType === "all" ? "还没有公开创作。" : "该类型还没有公开创作。"
+          }
+        />
       )}
       {list ? (
         <FollowListDialog
@@ -260,12 +273,14 @@ export function PublicProfileAssetFilters({
 }) {
   return (
     <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
-      {([
-        ["all", "全部"],
-        ["slice-figure", "切片角色"],
-        ["prime-figure", "本初角色"],
-        ["prime-world", "本初世界"],
-      ] as const).map(([value, label]) => (
+      {(
+        [
+          ["all", "全部"],
+          ["slice-figure", "切片角色"],
+          ["prime-figure", "本初角色"],
+          ["prime-world", "本初世界"],
+        ] as const
+      ).map(([value, label]) => (
         <button
           key={value}
           type="button"
