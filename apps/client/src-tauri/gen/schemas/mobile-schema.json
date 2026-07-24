@@ -2193,6 +2193,12 @@
           "markdownDescription": "Denies the unminimize command without any pre-configured scope."
         },
         {
+          "description": "Default permissions for the Echoo keepalive plugin\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-status`\n- `allow-handoff`",
+          "type": "string",
+          "const": "keepalive:default",
+          "markdownDescription": "Default permissions for the Echoo keepalive plugin\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-status`\n- `allow-handoff`"
+        },
+        {
           "description": "Enables the handoff command without any pre-configured scope.",
           "type": "string",
           "const": "keepalive:allow-handoff",

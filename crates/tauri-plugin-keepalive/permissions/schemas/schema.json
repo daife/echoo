@@ -341,6 +341,12 @@
           "type": "string",
           "const": "deny-stop",
           "markdownDescription": "Denies the stop command without any pre-configured scope."
+        },
+        {
+          "description": "Default permissions for the Echoo keepalive plugin\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-status`\n- `allow-handoff`",
+          "type": "string",
+          "const": "default",
+          "markdownDescription": "Default permissions for the Echoo keepalive plugin\n#### This default permission set includes:\n\n- `allow-start`\n- `allow-stop`\n- `allow-status`\n- `allow-handoff`"
         }
       ]
     }

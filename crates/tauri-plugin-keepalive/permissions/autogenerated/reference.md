@@ -1,3 +1,14 @@
+## Default Permission
+
+Default permissions for the Echoo keepalive plugin
+
+#### This default permission set includes the following:
+
+- `allow-start`
+- `allow-stop`
+- `allow-status`
+- `allow-handoff`
+
 ## Permission Table
 
 <table>

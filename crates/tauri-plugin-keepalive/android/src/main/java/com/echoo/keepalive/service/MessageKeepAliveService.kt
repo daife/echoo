@@ -14,6 +14,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.echoo.keepalive.notify.NotificationChannels
 import com.echoo.keepalive.socket.SocketManager
 
 class MessageKeepAliveService : Service(), DefaultLifecycleObserver {
@@ -29,6 +30,8 @@ class MessageKeepAliveService : Service(), DefaultLifecycleObserver {
         super<Service>.onCreate()
         isRunning = true
         createChannel()
+        NotificationChannels.createMessageChannel(this)
+        NotificationChannels.createActivityChannel(this)
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
     }
 

@@ -55,7 +55,11 @@ object SocketManager {
             val ticket = requestTicket(context, accessToken)
                 ?: requestTicket(context, refresh(context) ?: throw IllegalStateException("Refresh failed"))
                 ?: throw IllegalStateException("Ticket failed")
-            val socketUrl = AndroidTokenStore.wsUrl(context).toHttpUrl().newBuilder()
+            val socketUrl = AndroidTokenStore.wsUrl(context)
+                .replaceFirst("wss://", "https://", ignoreCase = true)
+                .replaceFirst("ws://", "http://", ignoreCase = true)
+                .toHttpUrl()
+                .newBuilder()
                 .addQueryParameter("ticket", ticket)
                 .build()
             val request = Request.Builder().url(socketUrl).build()
@@ -68,7 +72,10 @@ object SocketManager {
 
     private fun listener(context: Context, activeGeneration: Long) = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
-            if (isActive(activeGeneration)) reconnectAttempt = 0
+            if (isActive(activeGeneration)) {
+                reconnectAttempt = 0
+                Log.i(TAG, "Background realtime connection opened")
+            }
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {

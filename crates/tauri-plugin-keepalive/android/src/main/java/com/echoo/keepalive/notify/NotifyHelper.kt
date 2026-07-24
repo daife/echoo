@@ -6,6 +6,8 @@ import android.content.Context
 import androidx.core.app.NotificationCompat
 
 object NotifyHelper {
+    private val MESSAGE_VIBRATION_PATTERN = longArrayOf(0, 240, 120, 240)
+
     fun showNotification(
         context: Context,
         notificationId: String,
@@ -13,7 +15,8 @@ object NotifyHelper {
         title: String,
         body: String
     ) {
-        if (channelId == NotificationChannels.ACTIVITY_CHANNEL_ID) {
+        val isMessage = channelId == NotificationChannels.MESSAGE_CHANNEL_ID
+        if (!isMessage) {
             NotificationChannels.createActivityChannel(context)
         } else {
             NotificationChannels.createMessageChannel(context)
@@ -33,7 +36,18 @@ object NotifyHelper {
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .apply {
+                if (isMessage) {
+                    setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                    setPriority(NotificationCompat.PRIORITY_HIGH)
+                    setDefaults(NotificationCompat.DEFAULT_ALL)
+                    setVibrate(MESSAGE_VIBRATION_PATTERN)
+                    setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                } else {
+                    setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                }
+            }
             .build()
 
         context.getSystemService(NotificationManager::class.java)
