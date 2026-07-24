@@ -4,6 +4,8 @@ import type { NotificationRuntime } from "../../runtimes/contracts";
 import {
   hasUnreadConversations,
   initializeNotificationPermission,
+  removeConversation,
+  shouldNotifyConversation,
   upsertConversation,
 } from "./useNotificationCenter";
 
@@ -124,5 +126,33 @@ describe("notification conversation state", () => {
       ["a", 0],
       ["b", 1],
     ]);
+  });
+
+  it("removes a remotely deleted conversation from unread derivation", () => {
+    const next = removeConversation(
+      [conversation("a", 2), conversation("b", 0)],
+      "a",
+    );
+
+    expect(next.map((item) => item.id)).toEqual(["b"]);
+    expect(hasUnreadConversations(next)).toBe(false);
+  });
+
+  it("applies a caught-up reply without duplicating its native notification", () => {
+    const previous = conversation("a", 0);
+    const incoming = {
+      ...conversation("a", 1),
+      lastMessagePreview: "background reply",
+      updatedAt: 2,
+    };
+    const next = upsertConversation([previous], incoming);
+
+    expect(next[0]).toMatchObject({
+      unreadCount: 1,
+      lastMessagePreview: "background reply",
+    });
+    expect(hasUnreadConversations(next)).toBe(true);
+    expect(shouldNotifyConversation(false, incoming, previous)).toBe(false);
+    expect(shouldNotifyConversation(true, incoming, previous)).toBe(true);
   });
 });

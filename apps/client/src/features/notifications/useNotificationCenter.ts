@@ -176,10 +176,15 @@ export function useNotificationCenter(input: {
       liveRef.current = status === "live";
     });
     const unsubscribeChange = runtime.message.onSyncChange((change) => {
-      if (
-        change.entityType === "conversation" &&
-        change.entity?.entityType === "conversation"
-      ) {
+      if (change.entityType === "conversation") {
+        if (change.operation === "delete") {
+          queryClient.setQueryData<Conversation[]>(
+            conversationQueryKey,
+            (current = []) => removeConversation(current, change.entityId),
+          );
+          return;
+        }
+        if (change.entity?.entityType !== "conversation") return;
         const conversation = change.entity.value;
         const current =
           queryClient.getQueryData<Conversation[]>(conversationQueryKey) ?? [];
@@ -193,10 +198,7 @@ export function useNotificationCenter(input: {
           return;
         }
         setConversation(conversation);
-        if (
-          liveRef.current &&
-          conversation.unreadCount > (previous?.unreadCount ?? 0)
-        )
+        if (shouldNotifyConversation(liveRef.current, conversation, previous))
           void runtime.notification.showNotification({
             id: `conversation:${conversation.id}`,
             kind: "message",
@@ -333,8 +335,25 @@ export function upsertConversation(
   return [incoming, ...conversations.filter((item) => item.id !== incoming.id)];
 }
 
+export function removeConversation(
+  conversations: Conversation[],
+  conversationId: string,
+) {
+  return conversations.filter(
+    (conversation) => conversation.id !== conversationId,
+  );
+}
+
 export function hasUnreadConversations(conversations: Conversation[]) {
   return conversations.some((conversation) => conversation.unreadCount > 0);
+}
+
+export function shouldNotifyConversation(
+  isLive: boolean,
+  incoming: Conversation,
+  previous?: Conversation,
+) {
+  return isLive && incoming.unreadCount > (previous?.unreadCount ?? 0);
 }
 
 export async function initializeNotificationPermission(input: {

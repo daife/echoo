@@ -7,7 +7,6 @@ const mocks = vi.hoisted(() => ({
   realtimeStart: vi.fn(),
   realtimeStop: vi.fn(),
   getSyncCursor: vi.fn(async () => 17),
-  setSyncCursor: vi.fn(),
 }));
 
 vi.mock("./tauriInvoke", () => ({ tauriInvoke: mocks.invoke }));
@@ -16,7 +15,6 @@ vi.mock("../web/WebMessageRuntime", () => ({
     startRealtime = mocks.realtimeStart;
     stopRealtime = mocks.realtimeStop;
     getSyncCursor = mocks.getSyncCursor;
-    setSyncCursor = mocks.setSyncCursor;
   },
 }));
 
@@ -117,6 +115,28 @@ describe("Android realtime ownership", () => {
         ensureService: false,
         activateSocket: true,
         resumeOnly: false,
+      }),
+    );
+  });
+
+  it("keeps the UI cursor behind the native notification cursor for foreground catch-up", async () => {
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "plugin:keepalive|handoff")
+        return { ...tokens, cursor: 99 };
+      return undefined;
+    });
+    const runtime = new TauriMessageRuntime(auth);
+
+    await runtime.startRealtime();
+
+    expect(mocks.realtimeStart).toHaveBeenCalledOnce();
+    expect(mocks.getSyncCursor).toHaveBeenCalledOnce();
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      "plugin:keepalive|start",
+      expect.objectContaining({
+        cursor: 17,
+        ensureService: true,
+        activateSocket: false,
       }),
     );
   });

@@ -243,12 +243,6 @@ export class WebMessageRuntime implements MessageRuntime {
     return token ? Number(localStorage.getItem(syncCursorKey(token)) ?? 0) : 0;
   }
 
-  async setSyncCursor(cursor: number) {
-    const token = await this.auth.getAccessToken();
-    if (token && Number.isSafeInteger(cursor) && cursor >= 0)
-      localStorage.setItem(syncCursorKey(token), String(cursor));
-  }
-
   onSyncChange(handler: (change: SyncChange) => void) {
     this.syncChangeHandlers.add(handler);
     return () => this.syncChangeHandlers.delete(handler);

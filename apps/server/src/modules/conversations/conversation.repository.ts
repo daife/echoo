@@ -20,6 +20,15 @@ interface ConversationRow extends RowDataPacket {
   updated_at: number;
 }
 
+export interface ConversationPreviewUpdate {
+  ownerUserId: string;
+  conversationId: string;
+  preview: string | null;
+  updatedAt: number;
+  incrementUnread?: boolean;
+  unreadIncrement?: number;
+}
+
 export class ConversationRepository {
   constructor(private readonly events = new ChangeEventRepository()) {}
   async listByOwner(ownerUserId: string) {
@@ -37,42 +46,8 @@ export class ConversationRepository {
     );
     return row ? rowToConversation(row) : null;
   }
-  async updatePreview(input: {
-    ownerUserId: string;
-    conversationId: string;
-    preview: string | null;
-    updatedAt: number;
-    incrementUnread?: boolean;
-    unreadIncrement?: number;
-  }) {
-    const unreadIncrement =
-      input.unreadIncrement ?? (input.incrementUnread ? 1 : 0);
-    await withTransaction(async (connection) => {
-      await execute(
-        `UPDATE conversations SET last_message_preview = ?, unread_count = unread_count + ?, updated_at = ?
-         WHERE owner_user_id = ? AND id = ?`,
-        [
-          truncatePreview(input.preview),
-          unreadIncrement,
-          input.updatedAt,
-          input.ownerUserId,
-          input.conversationId,
-        ],
-        connection,
-      );
-      if (unreadIncrement > 0)
-        await this.events.append(
-          {
-            ownerUserId: input.ownerUserId,
-            entityType: "conversation",
-            entityId: input.conversationId,
-            conversationId: input.conversationId,
-            operation: "upsert",
-            createdAt: input.updatedAt,
-          },
-          connection,
-        );
-    });
+  updatePreview(input: ConversationPreviewUpdate) {
+    return updateConversationPreview(this.events, input);
   }
 
   async markRead(ownerUserId: string, conversationId: string) {
@@ -181,6 +156,41 @@ export class ConversationRepository {
 
 export function truncatePreview(value: string | null) {
   return value === null ? null : Array.from(value).slice(0, 500).join("");
+}
+
+export async function updateConversationPreview(
+  events: Pick<ChangeEventRepository, "append">,
+  input: ConversationPreviewUpdate,
+  transaction: typeof withTransaction = withTransaction,
+  run: typeof execute = execute,
+) {
+  const unreadIncrement =
+    input.unreadIncrement ?? (input.incrementUnread ? 1 : 0);
+  await transaction(async (connection) => {
+    await run(
+      `UPDATE conversations SET last_message_preview = ?, unread_count = unread_count + ?, updated_at = ?
+       WHERE owner_user_id = ? AND id = ?`,
+      [
+        truncatePreview(input.preview),
+        unreadIncrement,
+        input.updatedAt,
+        input.ownerUserId,
+        input.conversationId,
+      ],
+      connection,
+    );
+    await events.append(
+      {
+        ownerUserId: input.ownerUserId,
+        entityType: "conversation",
+        entityId: input.conversationId,
+        conversationId: input.conversationId,
+        operation: "upsert",
+        createdAt: input.updatedAt,
+      },
+      connection,
+    );
+  });
 }
 
 function rowToConversation(row: ConversationRow): Conversation {

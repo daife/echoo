@@ -108,12 +108,13 @@ export class TauriMessageRuntime implements MessageRuntime {
       return null;
     });
     if (state?.accessToken && state.refreshToken) {
+      // The native cursor tracks notification delivery, not UI consumption.
+      // Keep the Web cursor behind so its catch-up replays background changes.
       await this.auth.saveTokens({
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
         expiresAt: state.expiresAt,
       });
-      await this.realtime.setSyncCursor(state.cursor);
     }
     await this.realtime.startRealtime();
     if (this.backgroundNotificationsEnabled) {
@@ -221,7 +222,6 @@ interface NativeHandoff {
   accessToken: string;
   refreshToken: string;
   expiresAt: number;
-  cursor: number;
 }
 
 function tokenExpiresAt(token: string) {
