@@ -5,4 +5,7 @@ export interface AuthRuntime {
   getAccessToken(): Promise<string | null>;
   getRefreshToken(): Promise<string | null>;
   clearTokens(): Promise<void>;
+  expireSession(): Promise<void>;
+  hydrateTokens?(): Promise<void>;
+  onSessionExpired?(handler: () => void): () => void;
 }

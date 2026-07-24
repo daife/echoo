@@ -69,9 +69,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
     void Promise.all([
       services.authService.loadCurrentUser(),
       runtime.link.getInitialAuthLinkParams(),
-    ]).then(([currentUser, initialAuthLinkParams]) => {
+    ]).then(([session, initialAuthLinkParams]) => {
       if (cancelled) return;
-      setUser(currentUser);
+      setUser(session.user);
+      if (session.sessionExpired) setAuthError("登录已过期，请重新登录。");
       setAuthLinkParams(initialAuthLinkParams);
       setAuthMode(
         initialAuthLinkParams.verificationToken
@@ -86,6 +87,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
       cancelled = true;
     };
   }, [runtime.link, services]);
+
+  useEffect(() => {
+    return runtime.auth.onSessionExpired?.(() => {
+      void mediaCache.clearCurrentUser().catch(() => undefined);
+      setUser(null);
+      setAuthMode("login");
+      setAuthError("登录已过期，请重新登录。");
+    });
+  }, [runtime.auth]);
 
   const clearAuthLinkParams = useCallback(
     async (keys: Array<keyof AuthLinkParams>) => {

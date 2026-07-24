@@ -8,6 +8,16 @@ export interface ApiRequestOptions {
   signal?: AbortSignal;
 }
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export class ApiClient {
   private refreshPromise: Promise<string | null> | null = null;
   constructor(private readonly options: ApiClientOptions) {}
@@ -137,7 +147,10 @@ export class ApiClient {
       } catch {
         // Keep the status text when the response body is not JSON.
       }
-      throw new Error(detail || `接口请求失败：${response.status}`);
+      throw new ApiError(
+        detail || `接口请求失败：${response.status}`,
+        response.status,
+      );
     }
 
     return (await response.json()) as T;

@@ -42,6 +42,7 @@ describe("Android realtime ownership", () => {
       getAccessToken: vi.fn(async () => tokens.accessToken),
       getRefreshToken: vi.fn(async () => tokens.refreshToken),
       clearTokens: vi.fn(),
+      expireSession: vi.fn(),
     };
     vi.stubGlobal("navigator", { userAgent: "Echoo Android" });
     vi.stubGlobal("document", {

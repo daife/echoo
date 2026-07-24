@@ -88,10 +88,12 @@ async function refreshSession(runtime: RuntimeBundle, baseUrl: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ refreshToken }),
   });
-  if (!response.ok) {
-    await runtime.auth.clearTokens();
+  if (response.status === 401) {
+    await runtime.auth.expireSession();
     return null;
   }
+  if (!response.ok)
+    throw new Error(`刷新登录会话失败：${response.status}`);
   const session =
     (await response.json()) as import("@echoo/shared").AuthSession;
   await runtime.auth.saveTokens(session.tokens);

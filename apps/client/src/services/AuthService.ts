@@ -10,6 +10,7 @@ import type {
   VerifyEmailRequest,
 } from "@echoo/shared";
 import type { AuthApi } from "@echoo/api-client";
+import { ApiError } from "@echoo/api-client";
 import type { AuthRuntime } from "../runtimes/contracts";
 import type { StorageRuntime } from "../runtimes/contracts";
 
@@ -46,17 +47,26 @@ export class AuthService {
     return this.api.verifyEmail(body);
   }
 
-  async loadCurrentUser() {
+  async loadCurrentUser(): Promise<{
+    user: Awaited<ReturnType<AuthApi["me"]>> | null;
+    sessionExpired: boolean;
+  }> {
+    await this.auth.hydrateTokens?.();
     const token = await this.auth.getAccessToken();
-    if (!token) return null;
+    const refreshToken = await this.auth.getRefreshToken();
+    if (!token && !refreshToken) return { user: null, sessionExpired: false };
 
     try {
       const user = await this.api.me();
       await this.storage.setSetting(currentUserKey, user);
-      return user;
-    } catch {
-      await this.signOut();
-      return null;
+      return { user, sessionExpired: false };
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        await this.auth.expireSession();
+        await this.storage.removeSetting(currentUserKey);
+        return { user: null, sessionExpired: true };
+      }
+      return { user: null, sessionExpired: false };
     }
   }
 
