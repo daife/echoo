@@ -685,6 +685,8 @@ function BillingPanel({ token, onExpired }: PanelProps) {
       );
       setUsdToCnyRate(settings.recharge.usdToCnyRate ?? "");
       setPaymentConfigured(settings.recharge.paymentConfigured);
+      if (!settings.recharge.usdToCnyRate)
+        throw new Error("充值汇率保存后未能从服务器读取，请检查服务端数据库连接。");
       setStatus("充值汇率已保存，仅影响新创建的订单。");
     } catch (error) {
       handlePanelError(error, setStatus, onExpired);

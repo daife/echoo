@@ -250,10 +250,18 @@ export function normalizeUsdToCnyRate(value: string) {
   return `${BigInt(whole)}${normalizedFraction ? `.${normalizedFraction}` : ""}`;
 }
 
-function parseJson(value: unknown) {
-  if (typeof value !== "string") return value;
+export function parseJson(value: unknown) {
+  const text =
+    typeof value === "string"
+      ? value
+      : Buffer.isBuffer(value)
+        ? value.toString("utf8")
+        : value instanceof Uint8Array
+          ? Buffer.from(value).toString("utf8")
+          : null;
+  if (text === null) return value;
   try {
-    return JSON.parse(value);
+    return JSON.parse(text);
   } catch {
     return null;
   }
