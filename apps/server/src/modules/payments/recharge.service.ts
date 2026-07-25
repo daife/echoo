@@ -127,6 +127,7 @@ export class RechargeService {
     const rate = await this.settings.getUsdToCnyRate();
     return {
       enabled: this.isPaymentConfigured() && rate !== null,
+      paymentConfigured: this.isPaymentConfigured(),
       usdToCnyRate: rate,
       minimumCreditUsd: "1",
       maximumCreditUsd: "1000",

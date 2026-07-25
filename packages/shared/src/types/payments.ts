@@ -4,6 +4,8 @@ export type RechargeOrderStatus = "pending" | "paid";
 
 export interface RechargeConfigView {
   enabled: boolean;
+  /** Whether the server has a complete payment-provider configuration. */
+  paymentConfigured: boolean;
   usdToCnyRate: string | null;
   minimumCreditUsd: "1";
   maximumCreditUsd: "1000";
@@ -35,4 +37,3 @@ export interface RechargeCheckoutView {
     fields: Record<string, string>;
   };
 }
-

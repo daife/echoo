@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { submitPostForm } from "./RechargeService";
-import { calculatePreviewMoneyCny } from "../pages/settings/RechargePanel";
+import {
+  calculatePreviewMoneyCny,
+  rechargeUnavailableMessage,
+} from "../pages/settings/RechargePanel";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -11,6 +14,20 @@ describe("recharge checkout form", () => {
     expect(calculatePreviewMoneyCny("10", "7.234567")).toBe("72.35");
     expect(calculatePreviewMoneyCny("1", "0.01")).toBe("0.01");
     expect(calculatePreviewMoneyCny("1.001", "7.2")).toBeNull();
+  });
+
+  it("explains which recharge prerequisite is missing", () => {
+    expect(
+      rechargeUnavailableMessage({
+        enabled: false,
+        paymentConfigured: false,
+        usdToCnyRate: "7.2",
+        minimumCreditUsd: "1",
+        maximumCreditUsd: "1000",
+        quickAmountsUsd: ["5", "10", "20", "50", "100"],
+        paymentTypes: ["alipay", "wxpay"],
+      }),
+    ).toContain("已设置汇率，但在线充值尚未配置商户");
   });
 
   it("posts every server-signed field without changing it", () => {

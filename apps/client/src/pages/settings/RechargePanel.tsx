@@ -200,7 +200,7 @@ export function RechargePanel({
           </div>
           {!config?.enabled ? (
             <p className="text-xs text-amber-100/55">
-              在线充值尚未完成商户配置或管理员尚未设置汇率。
+              {rechargeUnavailableMessage(config)}
             </p>
           ) : null}
         </form>
@@ -233,6 +233,15 @@ async function confirmOrder(service: RechargeService, outTradeNo: string) {
 
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : "充值操作失败。";
+}
+
+export function rechargeUnavailableMessage(config: RechargeConfigView | null) {
+  if (!config?.paymentConfigured && !config?.usdToCnyRate)
+    return "在线充值尚未配置商户，管理员也尚未设置汇率。";
+  if (!config?.paymentConfigured)
+    return "管理员已设置汇率，但在线充值尚未配置商户。请联系管理员配置并重启服务。";
+  if (!config.usdToCnyRate) return "在线充值商户已配置，但管理员尚未设置汇率。";
+  return "在线充值暂不可用，请稍后重试。";
 }
 
 export function calculatePreviewMoneyCny(
