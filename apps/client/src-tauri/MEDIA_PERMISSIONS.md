@@ -9,6 +9,7 @@ Web 与桌面端录音由前端的 `getUserMedia` 方法请求运行时授权。
 CI=true pnpm --filter @echoo/client tauri android build --apk --target aarch64 --ci
 ```
 
-该流程会为 Android 添加 `android.permission.RECORD_AUDIO`，并为 iOS 添加
-`NSMicrophoneUsageDescription`。脚本可重复执行；如需单独同步，仍可运行
+该流程会为 Android 添加 `android.permission.RECORD_AUDIO` 与
+`android.permission.MODIFY_AUDIO_SETTINGS`（Tauri/Wry 的 WebView 音频捕获会同时检查
+两者），并为 iOS 添加 `NSMicrophoneUsageDescription`。脚本可重复执行；如需单独同步，仍可运行
 `pnpm --filter @echoo/client sync:media-permissions`。

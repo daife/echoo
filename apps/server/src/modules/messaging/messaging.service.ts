@@ -412,19 +412,34 @@ export class MessagingService {
                 },
         },
         status: "sent",
-        ...(input.contentType === "voice"
-          ? {
-              metadata: {
+        metadata:
+          input.contentType === "image"
+            ? {
+                kind: "prime_figure",
+                primeContent: {
+                  type: "image",
+                  description: "",
+                  referenceResourceUrls: [],
+                  resourceId: resource.id,
+                  resourceUrl: resource.publicPath,
+                } satisfies PrimeMessageContent,
+              }
+            : input.contentType === "voice"
+              ? {
+                  kind: "prime_figure",
+                  primeContent: {
+                    type: "voice",
+                    transcript: "",
+                    resourceId: resource.id,
+                    resourceUrl: resource.publicPath,
+                  } satisfies PrimeMessageContent,
                 mediaIntent: {
                   status: "ready",
                   durationSeconds:
                     resource.durationSeconds ?? input.durationSeconds,
                 },
-              },
-            }
-          : input.contentType === "video"
-            ? {
-                metadata: {
+                }
+              : {
                   kind: "prime_figure",
                   primeContent: {
                     type: "video",
@@ -432,8 +447,6 @@ export class MessagingService {
                     resourceUrl: resource.publicPath,
                   } satisfies PrimeMessageContent,
                 },
-              }
-            : {}),
         createdAt: now,
         updatedAt: now,
       });

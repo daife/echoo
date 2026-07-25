@@ -13,15 +13,20 @@ const androidManifest = join(
   "main",
   "AndroidManifest.xml",
 );
-const microphonePermission =
-  '<uses-permission android:name="android.permission.RECORD_AUDIO" />';
+const androidAudioPermissions = [
+  '<uses-permission android:name="android.permission.RECORD_AUDIO" />',
+  '<uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />',
+];
 
 if (existsSync(androidManifest)) {
   const source = readFileSync(androidManifest, "utf8");
-  if (!source.includes("android.permission.RECORD_AUDIO")) {
+  const missingPermissions = androidAudioPermissions.filter(
+    (permission) => !source.includes(permission),
+  );
+  if (missingPermissions.length) {
     const next = source.replace(
       /(<application\b)/,
-      `  ${microphonePermission}\n\n  $1`,
+      `  ${missingPermissions.join("\n  ")}\n\n  $1`,
     );
     if (next === source)
       throw new Error("无法定位 AndroidManifest.xml 的 <application> 节点。");

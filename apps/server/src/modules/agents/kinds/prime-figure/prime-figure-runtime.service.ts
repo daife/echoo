@@ -58,6 +58,7 @@ import {
   isPrimeOutputEnabled,
 } from "./prime-output-capabilities.js";
 import { advanceHandledSequenceAfterSuccessfulRun } from "./prime-run-commit.js";
+import { requiresDirectMediaReply } from "./prime-media-trigger.js";
 
 const PRIME_VISIBLE_MEMORY_LIMIT = 20;
 const RECALL_HINT_PATTERN = /记得|不记得|忘了|还记得|remember|forgot|recal+l/i;
@@ -845,6 +846,14 @@ export async function buildPrimeChatMessages(
       `本次请求中新出现、figure 可能需要注意的 end_user 消息：${[
         ...attentionIdByMessage.values(),
       ].join(", ")}。结合完整时间线顺序统一回应，不要遗漏这些消息。`,
+    );
+  }
+  if (
+    trigger === "end_user_message" &&
+    requiresDirectMediaReply(timeline, lastHandledEndUserSeq)
+  ) {
+    hints.push(
+      "本轮新增内容是 end_user 主动发送的媒体消息，不是仅供归档的附件。理解媒体内容后，必须至少使用一个 send_message action 作出可见回应；不要仅完成媒体标注后使用 silence。",
     );
   }
   const pendingTransferSummaries = pendingEndUserTransfers.map((message) => ({
