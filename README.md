@@ -34,6 +34,8 @@ separated by lifecycle and ownership. See [docs/configuration.md](docs/configura
 For the Ubuntu production deployment of `www.echooo.uk` (Nginx, systemd,
 Docker Compose, and Cloudflare R2), see
 [docs/production-deployment.md](docs/production-deployment.md).
+For a complete and rollback-safe move to another production server, see
+[docs/server-migration.md](docs/server-migration.md).
 
 The client uses the Luminous Monochrome design direction from `reference/frontend-refer`.
 The Android keepalive plugin owns the connection only while the WebView is in the background. Foreground restoration stops the native socket first and uses the durable cursor stream to fill the handoff window.

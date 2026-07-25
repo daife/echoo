@@ -347,3 +347,9 @@ curl -I https://www.echooo.uk/api/health
 如果 `docker compose up` 提示 `MYSQL_PASSWORD` 或 `REDIS_PASSWORD` 缺失，说明服务器的 `.env` 没有从安全位置复制完整。若 MySQL 报 `Access denied`，优先检查已有 Docker volume 是否是用旧密码初始化，参见第 3 节。
 
 R2 的 S3 Access Key、Secret Access Key、Cloudflare API Token，以及 `.env` 内的数据库密码和 JWT Secret 都是生产密钥；不要提交、复制到日志或发送到聊天中。已经泄露的密钥应立即在 Cloudflare 或相应系统中轮换。
+
+## 更换服务器
+
+不要直接复制运行中的 MySQL/Redis Docker volume，也不要只迁移数据库而遗漏
+Redis 队列、R2 对象和生产密钥。完整的停写、备份、恢复、验证、DNS 切换与回滚
+步骤见[生产服务器完整迁移](server-migration.md)。
