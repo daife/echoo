@@ -6,9 +6,9 @@ import {
   MagnifyingGlass,
   SealCheck,
 } from "@phosphor-icons/react";
-import type { Agent, SocialPostSummary } from "@echoo/shared";
+import type { Agent } from "@echoo/shared";
 import type { PublicAssetListItem } from "@echoo/shared/public-assets";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { useServices } from "../../app/providers/ServicesProvider";
@@ -19,9 +19,10 @@ import { PostComposer } from "../social/PostComposer";
 import {
   patchAssetInSocialCaches,
   patchPostInSocialCaches,
+  filterPublicAssets,
+  flattenSocialPages,
   prependPostToSocialCache,
   socialQueryKeys,
-  type SocialListPage,
 } from "../social/socialQueryCache";
 
 export const PRIME_FIGURE_UPDATE_WARNING =
@@ -54,28 +55,46 @@ export function PublicAssetCatalog({
   onOpenAsset: (assetId: string) => void;
   onOpenUser?: (userId: string) => void;
 }) {
+  const auth = useAuth();
   const { socialService } = useServices();
-  const [assets, setAssets] = useState<PublicAssetListItem[]>([]);
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [assetType, setAssetType] = useState<"all" | Agent["type"]>("all");
   const [debouncedQuery, setDebouncedQuery] = useState<string | null>("");
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
-  const [nextCursor, setNextCursor] = useState<string>();
+  const [actionError, setActionError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const requestController = useRef<AbortController | null>(null);
-  const loadMoreController = useRef<AbortController | null>(null);
   const normalizedQuery = useMemo(
     () => normalizeCharacterSearchQuery(query),
     [query],
   );
   const queryInvalid = isCharacterSearchQueryInvalid(normalizedQuery);
+  const viewerId = auth.user?.id ?? "anonymous";
+  const catalogQueryKey = socialQueryKeys.catalogAssets(
+    viewerId,
+    debouncedQuery ?? "__invalid__",
+  );
+  const assetsQuery = useInfiniteQuery({
+    queryKey: catalogQueryKey,
+    queryFn: ({ pageParam, signal }) =>
+      service.list({
+        limit: 12,
+        q: debouncedQuery || undefined,
+        cursor: pageParam,
+        signal,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor,
+    enabled: debouncedQuery !== null,
+    staleTime: 60_000,
+  });
+  const loadedAssets = flattenSocialPages(assetsQuery.data);
+  const assets = filterPublicAssets(loadedAssets, assetType);
+  const loading = assetsQuery.isPending && debouncedQuery !== null;
+  const error =
+    actionError ??
+    (assetsQuery.error instanceof Error ? assetsQuery.error.message : null);
 
   useEffect(() => {
-    requestController.current?.abort();
-    loadMoreController.current?.abort();
     if (!normalizedQuery) {
       setDebouncedQuery("");
       return;
@@ -86,63 +105,6 @@ export function PublicAssetCatalog({
     }
     return scheduleCharacterSearch(normalizedQuery, setDebouncedQuery);
   }, [normalizedQuery, queryInvalid]);
-
-  useEffect(() => {
-    loadMoreController.current?.abort();
-    setLoadMoreError(null);
-    setNextCursor(undefined);
-    if (debouncedQuery === null) {
-      setAssets([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    let cancelled = false;
-    const controller = new AbortController();
-    requestController.current = controller;
-    setLoading(true);
-    setError(null);
-    setAssets([]);
-    void service
-      .list({
-        limit: 12,
-        q: debouncedQuery || undefined,
-        type: assetType === "all" ? undefined : assetType,
-        signal: controller.signal,
-      })
-      .then((page) => {
-        if (!cancelled) {
-          setAssets(page.items);
-          setNextCursor(page.nextCursor);
-        }
-      })
-      .catch((reason) => {
-        if (
-          !cancelled &&
-          !(reason instanceof DOMException && reason.name === "AbortError")
-        )
-          setError(
-            reason instanceof Error ? reason.message : "加载公共资产失败。",
-          );
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-        if (requestController.current === controller)
-          requestController.current = null;
-      });
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [assetType, debouncedQuery, service]);
-
-  useEffect(
-    () => () => {
-      requestController.current?.abort();
-      loadMoreController.current?.abort();
-    },
-    [],
-  );
 
   return (
     <section className="space-y-7">
@@ -207,32 +169,27 @@ export function PublicAssetCatalog({
               onToggleLike={async () => {
                 if (!isAuthenticated) return onRequireAuth();
                 const liked = !asset.viewerHasLiked;
-                setAssets((current) =>
-                  current.map((item) =>
-                    item.id === asset.id
-                      ? {
-                          ...item,
-                          viewerHasLiked: liked,
-                          likeCount: Math.max(
-                            0,
-                            item.likeCount + (liked ? 1 : -1),
-                          ),
-                        }
-                      : item,
+                patchAssetInSocialCaches(queryClient, viewerId, asset.id, {
+                  viewerHasLiked: liked,
+                  likeCount: Math.max(
+                    0,
+                    asset.likeCount + (liked ? 1 : -1),
                   ),
-                );
+                });
                 try {
                   const result = await socialService.setLiked(asset.id, liked);
-                  setAssets((current) =>
-                    current.map((item) =>
-                      item.id === asset.id ? { ...item, ...result } : item,
-                    ),
+                  patchAssetInSocialCaches(
+                    queryClient,
+                    viewerId,
+                    asset.id,
+                    result,
                   );
                 } catch {
-                  setAssets((current) =>
-                    current.map((item) =>
-                      item.id === asset.id ? asset : item,
-                    ),
+                  patchAssetInSocialCaches(
+                    queryClient,
+                    viewerId,
+                    asset.id,
+                    asset,
                   );
                 }
               }}
@@ -257,19 +214,12 @@ export function PublicAssetCatalog({
                     ? await service.updateInstallation(asset.id, false)
                     : await service.install(asset.id, false);
                   onAgentInstalled(result.agent);
-                  setAssets((current) =>
-                    current.map((item) =>
-                      item.id === asset.id
-                        ? {
-                            ...item,
-                            installedVersionId: result.installedVersionId,
-                            updateAvailable: false,
-                          }
-                        : item,
-                    ),
-                  );
+                  patchAssetInSocialCaches(queryClient, viewerId, asset.id, {
+                    installedVersionId: result.installedVersionId,
+                    updateAvailable: false,
+                  });
                 } catch (reason) {
-                  setError(
+                  setActionError(
                     reason instanceof Error ? reason.message : "添加资产失败。",
                   );
                 } finally {
@@ -279,6 +229,8 @@ export function PublicAssetCatalog({
             />
           ))}
         </div>
+      ) : assetsQuery.hasNextPage && assetType !== "all" ? (
+        <EmptyState text="当前已加载内容中暂无此类型，可继续加载更多。" />
       ) : (
         <EmptyState
           text={
@@ -287,49 +239,16 @@ export function PublicAssetCatalog({
           }
         />
       )}
-      {nextCursor && !queryInvalid ? (
+      {assetsQuery.hasNextPage && !queryInvalid ? (
         <button
           type="button"
-          disabled={loadingMore}
-          onClick={async () => {
-            if (loadingMore || debouncedQuery === null) return;
-            const controller = new AbortController();
-            loadMoreController.current?.abort();
-            loadMoreController.current = controller;
-            setLoadingMore(true);
-            setLoadMoreError(null);
-            try {
-              const page = await service.list({
-                limit: 12,
-                q: debouncedQuery || undefined,
-                type: assetType === "all" ? undefined : assetType,
-                cursor: nextCursor,
-                signal: controller.signal,
-              });
-              if (controller.signal.aborted) return;
-              setAssets((current) =>
-                mergeUniquePublicAssets(current, page.items),
-              );
-              setNextCursor(page.nextCursor);
-            } catch (reason) {
-              if (!(
-                reason instanceof DOMException && reason.name === "AbortError"
-              ))
-                setLoadMoreError(
-                  reason instanceof Error ? reason.message : "加载更多失败。",
-                );
-            } finally {
-              if (loadMoreController.current === controller) {
-                loadMoreController.current = null;
-                setLoadingMore(false);
-              }
-            }
-          }}
+          disabled={assetsQuery.isFetchingNextPage}
+          onClick={() => void assetsQuery.fetchNextPage()}
           className="w-full rounded-xl border border-white/8 py-3 text-sm text-white/45 hover:text-white disabled:cursor-wait disabled:opacity-50"
         >
-          {loadingMore
+          {assetsQuery.isFetchingNextPage
             ? "正在加载……"
-            : loadMoreError
+            : assetsQuery.isFetchNextPageError
               ? "加载失败，点击重试"
               : "加载更多"}
         </button>
@@ -363,35 +282,40 @@ export function ExplorePage({
   const [actionError, setActionError] = useState<string | null>(null);
   const lastRefreshVersionRef = useRef(refreshVersion);
   const viewerId = auth.user?.id ?? "anonymous";
-  const assetsQueryKey = socialQueryKeys.followingAssets(
-    viewerId,
-    creationType,
-  );
+  const assetsQueryKey = socialQueryKeys.followingAssets(viewerId);
   const postsQueryKey = socialQueryKeys.followingPosts(viewerId);
-  const assetsQuery = useQuery({
+  const assetsQuery = useInfiniteQuery({
     queryKey: assetsQueryKey,
-    queryFn: () =>
+    queryFn: ({ pageParam }) =>
       publicAssetService.listFollowing({
         limit: 24,
-        type: creationType === "all" ? undefined : creationType,
+        cursor: pageParam,
       }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor,
     enabled: Boolean(auth.user) && tab === "creations",
     staleTime: 60_000,
   });
-  const postsQuery = useQuery({
+  const postsQuery = useInfiniteQuery({
     queryKey: postsQueryKey,
-    queryFn: () => socialService.listFollowingPosts({ limit: 20 }),
+    queryFn: ({ pageParam }) =>
+      socialService.listFollowingPosts({ limit: 20, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor,
     enabled: Boolean(auth.user) && tab === "posts",
     staleTime: 60_000,
   });
-  const visibleAssets = assetsQuery.data?.items ?? [];
-  const posts = postsQuery.data?.items ?? [];
+  const visibleAssets = filterPublicAssets(
+    flattenSocialPages(assetsQuery.data),
+    creationType,
+  );
+  const posts = flattenSocialPages(postsQuery.data);
   const activeQuery = tab === "creations" ? assetsQuery : postsQuery;
   const loading = activeQuery.isPending;
   const error =
     actionError ??
     (activeQuery.error instanceof Error ? activeQuery.error.message : null);
-  const nextCursor = activeQuery.data?.nextCursor;
+  const hasNextPage = activeQuery.hasNextPage;
 
   useEffect(() => {
     if (!auth.user || lastRefreshVersionRef.current === refreshVersion) return;
@@ -569,53 +493,23 @@ export function ExplorePage({
             />
           ))}
         </div>
+      ) : assetsQuery.hasNextPage && creationType !== "all" ? (
+        <EmptyState text="当前已加载内容中暂无此类型，可继续加载更多。" />
       ) : (
         <EmptyState text={error ?? "你关注的人还没有发布创作。"} />
       )}
-      {auth.user && nextCursor ? (
+      {auth.user && hasNextPage ? (
         <button
           type="button"
-          onClick={async () => {
-            const page =
-              tab === "creations"
-                ? await publicAssetService.listFollowing({
-                    limit: 24,
-                    cursor: nextCursor,
-                    type: creationType === "all" ? undefined : creationType,
-                  })
-                : await socialService.listFollowingPosts({
-                    limit: 20,
-                    cursor: nextCursor,
-                  });
-            if (tab === "creations")
-              queryClient.setQueryData<SocialListPage<PublicAssetListItem>>(
-                assetsQueryKey,
-                (current) => ({
-                  ...page,
-                  items: mergeUniquePublicAssets(
-                    current?.items ?? [],
-                    (page as SocialListPage<PublicAssetListItem>).items,
-                  ),
-                }),
-              );
-            else
-              queryClient.setQueryData<SocialListPage<SocialPostSummary>>(
-                postsQueryKey,
-                (current) => ({
-                  ...page,
-                  items: [
-                    ...(current?.items ?? []),
-                    ...(page as SocialListPage<SocialPostSummary>).items.filter(
-                      (post) =>
-                        !current?.items.some((item) => item.id === post.id),
-                    ),
-                  ],
-                }),
-              );
-          }}
-          className="w-full rounded-xl border border-white/8 py-3 text-sm text-white/45 hover:text-white"
+          disabled={activeQuery.isFetchingNextPage}
+          onClick={() => void activeQuery.fetchNextPage()}
+          className="w-full rounded-xl border border-white/8 py-3 text-sm text-white/45 hover:text-white disabled:cursor-wait disabled:opacity-50"
         >
-          加载更多
+          {activeQuery.isFetchingNextPage
+            ? "正在加载……"
+            : activeQuery.isFetchNextPageError
+              ? "加载失败，点击重试"
+              : "加载更多"}
         </button>
       ) : null}
     </section>

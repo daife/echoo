@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { MediaCache, type MediaCacheStore } from "./mediaCache";
+import {
+  MediaCache,
+  type CachedMediaEntry,
+  type MediaCacheStore,
+} from "./mediaCache";
 
 const emptyStore: MediaCacheStore = {
   get: async () => undefined,
@@ -86,4 +90,75 @@ describe("MediaCache access URL batching", () => {
     expect(await blob?.text()).toBe("world");
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+
+  it("reuses a persisted resource variant without downloading it again", async () => {
+    const records = new Map<string, CachedMediaEntry>();
+    const store: MediaCacheStore = {
+      ...emptyStore,
+      get: async (key) => records.get(key),
+      put: async (key, response, metadata) => {
+        records.set(key, { response, metadata });
+      },
+    };
+    const fetcher = mediaFetcher();
+    const cache = new MediaCache(store, fetcher, Date.now, 1024 * 1024);
+    cache.configure({ userId: "user_1", getAccessToken: async () => "token" });
+
+    expect(await (await cache.getByResourceId("res_shared", "display"))?.text()).toBe(
+      "media",
+    );
+    expect(await (await cache.getByResourceId("res_shared", "display"))?.text()).toBe(
+      "media",
+    );
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a shared download alive when one consumer aborts", async () => {
+    let finishDownload!: () => void;
+    const downloadReady = new Promise<void>((resolve) => {
+      finishDownload = resolve;
+    });
+    const fetcher = mediaFetcher(downloadReady);
+    const cache = new MediaCache(emptyStore, fetcher);
+    cache.configure({ userId: "user_1", getAccessToken: async () => "token" });
+    const controller = new AbortController();
+
+    const cancelled = cache.getByResourceId(
+      "res_shared",
+      "display",
+      controller.signal,
+    );
+    const active = cache.getByResourceId("res_shared", "display");
+    controller.abort();
+    finishDownload();
+
+    expect(await cancelled).toBeNull();
+    expect(await (await active)?.text()).toBe("media");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
 });
+
+function mediaFetcher(downloadReady: Promise<void> = Promise.resolve()) {
+  return vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/api/resources/access"))
+      return new Response(
+        JSON.stringify({
+          items: [
+            {
+              resourceId: "res_shared",
+              variant: "display",
+              url: "https://download.test/res_shared",
+              expiresAt: Date.now() + 60_000,
+              mimeType: "image/jpeg",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    await downloadReady;
+    return new Response(new Blob(["media"], { type: "image/jpeg" }), {
+      status: 200,
+    });
+  });
+}

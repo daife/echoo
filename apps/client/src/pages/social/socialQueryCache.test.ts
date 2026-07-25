@@ -3,11 +3,13 @@ import type { PublicAssetListItem } from "@echoo/shared/public-assets";
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import {
+  filterPublicAssets,
+  flattenSocialPages,
   patchAssetInSocialCaches,
   patchPostInSocialCaches,
   removePostFromSocialCaches,
   socialQueryKeys,
-  type SocialListPage,
+  type SocialInfiniteData,
 } from "./socialQueryCache";
 
 function post(id: string, likeCount = 0) {
@@ -23,16 +25,13 @@ describe("social query cache", () => {
     const client = new QueryClient();
     const followingKey = socialQueryKeys.followingPosts("viewer-1");
     const userKey = socialQueryKeys.userPosts("author-1", "viewer-1");
-    const assetKey = socialQueryKeys.followingAssets("viewer-1", "all");
-    client.setQueryData<SocialListPage<SocialPostSummary>>(followingKey, {
-      items: [post("post-1")],
-    });
-    client.setQueryData<SocialListPage<SocialPostSummary>>(userKey, {
-      items: [post("post-1"), post("post-2")],
-    });
-    client.setQueryData<SocialListPage<PublicAssetListItem>>(assetKey, {
-      items: [asset("asset-1", 3)],
-    });
+    const assetKey = socialQueryKeys.followingAssets("viewer-1");
+    client.setQueryData(followingKey, infinite([post("post-1")]));
+    client.setQueryData(
+      userKey,
+      infinite([post("post-1"), post("post-2")]),
+    );
+    client.setQueryData(assetKey, infinite([asset("asset-1", 3)]));
 
     patchPostInSocialCaches(client, "viewer-1", "post-1", {
       likeCount: 4,
@@ -40,15 +39,16 @@ describe("social query cache", () => {
     });
 
     expect(
-      client.getQueryData<SocialListPage<SocialPostSummary>>(followingKey)
-        ?.items[0],
+      client.getQueryData<SocialInfiniteData<SocialPostSummary>>(followingKey)
+        ?.pages[0]?.items[0],
     ).toMatchObject({ likeCount: 4, viewerHasLiked: true });
     expect(
-      client.getQueryData<SocialListPage<SocialPostSummary>>(userKey)?.items[0],
+      client.getQueryData<SocialInfiniteData<SocialPostSummary>>(userKey)
+        ?.pages[0]?.items[0],
     ).toMatchObject({ likeCount: 4, viewerHasLiked: true });
     expect(
-      client.getQueryData<SocialListPage<PublicAssetListItem>>(assetKey)
-        ?.items[0]?.commentCount,
+      client.getQueryData<SocialInfiniteData<PublicAssetListItem>>(assetKey)
+        ?.pages[0]?.items[0]?.commentCount,
     ).toBe(3);
   });
 
@@ -57,21 +57,19 @@ describe("social query cache", () => {
     const firstKey = socialQueryKeys.followingPosts("viewer-1");
     const secondKey = socialQueryKeys.userPosts("author-1", "viewer-1");
     for (const key of [firstKey, secondKey])
-      client.setQueryData<SocialListPage<SocialPostSummary>>(key, {
-        items: [post("post-1"), post("post-2")],
-      });
+      client.setQueryData(key, infinite([post("post-1"), post("post-2")]));
 
     removePostFromSocialCaches(client, "viewer-1", "post-1");
 
     expect(
       client
-        .getQueryData<SocialListPage<SocialPostSummary>>(firstKey)
-        ?.items.map((item) => item.id),
+        .getQueryData<SocialInfiniteData<SocialPostSummary>>(firstKey)
+        ?.pages.flatMap((page) => page.items.map((item) => item.id)),
     ).toEqual(["post-2"]);
     expect(
       client
-        .getQueryData<SocialListPage<SocialPostSummary>>(secondKey)
-        ?.items.map((item) => item.id),
+        .getQueryData<SocialInfiniteData<SocialPostSummary>>(secondKey)
+        ?.pages.flatMap((page) => page.items.map((item) => item.id)),
     ).toEqual(["post-2"]);
   });
 
@@ -80,31 +78,54 @@ describe("social query cache", () => {
     const viewerOneKey = socialQueryKeys.userAssets(
       "author-1",
       "viewer-1",
-      "all",
     );
     const viewerTwoKey = socialQueryKeys.userAssets(
       "author-1",
       "viewer-2",
-      "all",
     );
-    client.setQueryData<SocialListPage<PublicAssetListItem>>(viewerOneKey, {
-      items: [asset("asset-1")],
-    });
-    client.setQueryData<SocialListPage<PublicAssetListItem>>(viewerTwoKey, {
-      items: [asset("asset-1")],
-    });
+    client.setQueryData(viewerOneKey, infinite([asset("asset-1")]));
+    client.setQueryData(viewerTwoKey, infinite([asset("asset-1")]));
 
     patchAssetInSocialCaches(client, "viewer-1", "asset-1", {
       commentCount: 2,
     });
 
     expect(
-      client.getQueryData<SocialListPage<PublicAssetListItem>>(viewerOneKey)
-        ?.items[0]?.commentCount,
+      client.getQueryData<SocialInfiniteData<PublicAssetListItem>>(viewerOneKey)
+        ?.pages[0]?.items[0]?.commentCount,
     ).toBe(2);
     expect(
-      client.getQueryData<SocialListPage<PublicAssetListItem>>(viewerTwoKey)
-        ?.items[0]?.commentCount,
+      client.getQueryData<SocialInfiniteData<PublicAssetListItem>>(viewerTwoKey)
+        ?.pages[0]?.items[0]?.commentCount,
     ).toBe(0);
   });
+
+  it("flattens pages, removes duplicate ids, and filters assets locally", () => {
+    const slice = {
+      ...asset("asset-1"),
+      snapshot: { type: "slice-figure" },
+    } as PublicAssetListItem;
+    const prime = {
+      ...asset("asset-2"),
+      snapshot: { type: "prime-figure" },
+    } as PublicAssetListItem;
+    const data = {
+      pages: [
+        { items: [slice, prime], nextCursor: "next" },
+        { items: [slice] },
+      ],
+      pageParams: [undefined, "next"],
+    } satisfies SocialInfiniteData<PublicAssetListItem>;
+
+    const flattened = flattenSocialPages(data);
+    expect(flattened.map((item) => item.id)).toEqual(["asset-1", "asset-2"]);
+    expect(filterPublicAssets(flattened, "prime-figure")).toEqual([prime]);
+    expect(socialQueryKeys.followingAssets("viewer-1")).toEqual(
+      socialQueryKeys.followingAssets("viewer-1"),
+    );
+  });
 });
+
+function infinite<T>(items: T[]): SocialInfiniteData<T> {
+  return { pages: [{ items }], pageParams: [undefined] };
+}

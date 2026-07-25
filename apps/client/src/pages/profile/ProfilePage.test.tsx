@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { Agent } from "@echoo/shared";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   ProfileEditorDialog,
   ProfilePage,
@@ -111,18 +112,20 @@ describe("PublicAssetCreateDialog", () => {
 describe("ProfilePage personal conversations", () => {
   it("groups conversations by origin and only links public-origin cards to details", () => {
     const html = renderToStaticMarkup(
-      <ProfilePage
-        agents={[originalAgent, publicAssetAgent]}
-        isLoadingAgents={false}
-        onOpenAgent={vi.fn()}
-        onOpenSettings={vi.fn()}
-        publicAssets={[]}
-        onCreatePublicDraft={vi.fn()}
-        onManagePublicAsset={vi.fn()}
-        onOpenAsset={vi.fn()}
-        onOpenPost={vi.fn()}
-        onOpenUser={vi.fn()}
-      />,
+      <QueryClientProvider client={new QueryClient()}>
+        <ProfilePage
+          agents={[originalAgent, publicAssetAgent]}
+          isLoadingAgents={false}
+          onOpenAgent={vi.fn()}
+          onOpenSettings={vi.fn()}
+          publicAssets={[]}
+          onCreatePublicDraft={vi.fn()}
+          onManagePublicAsset={vi.fn()}
+          onOpenAsset={vi.fn()}
+          onOpenPost={vi.fn()}
+          onOpenUser={vi.fn()}
+        />
+      </QueryClientProvider>,
     );
 
     expect(html).toContain("个人会话");

@@ -1,7 +1,7 @@
 import { UsersThree, X } from "@phosphor-icons/react";
 import type { Agent, PublicUserProfile } from "@echoo/shared";
 import type { PublicAssetListItem } from "@echoo/shared/public-assets";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
 import { useBackHandler } from "../../app/providers/BackNavigationProvider";
@@ -12,6 +12,8 @@ import { BackButton } from "../../shared/components/BackButton";
 import { PostCard } from "./PostCard";
 import { PostComposer } from "./PostComposer";
 import {
+  filterPublicAssets,
+  flattenSocialPages,
   patchPostInSocialCaches,
   prependPostToSocialCache,
   socialQueryKeys,
@@ -47,31 +49,40 @@ export function PublicProfilePage({
   const assetsQueryKey = socialQueryKeys.userAssets(
     userId,
     viewerId,
-    assetType,
   );
   const profileQuery = useQuery({
     queryKey: profileQueryKey,
     queryFn: () => socialService.getUser(userId),
     staleTime: 60_000,
   });
-  const postsQuery = useQuery({
+  const postsQuery = useInfiniteQuery({
     queryKey: postsQueryKey,
-    queryFn: () => socialService.listUserPosts(userId),
+    queryFn: ({ pageParam }) =>
+      socialService.listUserPosts(userId, { limit: 20, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor,
     enabled: tab === "posts",
     staleTime: 60_000,
   });
-  const assetsQuery = useQuery({
+  const assetsQuery = useInfiniteQuery({
     queryKey: assetsQueryKey,
-    queryFn: () =>
+    queryFn: ({ pageParam }) =>
       publicAssetService.listByUser(userId, {
-        type: assetType === "all" ? undefined : assetType,
+        limit: 24,
+        cursor: pageParam,
       }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor,
     enabled: tab === "creations",
     staleTime: 60_000,
   });
   const profile = profileQuery.data;
-  const posts = postsQuery.data?.items ?? [];
-  const assets = assetsQuery.data?.items ?? [];
+  const posts = flattenSocialPages(postsQuery.data);
+  const assets = filterPublicAssets(
+    flattenSocialPages(assetsQuery.data),
+    assetType,
+  );
+  const activeListQuery = tab === "posts" ? postsQuery : assetsQuery;
   useBackHandler(() => setList(null), {
     enabled: list !== null,
     priority: BACK_HANDLER_PRIORITY.dialog,
@@ -236,6 +247,8 @@ export function PublicProfilePage({
             </button>
           ))}
         </div>
+      ) : assetsQuery.hasNextPage && assetType !== "all" ? (
+        <Empty text="当前已加载内容中暂无此类型，可继续加载更多。" />
       ) : (
         <Empty
           text={
@@ -243,6 +256,20 @@ export function PublicProfilePage({
           }
         />
       )}
+      {activeListQuery.hasNextPage ? (
+        <button
+          type="button"
+          disabled={activeListQuery.isFetchingNextPage}
+          onClick={() => void activeListQuery.fetchNextPage()}
+          className="w-full rounded-xl border border-white/8 py-3 text-sm text-white/45 hover:text-white disabled:cursor-wait disabled:opacity-50"
+        >
+          {activeListQuery.isFetchingNextPage
+            ? "正在加载……"
+            : activeListQuery.isFetchNextPageError
+              ? "加载失败，点击重试"
+              : "加载更多"}
+        </button>
+      ) : null}
       {list ? (
         <FollowListDialog
           userId={profile.id}

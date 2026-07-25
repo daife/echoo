@@ -89,13 +89,13 @@ export class MediaCache {
     if (!resourceId || !this.session) return null;
     const key = this.cacheKey(resourceId, variant);
     const activeRequest = this.inFlight.get(key);
-    if (activeRequest) return activeRequest;
+    if (activeRequest) return waitForConsumer(activeRequest, signal);
 
-    const request = this.load(key, resourceId, variant, signal).finally(() =>
+    const request = this.load(key, resourceId, variant).finally(() =>
       this.inFlight.delete(key),
     );
     this.inFlight.set(key, request);
-    return request;
+    return waitForConsumer(request, signal);
   }
 
   getByResourceId(
@@ -168,7 +168,6 @@ export class MediaCache {
     key: string,
     resourceId: string,
     variant: MediaVariant,
-    signal?: AbortSignal,
   ) {
     try {
       const cached = await within(this.store.get(key), CACHE_READ_TIMEOUT_MS);
@@ -185,13 +184,12 @@ export class MediaCache {
       // Continue with an authorized network request.
     }
 
-    await this.acquireDownloadSlot(signal);
+    await this.acquireDownloadSlot();
     try {
       const access = await this.resolveAccess(resourceId, variant);
       if (!access) return null;
       const response = await this.fetcher(resolveMediaUrl(access.url)!, {
         cache: "no-store",
-        signal,
       });
       if (!response.ok) return null;
       const cacheResponse = response.clone();
@@ -510,6 +508,22 @@ function transactionToPromise(transaction: IDBTransaction) {
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
     transaction.onabort = () => reject(transaction.error);
+  });
+}
+
+function waitForConsumer(
+  request: Promise<Blob | null>,
+  signal?: AbortSignal,
+) {
+  if (!signal) return request;
+  if (signal.aborted) return Promise.resolve(null);
+  return new Promise<Blob | null>((resolve) => {
+    const onAbort = () => resolve(null);
+    signal.addEventListener("abort", onAbort, { once: true });
+    void request.then((blob) => {
+      signal.removeEventListener("abort", onAbort);
+      resolve(signal.aborted ? null : blob);
+    });
   });
 }
 

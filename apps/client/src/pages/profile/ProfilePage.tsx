@@ -12,14 +12,14 @@ import type {
   AgentResourceUpload,
   UpdateUserProfileRequest,
   UserProfile,
-  SocialPostSummary,
 } from "@echoo/shared";
 import type {
   CreatePublicAssetDraftRequest,
   PublicAssetDraft,
 } from "@echoo/shared/public-assets";
 import { CharacterCard } from "../../features/conversations/components/CharacterCard";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
 import { useBackHandler } from "../../app/providers/BackNavigationProvider";
@@ -29,6 +29,12 @@ import { useServices } from "../../app/providers/ServicesProvider";
 import { PostComposer } from "../social/PostComposer";
 import { PostCard } from "../social/PostCard";
 import { createOptions } from "../create-agent/createAgentOptions";
+import {
+  flattenSocialPages,
+  patchPostInSocialCaches,
+  prependPostToSocialCache,
+  socialQueryKeys,
+} from "../social/socialQueryCache";
 
 export function ProfilePage({
   agents,
@@ -57,10 +63,10 @@ export function ProfilePage({
 }) {
   const auth = useAuth();
   const { socialService } = useServices();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"creations" | "posts">(
     "creations",
   );
-  const [userPosts, setUserPosts] = useState<SocialPostSummary[]>([]);
   const [publishNotice, setPublishNotice] = useState<string | null>(null);
   const [isPublicCreateOpen, setIsPublicCreateOpen] = useState(false);
   const [isProfileEditorOpen, setIsProfileEditorOpen] = useState(false);
@@ -81,17 +87,21 @@ export function ProfilePage({
   const publicAssetCards = cards.filter(
     (card) => card.origin.kind === "public-asset",
   );
-
-  useEffect(() => {
-    if (!auth.user || activeTab !== "posts") return;
-    let cancelled = false;
-    void socialService.listUserPosts(auth.user.id).then((page) => {
-      if (!cancelled) setUserPosts(page.items);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab, auth.user, socialService]);
+  const viewerId = auth.user?.id ?? "anonymous";
+  const postsQueryKey = socialQueryKeys.userPosts(viewerId, viewerId);
+  const postsQuery = useInfiniteQuery({
+    queryKey: postsQueryKey,
+    queryFn: ({ pageParam }) =>
+      socialService.listUserPosts(viewerId, {
+        limit: 20,
+        cursor: pageParam,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor,
+    enabled: Boolean(auth.user) && activeTab === "posts",
+    staleTime: 60_000,
+  });
+  const userPosts = flattenSocialPages(postsQuery.data);
 
   return (
     <section className="space-y-8">
@@ -322,13 +332,14 @@ export function ProfilePage({
           <PostComposer
             service={socialService}
             onSaved={(post) =>
-              setUserPosts((current) => [
-                post,
-                ...current.filter((item) => item.id !== post.id),
-              ])
+              prependPostToSocialCache(queryClient, postsQueryKey, post)
             }
           />
-          {userPosts.length ? (
+          {postsQuery.isPending ? (
+            <div className="rounded-2xl border border-dashed border-white/10 py-16 text-center text-sm text-white/35">
+              正在加载动态……
+            </div>
+          ) : userPosts.length ? (
             userPosts.map((post) => (
               <PostCard
                 key={post.id}
@@ -340,10 +351,11 @@ export function ProfilePage({
                     post.id,
                     !post.viewerHasLiked,
                   );
-                  setUserPosts((current) =>
-                    current.map((item) =>
-                      item.id === post.id ? { ...item, ...result } : item,
-                    ),
+                  patchPostInSocialCaches(
+                    queryClient,
+                    viewerId,
+                    post.id,
+                    result,
                   );
                 }}
               />
@@ -353,6 +365,20 @@ export function ProfilePage({
               还没有发布动态。
             </div>
           )}
+          {postsQuery.hasNextPage ? (
+            <button
+              type="button"
+              disabled={postsQuery.isFetchingNextPage}
+              onClick={() => void postsQuery.fetchNextPage()}
+              className="w-full rounded-xl border border-white/8 py-3 text-sm text-white/45 hover:text-white disabled:cursor-wait disabled:opacity-50"
+            >
+              {postsQuery.isFetchingNextPage
+                ? "正在加载……"
+                : postsQuery.isFetchNextPageError
+                  ? "加载失败，点击重试"
+                  : "加载更多"}
+            </button>
+          ) : null}
         </div>
       ) : null}
       {isProfileEditorOpen && auth.user ? (
