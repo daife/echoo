@@ -1,9 +1,17 @@
 import type {
+  RechargeCheckoutView,
   RechargeConfigView,
   RechargeOrderView,
   RechargePaymentType,
 } from "@echoo/shared";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { isTauri } from "../../runtimes/factory/detectPlatform";
 import type { RechargeService } from "../../services/RechargeService";
 
@@ -21,10 +29,14 @@ export function RechargePanel({
   const [pendingOrder, setPendingOrder] = useState<RechargeOrderView | null>(
     null,
   );
+  const [pendingCheckout, setPendingCheckout] =
+    useState<RechargeCheckoutView | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const nativeShell = isTauri();
+  const reconcileInFlight = useRef(false);
+  const pendingOrderRef = useRef<RechargeOrderView | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,6 +62,7 @@ export function RechargePanel({
     void confirmOrder(service, outTradeNo)
       .then(async (order) => {
         if (cancelled) return;
+        pendingOrderRef.current = order.status === "pending" ? order : null;
         setPendingOrder(order.status === "pending" ? order : null);
         if (order.status === "paid") {
           await onWalletChanged();
@@ -75,6 +88,45 @@ export function RechargePanel({
     return calculatePreviewMoneyCny(creditUsd, config?.usdToCnyRate ?? null);
   }, [config?.usdToCnyRate, creditUsd]);
 
+  const reconcilePending = useCallback(
+    async (order: RechargeOrderView) => {
+      if (reconcileInFlight.current) return;
+      reconcileInFlight.current = true;
+      setError("");
+      setStatus("正在查询支付平台…");
+      try {
+        const current = await service.reconcile(order.outTradeNo);
+        pendingOrderRef.current = current.status === "pending" ? current : null;
+        setPendingOrder(current.status === "pending" ? current : null);
+        if (current.status === "paid") {
+          setPendingCheckout(null);
+          await onWalletChanged();
+          setStatus(`充值成功，已到账 ${current.creditUsd} USD。`);
+        } else {
+          setStatus("支付结果尚未确认，请稍后再试。");
+        }
+      } catch (caught) {
+        setError(messageOf(caught));
+        setStatus("");
+      } finally {
+        reconcileInFlight.current = false;
+      }
+    },
+    [onWalletChanged, service],
+  );
+
+  useEffect(() => {
+    if (!nativeShell) return;
+    const handleVisibilityChange = () => {
+      const order = pendingOrderRef.current;
+      if (document.visibilityState === "visible" && order)
+        void reconcilePending(order);
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [nativeShell, reconcilePending]);
+
   const createOrder = async (event: FormEvent) => {
     event.preventDefault();
     setError("");
@@ -82,8 +134,14 @@ export function RechargePanel({
     setSubmitting(true);
     try {
       const checkout = await service.createOrder({ creditUsd, paymentType });
+      pendingOrderRef.current = checkout.order;
       setPendingOrder(checkout.order);
-      service.submitCheckout(checkout);
+      setPendingCheckout(checkout);
+      const destination = await service.submitCheckout(checkout);
+      if (destination === "external") {
+        setStatus("收银台已在浏览器中打开。支付完成后请返回 Echoo。");
+        setSubmitting(false);
+      }
     } catch (caught) {
       setError(messageOf(caught));
       setSubmitting(false);
@@ -92,20 +150,17 @@ export function RechargePanel({
 
   const refreshPending = async () => {
     if (!pendingOrder) return;
+    await reconcilePending(pendingOrder);
+  };
+
+  const reopenCheckout = async () => {
+    if (!pendingCheckout) return;
     setError("");
-    setStatus("正在查询支付平台…");
     try {
-      const order = await service.reconcile(pendingOrder.outTradeNo);
-      setPendingOrder(order.status === "pending" ? order : null);
-      if (order.status === "paid") {
-        await onWalletChanged();
-        setStatus(`充值成功，已到账 ${order.creditUsd} USD。`);
-      } else {
-        setStatus("支付结果尚未确认，请稍后再试。");
-      }
+      await service.submitCheckout(pendingCheckout);
+      setStatus("收银台已在浏览器中打开。支付完成后请返回 Echoo。");
     } catch (caught) {
       setError(messageOf(caught));
-      setStatus("");
     }
   };
 
@@ -128,13 +183,8 @@ export function RechargePanel({
         ) : null}
       </div>
 
-      {nativeShell ? (
-        <p className="mt-5 rounded-xl border border-amber-200/10 bg-amber-200/[0.04] p-4 text-sm text-amber-100/65">
-          当前原生客户端暂不跳转第三方收银台，请登录网页版完成充值。
-        </p>
-      ) : (
-        <form onSubmit={createOrder} className="mt-5 space-y-4">
-          <div className="flex flex-wrap gap-2">
+      <form onSubmit={createOrder} className="mt-5 space-y-4">
+        <div className="flex flex-wrap gap-2">
             {(config?.quickAmountsUsd ?? ["5", "10", "20", "50", "100"]).map(
               (amount) => (
                 <button
@@ -147,8 +197,8 @@ export function RechargePanel({
                 </button>
               ),
             )}
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
             <label className="text-sm text-white/55">
               充值美元额度
               <input
@@ -183,8 +233,8 @@ export function RechargePanel({
                 ))}
               </div>
             </div>
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-black/15 p-4">
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-black/15 p-4">
             <p className="text-sm text-white/50">
               ${creditUsd || "0"} × {config?.usdToCnyRate ?? "—"} =
               <strong className="ml-2 font-mono text-lg text-white/85">
@@ -197,27 +247,37 @@ export function RechargePanel({
             >
               {submitting ? "正在创建订单…" : "前往支付"}
             </button>
-          </div>
-          {!config?.enabled ? (
-            <p className="text-xs text-amber-100/55">
-              {rechargeUnavailableMessage(config)}
-            </p>
-          ) : null}
-        </form>
-      )}
+        </div>
+        {!config?.enabled ? (
+          <p className="text-xs text-amber-100/55">
+            {rechargeUnavailableMessage(config)}
+          </p>
+        ) : null}
+      </form>
 
       {pendingOrder ? (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/8 pt-4 text-sm">
           <span className="text-white/45">
             待确认订单 {pendingOrder.outTradeNo} · ¥{pendingOrder.moneyCny}
           </span>
-          <button
-            type="button"
-            onClick={() => void refreshPending()}
-            className="rounded-lg border border-white/10 px-3 py-2 text-white/65"
-          >
-            刷新支付结果
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {nativeShell && pendingCheckout ? (
+              <button
+                type="button"
+                onClick={() => void reopenCheckout()}
+                className="rounded-lg border border-white/10 px-3 py-2 text-white/65"
+              >
+                重新打开收银台
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void refreshPending()}
+              className="rounded-lg border border-white/10 px-3 py-2 text-white/65"
+            >
+              刷新支付结果
+            </button>
+          </div>
         </div>
       ) : null}
       {status ? <p className="mt-4 text-sm text-emerald-100/65">{status}</p> : null}

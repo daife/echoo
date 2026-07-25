@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { submitPostForm } from "./RechargeService";
+const { openUrl } = vi.hoisted(() => ({ openUrl: vi.fn() }));
+
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
+
+import { RechargeService, submitPostForm } from "./RechargeService";
 import {
   calculatePreviewMoneyCny,
   rechargeUnavailableMessage,
 } from "../pages/settings/RechargePanel";
 
 afterEach(() => {
+  openUrl.mockReset();
   vi.unstubAllGlobals();
 });
 
@@ -66,5 +71,33 @@ describe("recharge checkout form", () => {
     expect(documentStub.body.appendChild).toHaveBeenCalledWith(form);
     expect(submit).toHaveBeenCalledOnce();
     expect(remove).toHaveBeenCalledOnce();
+  });
+
+  it("opens the external checkout URL in the native shell", async () => {
+    vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+    const service = new RechargeService({} as never);
+    const destination = await service.submitCheckout({
+      externalCheckoutUrl:
+        "https://api.example.com/api/payments/zpay/checkout?token=signed",
+      order: {
+        outTradeNo: "1000000000000000000000000001",
+        status: "pending",
+        paymentType: "alipay",
+        creditUsd: "10",
+        usdToCnyRate: "7.2",
+        moneyCny: "72.00",
+        createdAt: 1,
+      },
+      form: {
+        actionUrl: "https://zpayz.cn/submit.php",
+        method: "POST",
+        fields: { sign: "provider-signature" },
+      },
+    });
+
+    expect(destination).toBe("external");
+    expect(openUrl).toHaveBeenCalledWith(
+      "https://api.example.com/api/payments/zpay/checkout?token=signed",
+    );
   });
 });

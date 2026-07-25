@@ -140,8 +140,10 @@ test("matches every provider result field against the locked local order", () =>
 test("creates a checkout from the current rate and signs all POST fields", async () => {
   let rate = "7.2";
   class CheckoutTestService extends RechargeService {
+    readonly orders = new Map<string, any>();
+
     protected override async insertOrderWithUniqueNumber(input: any) {
-      return {
+      const row = {
         out_trade_no: input.rateMicro === 7_200_000 ? "1000000000000000000000000001" : "1000000000000000000000000002",
         owner_user_id: input.ownerUserId,
         payment_type: input.paymentType,
@@ -157,6 +159,12 @@ test("creates a checkout from the current rate and signs all POST fields", async
         updated_at: input.now,
         paid_at: null,
       } as any;
+      this.orders.set(row.out_trade_no, row);
+      return row;
+    }
+
+    protected override async findOrder(outTradeNo: string) {
+      return this.orders.get(outTradeNo) ?? null;
     }
   }
   const service = new CheckoutTestService({
@@ -174,6 +182,11 @@ test("creates a checkout from the current rate and signs all POST fields", async
   assert.equal(first.order.usdToCnyRate, "7.2");
   assert.equal(first.order.moneyCny, "72.00");
   assert.equal(first.form.actionUrl, "https://zpayz.cn/submit.php");
+  assert.match(
+    first.externalCheckoutUrl,
+    /^https:\/\/api\.example\.com\/api\/payments\/zpay\/checkout\?/,
+  );
+  assert.equal(first.externalCheckoutUrl.includes(paymentConfig.key), false);
   assert.equal(
     first.form.fields.sign,
     signZpayParams(first.form.fields, paymentConfig.key),
@@ -188,4 +201,37 @@ test("creates a checkout from the current rate and signs all POST fields", async
   assert.equal(second.order.usdToCnyRate, "8");
   assert.equal(second.order.moneyCny, "80.00");
   assert.equal(first.order.moneyCny, "72.00");
+
+  const externalUrl = new URL(first.externalCheckoutUrl);
+  const external = await service.getExternalCheckout(
+    externalUrl.searchParams.get("outTradeNo")!,
+    externalUrl.searchParams.get("token")!,
+  );
+  assert.equal(external.status, "pending");
+  if (external.status === "pending") {
+    assert.equal(
+      external.form.fields.return_url,
+      "https://api.example.com/api/payments/zpay/native-return",
+    );
+    assert.equal(
+      external.form.fields.sign,
+      signZpayParams(external.form.fields, paymentConfig.key),
+    );
+  }
+  await assert.rejects(
+    service.getExternalCheckout(
+      first.order.outTradeNo,
+      `${externalUrl.searchParams.get("token")!.slice(0, -1)}${externalUrl.searchParams.get("token")!.endsWith("0") ? "1" : "0"}`,
+    ),
+    PaymentValidationError,
+  );
+
+  service.orders.get(first.order.outTradeNo)!.status = "paid";
+  assert.deepEqual(
+    await service.getExternalCheckout(
+      first.order.outTradeNo,
+      externalUrl.searchParams.get("token")!,
+    ),
+    { status: "paid" },
+  );
 });

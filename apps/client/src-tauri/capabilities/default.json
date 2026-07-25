@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default Echoo app permissions",
   "windows": ["main"],
-  "permissions": ["core:default", "keepalive:default", "notification:default"]
+  "permissions": ["core:default", "keepalive:default", "notification:default", "opener:default"]
 }

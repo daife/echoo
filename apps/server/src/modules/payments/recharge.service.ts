@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type {
   RechargeCheckoutView,
   RechargeConfigView,
@@ -160,25 +160,38 @@ export class RechargeService {
       payAmountFen,
       now,
     });
-    const fields: Record<string, string> = {
-      name: row.product_name,
-      money: formatFen(row.pay_amount_fen),
-      type: row.payment_type,
-      out_trade_no: row.out_trade_no,
-      notify_url: `${payment.publicServerUrl}/api/payments/zpay/notify`,
-      pid: payment.pid,
-      return_url: `${payment.publicServerUrl}/api/payments/zpay/return`,
-      sign_type: "MD5",
-      ...(payment.cid ? { cid: payment.cid } : {}),
-    };
-    fields.sign = signZpayParams(fields, payment.key);
+    const externalUrl = new URL(
+      `${payment.publicServerUrl}/api/payments/zpay/checkout`,
+    );
+    externalUrl.searchParams.set("outTradeNo", row.out_trade_no);
+    externalUrl.searchParams.set(
+      "token",
+      createCheckoutToken(row.out_trade_no, payment.key),
+    );
     return {
       order: toOrderView(row),
-      form: {
-        actionUrl: `${payment.baseUrl}/submit.php`,
-        method: "POST",
-        fields,
-      },
+      externalCheckoutUrl: externalUrl.toString(),
+      form: this.buildPaymentForm(
+        row,
+        `${payment.publicServerUrl}/api/payments/zpay/return`,
+      ),
+    };
+  }
+
+  async getExternalCheckout(outTradeNo: string, token: string) {
+    const payment = this.requirePaymentConfig();
+    validateOutTradeNo(outTradeNo);
+    if (!verifyCheckoutToken(outTradeNo, token, payment.key))
+      throw new PaymentValidationError("原生收银台链接无效。");
+    const row = await this.findOrder(outTradeNo);
+    if (!row) throw new PaymentOrderNotFoundError("充值订单不存在。");
+    if (row.status === "paid") return { status: "paid" as const };
+    return {
+      status: "pending" as const,
+      form: this.buildPaymentForm(
+        row,
+        `${payment.publicServerUrl}/api/payments/zpay/native-return`,
+      ),
     };
   }
 
@@ -261,6 +274,27 @@ export class RechargeService {
     if (!this.paymentConfig)
       throw new PaymentUnavailableError("在线充值尚未配置。");
     return this.paymentConfig;
+  }
+
+  private buildPaymentForm(row: RechargeOrderRow, returnUrl: string) {
+    const payment = this.requirePaymentConfig();
+    const fields: Record<string, string> = {
+      name: row.product_name,
+      money: formatFen(row.pay_amount_fen),
+      type: row.payment_type,
+      out_trade_no: row.out_trade_no,
+      notify_url: `${payment.publicServerUrl}/api/payments/zpay/notify`,
+      pid: payment.pid,
+      return_url: returnUrl,
+      sign_type: "MD5",
+      ...(payment.cid ? { cid: payment.cid } : {}),
+    };
+    fields.sign = signZpayParams(fields, payment.key);
+    return {
+      actionUrl: `${payment.baseUrl}/submit.php`,
+      method: "POST" as const,
+      fields,
+    };
   }
 
   protected async insertOrderWithUniqueNumber(input: {
@@ -404,7 +438,7 @@ export class RechargeService {
     );
   }
 
-  private findOrder(
+  protected findOrder(
     outTradeNo: string,
     connection?: PoolConnection,
     lock = false,
@@ -432,6 +466,21 @@ function paymentConfigFromEnvironment(): ZpayPaymentConfig | null {
     ...(environment.zpayCid ? { cid: environment.zpayCid } : {}),
     baseUrl: environment.zpayBaseUrl,
   };
+}
+
+function createCheckoutToken(outTradeNo: string, key: string) {
+  return createHmac("sha256", key)
+    .update(`echoo-recharge-checkout:v1:${outTradeNo}`, "utf8")
+    .digest("hex");
+}
+
+function verifyCheckoutToken(outTradeNo: string, token: string, key: string) {
+  if (!/^[a-f0-9]{64}$/i.test(token)) return false;
+  const expected = createCheckoutToken(outTradeNo, key);
+  return timingSafeEqual(
+    Buffer.from(token.toLowerCase(), "hex"),
+    Buffer.from(expected, "hex"),
+  );
 }
 
 function normalizeCallbackParams(input: Record<string, unknown>) {

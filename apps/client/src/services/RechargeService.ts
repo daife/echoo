@@ -1,5 +1,6 @@
 import type { PaymentsApi } from "@echoo/api-client";
 import type { CreateRechargeOrderRequest, RechargeCheckoutView } from "@echoo/shared";
+import { isTauri } from "../runtimes/factory/detectPlatform";
 
 export class RechargeService {
   constructor(private readonly api: PaymentsApi) {}
@@ -20,8 +21,14 @@ export class RechargeService {
     return this.api.reconcileRechargeOrder(outTradeNo);
   }
 
-  submitCheckout(checkout: RechargeCheckoutView) {
+  async submitCheckout(checkout: RechargeCheckoutView) {
+    if (isTauri()) {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(checkout.externalCheckoutUrl);
+      return "external" as const;
+    }
     submitPostForm(checkout.form.actionUrl, checkout.form.fields);
+    return "web" as const;
   }
 }
 
@@ -44,4 +51,3 @@ export function submitPostForm(
   form.submit();
   form.remove();
 }
-

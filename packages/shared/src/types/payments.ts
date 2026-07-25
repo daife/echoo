@@ -31,6 +31,7 @@ export interface CreateRechargeOrderRequest {
 
 export interface RechargeCheckoutView {
   order: RechargeOrderView;
+  externalCheckoutUrl: string;
   form: {
     actionUrl: string;
     method: "POST";

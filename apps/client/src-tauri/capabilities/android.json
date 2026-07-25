@@ -3,5 +3,5 @@
   "identifier": "android",
   "description": "Android keepalive bridge permissions",
   "windows": ["main"],
-  "permissions": ["core:default", "keepalive:default", "notification:default"]
+  "permissions": ["core:default", "keepalive:default", "notification:default", "opener:default"]
 }
