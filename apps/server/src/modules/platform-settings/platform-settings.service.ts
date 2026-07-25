@@ -31,8 +31,12 @@ export class PlatformSettingsService {
     const value =
       typeof parsed === "string"
         ? parsed
+        : typeof parsed === "number"
+          ? String(parsed)
         : typeof (parsed as { value?: unknown } | null)?.value === "string"
           ? (parsed as { value: string }).value
+          : typeof (parsed as { value?: unknown } | null)?.value === "number"
+            ? String((parsed as { value: number }).value)
           : null;
     if (!value) return null;
     try {
