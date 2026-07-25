@@ -304,12 +304,6 @@ export class RewardsService {
       parseUsdToMicro(settings.promotion.usdPerLike),
       parseUsdToMicro(settings.promotion.maxRewardUsd),
     );
-    if (reward <= 0)
-      throw new RewardsError(
-        "PROMOTION_THRESHOLD_NOT_MET",
-        `自绑定以来新增 ${Math.max(0, parsed.likeCount - binding.initial_like_count)} 个赞，尚未超过有效门槛 ${settings.promotion.minimumLikes}。`,
-        409,
-      );
     const quoteId = `quote_${randomUUID()}`;
     const now = Date.now();
     const expiresAt = now + QUOTE_TTL_MS;
@@ -384,30 +378,32 @@ export class RewardsService {
           409,
         );
       const reward = binding.quote_reward_micro_usd ?? 0;
-      if (reward <= 0)
+      if (reward < 0)
         throw new RewardsError(
           "PROMOTION_QUOTE_INVALID",
           "结算金额无效，请重新获取报价。",
           409,
         );
-      await ensureAccounts([ownerUserId], connection);
-      const accounts = await lockAccounts([ownerUserId], connection);
       const now = Date.now();
-      await creditAccount({
-        ownerUserId,
-        currentBalance: accounts.get(ownerUserId) ?? 0,
-        amount: reward,
-        kind: "promotion_reward",
-        note: `${promotionPlatformLabel(binding.platform)}推广结算`,
-        metadata: {
-          bindingId,
-          platform: binding.platform,
-          externalContentId: binding.external_content_id,
-          likeCount: binding.quote_like_count,
-        },
-        now,
-        connection,
-      });
+      if (reward > 0) {
+        await ensureAccounts([ownerUserId], connection);
+        const accounts = await lockAccounts([ownerUserId], connection);
+        await creditAccount({
+          ownerUserId,
+          currentBalance: accounts.get(ownerUserId) ?? 0,
+          amount: reward,
+          kind: "promotion_reward",
+          note: `${promotionPlatformLabel(binding.platform)}推广结算`,
+          metadata: {
+            bindingId,
+            platform: binding.platform,
+            externalContentId: binding.external_content_id,
+            likeCount: binding.quote_like_count,
+          },
+          now,
+          connection,
+        });
+      }
       await execute(
         `UPDATE promotion_bindings
             SET settled_like_count = quote_like_count,
