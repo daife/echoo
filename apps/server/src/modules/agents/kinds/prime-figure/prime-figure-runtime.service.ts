@@ -1530,6 +1530,7 @@ export function buildPrimeDecisionResponseFormat(
         required: [
           "rationale",
           "figureMood",
+          "actions",
           ...(hasVariables ? ["variables"] : []),
           ...(pendingMedia.length ? ["mediaAnnotations"] : []),
         ],
