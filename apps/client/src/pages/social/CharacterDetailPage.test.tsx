@@ -21,7 +21,7 @@ describe("CharacterDetailPage unavailable state", () => {
     );
 
     expect(html).toContain("返回");
-    expect(html).toContain("正在加载公共资产");
+    expect(html).toContain("正在加载公共创作");
   });
 });
 

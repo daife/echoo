@@ -77,7 +77,7 @@ export function CharacterDetailPage({
       <section className="mx-auto max-w-4xl pb-24">
         <BackButton className="mb-6" onClick={onBack} />
         <div className="rounded-2xl border border-white/8 bg-[#111114] py-20 text-center text-sm text-white/40">
-          {error ?? "正在加载公共资产……"}
+          {error ?? "正在加载公共创作……"}
         </div>
       </section>
     );
@@ -101,7 +101,7 @@ export function CharacterDetailPage({
         updateAvailable: false,
       });
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "添加资产失败。");
+      setError(reason instanceof Error ? reason.message : "添加创作失败。");
     } finally {
       setBusy(false);
     }

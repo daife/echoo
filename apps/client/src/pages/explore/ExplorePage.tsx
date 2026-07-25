@@ -114,7 +114,7 @@ export function PublicAssetCatalog({
             PUBLIC ASSET ARCHIVE
           </p>
           <h2 className="mt-2 text-3xl font-semibold text-white">
-            全部已公开资产
+            全部已公开创作
           </h2>
         </div>
         <div>
@@ -123,7 +123,7 @@ export function PublicAssetCatalog({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索资产、作者或标签"
+              placeholder="搜索创作、作者或标签"
               className="min-w-0 bg-transparent text-sm text-white outline-none"
             />
           </label>
@@ -156,7 +156,7 @@ export function PublicAssetCatalog({
       {queryInvalid ? (
         <EmptyState text="请输入至少两个字符开始搜索。" />
       ) : loading ? (
-        <EmptyState text="正在整理公共资产档案……" />
+        <EmptyState text="正在整理公共创作档案……" />
       ) : assets.length ? (
         <div className="grid gap-5 xl:grid-cols-2">
           {assets.map((asset) => (
@@ -220,7 +220,7 @@ export function PublicAssetCatalog({
                   });
                 } catch (reason) {
                   setActionError(
-                    reason instanceof Error ? reason.message : "添加资产失败。",
+                    reason instanceof Error ? reason.message : "添加创作失败。",
                   );
                 } finally {
                   setBusyId(null);
@@ -235,7 +235,7 @@ export function PublicAssetCatalog({
         <EmptyState
           text={
             error ??
-            (debouncedQuery ? "没有找到匹配的公开资产。" : "还没有公开资产。")
+            (debouncedQuery ? "没有找到匹配的公开创作。" : "还没有公开创作。")
           }
         />
       )}
@@ -486,7 +486,7 @@ export function ExplorePage({
                   });
                 } catch (reason) {
                   setActionError(
-                    reason instanceof Error ? reason.message : "添加资产失败。",
+                    reason instanceof Error ? reason.message : "添加创作失败。",
                   );
                 }
               }}

@@ -395,7 +395,7 @@ export function MessageComposer({
             {pushToTalk.phase === "requesting"
               ? "等待麦克风授权…"
               : pushToTalk.phase === "encoding"
-                ? "正在生成 MP3…"
+                ? "处理中……"
                 : pushToTalk.isCancelArmed
                   ? "松开取消"
                   : isRecording

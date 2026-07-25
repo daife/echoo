@@ -123,6 +123,10 @@ select:focus-visible {
   padding: 0;
 }
 
+.app-overlay.app-media-viewer {
+  align-items: center;
+}
+
 body:has(.app-overlay) .app-mobile-bottom-nav {
   display: none;
 }

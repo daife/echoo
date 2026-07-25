@@ -467,7 +467,7 @@ function MessageAvatar({ mediaUrl, alt }: { mediaUrl?: string; alt?: string }) {
     <IdentityAvatar
       mediaUrl={mediaUrl}
       alt={alt ?? "消息发送者头像"}
-      className="mb-1 h-8 w-8 shrink-0"
+      className="mb-1 h-9 w-9 shrink-0"
     />
   );
 }
@@ -582,7 +582,7 @@ function MediaViewer({
 
   return createPortal(
     <div
-      className="app-overlay fixed inset-0 grid place-items-center bg-black/88 p-4 backdrop-blur-md"
+      className="app-overlay app-media-viewer fixed inset-0 grid place-items-center bg-black/88 p-4 backdrop-blur-md"
       role="dialog"
       aria-modal="true"
       aria-label={`${alt}放大预览`}

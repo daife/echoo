@@ -86,7 +86,7 @@ export function HomePage({
         </div>
         {featuredLoading ? (
           <div className="rounded-2xl border border-dashed border-white/10 py-16 text-center text-sm text-white/35">
-            正在统计最受喜爱的公开资产……
+            正在统计最受喜爱的公开创作……
           </div>
         ) : featured.length ? (
           <div className="grid gap-4 md:grid-cols-3">
@@ -130,7 +130,7 @@ export function HomePage({
           <div className="rounded-2xl border border-dashed border-white/10 py-16 text-center text-sm text-white/35">
             {featuredError
               ? "热门创作暂时加载失败。"
-              : "还没有获得点赞的公开资产。"}
+              : "还没有获得点赞的公开创作。"}
           </div>
         )}
       </section>

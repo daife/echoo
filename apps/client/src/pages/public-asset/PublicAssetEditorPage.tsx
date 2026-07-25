@@ -77,7 +77,7 @@ export function PublicAssetEditorPage({
       await service.unlist(draft.id);
       const next = await service.getDraft(draft.id);
       onDraftChange(next);
-      setNotice("公共资产已下架，草稿仍可继续编辑。");
+      setNotice("公共创作已下架，草稿仍可继续编辑。");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "下架失败。");
     } finally {
@@ -192,7 +192,7 @@ export function PublicAssetEditorPage({
           service={service}
           onSaved={(next) => {
             onDraftChange(next);
-            setNotice("资产草稿已保存，线上版本没有变化。");
+            setNotice("创作草稿已保存，线上版本没有变化。");
           }}
         />
       ) : (
