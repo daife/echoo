@@ -11,10 +11,7 @@ import {
   queryRows,
   withTransaction,
 } from "../../infra/database/mysql.js";
-import {
-  formatMicroUsd,
-  parseUsdToMicro,
-} from "../billing/money.js";
+import { formatMicroUsd, parseUsdToMicro } from "../billing/money.js";
 import { PlatformSettingsService } from "../platform-settings/platform-settings.service.js";
 import {
   hasEchooTag,
@@ -135,12 +132,8 @@ export class RewardsService {
         "邀请奖励暂未开放，请稍后再试。",
         409,
       );
-    const inviterAmount = parseUsdToMicro(
-      settings.invitation.inviterRewardUsd,
-    );
-    const inviteeAmount = parseUsdToMicro(
-      settings.invitation.inviteeRewardUsd,
-    );
+    const inviterAmount = parseUsdToMicro(settings.invitation.inviterRewardUsd);
+    const inviteeAmount = parseUsdToMicro(settings.invitation.inviteeRewardUsd);
     try {
       await withTransaction(async (connection) => {
         const invitation = await queryOne<InviteCodeRow>(
@@ -149,9 +142,17 @@ export class RewardsService {
           connection,
         );
         if (!invitation)
-          throw new RewardsError("INVITE_CODE_NOT_FOUND", "邀请码不存在。", 404);
+          throw new RewardsError(
+            "INVITE_CODE_NOT_FOUND",
+            "邀请码不存在。",
+            404,
+          );
         if (invitation.owner_user_id === inviteeUserId)
-          throw new RewardsError("SELF_INVITATION", "不能使用自己的邀请码。", 409);
+          throw new RewardsError(
+            "SELF_INVITATION",
+            "不能使用自己的邀请码。",
+            409,
+          );
         const existing = await queryOne<RedemptionRow>(
           "SELECT invitee_user_id FROM invite_redemptions WHERE invitee_user_id = ? FOR UPDATE",
           [inviteeUserId],
@@ -229,7 +230,7 @@ export class RewardsService {
     if (!hasEchooTag(parsed.tags))
       throw new RewardsError(
         "ECHOO_TAG_REQUIRED",
-        "作品必须包含 #echoo 标签后才能绑定。",
+        "未在内容中识别到 #echoo 标签，请添加后重新绑定。",
         422,
       );
     const now = Date.now();
@@ -259,7 +260,7 @@ export class RewardsService {
       if (isDuplicateEntry(error))
         throw new RewardsError(
           "PROMOTION_ALREADY_BOUND",
-          "该作品已被绑定，不能重复占位。",
+          "该作品已被绑定，请勿重复绑定。",
           409,
         );
       throw error;
@@ -298,6 +299,7 @@ export class RewardsService {
       );
     const reward = calculatePromotionRewardMicroUsd(
       parsed.likeCount,
+      binding.initial_like_count,
       settings.promotion.minimumLikes,
       parseUsdToMicro(settings.promotion.usdPerLike),
       parseUsdToMicro(settings.promotion.maxRewardUsd),
@@ -305,7 +307,7 @@ export class RewardsService {
     if (reward <= 0)
       throw new RewardsError(
         "PROMOTION_THRESHOLD_NOT_MET",
-        `当前 ${parsed.likeCount} 个赞，尚未超过有效门槛 ${settings.promotion.minimumLikes}。`,
+        `自绑定以来新增 ${Math.max(0, parsed.likeCount - binding.initial_like_count)} 个赞，尚未超过有效门槛 ${settings.promotion.minimumLikes}。`,
         409,
       );
     const quoteId = `quote_${randomUUID()}`;
@@ -451,20 +453,24 @@ export class RewardsService {
 }
 
 export function calculatePromotionRewardMicroUsd(
-  likeCount: number,
+  currentLikeCount: number,
+  initialLikeCount: number,
   minimumLikes: number,
   microUsdPerLike: number,
   maxRewardMicroUsd: number,
 ) {
   if (
-    !Number.isSafeInteger(likeCount) ||
+    !Number.isSafeInteger(currentLikeCount) ||
+    !Number.isSafeInteger(initialLikeCount) ||
     !Number.isSafeInteger(minimumLikes) ||
-    likeCount <= minimumLikes ||
+    currentLikeCount <= initialLikeCount ||
     microUsdPerLike <= 0 ||
     maxRewardMicroUsd <= 0
   )
     return 0;
-  const calculated = (likeCount - minimumLikes) * microUsdPerLike;
+  const newLikeCount = currentLikeCount - initialLikeCount;
+  if (newLikeCount <= minimumLikes) return 0;
+  const calculated = (newLikeCount - minimumLikes) * microUsdPerLike;
   if (!Number.isSafeInteger(calculated)) return maxRewardMicroUsd;
   return Math.min(maxRewardMicroUsd, calculated);
 }
@@ -478,7 +484,10 @@ const promotionSelect = `SELECT id, owner_user_id, platform, work_type,
 
 function createInviteCode() {
   const bytes = randomBytes(10);
-  return Array.from(bytes, (byte) => INVITE_ALPHABET[byte % INVITE_ALPHABET.length])
+  return Array.from(
+    bytes,
+    (byte) => INVITE_ALPHABET[byte % INVITE_ALPHABET.length],
+  )
     .join("")
     .slice(0, 10);
 }
@@ -566,9 +575,7 @@ async function creditAccount(input: {
   currentBalance: number;
   amount: number;
   kind:
-    | "invite_referrer_reward"
-    | "invite_redeemer_reward"
-    | "promotion_reward";
+    "invite_referrer_reward" | "invite_redeemer_reward" | "promotion_reward";
   note: string;
   metadata: Record<string, unknown>;
   now: number;

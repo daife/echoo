@@ -686,7 +686,9 @@ function BillingPanel({ token, onExpired }: PanelProps) {
       setUsdToCnyRate(settings.recharge.usdToCnyRate ?? "");
       setPaymentConfigured(settings.recharge.paymentConfigured);
       if (!settings.recharge.usdToCnyRate)
-        throw new Error("充值汇率保存后未能从服务器读取，请检查服务端数据库连接。");
+        throw new Error(
+          "充值汇率保存后未能从服务器读取，请检查服务端数据库连接。",
+        );
       setStatus("充值汇率已保存，仅影响新创建的订单。");
     } catch (error) {
       handlePanelError(error, setStatus, onExpired);
@@ -754,94 +756,96 @@ function BillingPanel({ token, onExpired }: PanelProps) {
         </form>
       </section>
       <div className="grid gap-6 lg:grid-cols-[1.1fr_.9fr]">
-      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
-        <div className="mb-4 flex gap-2">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="邮箱或昵称"
-            className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2"
-          />
-          <button
-            onClick={() => void loadUsers()}
-            className="rounded-lg bg-white px-4 text-sm font-medium text-black"
-          >
-            搜索
-          </button>
-        </div>
-        <div className="divide-y divide-white/6">
-          {users.map((user) => (
+        <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+          <div className="mb-4 flex gap-2">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="邮箱或昵称"
+              className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2"
+            />
             <button
-              key={user.id}
-              onClick={() => void openUser(user)}
-              className="flex w-full items-center justify-between gap-4 py-3 text-left"
+              onClick={() => void loadUsers()}
+              className="rounded-lg bg-white px-4 text-sm font-medium text-black"
             >
-              <span>
-                <strong className="block text-sm text-white">
-                  {user.displayName}
-                </strong>
-                <small className="text-white/40">{user.email}</small>
-              </span>
-              <span
-                className={`font-mono text-sm ${Number(user.balanceUsd) > 0 ? "text-emerald-200" : "text-red-200"}`}
-              >
-                ${user.balanceUsd}
-              </span>
+              搜索
             </button>
-          ))}
-        </div>
-      </section>
-      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
-        {selected ? (
-          <>
-            <h2 className="text-xl font-semibold">{selected.displayName}</h2>
-            <p className="mt-1 text-sm text-white/40">
-              当前余额：${wallet?.balanceUsd ?? selected.balanceUsd}
-            </p>
-            <form onSubmit={adjust} className="mt-5 space-y-3">
-              <input
-                required
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="美元金额，如 10 或 -2.5"
-                className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2"
-              />
-              <input
-                required
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="调整原因"
-                className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2"
-              />
-              <button className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black">
-                确认入账
-              </button>
-            </form>
-            <div className="mt-6 max-h-80 space-y-2 overflow-auto">
-              {wallet?.entries.map((entry) => (
-                <div
-                  key={entry.id}
-                  className="rounded-lg bg-black/20 p-3 text-xs"
+          </div>
+          <div className="divide-y divide-white/6">
+            {users.map((user) => (
+              <button
+                key={user.id}
+                onClick={() => void openUser(user)}
+                className="flex w-full items-center justify-between gap-4 py-3 text-left"
+              >
+                <span>
+                  <strong className="block text-sm text-white">
+                    {user.displayName}
+                  </strong>
+                  <small className="text-white/40">{user.email}</small>
+                </span>
+                <span
+                  className={`font-mono text-sm ${Number(user.balanceUsd) > 0 ? "text-emerald-200" : "text-red-200"}`}
                 >
-                  <span className="font-mono">{entry.amountUsd} USD</span>
-                  <span className="float-right text-white/35">
-                    {new Date(entry.createdAt).toLocaleString()}
-                  </span>
-                  <p className="mt-1 text-white/45">
-                    {entry.note ??
-                      `${entry.service ?? ""} ${entry.model ?? ""}`}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <p className="text-sm text-white/40">
-            选择一个用户查看账本并调整余额。
-          </p>
-        )}
-        {status ? <p className="mt-4 text-sm text-white/55">{status}</p> : null}
-      </section>
+                  ${user.balanceUsd}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+        <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+          {selected ? (
+            <>
+              <h2 className="text-xl font-semibold">{selected.displayName}</h2>
+              <p className="mt-1 text-sm text-white/40">
+                当前余额：${wallet?.balanceUsd ?? selected.balanceUsd}
+              </p>
+              <form onSubmit={adjust} className="mt-5 space-y-3">
+                <input
+                  required
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="美元金额，如 10 或 -2.5"
+                  className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2"
+                />
+                <input
+                  required
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="调整原因"
+                  className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2"
+                />
+                <button className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black">
+                  确认入账
+                </button>
+              </form>
+              <div className="mt-6 max-h-80 space-y-2 overflow-auto">
+                {wallet?.entries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="rounded-lg bg-black/20 p-3 text-xs"
+                  >
+                    <span className="font-mono">{entry.amountUsd} USD</span>
+                    <span className="float-right text-white/35">
+                      {new Date(entry.createdAt).toLocaleString()}
+                    </span>
+                    <p className="mt-1 text-white/45">
+                      {entry.note ??
+                        `${entry.service ?? ""} ${entry.model ?? ""}`}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-white/40">
+              选择一个用户查看账本并调整余额。
+            </p>
+          )}
+          {status ? (
+            <p className="mt-4 text-sm text-white/55">{status}</p>
+          ) : null}
+        </section>
       </div>
     </div>
   );
@@ -980,7 +984,8 @@ function RewardSettingsPanel({ token, onExpired }: PanelProps) {
           <div>
             <h2 className="text-xl font-semibold">推广结算</h2>
             <p className="mt-2 text-sm leading-6 text-white/42">
-              三个平台共用：min(上限, max(0, 点赞 - 门槛) × 每赞金额)。每赞金额和上限都大于 0 时开放结算。
+              三个平台共用：min(上限, max(0, 绑定后新增点赞 - 门槛) ×
+              每赞金额)。每赞金额和上限都大于 0 时开放结算。
             </p>
           </div>
           <span
@@ -1052,7 +1057,8 @@ function RewardSettingsPanel({ token, onExpired }: PanelProps) {
       <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
         <h2 className="text-xl font-semibold">创作激励</h2>
         <p className="mt-2 text-sm leading-6 text-white/45">
-          固定返还 {value.creator.rewardPercent}%：仅公开作品处于上架状态且使用平台服务 API 时触发，暂不支持修改。
+          固定返还 {value.creator.rewardPercent}
+          %：仅公开作品处于上架状态且使用平台服务 API 时触发，暂不支持修改。
         </p>
       </section>
 
@@ -1391,41 +1397,41 @@ function RecommendationsPanel({ token, onExpired }: PanelProps) {
                 id="recommendation-model-candidates"
                 className="absolute inset-x-0 top-full z-20 mt-1 max-h-72 overflow-auto rounded-lg border border-white/10 bg-[#15151a] p-1 shadow-2xl shadow-black/45"
               >
-                  {candidatesLoading ? (
-                    <p className="px-3 py-2 text-xs text-white/40">
-                      正在获取匹配当前分类的模型...
-                    </p>
-                  ) : visibleCandidateModels.length ? (
-                    visibleCandidateModels.map((model) => (
-                      <button
-                        key={model.modelId}
-                        type="button"
-                        onClick={() => {
-                          setModelId(model.modelId);
-                          setProviders("");
-                          setProviderCandidates([]);
-                          setCandidatesOpen(false);
-                        }}
-                        className="block w-full rounded-md px-3 py-2 text-left hover:bg-white/[0.06] focus:bg-white/[0.06] focus:outline-none"
-                      >
-                        <span className="block text-sm text-white/85">
-                          {model.name}
-                        </span>
-                        <span className="mt-0.5 block break-all font-mono text-[11px] text-white/40">
-                          {model.modelId}
-                        </span>
-                        <span className="mt-1 block text-[11px] text-emerald-100/50">
-                          {modelCapabilityLabel(model)}
-                        </span>
-                      </button>
-                    ))
-                  ) : (
-                    <p className="px-3 py-2 text-xs text-white/40">
-                      没有匹配候选，仍可直接使用手填 ID。
-                    </p>
-                  )}
-                </div>
-              ) : null}
+                {candidatesLoading ? (
+                  <p className="px-3 py-2 text-xs text-white/40">
+                    正在获取匹配当前分类的模型...
+                  </p>
+                ) : visibleCandidateModels.length ? (
+                  visibleCandidateModels.map((model) => (
+                    <button
+                      key={model.modelId}
+                      type="button"
+                      onClick={() => {
+                        setModelId(model.modelId);
+                        setProviders("");
+                        setProviderCandidates([]);
+                        setCandidatesOpen(false);
+                      }}
+                      className="block w-full rounded-md px-3 py-2 text-left hover:bg-white/[0.06] focus:bg-white/[0.06] focus:outline-none"
+                    >
+                      <span className="block text-sm text-white/85">
+                        {model.name}
+                      </span>
+                      <span className="mt-0.5 block break-all font-mono text-[11px] text-white/40">
+                        {model.modelId}
+                      </span>
+                      <span className="mt-1 block text-[11px] text-emerald-100/50">
+                        {modelCapabilityLabel(model)}
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <p className="px-3 py-2 text-xs text-white/40">
+                    没有匹配候选，仍可直接使用手填 ID。
+                  </p>
+                )}
+              </div>
+            ) : null}
           </div>
           {candidateError ? (
             <p className="text-xs text-red-200/70">{candidateError}</p>
@@ -1615,7 +1621,8 @@ function modelCapabilityLabel(model: CatalogModel) {
   const capabilities = [
     `${model.inputModalities.join("+")} → ${model.outputModalities.join("+")}`,
   ];
-  if (model.supportedParameters.includes("tools")) capabilities.push("工具调用");
+  if (model.supportedParameters.includes("tools"))
+    capabilities.push("工具调用");
   if (
     model.supportedParameters.includes("structured_outputs") ||
     model.supportedParameters.includes("response_format")

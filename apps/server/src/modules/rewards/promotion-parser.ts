@@ -54,14 +54,19 @@ async function parseDouyin(url: string, fetcher: typeof fetch) {
   const resolved = await resolveUrl(url, fetcher, "douyin");
   const found = resolved.match(/\/(?:share\/)?(video|note)\/(\d+)/);
   if (!found)
-    throw new PromotionParseError("无法从抖音链接识别作品 ID。", true);
+    throw new PromotionParseError(
+      "不支持的内容类型：抖音仅支持视频和图文作品。",
+      false,
+    );
   const [, workType, workId] = found;
   const html = await requestText(
     `https://www.iesdouyin.com/share/${workType}/${workId}/`,
     fetcher,
     { platform: "douyin" },
   );
-  const match = html.match(/window\._ROUTER_DATA\s*=\s*(\{[\s\S]*?\})<\/script>/);
+  const match = html.match(
+    /window\._ROUTER_DATA\s*=\s*(\{[\s\S]*?\})<\/script>/,
+  );
   if (!match)
     throw new PromotionParseError("抖音页面暂时无法读取，请稍后重试。", true);
   const router = JSON.parse(decodeHtml(match[1])) as Record<string, unknown>;
@@ -94,8 +99,14 @@ async function parseBilibili(url: string, fetcher: typeof fetch) {
   const opus = resolved.match(/\/opus\/(\d+)/);
   if (opus) return parseBilibiliOpus(opus[1], fetcher);
   if (/\/read\/(?:mobile\/)?(?:cv)?\d+/.test(resolved))
-    throw new PromotionParseError("首版暂不支持哔哩哔哩专栏，请使用视频或动态。", false);
-  throw new PromotionParseError("无法从哔哩哔哩链接识别视频或动态 ID。", true);
+    throw new PromotionParseError(
+      "不支持的内容类型：哔哩哔哩仅支持视频和动态，不支持专栏。",
+      false,
+    );
+  throw new PromotionParseError(
+    "不支持的内容类型：哔哩哔哩仅支持视频和动态。",
+    false,
+  );
 }
 
 async function parseBilibiliVideo(bvid: string, fetcher: typeof fetch) {
@@ -142,12 +153,9 @@ async function parseBilibiliOpus(opusId: string, fetcher: typeof fetch) {
   const match = html.match(
     /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});\(function/,
   );
-  if (!match)
-    throw new PromotionParseError("哔哩哔哩动态详情获取失败。", true);
+  if (!match) throw new PromotionParseError("哔哩哔哩动态详情获取失败。", true);
   const state = parseEmbeddedJson(match[1]);
-  const detail = objectValue(
-    state.detail ?? objectValue(state.opus).detail,
-  );
+  const detail = objectValue(state.detail ?? objectValue(state.opus).detail);
   const modules = arrayValue(detail.modules).map(objectValue);
   const moduleOf = (type: string) =>
     modules.find((module) => module.module_type === type) ?? {};
@@ -160,7 +168,8 @@ async function parseBilibiliOpus(opusId: string, fetcher: typeof fetch) {
     .map((tag) =>
       typeof tag === "string"
         ? tag
-        : stringValue(objectValue(tag).text) ?? stringValue(objectValue(tag).name),
+        : (stringValue(objectValue(tag).text) ??
+          stringValue(objectValue(tag).name)),
     )
     .filter((tag): tag is string => Boolean(tag));
   return {
@@ -168,7 +177,9 @@ async function parseBilibiliOpus(opusId: string, fetcher: typeof fetch) {
     workType: "opus",
     contentId: stringValue(detail.id_str) ?? opusId,
     authorId: optionalId(author.mid ?? basic.uid),
-    tags: unique([...titleTags, stringValue(topic.name)].filter(Boolean) as string[]),
+    tags: unique(
+      [...titleTags, stringValue(topic.name)].filter(Boolean) as string[],
+    ),
     likeCount: requireCount(objectValue(stats.like).count),
   };
 }
@@ -179,7 +190,10 @@ async function parseXiaohongshu(url: string, fetcher: typeof fetch) {
     resolved.match(/\/(?:discovery\/item|explore)\/([0-9a-fA-F]+)/)?.[1] ??
     url.match(/\/(?:discovery\/item|explore)\/([0-9a-fA-F]+)/)?.[1];
   if (!noteId)
-    throw new PromotionParseError("无法从小红书链接识别作品 ID。", true);
+    throw new PromotionParseError(
+      "不支持的内容类型：小红书仅支持图文和视频笔记。",
+      false,
+    );
   const resolvedUrl = new URL(resolved);
   const token = resolvedUrl.searchParams.get("xsec_token");
   const fetchUrl = `https://www.xiaohongshu.com/explore/${noteId}${token ? `?xsec_token=${encodeURIComponent(token)}` : ""}`;
@@ -190,15 +204,17 @@ async function parseXiaohongshu(url: string, fetcher: typeof fetch) {
   const match = html.match(
     /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})<\/script>/,
   );
-  if (!match)
-    throw new PromotionParseError("小红书作品详情获取失败。", true);
+  if (!match) throw new PromotionParseError("小红书作品详情获取失败。", true);
   const state = parseEmbeddedJson(match[1]);
   const noteStore = objectValue(state.note);
   const noteMap = objectValue(noteStore.noteDetailMap);
   const detail = objectValue(noteMap[noteId]);
   const note = objectValue(detail.note);
   if (!Object.keys(note).length)
-    throw new PromotionParseError("小红书作品详情为空或需要重新分享链接。", true);
+    throw new PromotionParseError(
+      "小红书作品详情为空或需要重新分享链接。",
+      true,
+    );
   const user = objectValue(note.user);
   const interact = objectValue(note.interactInfo);
   return {
@@ -223,7 +239,10 @@ function extractDouyinTags(item: Record<string, unknown>) {
     .filter((tag): tag is string => Boolean(tag));
   if (tags.length) return unique(tags);
   return unique(
-    Array.from((stringValue(item.desc) ?? "").matchAll(/#\s*([^\s#，。,.!！?？、]+)/g), (match) => match[1]),
+    Array.from(
+      (stringValue(item.desc) ?? "").matchAll(/#\s*([^\s#，。,.!！?？、]+)/g),
+      (match) => match[1],
+    ),
   );
 }
 
@@ -235,7 +254,10 @@ async function resolveUrl(
   let current = initial;
   for (let hop = 0; hop < 8; hop += 1) {
     validateUrlForPlatform(current, platform);
-    const response = await request(current, fetcher, { platform, redirect: "manual" });
+    const response = await request(current, fetcher, {
+      platform,
+      redirect: "manual",
+    });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers.get("location");
       if (!location)
@@ -244,7 +266,10 @@ async function resolveUrl(
       continue;
     }
     if (!response.ok)
-      throw new PromotionParseError(`分享链接访问失败（${response.status}）。`, true);
+      throw new PromotionParseError(
+        `分享链接访问失败（${response.status}）。`,
+        true,
+      );
     validateUrlForPlatform(response.url || current, platform);
     return response.url || current;
   }
@@ -258,7 +283,10 @@ async function requestText(
 ) {
   const response = await requestFollowingRedirects(url, fetcher, options);
   if (!response.ok)
-    throw new PromotionParseError(`第三方页面访问失败（${response.status}）。`, true);
+    throw new PromotionParseError(
+      `第三方页面访问失败（${response.status}）。`,
+      true,
+    );
   enforceContentLength(response);
   const text = await response.text();
   if (Buffer.byteLength(text) > MAX_RESPONSE_BYTES)
@@ -336,12 +364,19 @@ function platformForUrl(value: string): PromotionPlatform {
   if (hostMatches(host, ["bilibili.com", "b23.tv"])) return "bilibili";
   if (hostMatches(host, ["xiaohongshu.com", "xhslink.com"]))
     return "xiaohongshu";
-  throw new PromotionParseError("仅支持抖音、哔哩哔哩和小红书分享链接。", false);
+  throw new PromotionParseError(
+    "仅支持抖音、哔哩哔哩和小红书分享链接。",
+    false,
+  );
 }
 
 function validateUrlForPlatform(value: string, platform: PromotionPlatform) {
   const url = new URL(value);
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password
+  )
     throw new PromotionParseError("分享链接格式不安全。", false);
   const actual = platformForUrl(url.toString());
   if (actual !== platform)
@@ -407,7 +442,9 @@ function stringValue(value: unknown) {
 }
 
 function numberValue(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function optionalId(value: unknown) {
@@ -430,9 +467,7 @@ function requireCount(value: unknown) {
 }
 
 function requireSafeCount(value: number) {
-  if (!Number.isSafeInteger(value))
-    throw new PromotionParseError("第三方平台返回的点赞数超出支持范围。", true);
-  return value;
+  return Number.isSafeInteger(value) ? value : Number.MAX_SAFE_INTEGER;
 }
 
 function unique(values: string[]) {

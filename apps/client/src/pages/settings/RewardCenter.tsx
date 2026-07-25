@@ -200,18 +200,26 @@ export function RewardCenter({
                 <p className="text-xs uppercase tracking-[0.16em] text-rose-100/45">
                   Promotion
                 </p>
-                <h3 className="mt-2 text-lg font-semibold text-white">推广获取</h3>
+                <h3 className="mt-2 text-lg font-semibold text-white">
+                  推广获取
+                </h3>
               </div>
               <p className="text-right text-xs leading-5 text-white/38">
-                超过 {center.promotion.minimumLikes} 赞后，每赞 $
+                自绑定起新增超过 {center.promotion.minimumLikes} 赞后，每赞 $
                 {center.promotion.usdPerLike}
-                <br />单作品最高 ${center.promotion.maxRewardUsd}
+                <br />
+                单作品最高 ${center.promotion.maxRewardUsd}
               </p>
             </div>
             <p className="mt-2 text-sm leading-6 text-white/42">
-              发布带 #echoo 标签的抖音、B站或小红书内容后请尽快绑定，防止作品被他人占位。绑定不等于结算，可以等待点赞继续增长。
+              支持抖音视频和图文、哔哩哔哩视频和动态、小红书图文和视频笔记。发布带
+              #echoo
+              标签的作品后请尽快绑定，防止作品被他人占位；结算只计算绑定后新增的点赞。
             </p>
-            <form onSubmit={bind} className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <form
+              onSubmit={bind}
+              className="mt-4 flex flex-col gap-2 sm:flex-row"
+            >
               <textarea
                 value={shareText}
                 onChange={(event) => setShareText(event.target.value)}
@@ -284,7 +292,8 @@ export function RewardCenter({
               <div>
                 <h3 className="text-lg font-semibold text-white">创作激励</h3>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-white/42">
-                  公开作品保持上架时，使用者通过该作品产生的平台服务 API 消耗，会按 1% 自动返还给创作者。创作者本人使用也参与返还。
+                  公开作品保持上架时，使用者通过该作品产生的平台服务 API
+                  消耗，会按 1% 自动返还给创作者。创作者本人使用也参与返还。
                 </p>
               </div>
               <div className="text-right">
@@ -309,10 +318,15 @@ export function RewardCenter({
             <p className="text-xs uppercase tracking-[0.18em] text-white/35">
               One-time settlement
             </p>
-            <h3 className="mt-2 text-2xl font-semibold text-white">确认一次性结算</h3>
+            <h3 className="mt-2 text-2xl font-semibold text-white">
+              确认一次性结算
+            </h3>
             <p className="mt-4 text-sm leading-6 text-white/55">
-              当前读取到 {quote.likeCount} 个赞，本次将获得
-              <strong className="mx-1 text-emerald-100">${quote.rewardUsd}</strong>
+              当前读取到 {quote.likeCount}{" "}
+              个赞；本次奖励仅按绑定后新增的点赞计算，将获得
+              <strong className="mx-1 text-emerald-100">
+                ${quote.rewardUsd}
+              </strong>
               。每个作品只能结算一次；点赞量可能继续增长，你可以取消并等待以后再结算。
             </p>
             <p className="mt-3 text-xs text-white/30">

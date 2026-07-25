@@ -9,23 +9,25 @@ import {
 test("parses a Douyin work id, tags, author and likes", async () => {
   const fetcher = fixtureFetch((url) => {
     if (url.includes("iesdouyin.com/share/video/123"))
-      return html(`window._ROUTER_DATA = ${JSON.stringify({
-        loaderData: {
-          "video_(id)/page": {
-            videoInfoRes: {
-              item_list: [
-                {
-                  aweme_id: "123",
-                  desc: "hello #echoo",
-                  text_extra: [{ type: 1, hashtag_name: "Echoo" }],
-                  author: { unique_id: "author-a" },
-                  statistics: { digg_count: 321 },
-                },
-              ],
+      return html(
+        `window._ROUTER_DATA = ${JSON.stringify({
+          loaderData: {
+            "video_(id)/page": {
+              videoInfoRes: {
+                item_list: [
+                  {
+                    aweme_id: "123",
+                    desc: "hello #echoo",
+                    text_extra: [{ type: 1, hashtag_name: "Echoo" }],
+                    author: { unique_id: "author-a" },
+                    statistics: { digg_count: 321 },
+                  },
+                ],
+              },
             },
           },
-        },
-      })}</script>`);
+        })}</script>`,
+      );
     return html("");
   });
   const parsed = await parsePromotionShare(
@@ -37,6 +39,35 @@ test("parses a Douyin work id, tags, author and likes", async () => {
   assert.equal(parsed.authorId, "author-a");
   assert.equal(parsed.likeCount, 321);
   assert.equal(hasEchooTag(parsed.tags), true);
+});
+
+test("caps out-of-range likes so the reward can use its configured maximum", async () => {
+  const fetcher = fixtureFetch((url) => {
+    if (url.includes("iesdouyin.com/share/video/456"))
+      return html(
+        `window._ROUTER_DATA = ${JSON.stringify({
+          loaderData: {
+            "video_(id)/page": {
+              videoInfoRes: {
+                item_list: [
+                  {
+                    aweme_id: "456",
+                    desc: "#echoo",
+                    statistics: { digg_count: Number.MAX_VALUE },
+                  },
+                ],
+              },
+            },
+          },
+        })}</script>`,
+      );
+    return html("");
+  });
+  const parsed = await parsePromotionShare(
+    "https://www.douyin.com/video/456",
+    fetcher,
+  );
+  assert.equal(parsed.likeCount, Number.MAX_SAFE_INTEGER);
 });
 
 test("parses Bilibili video API data and tags", async () => {
@@ -126,7 +157,11 @@ test("parses Xiaohongshu note counts including ten-thousand notation", async () 
 
 test("rejects unsupported domains and Bilibili articles", async () => {
   await assert.rejects(
-    () => parsePromotionShare("https://example.com/video/1", fixtureFetch(() => html(""))),
+    () =>
+      parsePromotionShare(
+        "https://example.com/video/1",
+        fixtureFetch(() => html("")),
+      ),
     PromotionParseError,
   );
   await assert.rejects(
@@ -135,7 +170,7 @@ test("rejects unsupported domains and Bilibili articles", async () => {
         "https://www.bilibili.com/read/cv123",
         fixtureFetch(() => html("")),
       ),
-    /暂不支持哔哩哔哩专栏/,
+    /不支持的内容类型：哔哩哔哩仅支持视频和动态，不支持专栏/,
   );
 });
 
