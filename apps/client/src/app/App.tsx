@@ -68,6 +68,7 @@ import {
   NavigationLayer,
   useBackHandler,
 } from "./providers/BackNavigationProvider";
+import { parsePublicLinkTarget, syncPublicLinkTarget } from "./publicLinks";
 
 interface ViewLocation {
   view: AppView;
@@ -96,10 +97,17 @@ export function App() {
   const runtime = useRuntime();
   const services = useServices();
   const queryClient = useQueryClient();
+  const [initialPublicTarget] = useState(() =>
+    parsePublicLinkTarget(window.location.search),
+  );
   const [view, setView] = useState<AppView>(() =>
     new URLSearchParams(window.location.search).has("rechargeOrder")
       ? "settings"
-      : "home",
+      : initialPublicTarget?.type === "post"
+        ? "post-detail"
+        : initialPublicTarget?.type === "card"
+          ? "character-detail"
+          : "home",
   );
   const [bindingsReturnView, setBindingsReturnView] =
     useState<AppView>("messages");
@@ -112,8 +120,12 @@ export function App() {
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [editingPublicAsset, setEditingPublicAsset] =
     useState<PublicAssetDraft | null>(null);
-  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
-  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(
+    initialPublicTarget?.type === "post" ? initialPublicTarget.id : null,
+  );
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(
+    initialPublicTarget?.type === "card" ? initialPublicTarget.id : null,
+  );
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const nextNavigationEntryIdRef = useRef(1);
   const [currentEntryId, setCurrentEntryId] = useState("navigation-0");
@@ -123,6 +135,16 @@ export function App() {
   >([]);
   const mainRef = useRef<HTMLElement>(null);
   const pendingScrollPositionRef = useRef<ScrollPosition | null>(null);
+
+  useEffect(() => {
+    syncPublicLinkTarget(
+      view === "post-detail" && selectedPostId
+        ? { type: "post", id: selectedPostId }
+        : view === "character-detail" && selectedAssetId
+          ? { type: "card", id: selectedAssetId }
+          : null,
+    );
+  }, [selectedAssetId, selectedPostId, view]);
   const agentQueryKey = useMemo(
     () => ["agents", "mine", auth.user?.id ?? "anonymous"] as const,
     [auth.user?.id],
@@ -644,12 +666,14 @@ export function App() {
   };
 
   const openPost = (postId: string) => {
+    if (view === "post-detail" && selectedPostId === postId) return;
     rememberCurrentLocation();
     setSelectedPostId(postId);
     beginNavigationEntry();
     setView("post-detail");
   };
   const openAsset = (assetId: string) => {
+    if (view === "character-detail" && selectedAssetId === assetId) return;
     rememberCurrentLocation();
     setSelectedAssetId(assetId);
     beginNavigationEntry();
@@ -699,6 +723,8 @@ export function App() {
           onRequireAuth={() => setView("auth")}
           onBack={closeDetail}
           onOpenUser={openPublicProfile}
+          onOpenPost={openPost}
+          onOpenAsset={openAsset}
           onDeleted={closeDetail}
           viewerId={auth.user?.id ?? "anonymous"}
         />
@@ -713,6 +739,8 @@ export function App() {
           onRequireAuth={() => setView("auth")}
           onBack={closeDetail}
           onOpenUser={openPublicProfile}
+          onOpenPost={openPost}
+          onOpenAsset={openAsset}
           onAgentInstalled={handleAgentInstalled}
           viewerId={auth.user?.id ?? "anonymous"}
         />

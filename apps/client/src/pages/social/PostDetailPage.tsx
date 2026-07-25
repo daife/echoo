@@ -6,6 +6,8 @@ import type { SocialService } from "../../services/SocialService";
 import { MediaAsset } from "../../features/media/MediaAsset";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
 import { BackButton } from "../../shared/components/BackButton";
+import { LinkedText } from "../../shared/components/LinkedText";
+import { ShareButton } from "../../shared/components/ShareButton";
 import { PostComposer } from "./PostComposer";
 import { SocialComments } from "./SocialComments";
 import { formatDate } from "./PostCard";
@@ -21,6 +23,8 @@ export function PostDetailPage({
   onRequireAuth,
   onBack,
   onOpenUser,
+  onOpenPost,
+  onOpenAsset,
   onDeleted,
   viewerId,
 }: {
@@ -30,6 +34,8 @@ export function PostDetailPage({
   onRequireAuth: () => void;
   onBack: () => void;
   onOpenUser: (userId: string) => void;
+  onOpenPost: (postId: string) => void;
+  onOpenAsset: (assetId: string) => void;
   onDeleted: () => void;
   viewerId: string;
 }) {
@@ -142,7 +148,11 @@ export function PostDetailPage({
             </div>
             {post.body ? (
               <p className="mt-6 whitespace-pre-wrap text-[15px] leading-8 text-white/72">
-                {post.body}
+                <LinkedText
+                  text={post.body}
+                  onOpenPost={onOpenPost}
+                  onOpenAsset={onOpenAsset}
+                />
               </p>
             ) : null}
           </div>
@@ -166,44 +176,56 @@ export function PostDetailPage({
             {error ? (
               <p className="mb-4 text-xs text-red-200/80">{error}</p>
             ) : null}
-            <button
-              type="button"
-              onClick={async () => {
-                if (!isAuthenticated) return onRequireAuth();
-                const liked = !post.viewerHasLiked;
-                setPost({
-                  ...post,
-                  viewerHasLiked: liked,
-                  likeCount: Math.max(0, post.likeCount + (liked ? 1 : -1)),
-                });
-                patchPostInSocialCaches(queryClient, viewerId, post.id, {
-                  viewerHasLiked: liked,
-                  likeCount: Math.max(0, post.likeCount + (liked ? 1 : -1)),
-                });
-                try {
-                  const result = await service.setLiked(post.id, liked);
-                  patchPostInSocialCaches(
-                    queryClient,
-                    viewerId,
-                    post.id,
-                    result,
-                  );
-                  setPost((current) =>
-                    current ? { ...current, ...result } : current,
-                  );
-                } catch {
-                  setPost(post);
-                  patchPostInSocialCaches(queryClient, viewerId, post.id, post);
-                }
-              }}
-              className={`mb-6 flex items-center gap-2 text-sm ${post.viewerHasLiked ? "text-[#c7b9ed]" : "text-white/45"}`}
-            >
-              <Heart
-                size={19}
-                weight={post.viewerHasLiked ? "fill" : "regular"}
+            <div className="mb-6 flex items-center gap-6">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!isAuthenticated) return onRequireAuth();
+                  const liked = !post.viewerHasLiked;
+                  setPost({
+                    ...post,
+                    viewerHasLiked: liked,
+                    likeCount: Math.max(0, post.likeCount + (liked ? 1 : -1)),
+                  });
+                  patchPostInSocialCaches(queryClient, viewerId, post.id, {
+                    viewerHasLiked: liked,
+                    likeCount: Math.max(0, post.likeCount + (liked ? 1 : -1)),
+                  });
+                  try {
+                    const result = await service.setLiked(post.id, liked);
+                    patchPostInSocialCaches(
+                      queryClient,
+                      viewerId,
+                      post.id,
+                      result,
+                    );
+                    setPost((current) =>
+                      current ? { ...current, ...result } : current,
+                    );
+                  } catch {
+                    setPost(post);
+                    patchPostInSocialCaches(
+                      queryClient,
+                      viewerId,
+                      post.id,
+                      post,
+                    );
+                  }
+                }}
+                className={`flex items-center gap-2 text-sm ${post.viewerHasLiked ? "text-[#c7b9ed]" : "text-white/45"}`}
+              >
+                <Heart
+                  size={19}
+                  weight={post.viewerHasLiked ? "fill" : "regular"}
+                />
+                {post.likeCount} 人喜欢
+              </button>
+              <ShareButton
+                target={{ type: "post", id: post.id }}
+                title={`${post.author.displayName} 的动态`}
+                text={post.body.slice(0, 120)}
               />
-              {post.likeCount} 人喜欢
-            </button>
+            </div>
             <SocialComments
               objectId={post.id}
               service={service}
@@ -229,6 +251,8 @@ export function PostDetailPage({
                 );
               }}
               onOpenUser={onOpenUser}
+              onOpenPost={onOpenPost}
+              onOpenAsset={onOpenAsset}
             />
           </div>
         </article>

@@ -1,7 +1,11 @@
 import { UsersThree, X } from "@phosphor-icons/react";
 import type { Agent, PublicUserProfile } from "@echoo/shared";
 import type { PublicAssetListItem } from "@echoo/shared/public-assets";
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
 import { useBackHandler } from "../../app/providers/BackNavigationProvider";
@@ -46,10 +50,7 @@ export function PublicProfilePage({
   const viewerId = auth.user?.id ?? "anonymous";
   const profileQueryKey = socialQueryKeys.profile(userId, viewerId);
   const postsQueryKey = socialQueryKeys.userPosts(userId, viewerId);
-  const assetsQueryKey = socialQueryKeys.userAssets(
-    userId,
-    viewerId,
-  );
+  const assetsQueryKey = socialQueryKeys.userAssets(userId, viewerId);
   const profileQuery = useQuery({
     queryKey: profileQueryKey,
     queryFn: () => socialService.getUser(userId),
@@ -203,6 +204,8 @@ export function PublicProfilePage({
                 post={post}
                 onOpen={() => onOpenPost(post.id)}
                 onOpenUser={onOpenUser}
+                onOpenPost={onOpenPost}
+                onOpenAsset={onOpenAsset}
                 onToggleLike={async () => {
                   if (!auth.user) return onRequireAuth();
                   const result = await socialService.setLiked(

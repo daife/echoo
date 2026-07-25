@@ -1,8 +1,4 @@
-import {
-  ArrowClockwise,
-  DownloadSimple,
-  Heart,
-} from "@phosphor-icons/react";
+import { ArrowClockwise, DownloadSimple, Heart } from "@phosphor-icons/react";
 import type { Agent } from "@echoo/shared";
 import type { PublicAssetSummary } from "@echoo/shared/public-assets";
 import { useQueryClient } from "@tanstack/react-query";
@@ -11,6 +7,8 @@ import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
 import { useBackHandler } from "../../app/providers/BackNavigationProvider";
 import { MediaAsset } from "../../features/media/MediaAsset";
 import { BackButton } from "../../shared/components/BackButton";
+import { LinkedText } from "../../shared/components/LinkedText";
+import { ShareButton } from "../../shared/components/ShareButton";
 import type { PublicAssetService } from "../../services/PublicAssetService";
 import type { SocialService } from "../../services/SocialService";
 import {
@@ -29,6 +27,8 @@ export function CharacterDetailPage({
   onRequireAuth,
   onBack,
   onOpenUser,
+  onOpenPost,
+  onOpenAsset,
   onAgentInstalled,
   viewerId,
 }: {
@@ -39,6 +39,8 @@ export function CharacterDetailPage({
   onRequireAuth: () => void;
   onBack: () => void;
   onOpenUser: (userId: string) => void;
+  onOpenPost: (postId: string) => void;
+  onOpenAsset: (assetId: string) => void;
   onAgentInstalled: (agent: Agent) => void;
   viewerId: string;
 }) {
@@ -150,12 +152,18 @@ export function CharacterDetailPage({
           </div>
         </div>
         <div className="p-7 md:p-10">
-          <p className="text-sm leading-7 text-white/62">
-            {snapshot.introduction ||
-              (snapshot.type === "prime-world"
-                ? (snapshot.detail.presentation.startView.title ??
-                  snapshot.name)
-                : snapshot.detail.persona)}
+          <p className="whitespace-pre-wrap text-sm leading-7 text-white/62">
+            <LinkedText
+              text={
+                snapshot.introduction ||
+                (snapshot.type === "prime-world"
+                  ? (snapshot.detail.presentation.startView.title ??
+                    snapshot.name)
+                  : snapshot.detail.persona)
+              }
+              onOpenPost={onOpenPost}
+              onOpenAsset={onOpenAsset}
+            />
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
             {snapshot.tags.map((tag) => (
@@ -213,6 +221,11 @@ export function CharacterDetailPage({
             <span className="text-sm text-white/38">
               {asset.commentCount} 条评论
             </span>
+            <ShareButton
+              target={{ type: "card", id: asset.id }}
+              title={snapshot.name}
+              text={snapshot.introduction.slice(0, 120)}
+            />
             <button
               type="button"
               disabled={
@@ -280,6 +293,8 @@ export function CharacterDetailPage({
                 );
               }}
               onOpenUser={onOpenUser}
+              onOpenPost={onOpenPost}
+              onOpenAsset={onOpenAsset}
             />
           </div>
         </div>

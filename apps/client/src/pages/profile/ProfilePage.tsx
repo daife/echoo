@@ -23,7 +23,11 @@ import type {
 import type { VoiceClone } from "@echoo/shared/voice-clones";
 import { CharacterCard } from "../../features/conversations/components/CharacterCard";
 import { useState } from "react";
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
 import { useBackHandler } from "../../app/providers/BackNavigationProvider";
@@ -59,9 +63,7 @@ export function ProfilePage({
   onOpenAgent: (agent: Agent) => void;
   onOpenSettings: () => void;
   publicAssets: PublicAssetDraft[];
-  onCreatePublicDraft: (
-    input: CreatePublicAssetDraftRequest,
-  ) => Promise<void>;
+  onCreatePublicDraft: (input: CreatePublicAssetDraftRequest) => Promise<void>;
   onManagePublicAsset: (asset: PublicAssetDraft) => void;
   onOpenAsset: (assetId: string) => void;
   onOpenPost: (postId: string) => void;
@@ -77,7 +79,9 @@ export function ProfilePage({
   const [isPublicCreateOpen, setIsPublicCreateOpen] = useState(false);
   const [isProfileEditorOpen, setIsProfileEditorOpen] = useState(false);
   const [isVoiceCloneCreateOpen, setIsVoiceCloneCreateOpen] = useState(false);
-  const [deletingVoiceCloneId, setDeletingVoiceCloneId] = useState<string | null>(null);
+  const [deletingVoiceCloneId, setDeletingVoiceCloneId] = useState<
+    string | null
+  >(null);
   const [voiceCloneNotice, setVoiceCloneNotice] = useState<string | null>(null);
   const cards = agents.map((agent) => ({
     id: agent.id,
@@ -278,7 +282,9 @@ export function ProfilePage({
 
             <div className="mb-5 mt-12 flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-semibold text-white">我的克隆音色</h2>
+                <h2 className="text-2xl font-semibold text-white">
+                  我的克隆音色
+                </h2>
                 <span className="mt-1 block text-sm text-white/40">
                   最多保留 5 个，可复制 Reference ID 到 TTS 配置
                 </span>
@@ -319,7 +325,9 @@ export function ProfilePage({
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="font-medium text-white">{clone.name}</p>
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] ${clone.state === "trained" ? "bg-emerald-400/12 text-emerald-200/75" : clone.state === "failed" ? "bg-red-400/12 text-red-200/75" : "bg-amber-300/12 text-amber-100/70"}`}>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] ${clone.state === "trained" ? "bg-emerald-400/12 text-emerald-200/75" : clone.state === "failed" ? "bg-red-400/12 text-red-200/75" : "bg-amber-300/12 text-amber-100/70"}`}
+                          >
                             {formatVoiceCloneState(clone.state)}
                           </span>
                         </div>
@@ -331,7 +339,8 @@ export function ProfilePage({
                         <p className="mt-2 break-all font-mono text-[11px] text-white/35">
                           {clone.referenceId}
                         </p>
-                        {clone.state !== "trained" && clone.state !== "failed" ? (
+                        {clone.state !== "trained" &&
+                        clone.state !== "failed" ? (
                           <p className="mt-1 text-[11px] text-amber-100/55">
                             训练完成前暂不可用于 TTS。
                           </p>
@@ -344,10 +353,14 @@ export function ProfilePage({
                           title="复制 Reference ID"
                           onClick={async () => {
                             try {
-                              await navigator.clipboard.writeText(clone.referenceId);
+                              await navigator.clipboard.writeText(
+                                clone.referenceId,
+                              );
                               setVoiceCloneNotice("Reference ID 已复制。");
                             } catch {
-                              setVoiceCloneNotice("复制失败，请手动选择 Reference ID。");
+                              setVoiceCloneNotice(
+                                "复制失败，请手动选择 Reference ID。",
+                              );
                             }
                           }}
                           className="grid h-9 w-9 place-items-center rounded-full text-white/45 transition hover:bg-white/[0.06] hover:text-white"
@@ -360,18 +373,28 @@ export function ProfilePage({
                           title="删除克隆音色"
                           disabled={deletingVoiceCloneId === clone.id}
                           onClick={async () => {
-                            if (!window.confirm(`确定删除克隆音色“${clone.name}”吗？该操作也会删除 Fish Audio 上的模型。`)) return;
+                            if (
+                              !window.confirm(
+                                `确定删除克隆音色“${clone.name}”吗？该操作也会删除 Fish Audio 上的模型。`,
+                              )
+                            )
+                              return;
                             setDeletingVoiceCloneId(clone.id);
                             try {
                               await voiceCloneService.delete(clone.id);
                               queryClient.setQueryData<VoiceClone[]>(
                                 voiceClonesQueryKey,
-                                (current = []) => current.filter((item) => item.id !== clone.id),
+                                (current = []) =>
+                                  current.filter(
+                                    (item) => item.id !== clone.id,
+                                  ),
                               );
                               setVoiceCloneNotice("克隆音色已删除。");
                             } catch (reason) {
                               setVoiceCloneNotice(
-                                reason instanceof Error ? reason.message : "克隆音色删除失败。",
+                                reason instanceof Error
+                                  ? reason.message
+                                  : "克隆音色删除失败。",
                               );
                             } finally {
                               setDeletingVoiceCloneId(null);
@@ -379,7 +402,11 @@ export function ProfilePage({
                           }}
                           className="grid h-9 w-9 place-items-center rounded-full text-white/35 transition hover:bg-red-400/10 hover:text-red-200 disabled:opacity-30"
                         >
-                          {deletingVoiceCloneId === clone.id ? <SpinnerGap size={16} className="animate-spin" /> : <Trash size={16} />}
+                          {deletingVoiceCloneId === clone.id ? (
+                            <SpinnerGap size={16} className="animate-spin" />
+                          ) : (
+                            <Trash size={16} />
+                          )}
                         </button>
                       </div>
                     </div>
@@ -388,7 +415,8 @@ export function ProfilePage({
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm leading-6 text-white/42">
-                还没有克隆音色。准备一段 10–90 秒、单人且环境安静的语音即可创建。
+                还没有克隆音色。准备一段 10–90
+                秒、单人且环境安静的语音即可创建。
               </div>
             )}
 
@@ -485,6 +513,8 @@ export function ProfilePage({
                 post={post}
                 onOpen={() => onOpenPost(post.id)}
                 onOpenUser={onOpenUser}
+                onOpenPost={onOpenPost}
+                onOpenAsset={onOpenAsset}
                 onToggleLike={async () => {
                   const result = await socialService.setLiked(
                     post.id,
@@ -552,10 +582,13 @@ export function ProfilePage({
           onClose={() => setIsVoiceCloneCreateOpen(false)}
           onCreate={async (input) => {
             const created = await voiceCloneService.create(input);
-            queryClient.setQueryData<VoiceClone[]>(voiceClonesQueryKey, (current = []) => [
-              created,
-              ...current.filter((item) => item.id !== created.id),
-            ]);
+            queryClient.setQueryData<VoiceClone[]>(
+              voiceClonesQueryKey,
+              (current = []) => [
+                created,
+                ...current.filter((item) => item.id !== created.id),
+              ],
+            );
             setIsVoiceCloneCreateOpen(false);
           }}
         />
@@ -573,11 +606,11 @@ export function PublicAssetCreateDialog({
   onClose: () => void;
   onCreate: (input: CreatePublicAssetDraftRequest) => Promise<void>;
 }) {
-  const eligibleAgents = agents.filter((agent) => agent.origin.kind === "original");
-  const [mode, setMode] = useState<"blank" | "import">("blank");
-  const [type, setType] = useState<Agent["type"]>(
-    "slice-figure",
+  const eligibleAgents = agents.filter(
+    (agent) => agent.origin.kind === "original",
   );
+  const [mode, setMode] = useState<"blank" | "import">("blank");
+  const [type, setType] = useState<Agent["type"]>("slice-figure");
   const [importFromOriginalAgentId, setImportFromOriginalAgentId] = useState(
     eligibleAgents[0]?.id ?? "",
   );
@@ -665,23 +698,23 @@ export function PublicAssetCreateDialog({
                 const Icon = option.icon;
                 const active = type === option.type;
                 return (
-                <button
-                  key={option.type}
-                  type="button"
-                  onClick={() => setType(option.type)}
-                  className={`rounded-xl border p-4 text-left transition ${active ? "border-white/24 bg-white/[0.09] text-white" : "border-white/8 text-white/48 hover:border-white/16"}`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <Icon size={20} weight="duotone" />
-                    <span className="text-xs">{option.label}</span>
-                  </div>
-                  <span className="mt-4 block text-sm font-medium text-white">
-                    {option.title}
-                  </span>
-                  <span className="mt-2 block text-xs leading-5 text-white/42 sm:hidden">
-                    {option.description}
-                  </span>
-                </button>
+                  <button
+                    key={option.type}
+                    type="button"
+                    onClick={() => setType(option.type)}
+                    className={`rounded-xl border p-4 text-left transition ${active ? "border-white/24 bg-white/[0.09] text-white" : "border-white/8 text-white/48 hover:border-white/16"}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <Icon size={20} weight="duotone" />
+                      <span className="text-xs">{option.label}</span>
+                    </div>
+                    <span className="mt-4 block text-sm font-medium text-white">
+                      {option.title}
+                    </span>
+                    <span className="mt-2 block text-xs leading-5 text-white/42 sm:hidden">
+                      {option.description}
+                    </span>
+                  </button>
                 );
               })}
             </div>
@@ -1000,7 +1033,10 @@ function VoiceCloneCreateDialog({
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [sample, setSample] = useState<{ blob: Blob; durationSeconds: number } | null>(null);
+  const [sample, setSample] = useState<{
+    blob: Blob;
+    durationSeconds: number;
+  } | null>(null);
   const [consent, setConsent] = useState(false);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1069,7 +1105,9 @@ function VoiceCloneCreateDialog({
               sample: sample.blob,
             });
           } catch (reason) {
-            setError(reason instanceof Error ? reason.message : "音色克隆创建失败。");
+            setError(
+              reason instanceof Error ? reason.message : "音色克隆创建失败。",
+            );
           } finally {
             setIsSubmitting(false);
           }
@@ -1121,7 +1159,11 @@ function VoiceCloneCreateDialog({
           <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-4">
             <div className="grid grid-cols-2 gap-3">
               <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-3 text-sm text-white/65 transition hover:bg-white/[0.05]">
-                {isProcessingFile ? <SpinnerGap size={17} className="animate-spin" /> : <UploadSimple size={17} />}
+                {isProcessingFile ? (
+                  <SpinnerGap size={17} className="animate-spin" />
+                ) : (
+                  <UploadSimple size={17} />
+                )}
                 {isProcessingFile ? "处理中…" : "上传音频"}
                 <input
                   type="file"
@@ -1130,13 +1172,19 @@ function VoiceCloneCreateDialog({
                   disabled={isSubmitting || isProcessingFile}
                   onChange={(event) => {
                     const input = event.currentTarget;
-                    void handleFile(input.files?.[0]).finally(() => (input.value = ""));
+                    void handleFile(input.files?.[0]).finally(
+                      () => (input.value = ""),
+                    );
                   }}
                 />
               </label>
               <button
                 type="button"
-                disabled={isSubmitting || isProcessingFile || pushToTalk.phase === "encoding"}
+                disabled={
+                  isSubmitting ||
+                  isProcessingFile ||
+                  pushToTalk.phase === "encoding"
+                }
                 onContextMenu={(event) => event.preventDefault()}
                 onPointerDown={(event) => {
                   if (!event.isPrimary || event.button !== 0) return;
@@ -1166,7 +1214,9 @@ function VoiceCloneCreateDialog({
             {sample ? (
               <div className="mt-3 flex items-center justify-between rounded-xl bg-emerald-300/[0.07] px-3 py-2 text-xs text-emerald-100/70">
                 <span>样本已就绪</span>
-                <span className="tabular-nums">{sample.durationSeconds.toFixed(1)} 秒</span>
+                <span className="tabular-nums">
+                  {sample.durationSeconds.toFixed(1)} 秒
+                </span>
               </div>
             ) : null}
           </div>
@@ -1179,7 +1229,9 @@ function VoiceCloneCreateDialog({
               onChange={(event) => setConsent(event.target.checked)}
               className="mt-0.5 h-4 w-4 accent-white"
             />
-            <span>这是我的声音，或我已获得声音所有者对克隆和生成语音的明确授权。</span>
+            <span>
+              这是我的声音，或我已获得声音所有者对克隆和生成语音的明确授权。
+            </span>
           </label>
         </div>
 
@@ -1190,10 +1242,18 @@ function VoiceCloneCreateDialog({
         ) : null}
         <button
           type="submit"
-          disabled={isSubmitting || isProcessingFile || !sample || !consent || !name.trim()}
+          disabled={
+            isSubmitting ||
+            isProcessingFile ||
+            !sample ||
+            !consent ||
+            !name.trim()
+          }
           className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-white py-3 text-sm font-medium text-black disabled:cursor-not-allowed disabled:opacity-35"
         >
-          {isSubmitting ? <SpinnerGap size={16} className="animate-spin" /> : null}
+          {isSubmitting ? (
+            <SpinnerGap size={16} className="animate-spin" />
+          ) : null}
           {isSubmitting ? "正在创建音色克隆……" : "创建音色克隆"}
         </button>
       </form>

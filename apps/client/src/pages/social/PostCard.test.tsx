@@ -50,4 +50,27 @@ describe("PostCard", () => {
     expect(html).toContain("管理员账号");
     expect(html).toContain("管理员");
   });
+
+  it("renders body links without nesting them in a button", () => {
+    const html = renderToStaticMarkup(
+      <PostCard
+        post={{
+          id: "post_links",
+          author: { id: "user_1", displayName: "Aether", isAdmin: false },
+          body: "看看 https://echoo.example/?card=asset_1",
+          images: [],
+          likeCount: 0,
+          commentCount: 0,
+          viewerHasLiked: false,
+          canEdit: false,
+          canDelete: false,
+          createdAt: 1,
+          updatedAt: 1,
+        }}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(html).toContain('href="https://echoo.example/?card=asset_1"');
+    expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>).)*<a/s);
+  });
 });

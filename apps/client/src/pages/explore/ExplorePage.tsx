@@ -171,10 +171,7 @@ export function PublicAssetCatalog({
                 const liked = !asset.viewerHasLiked;
                 patchAssetInSocialCaches(queryClient, viewerId, asset.id, {
                   viewerHasLiked: liked,
-                  likeCount: Math.max(
-                    0,
-                    asset.likeCount + (liked ? 1 : -1),
-                  ),
+                  likeCount: Math.max(0, asset.likeCount + (liked ? 1 : -1)),
                 });
                 try {
                   const result = await socialService.setLiked(asset.id, liked);
@@ -409,6 +406,8 @@ export function ExplorePage({
                 post={post}
                 onOpen={() => onOpenPost(post.id)}
                 onOpenUser={onOpenUser}
+                onOpenPost={onOpenPost}
+                onOpenAsset={onOpenAsset}
                 onToggleLike={async () => {
                   const liked = !post.viewerHasLiked;
                   patchPostInSocialCaches(queryClient, viewerId, post.id, {

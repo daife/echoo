@@ -2,16 +2,21 @@ import { ChatCircleDots, Heart } from "@phosphor-icons/react";
 import type { SocialPostSummary } from "@echoo/shared";
 import { MediaAsset } from "../../features/media/MediaAsset";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
+import { LinkedText } from "../../shared/components/LinkedText";
 
 export function PostCard({
   post,
   onOpen,
   onOpenUser,
+  onOpenPost,
+  onOpenAsset,
   onToggleLike,
 }: {
   post: SocialPostSummary;
   onOpen: () => void;
   onOpenUser?: (userId: string) => void;
+  onOpenPost?: (postId: string) => void;
+  onOpenAsset?: (assetId: string) => void;
   onToggleLike?: () => void;
 }) {
   return (
@@ -43,13 +48,22 @@ export function PostCard({
           </span>
         </button>
         {post.body ? (
-          <button
-            type="button"
+          <div
+            role="button"
+            tabIndex={0}
             onClick={onOpen}
-            className="mt-4 block w-full whitespace-pre-wrap text-left text-sm leading-7 text-white/67 line-clamp-6"
+            onKeyDown={(event) => {
+              if ((event.target as HTMLElement).closest?.("a")) return;
+              if (event.key === "Enter" || event.key === " ") onOpen();
+            }}
+            className="mt-4 block w-full cursor-pointer whitespace-pre-wrap text-left text-sm leading-7 text-white/67 line-clamp-6"
           >
-            {post.body}
-          </button>
+            <LinkedText
+              text={post.body}
+              onOpenPost={onOpenPost}
+              onOpenAsset={onOpenAsset}
+            />
+          </div>
         ) : null}
       </div>
       {post.images.length ? (

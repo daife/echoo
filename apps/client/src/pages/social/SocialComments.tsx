@@ -3,6 +3,7 @@ import type { SocialComment } from "@echoo/shared";
 import { useEffect, useMemo, useState } from "react";
 import type { SocialService } from "../../services/SocialService";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
+import { LinkedText } from "../../shared/components/LinkedText";
 import { formatDate } from "./PostCard";
 
 export function SocialComments({
@@ -12,6 +13,8 @@ export function SocialComments({
   onRequireAuth,
   onCountChange,
   onOpenUser,
+  onOpenPost,
+  onOpenAsset,
 }: {
   objectId: string;
   service: SocialService;
@@ -19,6 +22,8 @@ export function SocialComments({
   onRequireAuth: () => void;
   onCountChange?: (delta: number) => void;
   onOpenUser?: (userId: string) => void;
+  onOpenPost?: (postId: string) => void;
+  onOpenAsset?: (assetId: string) => void;
 }) {
   const [comments, setComments] = useState<SocialComment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -148,7 +153,15 @@ export function SocialComments({
         </div>
       ) : (
         <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/58">
-          {comment.status === "visible" ? comment.body : "这条评论已不可见。"}
+          {comment.status === "visible" ? (
+            <LinkedText
+              text={comment.body}
+              onOpenPost={onOpenPost}
+              onOpenAsset={onOpenAsset}
+            />
+          ) : (
+            "这条评论已不可见。"
+          )}
         </p>
       )}
       {comment.status === "visible" ? (

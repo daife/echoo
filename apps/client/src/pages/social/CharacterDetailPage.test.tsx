@@ -14,6 +14,8 @@ describe("CharacterDetailPage unavailable state", () => {
           onRequireAuth={vi.fn()}
           onBack={vi.fn()}
           onOpenUser={vi.fn()}
+          onOpenPost={vi.fn()}
+          onOpenAsset={vi.fn()}
           onAgentInstalled={vi.fn()}
           viewerId="viewer-1"
         />
