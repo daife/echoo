@@ -266,7 +266,7 @@ function resolveNativeRecorderMimeType() {
   ].find((value) => MediaRecorder.isTypeSupported(value));
 }
 
-function downmixAudioBuffer(buffer: AudioBuffer) {
+export function downmixAudioBuffer(buffer: AudioBuffer) {
   const output = new Float32Array(buffer.length);
   for (
     let channelIndex = 0;
@@ -278,6 +278,30 @@ function downmixAudioBuffer(buffer: AudioBuffer) {
       output[index] += (channel[index] ?? 0) / buffer.numberOfChannels;
   }
   return output;
+}
+
+export async function audioBlobToMp3(blob: Blob): Promise<Mp3RecordingResult> {
+  const AudioContextClass =
+    window.AudioContext ??
+    (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+      .webkitAudioContext;
+  if (!AudioContextClass)
+    throw new Error("当前浏览器不支持音频解码，请改用录音或 MP3 文件。");
+  const context = new AudioContextClass();
+  try {
+    const decoded = await context.decodeAudioData(await blob.arrayBuffer());
+    if (!Number.isFinite(decoded.duration) || decoded.duration <= 0)
+      throw new Error("无法读取音频时长。");
+    return {
+      blob: await encodeMp3([downmixAudioBuffer(decoded)], decoded.sampleRate),
+      durationSeconds: decoded.duration,
+    };
+  } catch (error) {
+    if (error instanceof Error && error.message === "无法读取音频时长。") throw error;
+    throw new Error("无法解码该音频，请使用 WAV、MP3、M4A 或 Opus 文件。");
+  } finally {
+    await context.close().catch(() => undefined);
+  }
 }
 
 /**

@@ -38,6 +38,7 @@ import { registerRewardsRoutes } from "./modules/rewards/rewards.controller.js";
 import { registerRechargeRoutes } from "./modules/payments/recharge.controller.js";
 import { channelsModule } from "./modules/channels/channels.module.js";
 import { WechatService } from "./modules/channels/wechat.service.js";
+import { registerVoiceCloneRoutes } from "./modules/voice-clones/voice-clones.controller.js";
 
 export async function buildApp() {
   await initializeDatabase();
@@ -126,6 +127,7 @@ export async function buildApp() {
   await app.register(registerUsersRoutes, { prefix: "/api" });
   await app.register(registerSyncRoutes, { prefix: "/api" });
   await app.register(registerNotificationRoutes, { prefix: "/api" });
+  await app.register(registerVoiceCloneRoutes, { prefix: "/api" });
   await app.register(registerAdminRoutes, { prefix: "/api/admin" });
   await app.register(registerRealtimeGateway);
   app.addHook("onReady", async () => {

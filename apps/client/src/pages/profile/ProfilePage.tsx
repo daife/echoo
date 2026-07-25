@@ -1,10 +1,13 @@
 import {
   GearSix,
+  Copy,
+  Microphone,
   NotePencil,
   PencilSimple,
   Plus,
   SpinnerGap,
   Trash,
+  UploadSimple,
   X,
 } from "@phosphor-icons/react";
 import type {
@@ -17,15 +20,18 @@ import type {
   CreatePublicAssetDraftRequest,
   PublicAssetDraft,
 } from "@echoo/shared/public-assets";
+import type { VoiceClone } from "@echoo/shared/voice-clones";
 import { CharacterCard } from "../../features/conversations/components/CharacterCard";
 import { useState } from "react";
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
 import { useBackHandler } from "../../app/providers/BackNavigationProvider";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
 import { imageFileToUpload } from "../../shared/utils/imageCompression";
 import { useServices } from "../../app/providers/ServicesProvider";
+import { audioBlobToMp3 } from "../../features/messages/audio/mp3Recorder";
+import { usePushToTalk } from "../../features/messages/usePushToTalk";
 import { PostComposer } from "../social/PostComposer";
 import { PostCard } from "../social/PostCard";
 import { createOptions } from "../create-agent/createAgentOptions";
@@ -62,7 +68,7 @@ export function ProfilePage({
   onOpenUser: (userId: string) => void;
 }) {
   const auth = useAuth();
-  const { socialService } = useServices();
+  const { socialService, voiceCloneService } = useServices();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"creations" | "posts">(
     "creations",
@@ -70,6 +76,9 @@ export function ProfilePage({
   const [publishNotice, setPublishNotice] = useState<string | null>(null);
   const [isPublicCreateOpen, setIsPublicCreateOpen] = useState(false);
   const [isProfileEditorOpen, setIsProfileEditorOpen] = useState(false);
+  const [isVoiceCloneCreateOpen, setIsVoiceCloneCreateOpen] = useState(false);
+  const [deletingVoiceCloneId, setDeletingVoiceCloneId] = useState<string | null>(null);
+  const [voiceCloneNotice, setVoiceCloneNotice] = useState<string | null>(null);
   const cards = agents.map((agent) => ({
     id: agent.id,
     name: agent.name,
@@ -102,6 +111,20 @@ export function ProfilePage({
     staleTime: 60_000,
   });
   const userPosts = flattenSocialPages(postsQuery.data);
+  const voiceClonesQueryKey = ["voice-clones", "mine", viewerId] as const;
+  const voiceClonesQuery = useQuery({
+    queryKey: voiceClonesQueryKey,
+    queryFn: () => voiceCloneService.listMine(),
+    enabled: Boolean(auth.user),
+    staleTime: 30_000,
+    refetchInterval: (query) =>
+      query.state.data?.some(
+        (clone) => clone.state === "created" || clone.state === "training",
+      )
+        ? 3_000
+        : false,
+  });
+  const voiceClones = voiceClonesQuery.data ?? [];
 
   return (
     <section className="space-y-8">
@@ -250,6 +273,122 @@ export function ProfilePage({
                     </div>
                   )}
                 </section>
+              </div>
+            )}
+
+            <div className="mb-5 mt-12 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-semibold text-white">我的克隆音色</h2>
+                <span className="mt-1 block text-sm text-white/40">
+                  最多保留 5 个，可复制 Reference ID 到 TTS 配置
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setVoiceCloneNotice(null);
+                  setIsVoiceCloneCreateOpen(true);
+                }}
+                disabled={voiceClones.length >= 5}
+                className="flex shrink-0 items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-medium text-[#09090b] transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                <Plus size={16} weight="bold" />
+                创建音色克隆
+              </button>
+            </div>
+            {voiceCloneNotice ? (
+              <p className="mb-4 rounded-xl border border-white/8 bg-white/[0.025] px-4 py-3 text-xs text-white/55">
+                {voiceCloneNotice}
+              </p>
+            ) : null}
+            {voiceClonesQuery.isPending ? (
+              <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-6 text-sm text-white/45">
+                正在加载克隆音色……
+              </div>
+            ) : voiceClones.length ? (
+              <div className="space-y-3">
+                {voiceClones.map((clone) => (
+                  <div
+                    key={clone.id}
+                    className="rounded-2xl border border-white/8 bg-white/[0.025] p-4"
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white/[0.06] text-white/70">
+                        <Microphone size={20} weight="duotone" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium text-white">{clone.name}</p>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] ${clone.state === "trained" ? "bg-emerald-400/12 text-emerald-200/75" : clone.state === "failed" ? "bg-red-400/12 text-red-200/75" : "bg-amber-300/12 text-amber-100/70"}`}>
+                            {formatVoiceCloneState(clone.state)}
+                          </span>
+                        </div>
+                        {clone.description ? (
+                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/42">
+                            {clone.description}
+                          </p>
+                        ) : null}
+                        <p className="mt-2 break-all font-mono text-[11px] text-white/35">
+                          {clone.referenceId}
+                        </p>
+                        {clone.state !== "trained" && clone.state !== "failed" ? (
+                          <p className="mt-1 text-[11px] text-amber-100/55">
+                            训练完成前暂不可用于 TTS。
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          aria-label={`复制 ${clone.name} 的 Reference ID`}
+                          title="复制 Reference ID"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(clone.referenceId);
+                              setVoiceCloneNotice("Reference ID 已复制。");
+                            } catch {
+                              setVoiceCloneNotice("复制失败，请手动选择 Reference ID。");
+                            }
+                          }}
+                          className="grid h-9 w-9 place-items-center rounded-full text-white/45 transition hover:bg-white/[0.06] hover:text-white"
+                        >
+                          <Copy size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`删除克隆音色 ${clone.name}`}
+                          title="删除克隆音色"
+                          disabled={deletingVoiceCloneId === clone.id}
+                          onClick={async () => {
+                            if (!window.confirm(`确定删除克隆音色“${clone.name}”吗？该操作也会删除 Fish Audio 上的模型。`)) return;
+                            setDeletingVoiceCloneId(clone.id);
+                            try {
+                              await voiceCloneService.delete(clone.id);
+                              queryClient.setQueryData<VoiceClone[]>(
+                                voiceClonesQueryKey,
+                                (current = []) => current.filter((item) => item.id !== clone.id),
+                              );
+                              setVoiceCloneNotice("克隆音色已删除。");
+                            } catch (reason) {
+                              setVoiceCloneNotice(
+                                reason instanceof Error ? reason.message : "克隆音色删除失败。",
+                              );
+                            } finally {
+                              setDeletingVoiceCloneId(null);
+                            }
+                          }}
+                          className="grid h-9 w-9 place-items-center rounded-full text-white/35 transition hover:bg-red-400/10 hover:text-red-200 disabled:opacity-30"
+                        >
+                          {deletingVoiceCloneId === clone.id ? <SpinnerGap size={16} className="animate-spin" /> : <Trash size={16} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm leading-6 text-white/42">
+                还没有克隆音色。准备一段 10–90 秒、单人且环境安静的语音即可创建。
               </div>
             )}
 
@@ -405,6 +544,19 @@ export function ProfilePage({
               );
               throw error;
             }
+          }}
+        />
+      ) : null}
+      {isVoiceCloneCreateOpen ? (
+        <VoiceCloneCreateDialog
+          onClose={() => setIsVoiceCloneCreateOpen(false)}
+          onCreate={async (input) => {
+            const created = await voiceCloneService.create(input);
+            queryClient.setQueryData<VoiceClone[]>(voiceClonesQueryKey, (current = []) => [
+              created,
+              ...current.filter((item) => item.id !== created.id),
+            ]);
+            setIsVoiceCloneCreateOpen(false);
           }}
         />
       ) : null}
@@ -832,6 +984,228 @@ function formatAgentType(agent: Agent) {
   if (agent.type === "slice-figure") return "切片角色";
   if (agent.type === "prime-world") return "本初世界";
   return "本初角色";
+}
+
+function VoiceCloneCreateDialog({
+  onClose,
+  onCreate,
+}: {
+  onClose: () => void;
+  onCreate: (input: {
+    name: string;
+    description: string;
+    consentConfirmed: true;
+    sample: Blob;
+  }) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [sample, setSample] = useState<{ blob: Blob; durationSeconds: number } | null>(null);
+  const [consent, setConsent] = useState(false);
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pushToTalk = usePushToTalk({
+    disabled: isSubmitting || isProcessingFile,
+    minRecordingSeconds: 10,
+    maxRecordingSeconds: 90,
+    onError: setError,
+    onRecorded: (blob, durationSeconds) => {
+      setSample({ blob, durationSeconds });
+      setError(null);
+    },
+  });
+  useBackHandler(
+    () => {
+      if (!isSubmitting) {
+        pushToTalk.cancel();
+        onClose();
+      }
+    },
+    { priority: BACK_HANDLER_PRIORITY.dialog },
+  );
+
+  const handleFile = async (file?: File) => {
+    if (!file) return;
+    setIsProcessingFile(true);
+    setError(null);
+    try {
+      const normalized = await audioBlobToMp3(file);
+      if (normalized.durationSeconds < 10 || normalized.durationSeconds > 90)
+        throw new Error("音频时长必须在 10–90 秒之间。");
+      setSample(normalized);
+    } catch (reason) {
+      setSample(null);
+      setError(reason instanceof Error ? reason.message : "音频处理失败。");
+    } finally {
+      setIsProcessingFile(false);
+    }
+  };
+
+  return (
+    <div
+      className="app-overlay fixed inset-0 grid place-items-center bg-black/65 px-4 backdrop-blur-sm md:py-8"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !isSubmitting) onClose();
+      }}
+    >
+      <form
+        aria-label="创建音色克隆"
+        className="w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-[#101014] p-6 shadow-[0_28px_100px_rgba(0,0,0,0.58)] md:max-h-[92dvh]"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          const trimmedName = name.trim();
+          if (!trimmedName) return setError("请填写音色名称。");
+          if (!sample) return setError("请上传或录制一段 10–90 秒的音频。");
+          if (!consent) return setError("请先确认声音授权。");
+          setIsSubmitting(true);
+          setError(null);
+          try {
+            await onCreate({
+              name: trimmedName,
+              description: description.trim(),
+              consentConfirmed: true,
+              sample: sample.blob,
+            });
+          } catch (reason) {
+            setError(reason instanceof Error ? reason.message : "音色克隆创建失败。");
+          } finally {
+            setIsSubmitting(false);
+          }
+        }}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold text-white">创建音色克隆</h2>
+            <p className="mt-1 text-sm leading-6 text-white/42">
+              使用 10–90 秒清晰、单人、无背景音乐的语音效果最佳。
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="关闭音色克隆创建"
+            disabled={isSubmitting}
+            onClick={onClose}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-white/45 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-40"
+          >
+            <X size={17} />
+          </button>
+        </div>
+
+        <div className="mt-6 space-y-4">
+          <label className="block text-xs font-medium text-white/62">
+            名称
+            <input
+              value={name}
+              maxLength={80}
+              disabled={isSubmitting}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="例如：我的旁白音色"
+              className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm text-white outline-none placeholder:text-white/25 focus:border-white/25"
+            />
+          </label>
+          <label className="block text-xs font-medium text-white/62">
+            描述
+            <textarea
+              value={description}
+              maxLength={500}
+              rows={3}
+              disabled={isSubmitting}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="可选，记录音色特点或用途"
+              className="mt-2 w-full resize-none rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-6 text-white outline-none placeholder:text-white/25 focus:border-white/25"
+            />
+          </label>
+
+          <div className="rounded-2xl border border-white/8 bg-white/[0.025] p-4">
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-3 text-sm text-white/65 transition hover:bg-white/[0.05]">
+                {isProcessingFile ? <SpinnerGap size={17} className="animate-spin" /> : <UploadSimple size={17} />}
+                {isProcessingFile ? "处理中…" : "上传音频"}
+                <input
+                  type="file"
+                  className="sr-only"
+                  accept="audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/ogg,audio/opus,.mp3,.wav,.m4a,.opus"
+                  disabled={isSubmitting || isProcessingFile}
+                  onChange={(event) => {
+                    const input = event.currentTarget;
+                    void handleFile(input.files?.[0]).finally(() => (input.value = ""));
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                disabled={isSubmitting || isProcessingFile || pushToTalk.phase === "encoding"}
+                onContextMenu={(event) => event.preventDefault()}
+                onPointerDown={(event) => {
+                  if (!event.isPrimary || event.button !== 0) return;
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  void pushToTalk.beginHold(event.clientY);
+                }}
+                onPointerMove={(event) => pushToTalk.moveHold(event.clientY)}
+                onPointerUp={() => pushToTalk.endHold()}
+                onPointerCancel={() => pushToTalk.cancel()}
+                className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-3 text-sm transition ${pushToTalk.phase === "recording" ? "border-red-300/30 bg-red-400/10 text-red-100" : "border-white/10 text-white/65 hover:bg-white/[0.05]"}`}
+              >
+                <Microphone size={17} />
+                {pushToTalk.phase === "requesting"
+                  ? "等待授权…"
+                  : pushToTalk.phase === "encoding"
+                    ? "处理中…"
+                    : pushToTalk.isCancelArmed
+                      ? "松开取消"
+                      : pushToTalk.phase === "recording"
+                        ? `松开完成 ${pushToTalk.durationSeconds.toFixed(1)}s`
+                        : "按住录音"}
+              </button>
+            </div>
+            <p className="mt-3 text-xs leading-5 text-white/38">
+              支持 WAV、MP3、M4A、Opus；上传后会在本地转换为单声道 MP3。
+            </p>
+            {sample ? (
+              <div className="mt-3 flex items-center justify-between rounded-xl bg-emerald-300/[0.07] px-3 py-2 text-xs text-emerald-100/70">
+                <span>样本已就绪</span>
+                <span className="tabular-nums">{sample.durationSeconds.toFixed(1)} 秒</span>
+              </div>
+            ) : null}
+          </div>
+
+          <label className="flex items-start gap-3 rounded-xl border border-white/8 p-4 text-xs leading-5 text-white/55">
+            <input
+              type="checkbox"
+              checked={consent}
+              disabled={isSubmitting}
+              onChange={(event) => setConsent(event.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-white"
+            />
+            <span>这是我的声音，或我已获得声音所有者对克隆和生成语音的明确授权。</span>
+          </label>
+        </div>
+
+        {error ? (
+          <p className="mt-4 rounded-xl border border-red-300/15 bg-red-400/[0.06] px-4 py-3 text-sm text-red-100/80">
+            {error}
+          </p>
+        ) : null}
+        <button
+          type="submit"
+          disabled={isSubmitting || isProcessingFile || !sample || !consent || !name.trim()}
+          className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-white py-3 text-sm font-medium text-black disabled:cursor-not-allowed disabled:opacity-35"
+        >
+          {isSubmitting ? <SpinnerGap size={16} className="animate-spin" /> : null}
+          {isSubmitting ? "正在创建音色克隆……" : "创建音色克隆"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function formatVoiceCloneState(state: VoiceClone["state"]) {
+  if (state === "trained") return "可使用";
+  if (state === "failed") return "训练失败";
+  if (state === "training") return "训练中";
+  return "已创建";
 }
 
 function getAgentFallbackDescription(agent: Agent) {

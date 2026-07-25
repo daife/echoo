@@ -12,7 +12,12 @@ import { ResourceProcessingQueue } from "./resource-processing.queue.js";
 
 const variantSchema = z.enum(["original", "thumb", "display"]);
 const createUploadSchema = z.object({
-  kind: z.enum(["end_user_image", "end_user_voice", "end_user_video"]),
+  kind: z.enum([
+    "end_user_image",
+    "end_user_voice",
+    "end_user_video",
+    "voice_clone_sample",
+  ]),
   fileName: z.string().trim().min(1).max(255),
   mimeType: z.enum([
     "image/jpeg",

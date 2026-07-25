@@ -17,7 +17,8 @@ export type EntityPrefix =
   | "pwr"
   | "pwh"
   | "pws"
-  | "pwt";
+  | "pwt"
+  | "vclone";
 
 export function createId(prefix: EntityPrefix) {
   return `${prefix}_${randomUUID()}`;

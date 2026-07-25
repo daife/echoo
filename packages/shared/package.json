@@ -17,6 +17,10 @@
     "./notifications": {
       "types": "./dist/domains/notifications/index.d.ts",
       "import": "./dist/domains/notifications/index.js"
+    },
+    "./voice-clones": {
+      "types": "./dist/domains/voice-clones/index.d.ts",
+      "import": "./dist/domains/voice-clones/index.js"
     }
   },
   "scripts": {

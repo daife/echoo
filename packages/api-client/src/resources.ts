@@ -10,7 +10,11 @@ export class ResourcesApi {
   constructor(private readonly client: ApiClient) {}
 
   createUpload(input: {
-    kind: "end_user_image" | "end_user_voice" | "end_user_video";
+    kind:
+      | "end_user_image"
+      | "end_user_voice"
+      | "end_user_video"
+      | "voice_clone_sample";
     fileName: string;
     mimeType:
       | "image/jpeg"

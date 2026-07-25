@@ -71,6 +71,24 @@ CREATE TABLE IF NOT EXISTS resource_variants (
   CONSTRAINT fk_resource_variants_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS voice_clones (
+  id VARCHAR(64) PRIMARY KEY,
+  owner_user_id VARCHAR(64) NOT NULL,
+  quota_slot TINYINT UNSIGNED NOT NULL,
+  name VARCHAR(80) NOT NULL,
+  description VARCHAR(500) NOT NULL DEFAULT '',
+  reference_id VARCHAR(120) NULL,
+  state ENUM('creating', 'created', 'training', 'trained', 'failed') NOT NULL,
+  consent_confirmed_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  UNIQUE KEY uq_voice_clones_owner_slot (owner_user_id, quota_slot),
+  UNIQUE KEY uq_voice_clones_reference (reference_id),
+  INDEX idx_voice_clones_owner_created (owner_user_id, created_at DESC),
+  CONSTRAINT fk_voice_clones_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT chk_voice_clones_slot CHECK (quota_slot BETWEEN 1 AND 5)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS user_resources (
   user_id VARCHAR(64) NOT NULL,
   usage_kind VARCHAR(48) NOT NULL,

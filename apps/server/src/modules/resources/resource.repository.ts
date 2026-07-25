@@ -200,7 +200,11 @@ export class ResourceRepository {
   async createPendingUpload(
     input: {
       ownerUserId: string;
-      kind: "end_user_image" | "end_user_voice" | "end_user_video";
+      kind:
+        | "end_user_image"
+        | "end_user_voice"
+        | "end_user_video"
+        | "voice_clone_sample";
       fileName: string;
       mimeType: string;
       byteSize: number;
@@ -209,7 +213,12 @@ export class ResourceRepository {
   ) {
     const extension = userMediaMimeTypes.get(input.mimeType);
     const expectedKind = userMediaKind(input.mimeType);
-    if (!extension || expectedKind !== input.kind)
+    if (
+      !extension ||
+      (input.kind === "voice_clone_sample"
+        ? input.mimeType !== "audio/mpeg"
+        : expectedKind !== input.kind)
+    )
       throw new InvalidMediaUploadError("不支持的媒体格式。");
     const maximum =
       input.kind === "end_user_image" ? 5 * 1024 * 1024 : 12 * 1024 * 1024;
@@ -330,8 +339,10 @@ export class ResourceRepository {
     try {
       const data = await this.storage.get(record.storageKey);
       const durationSeconds = validateUserMediaData(
-        record.kind === "end_user_voice"
-          ? "end_user_voice"
+        record.kind === "voice_clone_sample"
+          ? "voice_clone_sample"
+          : record.kind === "end_user_voice"
+            ? "end_user_voice"
           : record.kind === "end_user_video"
             ? "end_user_video"
             : "end_user_image",
@@ -882,7 +893,11 @@ export function validateJpegUpload(data: Uint8Array) {
 }
 
 export function validateUserMediaData(
-  kind: "end_user_image" | "end_user_voice" | "end_user_video",
+  kind:
+    | "end_user_image"
+    | "end_user_voice"
+    | "end_user_video"
+    | "voice_clone_sample",
   data: Uint8Array,
   mimeType?: string,
 ) {
@@ -900,13 +915,21 @@ export function validateUserMediaData(
   }
 
   const durationSeconds = estimateMp3DurationSeconds(data);
-  if (durationSeconds < 0.8)
+  const minimumSeconds = kind === "voice_clone_sample" ? 10 : 0.8;
+  const maximumSeconds = kind === "voice_clone_sample" ? 90.1 : 60.1;
+  if (durationSeconds < minimumSeconds)
     throw new InvalidMediaUploadError(
-      "语音文件不是有效的 MP3，或说话时间太短。",
+      kind === "voice_clone_sample"
+        ? "音色样本必须是有效的 MP3，且时长不能少于 10 秒。"
+        : "语音文件不是有效的 MP3，或说话时间太短。",
     );
-  // One MP3 frame of encoder padding is tolerated at the 60-second boundary.
-  if (durationSeconds > 60.1)
-    throw new InvalidMediaUploadError("语音时长不能超过 60 秒。");
+  // One MP3 frame of encoder padding is tolerated at duration boundaries.
+  if (durationSeconds > maximumSeconds)
+    throw new InvalidMediaUploadError(
+      kind === "voice_clone_sample"
+        ? "音色样本时长不能超过 90 秒。"
+        : "语音时长不能超过 60 秒。",
+    );
   return durationSeconds;
 }
 

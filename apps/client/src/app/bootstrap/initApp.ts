@@ -15,6 +15,7 @@ import {
   PrimeWorldApi,
   ConversationsApi,
   NotificationsApi,
+  VoiceClonesApi,
 } from "@echoo/api-client";
 import { AgentService } from "../../services/AgentService";
 import { AuthService } from "../../services/AuthService";
@@ -28,6 +29,7 @@ import { RechargeService } from "../../services/RechargeService";
 import { PrimeWorldService } from "../../services/PrimeWorldService";
 import { ConversationService } from "../../services/ConversationService";
 import { NotificationService } from "../../services/NotificationService";
+import { VoiceCloneService } from "../../services/VoiceCloneService";
 
 export function initApp(runtime: RuntimeBundle) {
   let refreshPromise: Promise<string | null> | null = null;
@@ -73,6 +75,10 @@ export function initApp(runtime: RuntimeBundle) {
       new PostsApi(api),
       new UsersApi(api),
       new SocialApi(api),
+      new ResourcesApi(api),
+    ),
+    voiceCloneService: new VoiceCloneService(
+      new VoiceClonesApi(api),
       new ResourcesApi(api),
     ),
   };

@@ -3,7 +3,7 @@ import { startMp3Recorder, type ActiveMp3Recorder } from "./audio/mp3Recorder";
 
 const CANCEL_DISTANCE_PX = 72;
 const DEFAULT_MAX_RECORDING_SECONDS = 60;
-const MIN_RECORDING_SECONDS = 1;
+const DEFAULT_MIN_RECORDING_SECONDS = 1;
 
 export function isPushToTalkCancelGesture(startY: number, currentY: number) {
   return startY - currentY >= CANCEL_DISTANCE_PX;
@@ -16,8 +16,13 @@ export function usePushToTalk(input: {
   onRecorded: (blob: Blob, durationSeconds: number) => Promise<void> | void;
   onError: (message: string) => void;
   maxRecordingSeconds?: number;
+  minRecordingSeconds?: number;
 }) {
   const maxRecordingSeconds = Math.max(1, Math.min(120, input.maxRecordingSeconds ?? DEFAULT_MAX_RECORDING_SECONDS));
+  const minRecordingSeconds = Math.max(
+    0,
+    Math.min(maxRecordingSeconds, input.minRecordingSeconds ?? DEFAULT_MIN_RECORDING_SECONDS),
+  );
   const [phase, setPhase] = useState<PushToTalkPhase>("idle");
   const [level, setLevel] = useState(0);
   const [durationSeconds, setDurationSeconds] = useState(0);
@@ -61,10 +66,15 @@ export function usePushToTalk(input: {
       }
       clearTimers();
       const duration = recorder.getDurationSeconds();
-      if (cancel || duration < MIN_RECORDING_SECONDS) {
+      if (cancel || duration < minRecordingSeconds) {
         await recorder.cancel();
         reset();
-        if (!cancel) input.onError("说话时间太短");
+        if (!cancel)
+          input.onError(
+            minRecordingSeconds === 1
+              ? "说话时间太短"
+              : `录音不能少于 ${minRecordingSeconds} 秒。`,
+          );
         return;
       }
       setPhase("encoding");
@@ -82,7 +92,7 @@ export function usePushToTalk(input: {
         );
       }
     },
-    [clearTimers, input, maxRecordingSeconds, reset],
+    [clearTimers, input, maxRecordingSeconds, minRecordingSeconds, reset],
   );
   const finishRef = useRef(finish);
   finishRef.current = finish;

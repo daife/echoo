@@ -24,6 +24,11 @@ vi.mock("../../app/providers/AuthProvider", () => ({
 vi.mock("../../app/providers/ServicesProvider", () => ({
   useServices: () => ({
     socialService: { listUserPosts: vi.fn() },
+    voiceCloneService: {
+      listMine: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      delete: vi.fn(),
+    },
   }),
 }));
 
@@ -129,6 +134,8 @@ describe("ProfilePage personal conversations", () => {
     );
 
     expect(html).toContain("个人会话");
+    expect(html).toContain("我的克隆音色");
+    expect(html).toContain("创建音色克隆");
     expect(html).toContain("原创会话");
     expect(html).toContain("从公共创作添加的会话");
     expect(html).toContain("查看 公共林晚 的公共创作详情");

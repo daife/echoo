@@ -15,3 +15,4 @@ export * from "./payments";
 export * from "./channels";
 export * from "./conversations";
 export * from "./notifications";
+export * from "./voice-clones";
