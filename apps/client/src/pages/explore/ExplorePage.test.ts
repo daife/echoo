@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   CHARACTER_SEARCH_DEBOUNCE_MS,
   PRIME_FIGURE_UPDATE_WARNING,
+  RECOMMENDED_RUNTIME_CONFIG_PROMPT,
   assetTypeLabel,
+  confirmRecommendedRuntimeConfig,
   isCharacterSearchQueryInvalid,
   mergeUniquePublicAssets,
   normalizeCharacterSearchQuery,
@@ -38,6 +40,42 @@ describe("public character update warning", () => {
     expect(PRIME_FIGURE_UPDATE_WARNING).toContain("日程");
     expect(PRIME_FIGURE_UPDATE_WARNING).toContain("参数值");
     expect(PRIME_FIGURE_UPDATE_WARNING).toContain("JSON");
+  });
+});
+
+describe("public creation runtime recommendation", () => {
+  it("asks for recommendations and returns the user's choice", () => {
+    const confirm = vi.fn(() => true);
+
+    expect(
+      confirmRecommendedRuntimeConfig(
+        { hasRecommendedRuntimeConfig: true },
+        confirm,
+      ),
+    ).toBe(true);
+    expect(confirm).toHaveBeenCalledWith(RECOMMENDED_RUNTIME_CONFIG_PROMPT);
+  });
+
+  it("skips the question when no recommendation is published", () => {
+    const confirm = vi.fn(() => true);
+
+    expect(
+      confirmRecommendedRuntimeConfig(
+        { hasRecommendedRuntimeConfig: false },
+        confirm,
+      ),
+    ).toBe(false);
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it("treats cancellation as continuing without the recommendation", () => {
+    expect(
+      confirmRecommendedRuntimeConfig(
+        { hasRecommendedRuntimeConfig: true },
+        () => false,
+      ),
+    ).toBe(false);
+    expect(RECOMMENDED_RUNTIME_CONFIG_PROMPT).toContain("继续操作");
   });
 });
 

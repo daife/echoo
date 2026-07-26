@@ -28,6 +28,18 @@ import {
 export const PRIME_FIGURE_UPDATE_WARNING =
   "更新本初角色会覆盖当前的角色设定、日程、行程、当前情境、参数值、情绪与关系状态；聊天记录和长期记忆会保留。建议先进入该角色会话，从右上角菜单导出角色 JSON 备份。\n\n仍要更新到最新版吗？";
 
+export const RECOMMENDED_RUNTIME_CONFIG_PROMPT =
+  "该公共创作包含推荐运行配置。是否将推荐配置覆盖到会话独立配置，并启用会话独立配置？\n\n选择“确定”应用推荐配置；选择“取消”继续操作，但不更改会话运行配置。";
+
+export function confirmRecommendedRuntimeConfig(
+  asset: { hasRecommendedRuntimeConfig: boolean },
+  confirm: (message: string) => boolean = window.confirm,
+) {
+  return asset.hasRecommendedRuntimeConfig
+    ? confirm(RECOMMENDED_RUNTIME_CONFIG_PROMPT)
+    : false;
+}
+
 export function requiresPrimeFigureUpdateWarning(asset: {
   snapshot: { type: Agent["type"] };
   installedVersionId?: string;
@@ -207,9 +219,17 @@ export function PublicAssetCatalog({
                   return;
                 setBusyId(asset.id);
                 try {
+                  const applyRecommendedRuntimeConfig =
+                    confirmRecommendedRuntimeConfig(asset);
                   const result = asset.installedVersionId
-                    ? await service.updateInstallation(asset.id, false)
-                    : await service.install(asset.id, false);
+                    ? await service.updateInstallation(
+                        asset.id,
+                        applyRecommendedRuntimeConfig,
+                      )
+                    : await service.install(
+                        asset.id,
+                        applyRecommendedRuntimeConfig,
+                      );
                   onAgentInstalled(result.agent);
                   patchAssetInSocialCaches(queryClient, viewerId, asset.id, {
                     installedVersionId: result.installedVersionId,
@@ -472,12 +492,17 @@ export function ExplorePage({
                 )
                   return;
                 try {
+                  const applyRecommendedRuntimeConfig =
+                    confirmRecommendedRuntimeConfig(asset);
                   const result = asset.installedVersionId
                     ? await publicAssetService.updateInstallation(
                         asset.id,
-                        false,
+                        applyRecommendedRuntimeConfig,
                       )
-                    : await publicAssetService.install(asset.id, false);
+                    : await publicAssetService.install(
+                        asset.id,
+                        applyRecommendedRuntimeConfig,
+                      );
                   onAgentInstalled(result.agent);
                   patchAssetInSocialCaches(queryClient, viewerId, asset.id, {
                     installedVersionId: result.installedVersionId,

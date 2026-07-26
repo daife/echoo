@@ -853,6 +853,7 @@ export function rowToListItem(row: AssetRow): PublicAssetListItem {
     id: row.id,
     author: { id: row.author_user_id, displayName: row.display_name },
     latestVersionNumber: row.version_number,
+    hasRecommendedRuntimeConfig: Boolean(row.recommended_runtime_config),
     snapshot: {
       type: snapshot.type,
       name: snapshot.name,

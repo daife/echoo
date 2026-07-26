@@ -81,4 +81,5 @@ test("list items omit the full character definition", () => {
   assert.equal(item.snapshot.tags.length, 3);
   assert.equal("detail" in item.snapshot, false);
   assert.equal("recommendedRuntimeConfig" in item, false);
+  assert.equal(item.hasRecommendedRuntimeConfig, true);
 });

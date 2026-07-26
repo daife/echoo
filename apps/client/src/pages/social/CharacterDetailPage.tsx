@@ -19,6 +19,7 @@ import type { SocialService } from "../../services/SocialService";
 import {
   PRIME_FIGURE_UPDATE_WARNING,
   assetTypeLabel,
+  confirmRecommendedRuntimeConfig,
   requiresPrimeFigureUpdateWarning,
 } from "../explore/ExplorePage";
 import { SocialComments } from "./SocialComments";
@@ -94,9 +95,18 @@ export function CharacterDetailPage({
     setBusy(true);
     setError(null);
     try {
+      const applyRecommendedRuntimeConfig =
+        confirmRecommendedRuntimeConfig(asset);
       const result = asset.installedVersionId
-        ? await characterService.updateInstallation(asset.id, false, strategy)
-        : await characterService.install(asset.id, false);
+        ? await characterService.updateInstallation(
+            asset.id,
+            applyRecommendedRuntimeConfig,
+            strategy,
+          )
+        : await characterService.install(
+            asset.id,
+            applyRecommendedRuntimeConfig,
+          );
       onAgentInstalled(result.agent);
       setAsset({
         ...asset,

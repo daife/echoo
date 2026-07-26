@@ -83,6 +83,7 @@ export interface PublicAssetListItem {
   id: string;
   author: { id: string; displayName: string };
   latestVersionNumber: number;
+  hasRecommendedRuntimeConfig: boolean;
   snapshot: {
     type: PublicAssetType;
     name: string;
