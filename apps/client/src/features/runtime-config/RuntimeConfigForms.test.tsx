@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
   PrimeRuntimeConfigForm,
+  PrimeWorldRuntimeConfigForm,
   SliceRuntimeConfigForm,
 } from "./RuntimeConfigForms";
 
@@ -199,5 +200,50 @@ describe("runtime config forms", () => {
     );
     expect(html).toContain("费用承担方式");
     expect(html).toContain("disabled");
+  });
+
+  it("locks every Prime World credential source on platform-managed forms", () => {
+    const model = {
+      source: "custom" as const,
+      baseUrl: "https://models.example.test/v1",
+      model: "openai/gpt-4.1-mini",
+      temperature: 0.4,
+      maxTokens: 1600,
+      reasoningEnabled: false,
+      reasoningEffort: "high" as const,
+      apiKey: { configured: false },
+    };
+    const html = renderToStaticMarkup(
+      <PrimeWorldRuntimeConfigForm
+        platformOnly
+        value={{
+          version: 2,
+          mainModel: model,
+          summaryModel: model,
+          stt: {
+            source: "custom",
+            apiKey: { configured: false },
+            httpUrl: "https://audio.example.test/asr",
+            language: "",
+          },
+          tts: {
+            source: "custom",
+            apiKey: { configured: false },
+            referenceId: "default",
+            model: "s1",
+            httpUrl: "https://audio.example.test/tts",
+            wsUrl: "wss://audio.example.test/tts/live",
+            latency: "balanced",
+            chunkLength: 100,
+          },
+          context: { windowTokens: 32_000, providerReserveTokens: 4_000 },
+          audio: { autoPlay: true },
+        }}
+        onSave={vi.fn()}
+      />,
+    );
+    expect(html).toContain("主 LLM");
+    expect(html).toContain("摘要 LLM");
+    expect(html.match(/disabled=""/g)).toHaveLength(4);
   });
 });

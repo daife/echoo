@@ -2,6 +2,7 @@ import type {
   AdminRuntimeDefaultsView,
   ModelRecommendationCategory,
   PrimeFigureRuntimeConfigPatch,
+  PrimeWorldRuntimeConfigPatch,
   RecommendedModelView,
   SliceFigureRuntimeConfigPatch,
   RuntimeConfigPresetsView,
@@ -12,6 +13,7 @@ import { ApiClient } from "@echoo/api-client";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   PrimeRuntimeConfigForm,
+  PrimeWorldRuntimeConfigForm,
   SliceRuntimeConfigForm,
 } from "../../features/runtime-config/RuntimeConfigForms";
 
@@ -397,6 +399,7 @@ function RuntimeDefaultsPanel({ token, onExpired }: PanelProps) {
   const save = async (patch: {
     sliceFigure?: SliceFigureRuntimeConfigPatch;
     primeFigure?: PrimeFigureRuntimeConfigPatch;
+    primeWorld?: PrimeWorldRuntimeConfigPatch;
   }) => {
     try {
       const next = await authed<AdminRuntimeDefaultsView>(
@@ -482,6 +485,14 @@ function RuntimeDefaultsPanel({ token, onExpired }: PanelProps) {
           platformOnly
           value={value.config.primeFigure}
           onSave={(primeFigure) => save({ primeFigure })}
+        />
+      </section>
+      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+        <h2 className="mb-5 text-xl font-semibold">本初世界默认配置</h2>
+        <PrimeWorldRuntimeConfigForm
+          platformOnly
+          value={value.config.primeWorld}
+          onSave={(primeWorld) => save({ primeWorld })}
         />
       </section>
       <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">

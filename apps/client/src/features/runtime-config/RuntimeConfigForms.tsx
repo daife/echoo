@@ -521,9 +521,11 @@ export function PrimeWorldRuntimeConfigForm({
   disabled,
   error,
   notice,
+  platformOnly = false,
 }: FormStatusProps & {
   value: PrimeWorldRuntimeConfigView;
   onSave: (patch: PrimeWorldRuntimeConfigPatch) => Promise<void>;
+  platformOnly?: boolean;
 }) {
   const [draft, setDraft] = useState(() => worldDraft(value));
   const [secrets, setSecrets] = useState(() => emptyWorldSecrets());
@@ -533,38 +535,107 @@ export function PrimeWorldRuntimeConfigForm({
     setSecrets(emptyWorldSecrets());
   }, [value]);
   const secret = (key: WorldSecretKey, patch: Partial<SecretDraft>) =>
-    setSecrets((current) => ({ ...current, [key]: { ...current[key], ...patch } }));
+    setSecrets((current) => ({
+      ...current,
+      [key]: { ...current[key], ...patch },
+    }));
   return (
-    <form className="space-y-5" onSubmit={(event) => {
-      event.preventDefault();
-      setSaving(true);
-      void onSave({
-        mainModel: textModelPatch(draft.mainModel, secrets.mainModel),
-        summaryModel: textModelPatch(draft.summaryModel, secrets.summaryModel),
-        stt: { ...draft.stt, language: draft.stt.language || null, ...secretChange(secrets.stt.value, secrets.stt.clear) },
-        tts: { ...draft.tts, chunkLength: Number(draft.tts.chunkLength), ...secretChange(secrets.tts.value, secrets.tts.clear) },
-        context: { windowTokens: Number(draft.windowTokens), providerReserveTokens: Number(draft.providerReserveTokens) },
-        audio: { autoPlay: draft.autoPlay },
-      }).finally(() => setSaving(false));
-    }}>
+    <form
+      className="space-y-5"
+      onSubmit={(event) => {
+        event.preventDefault();
+        setSaving(true);
+        void onSave({
+          mainModel: textModelPatch(draft.mainModel, secrets.mainModel),
+          summaryModel: textModelPatch(
+            draft.summaryModel,
+            secrets.summaryModel,
+          ),
+          stt: {
+            ...draft.stt,
+            language: draft.stt.language || null,
+            ...secretChange(secrets.stt.value, secrets.stt.clear),
+          },
+          tts: {
+            ...draft.tts,
+            chunkLength: Number(draft.tts.chunkLength),
+            ...secretChange(secrets.tts.value, secrets.tts.clear),
+          },
+          context: {
+            windowTokens: Number(draft.windowTokens),
+            providerReserveTokens: Number(draft.providerReserveTokens),
+          },
+          audio: { autoPlay: draft.autoPlay },
+        }).finally(() => setSaving(false));
+      }}
+    >
       <ConfigSection title="主 LLM">
-        <ModelFields category="prime_decision" draft={draft.mainModel} onChange={(mainModel) => setDraft({ ...draft, mainModel })} status={value.mainModel.apiKey} secret={secrets.mainModel} onSecret={(patch) => secret("mainModel", patch)}/>
+        <ModelFields
+          category="prime_decision"
+          draft={draft.mainModel}
+          onChange={(mainModel) => setDraft({ ...draft, mainModel })}
+          status={value.mainModel.apiKey}
+          secret={secrets.mainModel}
+          onSecret={(patch) => secret("mainModel", patch)}
+          platformOnly={platformOnly}
+        />
       </ConfigSection>
       <ConfigSection title="摘要 LLM">
-        <ModelFields category="prime_decision" draft={draft.summaryModel} onChange={(summaryModel) => setDraft({ ...draft, summaryModel })} status={value.summaryModel.apiKey} secret={secrets.summaryModel} onSecret={(patch) => secret("summaryModel", patch)}/>
+        <ModelFields
+          category="prime_decision"
+          draft={draft.summaryModel}
+          onChange={(summaryModel) => setDraft({ ...draft, summaryModel })}
+          status={value.summaryModel.apiKey}
+          secret={secrets.summaryModel}
+          onSecret={(patch) => secret("summaryModel", patch)}
+          platformOnly={platformOnly}
+        />
       </ConfigSection>
       <ConfigSection title="批量 STT">
-        <SttFields draft={draft.stt} onChange={(stt) => setDraft({ ...draft, stt })} status={value.stt.apiKey} secret={secrets.stt} onSecret={(patch) => secret("stt", patch)}/>
+        <SttFields
+          draft={draft.stt}
+          onChange={(stt) => setDraft({ ...draft, stt })}
+          status={value.stt.apiKey}
+          secret={secrets.stt}
+          onSecret={(patch) => secret("stt", patch)}
+          platformOnly={platformOnly}
+        />
       </ConfigSection>
       <ConfigSection title="流式 TTS">
-        <TtsFields draft={draft.tts} onChange={(tts) => setDraft({ ...draft, tts })} status={value.tts.apiKey} secret={secrets.tts} onSecret={(patch) => secret("tts", patch)}/>
+        <TtsFields
+          draft={draft.tts}
+          onChange={(tts) => setDraft({ ...draft, tts })}
+          status={value.tts.apiKey}
+          secret={secrets.tts}
+          onSecret={(patch) => secret("tts", patch)}
+          platformOnly={platformOnly}
+        />
       </ConfigSection>
       <ConfigSection title="上下文与播放">
-        <NumberInput label="模型上下文窗口 Tokens" value={draft.windowTokens} onChange={(windowTokens) => setDraft({ ...draft, windowTokens })}/>
-        <NumberInput label="Provider 预留 Tokens" value={draft.providerReserveTokens} onChange={(providerReserveTokens) => setDraft({ ...draft, providerReserveTokens })}/>
-        <ToggleInput label="自动播放世界语音" checked={draft.autoPlay} onChange={(autoPlay) => setDraft({ ...draft, autoPlay })}/>
+        <NumberInput
+          label="模型上下文窗口 Tokens"
+          value={draft.windowTokens}
+          onChange={(windowTokens) => setDraft({ ...draft, windowTokens })}
+        />
+        <NumberInput
+          label="Provider 预留 Tokens"
+          value={draft.providerReserveTokens}
+          onChange={(providerReserveTokens) =>
+            setDraft({ ...draft, providerReserveTokens })
+          }
+        />
+        <ToggleInput
+          label="自动播放世界语音"
+          checked={draft.autoPlay}
+          onChange={(autoPlay) => setDraft({ ...draft, autoPlay })}
+        />
       </ConfigSection>
-      <FormFooter disabled={disabled || saving} error={error} notice={notice} saving={saving}/>
+      <FormFooter
+        disabled={disabled || saving}
+        error={error}
+        notice={notice}
+        saving={saving}
+      />
     </form>
   );
 }
@@ -1532,7 +1603,10 @@ function worldDraft(value: PrimeWorldRuntimeConfigView) {
 
 function emptyWorldSecrets(): Record<WorldSecretKey, SecretDraft> {
   return Object.fromEntries(
-    ["mainModel", "summaryModel", "stt", "tts"].map((key) => [key, { value: "", clear: false }]),
+    ["mainModel", "summaryModel", "stt", "tts"].map((key) => [
+      key,
+      { value: "", clear: false },
+    ]),
   ) as Record<WorldSecretKey, SecretDraft>;
 }
 
