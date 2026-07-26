@@ -134,17 +134,10 @@ export class PublicAssetService {
     } else {
       snapshot = createEmptySnapshot(input.type);
     }
-    const defaults = await this.runtimeConfigs.getPlatformFigureDefaults(
-      snapshot.type,
-    );
-    const recommendation = sanitizeRuntimeRecommendation(
-      snapshot.type,
-      defaults,
-    );
     const assetId = await this.assets.createDraft({
       authorUserId: ownerUserId,
       snapshot,
-      recommendedRuntimeConfig: recommendation,
+      recommendedRuntimeConfig: null,
       resources,
     });
     return this.getDraft(ownerUserId, assetId);

@@ -114,6 +114,49 @@ test("one personal conversation can seed multiple independent public drafts", as
   );
 });
 
+test("new public drafts do not include a runtime recommendation by default", async () => {
+  const recommendations: unknown[] = [];
+  let draft: PublicAssetDraft | undefined;
+  const assets = {
+    createDraft: async (input: {
+      snapshot: PublicAssetDraft["snapshot"];
+      recommendedRuntimeConfig: unknown;
+    }) => {
+      recommendations.push(input.recommendedRuntimeConfig);
+      draft = {
+        id: `asset_${recommendations.length}`,
+        author: { id: "user_1", displayName: "Creator" },
+        status: "draft",
+        snapshot: input.snapshot,
+        hasUnpublishedChanges: true,
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      return draft.id;
+    },
+    findDraftForAuthor: async () => draft ?? null,
+  };
+  const service = new PublicAssetService(
+    assets as never,
+    { findById: async () => baseAgent } as never,
+    { findByPublicPath: async () => null } as never,
+    {
+      getPlatformFigureDefaults: async () => {
+        throw new Error(
+          "defaults should only be loaded after enabling recommendations",
+        );
+      },
+    } as never,
+  );
+
+  await service.createDraft("user_1", { type: "slice-figure" });
+  await service.createDraft("user_1", {
+    importFromOriginalAgentId: baseAgent.id,
+  });
+
+  assert.deepEqual(recommendations, [null, null]);
+});
+
 test("unpublished drafts and unlisted assets are deletable", () => {
   assert.equal(isDeletablePublicAssetStatus("draft"), true);
   assert.equal(isDeletablePublicAssetStatus("unlisted"), true);
