@@ -4,8 +4,15 @@ import { App } from "./app/App";
 import { AppProviders } from "./app/providers/AppProviders";
 import { RuntimeProvider } from "./app/providers/RuntimeProvider";
 import { ServicesProvider } from "./app/providers/ServicesProvider";
+import { installPageZoomGestureGuard } from "./shared/utils/pageZoom";
 import "./styles/global.css";
 import { AdminPage } from "./pages/admin/AdminPage";
+
+const uninstallPageZoomGestureGuard = installPageZoomGestureGuard();
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(uninstallPageZoomGestureGuard);
+}
 
 const root =
   window.location.pathname.replace(/\/+$/, "") === "/admin" ? (

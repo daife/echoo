@@ -60,6 +60,7 @@ import {
   type ConversationScrollDirection,
 } from "./conversationScrollPosition";
 import { imageFileToUpload } from "../../shared/utils/imageCompression";
+import { buildPrologueDocument } from "./prologueDocument";
 import {
   PrimeRuntimeConfigForm,
   SliceRuntimeConfigForm,
@@ -1499,38 +1500,6 @@ function getVoiceDurationSeconds(metadata: LocalMessage["metadata"]) {
   return typeof duration === "number" && Number.isFinite(duration)
     ? duration
     : undefined;
-}
-
-function buildPrologueDocument(html: string) {
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      html,
-      body {
-        margin: 0;
-        min-height: 100%;
-        background: transparent;
-        color: #f5f1ee;
-        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-
-      body {
-        overflow-x: hidden;
-      }
-
-      img,
-      video,
-      canvas,
-      svg {
-        max-width: 100%;
-      }
-    </style>
-  </head>
-  <body>${html}</body>
-</html>`;
 }
 
 async function copyText(value: string) {
