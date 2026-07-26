@@ -34,6 +34,7 @@ import { BackButton } from "../../shared/components/BackButton";
 import type { PrimeWorldService } from "../../services/PrimeWorldService";
 import { PrimeWorldCreateForm } from "./PrimeWorldCreateForm";
 import { createOptions } from "./createAgentOptions";
+import { JsonImport } from "./JsonImport";
 
 export type CreateAgentHandlers = {
   "slice-figure": (input: CreateSliceFigureRequest) => Promise<Agent>;
@@ -224,7 +225,10 @@ function SliceFigureCreateForm({
         promptPreview={promptPreview}
         user={user}
         onApplyJson={importJson}
-        onJsonInputChange={setJsonInput}
+        onJsonInputChange={(value) => {
+          setJsonInput(value);
+          setError(null);
+        }}
         onPromptPreviewChange={setPromptPreview}
         onUnlockTextChange={setUnlockText}
         onChange={setField}
@@ -566,7 +570,10 @@ export function PrimeFigureForm({
 
       <JsonImport
         value={jsonInput}
-        onChange={setJsonInput}
+        onChange={(value) => {
+          setJsonInput(value);
+          setError(null);
+        }}
         onApply={importJson}
         placeholder='{"type":"prime-figure","name":"Mira","persona":"...","schedule":{"segments":[]},...}'
       />
@@ -1429,39 +1436,6 @@ function ListPanel({
       </div>
       <div className="mt-3 grid gap-3">{children}</div>
     </div>
-  );
-}
-
-function JsonImport({
-  value,
-  placeholder,
-  onChange,
-  onApply,
-}: {
-  value: string;
-  placeholder: string;
-  onChange: (value: string) => void;
-  onApply: () => void;
-}) {
-  return (
-    <section className="mt-7 rounded-xl border border-white/10 bg-white/[0.025] p-4">
-      <h3 className="text-sm font-semibold text-white">
-        如果你之前有导出的json内容，可以在这里一键导入
-      </h3>
-      <textarea
-        className={`${inputClass} mt-3 min-h-32 py-3 font-mono text-xs leading-5`}
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-      />
-      <button
-        className={`${secondaryButtonClass} mt-3`}
-        type="button"
-        onClick={onApply}
-      >
-        应用 JSON
-      </button>
-    </section>
   );
 }
 

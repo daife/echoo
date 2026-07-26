@@ -1069,7 +1069,10 @@ function EditSliceFigureDialog({
               setLocalError("JSON 无法解析，请检查格式。");
             }
           }}
-          onJsonInputChange={setJsonInput}
+          onJsonInputChange={(value) => {
+            setJsonInput(value);
+            setLocalError(null);
+          }}
           onUnlockTextChange={setUnlockText}
           onPromptPreviewChange={setPromptPreview}
           onChange={updateField}

@@ -1,0 +1,1239 @@
+{
+  "format": "echoo-prime-world",
+  "formatVersion": 1,
+  "name": "雾港来信",
+  "attributes": [],
+  "tags": [
+    "冒险",
+    "推理"
+  ],
+  "introduction": "讲述年轻记者沈舟（你）收到一封来自多年失踪姐姐的信，信中提到一座常年被浓雾笼罩的海港小镇。为寻找真相，他来到雾港，却发现镇民都在刻意隐瞒一场旧日沉船事故。随着更多匿名来信出现，沈舟逐渐揭开姐姐失踪、沉船秘密与自己家族过往之间的联系，也意识到写信的人或许并不是姐姐。最终，他必须在公开真相与保护仍活着的人之间作出选择。\n\n这是老大开发测试用的，没有细致打磨，致歉",
+  "isPublic": false,
+  "detail": {
+    "workflow": {
+      "edges": [
+        {
+          "id": "f1",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "start"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "already-started"
+          }
+        },
+        {
+          "id": "f1-started",
+          "kind": "data",
+          "source": {
+            "port": "value",
+            "nodeId": "started"
+          },
+          "target": {
+            "port": "value",
+            "nodeId": "already-started"
+          }
+        },
+        {
+          "id": "f1-first",
+          "kind": "control",
+          "source": {
+            "port": "false",
+            "nodeId": "already-started"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "mark-started"
+          }
+        },
+        {
+          "id": "f1-opening",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "mark-started"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "opening"
+          }
+        },
+        {
+          "id": "f1-repeat",
+          "kind": "control",
+          "source": {
+            "port": "true",
+            "nodeId": "already-started"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "start-noop"
+          }
+        },
+        {
+          "id": "f2",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "text-input"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "mark-interacted"
+          }
+        },
+        {
+          "id": "f3",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "choice-input"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "mark-interacted"
+          }
+        },
+        {
+          "id": "f3-action",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "mark-interacted"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "action"
+          }
+        },
+        {
+          "id": "f4",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "action"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "action-text"
+          }
+        },
+        {
+          "id": "f5",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "action-text"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "append-user"
+          }
+        },
+        {
+          "id": "f6",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "append-user"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "history"
+          }
+        },
+        {
+          "id": "f7",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "history"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "messages"
+          }
+        },
+        {
+          "id": "f8",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "messages"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "llm"
+          }
+        },
+        {
+          "id": "f9",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "llm"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "patch-state"
+          }
+        },
+        {
+          "id": "f10",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "patch-state"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "narrative-patch"
+          }
+        },
+        {
+          "id": "f11",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "narrative-patch"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "show-narrative"
+          }
+        },
+        {
+          "id": "f12",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "show-narrative"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "show-choices"
+          }
+        },
+        {
+          "id": "f13",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "show-choices"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "append-narrator"
+          }
+        },
+        {
+          "id": "f14",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "append-narrator"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "needs-summary"
+          }
+        },
+        {
+          "id": "f15",
+          "kind": "control",
+          "source": {
+            "port": "true",
+            "nodeId": "needs-summary"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "summarize"
+          }
+        },
+        {
+          "id": "f16",
+          "kind": "control",
+          "source": {
+            "port": "control",
+            "nodeId": "summarize"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "save-summary"
+          }
+        },
+        {
+          "id": "f17",
+          "kind": "control",
+          "source": {
+            "port": "error",
+            "nodeId": "summarize"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "summary-failed"
+          }
+        },
+        {
+          "id": "f18",
+          "kind": "control",
+          "source": {
+            "port": "invalid",
+            "nodeId": "llm"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "output-invalid"
+          }
+        },
+        {
+          "id": "f19",
+          "kind": "control",
+          "source": {
+            "port": "error",
+            "nodeId": "llm"
+          },
+          "target": {
+            "port": "control",
+            "nodeId": "model-failed"
+          }
+        },
+        {
+          "id": "fd1",
+          "kind": "data",
+          "source": {
+            "port": "action",
+            "nodeId": "action"
+          },
+          "target": {
+            "port": "value",
+            "nodeId": "action-text"
+          }
+        },
+        {
+          "id": "fd2",
+          "kind": "data",
+          "source": {
+            "port": "action",
+            "nodeId": "action"
+          },
+          "target": {
+            "port": "content",
+            "nodeId": "append-user"
+          }
+        },
+        {
+          "id": "fd3",
+          "kind": "data",
+          "source": {
+            "port": "messages",
+            "nodeId": "history"
+          },
+          "target": {
+            "port": "history",
+            "nodeId": "messages"
+          }
+        },
+        {
+          "id": "fd4",
+          "kind": "data",
+          "source": {
+            "port": "text",
+            "nodeId": "action-text"
+          },
+          "target": {
+            "port": "text",
+            "nodeId": "messages"
+          }
+        },
+        {
+          "id": "fd5",
+          "kind": "data",
+          "source": {
+            "port": "messages",
+            "nodeId": "messages"
+          },
+          "target": {
+            "port": "messages",
+            "nodeId": "llm"
+          }
+        },
+        {
+          "id": "fd6",
+          "kind": "data",
+          "source": {
+            "port": "json",
+            "nodeId": "llm"
+          },
+          "target": {
+            "port": "source",
+            "nodeId": "pick-patch"
+          }
+        },
+        {
+          "id": "fd7",
+          "kind": "data",
+          "source": {
+            "port": "value",
+            "nodeId": "pick-patch"
+          },
+          "target": {
+            "port": "patch",
+            "nodeId": "patch-state"
+          }
+        },
+        {
+          "id": "fd8",
+          "kind": "data",
+          "source": {
+            "port": "json",
+            "nodeId": "llm"
+          },
+          "target": {
+            "port": "source",
+            "nodeId": "pick-narrative"
+          }
+        },
+        {
+          "id": "fd9",
+          "kind": "data",
+          "source": {
+            "port": "value",
+            "nodeId": "pick-narrative"
+          },
+          "target": {
+            "port": "text",
+            "nodeId": "narrative-patch"
+          }
+        },
+        {
+          "id": "fd10",
+          "kind": "data",
+          "source": {
+            "port": "value",
+            "nodeId": "narrative-patch"
+          },
+          "target": {
+            "port": "patch",
+            "nodeId": "show-narrative"
+          }
+        },
+        {
+          "id": "fd11",
+          "kind": "data",
+          "source": {
+            "port": "json",
+            "nodeId": "llm"
+          },
+          "target": {
+            "port": "source",
+            "nodeId": "pick-choices"
+          }
+        },
+        {
+          "id": "fd12",
+          "kind": "data",
+          "source": {
+            "port": "value",
+            "nodeId": "pick-choices"
+          },
+          "target": {
+            "port": "choices",
+            "nodeId": "show-choices"
+          }
+        },
+        {
+          "id": "fd13",
+          "kind": "data",
+          "source": {
+            "port": "json",
+            "nodeId": "llm"
+          },
+          "target": {
+            "port": "content",
+            "nodeId": "append-narrator"
+          }
+        },
+        {
+          "id": "fd14",
+          "kind": "data",
+          "source": {
+            "port": "summary",
+            "nodeId": "summarize"
+          },
+          "target": {
+            "port": "summary",
+            "nodeId": "save-summary"
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": "start",
+          "type": "trigger.worldStart",
+          "config": {},
+          "version": 1
+        },
+        {
+          "id": "started",
+          "type": "state.get",
+          "config": {
+            "path": "/story/started"
+          },
+          "version": 1
+        },
+        {
+          "id": "already-started",
+          "type": "logic.if",
+          "config": {
+            "equals": true
+          },
+          "version": 1
+        },
+        {
+          "id": "mark-started",
+          "type": "state.set",
+          "config": {
+            "path": "/story/started",
+            "value": true
+          },
+          "version": 1
+        },
+        {
+          "id": "start-noop",
+          "type": "flow.noop",
+          "config": {},
+          "version": 1
+        },
+        {
+          "id": "opening",
+          "type": "view.render",
+          "config": {
+            "view": {
+              "root": {
+                "id": "root",
+                "type": "stack",
+                "children": [
+                  {
+                    "id": "narrative",
+                    "text": "",
+                    "tone": "body",
+                    "type": "text"
+                  },
+                  {
+                    "id": "choices",
+                    "type": "choices",
+                    "choices": [
+                      {
+                        "id": "begin",
+                        "label": "直接向前走"
+                      },
+                      {
+                        "id": "observe",
+                        "label": "观察四周"
+                      },
+                      {
+                        "id": "wait",
+                        "label": "稍作等待"
+                      }
+                    ],
+                    "actionId": "choose"
+                  }
+                ]
+              },
+              "audio": {
+                "autoPlay": true,
+                "allowInterrupt": true
+              },
+              "input": {
+                "mode": "text",
+                "placeholder": "你准备怎么做？"
+              },
+              "title": "雾港来信",
+              "revision": 0
+            }
+          },
+          "version": 1
+        },
+        {
+          "id": "text-input",
+          "type": "trigger.textInput",
+          "config": {},
+          "version": 1
+        },
+        {
+          "id": "choice-input",
+          "type": "trigger.uiAction",
+          "config": {},
+          "version": 1
+        },
+        {
+          "id": "mark-interacted",
+          "type": "state.set",
+          "config": {
+            "path": "/story/started",
+            "value": true
+          },
+          "version": 1
+        },
+        {
+          "id": "action",
+          "type": "data.normalizeAction",
+          "config": {},
+          "version": 1
+        },
+        {
+          "id": "action-text",
+          "type": "data.toText",
+          "config": {},
+          "version": 1
+        },
+        {
+          "id": "append-user",
+          "type": "history.append",
+          "config": {
+            "role": "user",
+            "channel": "story"
+          },
+          "version": 1
+        },
+        {
+          "id": "history",
+          "type": "history.read",
+          "config": {
+            "roles": [
+              "system",
+              "user",
+              "narrator"
+            ],
+            "channel": "story",
+            "maxTokens": 24000,
+            "maxEntries": 30,
+            "includeSummary": true
+          },
+          "version": 1
+        },
+        {
+          "id": "messages",
+          "type": "data.messages",
+          "config": {
+            "messages": [
+              {
+                "role": "system",
+                "content": "你是雾港互动小说叙事引擎。大纲为“年轻记者沈舟（即玩家）收到一封来自多年失踪姐姐的信，信中提到一座常年被浓雾笼罩的海港小镇。为寻找真相，他来到雾港，却发现镇民都在刻意隐瞒一场旧日沉船事故。随着更多匿名来信出现，沈舟逐渐揭开姐姐失踪、沉船秘密与自己家族过往之间的联系，也意识到写信的人或许并不是姐姐。最终，他必须在公开真相与保护仍活着的人之间作出选择。”。严格输出 schema，有限推进状态并给出恰好三个互不重复的选项。\n当前阶段：{{state.story.stageId}}；章节：{{state.story.chapterIndex}}；地点：{{state.story.location}}；状态：{{state.story.status}}。\n合法阶段迁移：arrival→investigation；investigation→lighthouse 或 betrayal；lighthouse→ending_restore 或 ending_release；betrayal→lighthouse；结局阶段不可继续迁移。\n唯一角色 ID 是 lin；合法旗标是 letter_found、lighthouse_open。不得创造其他角色 ID、旗标或阶段 ID。\nstatePatch 的数组字段即使没有变化也必须输出空数组；只有确实推进章节时 chapterIndexDelta 才能为 1。"
+              }
+            ],
+            "textRole": "user"
+          },
+          "version": 1
+        },
+        {
+          "id": "llm",
+          "type": "ai.llm",
+          "config": {
+            "mode": "json",
+            "maxTokens": 4096,
+            "modelSlot": "main",
+            "validator": "immersive-novel-v1",
+            "temperature": 0.8,
+            "outputSchema": {
+              "type": "object",
+              "required": [
+                "narrative",
+                "choices",
+                "statePatch"
+              ],
+              "properties": {
+                "choices": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "label"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_-]+$",
+                        "maxLength": 48,
+                        "minLength": 1
+                      },
+                      "label": {
+                        "type": "string",
+                        "maxLength": 80,
+                        "minLength": 1
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 200
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "maxItems": 3,
+                  "minItems": 3
+                },
+                "narrative": {
+                  "type": "string",
+                  "maxLength": 6000,
+                  "minLength": 100
+                },
+                "statePatch": {
+                  "type": "object",
+                  "required": [
+                    "chapterIndexDelta",
+                    "setFlags",
+                    "removeFlags",
+                    "inventoryAdd",
+                    "inventoryRemove",
+                    "characterChanges"
+                  ],
+                  "properties": {
+                    "location": {
+                      "type": "string",
+                      "maxLength": 120
+                    },
+                    "setFlags": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "maxItems": 20
+                    },
+                    "nextStageId": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "removeFlags": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "maxItems": 20
+                    },
+                    "inventoryAdd": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 80
+                      },
+                      "maxItems": 10
+                    },
+                    "inventoryRemove": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 80
+                      },
+                      "maxItems": 10
+                    },
+                    "characterChanges": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "characterId",
+                          "trustDelta"
+                        ],
+                        "properties": {
+                          "present": {
+                            "type": "boolean"
+                          },
+                          "trustDelta": {
+                            "type": "integer",
+                            "maximum": 10,
+                            "minimum": -10
+                          },
+                          "characterId": {
+                            "type": "string",
+                            "maxLength": 64
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 10
+                    },
+                    "chapterIndexDelta": {
+                      "type": "integer",
+                      "maximum": 1,
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "validatorConfig": {
+              "stages": {
+                "arrival": [
+                  "investigation"
+                ],
+                "betrayal": [
+                  "lighthouse"
+                ],
+                "lighthouse": [
+                  "ending_restore",
+                  "ending_release"
+                ],
+                "investigation": [
+                  "lighthouse",
+                  "betrayal"
+                ],
+                "ending_release": [],
+                "ending_restore": []
+              },
+              "flagIds": [
+                "letter_found",
+                "lighthouse_open"
+              ],
+              "characterIds": [
+                "lin"
+              ]
+            }
+          },
+          "version": 1
+        },
+        {
+          "id": "pick-patch",
+          "type": "data.pick",
+          "config": {
+            "path": "/statePatch"
+          },
+          "version": 1
+        },
+        {
+          "id": "patch-state",
+          "type": "state.patch",
+          "config": {
+            "mode": "immersive-novel-v1",
+            "allowedPaths": [],
+            "validatorConfig": {
+              "stages": {
+                "arrival": [
+                  "investigation"
+                ],
+                "betrayal": [
+                  "lighthouse"
+                ],
+                "lighthouse": [
+                  "ending_restore",
+                  "ending_release"
+                ],
+                "investigation": [
+                  "lighthouse",
+                  "betrayal"
+                ],
+                "ending_release": [],
+                "ending_restore": []
+              },
+              "flagIds": [
+                "letter_found",
+                "lighthouse_open"
+              ],
+              "characterIds": [
+                "lin"
+              ]
+            }
+          },
+          "version": 1
+        },
+        {
+          "id": "pick-narrative",
+          "type": "data.pick",
+          "config": {
+            "path": "/narrative"
+          },
+          "version": 1
+        },
+        {
+          "id": "narrative-patch",
+          "type": "data.object",
+          "config": {
+            "value": {},
+            "fields": [
+              "text"
+            ]
+          },
+          "version": 1
+        },
+        {
+          "id": "show-narrative",
+          "type": "view.patch",
+          "config": {
+            "elementId": "narrative"
+          },
+          "version": 1
+        },
+        {
+          "id": "pick-choices",
+          "type": "data.pick",
+          "config": {
+            "path": "/choices"
+          },
+          "version": 1
+        },
+        {
+          "id": "show-choices",
+          "type": "view.showChoices",
+          "config": {
+            "actionId": "choose",
+            "elementId": "choices"
+          },
+          "version": 1
+        },
+        {
+          "id": "append-narrator",
+          "type": "history.append",
+          "config": {
+            "role": "narrator",
+            "channel": "story"
+          },
+          "version": 1
+        },
+        {
+          "id": "needs-summary",
+          "type": "history.needsSummary",
+          "config": {
+            "channel": "story",
+            "thresholdTokens": 18000
+          },
+          "version": 1
+        },
+        {
+          "id": "summarize",
+          "type": "history.summarize",
+          "config": {
+            "channel": "story",
+            "keepLatest": 10,
+            "instruction": "压缩较早剧情，保留人物、线索、阶段和未兑现承诺。"
+          },
+          "version": 1
+        },
+        {
+          "id": "save-summary",
+          "type": "state.saveSummary",
+          "config": {
+            "channel": "story"
+          },
+          "version": 1
+        },
+        {
+          "id": "summary-failed",
+          "type": "flow.noop",
+          "config": {},
+          "version": 1
+        },
+        {
+          "id": "output-invalid",
+          "type": "view.showError",
+          "config": {
+            "message": "生成内容连续两次未通过校验，请重试。",
+            "errorCode": "WORLD_OUTPUT_INVALID"
+          },
+          "version": 1
+        },
+        {
+          "id": "model-failed",
+          "type": "view.showError",
+          "config": {
+            "message": "模型暂时无法生成内容，请稍后重试。",
+            "errorCode": "WORLD_MODEL_ERROR"
+          },
+          "version": 1
+        }
+      ],
+      "editor": {
+        "positions": {
+          "llm": {
+            "x": 1340,
+            "y": 350
+          },
+          "start": {
+            "x": 40,
+            "y": 20
+          },
+          "action": {
+            "x": 560,
+            "y": 270
+          },
+          "history": {
+            "x": 820,
+            "y": 350
+          },
+          "opening": {
+            "x": 1080,
+            "y": 20
+          },
+          "started": {
+            "x": 300,
+            "y": 100
+          },
+          "messages": {
+            "x": 1080,
+            "y": 350
+          },
+          "summarize": {
+            "x": 3160,
+            "y": 280
+          },
+          "pick-patch": {
+            "x": 1600,
+            "y": 70
+          },
+          "start-noop": {
+            "x": 820,
+            "y": 140
+          },
+          "text-input": {
+            "x": 40,
+            "y": 210
+          },
+          "action-text": {
+            "x": 560,
+            "y": 190
+          },
+          "append-user": {
+            "x": 560,
+            "y": 350
+          },
+          "patch-state": {
+            "x": 1860,
+            "y": 70
+          },
+          "choice-input": {
+            "x": 40,
+            "y": 340
+          },
+          "mark-started": {
+            "x": 820,
+            "y": 20
+          },
+          "model-failed": {
+            "x": 1860,
+            "y": 620
+          },
+          "pick-choices": {
+            "x": 1600,
+            "y": 460
+          },
+          "save-summary": {
+            "x": 3420,
+            "y": 280
+          },
+          "show-choices": {
+            "x": 2380,
+            "y": 350
+          },
+          "needs-summary": {
+            "x": 2900,
+            "y": 350
+          },
+          "output-invalid": {
+            "x": 1600,
+            "y": 620
+          },
+          "pick-narrative": {
+            "x": 1600,
+            "y": 260
+          },
+          "show-narrative": {
+            "x": 2120,
+            "y": 260
+          },
+          "summary-failed": {
+            "x": 3420,
+            "y": 440
+          },
+          "already-started": {
+            "x": 560,
+            "y": 20
+          },
+          "append-narrator": {
+            "x": 2640,
+            "y": 350
+          },
+          "mark-interacted": {
+            "x": 300,
+            "y": 270
+          },
+          "narrative-patch": {
+            "x": 1860,
+            "y": 260
+          }
+        }
+      },
+      "version": 1
+    },
+    "stateSchema": {
+      "type": "object",
+      "required": [
+        "story"
+      ],
+      "properties": {
+        "story": {
+          "type": "object",
+          "required": [
+            "started",
+            "stageId",
+            "chapterIndex",
+            "location",
+            "flags",
+            "inventory",
+            "characterStates",
+            "status"
+          ],
+          "properties": {
+            "flags": {
+              "type": "object",
+              "properties": {
+                "letter_found": {
+                  "type": "boolean"
+                },
+                "lighthouse_open": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            },
+            "status": {
+              "enum": [
+                "active",
+                "ending"
+              ],
+              "type": "string"
+            },
+            "stageId": {
+              "enum": [
+                "arrival",
+                "investigation",
+                "lighthouse",
+                "betrayal",
+                "ending_restore",
+                "ending_release"
+              ],
+              "type": "string"
+            },
+            "started": {
+              "type": "boolean"
+            },
+            "location": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "inventory": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 100
+            },
+            "chapterIndex": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "characterStates": {
+              "type": "object",
+              "required": [
+                "lin"
+              ],
+              "properties": {
+                "lin": {
+                  "type": "object",
+                  "required": [
+                    "trust",
+                    "present"
+                  ],
+                  "properties": {
+                    "trust": {
+                      "type": "integer"
+                    },
+                    "present": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "initialState": {
+      "story": {
+        "flags": {},
+        "status": "active",
+        "stageId": "arrival",
+        "started": false,
+        "location": "渡船",
+        "inventory": [],
+        "chapterIndex": 0,
+        "characterStates": {
+          "lin": {
+            "trust": 0,
+            "present": false
+          }
+        }
+      }
+    },
+    "presentation": {
+      "theme": "dark",
+      "startView": {
+        "root": {
+          "id": "root",
+          "type": "stack",
+          "children": [
+            {
+              "id": "narrative",
+              "text": "",
+              "tone": "body",
+              "type": "text"
+            },
+            {
+              "id": "choices",
+              "type": "choices",
+              "choices": [
+                {
+                  "id": "begin",
+                  "label": "开始"
+                },
+                {
+                  "id": "observe",
+                  "label": "观察四周"
+                },
+                {
+                  "id": "wait",
+                  "label": "稍作等待"
+                }
+              ],
+              "actionId": "choose"
+            }
+          ]
+        },
+        "audio": {
+          "autoPlay": true,
+          "allowInterrupt": true
+        },
+        "input": {
+          "mode": "text",
+          "placeholder": "你准备怎么做？"
+        },
+        "title": "雾港来信",
+        "revision": 0
+      },
+      "accentColor": "#8297b8"
+    },
+    "schemaVersion": 1,
+    "definitionRevision": 0
+  },
+  "resources": []
+}

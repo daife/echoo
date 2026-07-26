@@ -465,7 +465,10 @@ function SliceDraftForm({
             setError("JSON 无法解析，请检查格式。");
           }
         }}
-        onJsonInputChange={setJsonInput}
+        onJsonInputChange={(value) => {
+          setJsonInput(value);
+          setError(null);
+        }}
         onUnlockTextChange={setUnlockText}
         onPromptPreviewChange={setPreview}
         onChange={(key, value) =>
