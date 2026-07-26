@@ -1188,24 +1188,27 @@ function VoiceCloneCreateDialog({
                 onContextMenu={(event) => event.preventDefault()}
                 onPointerDown={(event) => {
                   if (!event.isPrimary || event.button !== 0) return;
+                  event.preventDefault();
                   event.currentTarget.setPointerCapture(event.pointerId);
                   void pushToTalk.beginHold(event.clientY);
                 }}
                 onPointerMove={(event) => pushToTalk.moveHold(event.clientY)}
                 onPointerUp={() => pushToTalk.endHold()}
                 onPointerCancel={() => pushToTalk.cancel()}
-                className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-3 text-sm transition ${pushToTalk.phase === "recording" ? "border-red-300/30 bg-red-400/10 text-red-100" : "border-white/10 text-white/65 hover:bg-white/[0.05]"}`}
+                className={`flex h-12 min-w-0 touch-none select-none items-center justify-center gap-2 overflow-hidden rounded-xl border px-2 text-sm transition ${pushToTalk.phase === "recording" ? "border-red-300/30 bg-red-400/10 text-red-100" : "border-white/10 text-white/65 hover:bg-white/[0.05]"}`}
               >
-                <Microphone size={17} />
-                {pushToTalk.phase === "requesting"
-                  ? "等待授权…"
-                  : pushToTalk.phase === "encoding"
-                    ? "处理中…"
-                    : pushToTalk.isCancelArmed
-                      ? "松开取消"
-                      : pushToTalk.phase === "recording"
-                        ? `松开完成 ${pushToTalk.durationSeconds.toFixed(1)}s`
-                        : "按住录音"}
+                <Microphone className="shrink-0" size={17} />
+                <span className="min-w-0 truncate tabular-nums">
+                  {pushToTalk.phase === "requesting"
+                    ? "等待授权…"
+                    : pushToTalk.phase === "encoding"
+                      ? "处理中…"
+                      : pushToTalk.isCancelArmed
+                        ? "松开取消"
+                        : pushToTalk.phase === "recording"
+                          ? `松开完成 ${pushToTalk.durationSeconds.toFixed(1)}s`
+                          : "按住录音"}
+                </span>
               </button>
             </div>
             <p className="mt-3 text-xs leading-5 text-white/38">
