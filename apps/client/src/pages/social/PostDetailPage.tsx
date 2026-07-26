@@ -3,7 +3,7 @@ import type { SocialPostSummary } from "@echoo/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { SocialService } from "../../services/SocialService";
-import { MediaAsset } from "../../features/media/MediaAsset";
+import { ExpandableMedia } from "../../features/media/ExpandableMedia";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
 import { BackButton } from "../../shared/components/BackButton";
 import { LinkedText } from "../../shared/components/LinkedText";
@@ -160,14 +160,15 @@ export function PostDetailPage({
             <div
               className={`grid gap-px bg-white/5 ${post.images.length === 1 ? "grid-cols-1" : post.images.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}
             >
-              {post.images.map((image) => (
-                <MediaAsset
+              {post.images.map((image, index) => (
+                <ExpandableMedia
                   key={image.resourceId}
                   mediaUrl={image.resourcePath}
-                  variant="display"
-                  alt="动态图片"
-                  containerClassName="aspect-square bg-black/20"
-                  className="h-full w-full object-cover"
+                  kind="image"
+                  previewVariant="display"
+                  alt={`${post.author.displayName} 的动态图片 ${index + 1}`}
+                  triggerClassName="group relative block aspect-square w-full overflow-hidden bg-black/20"
+                  mediaClassName="h-full w-full object-cover"
                 />
               ))}
             </div>

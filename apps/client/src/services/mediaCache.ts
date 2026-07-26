@@ -52,6 +52,7 @@ interface MediaCacheSession {
 export class MediaCache {
   private readonly inFlight = new Map<string, Promise<Blob | null>>();
   private readonly accessUrls = new Map<string, MediaAccessItem>();
+  private readonly variantAliases = new Map<string, MediaVariant>();
   private readonly pendingAccess = new Map<
     string,
     {
@@ -76,7 +77,10 @@ export class MediaCache {
   ) {}
 
   configure(session?: MediaCacheSession) {
-    if (this.session?.userId !== session?.userId) this.accessUrls.clear();
+    if (this.session?.userId !== session?.userId) {
+      this.accessUrls.clear();
+      this.variantAliases.clear();
+    }
     this.session = session;
   }
 
@@ -87,15 +91,7 @@ export class MediaCache {
   ): Promise<Blob | null> {
     const resourceId = getResourceId(mediaUrl);
     if (!resourceId || !this.session) return null;
-    const key = this.cacheKey(resourceId, variant);
-    const activeRequest = this.inFlight.get(key);
-    if (activeRequest) return waitForConsumer(activeRequest, signal);
-
-    const request = this.load(key, resourceId, variant).finally(() =>
-      this.inFlight.delete(key),
-    );
-    this.inFlight.set(key, request);
-    return waitForConsumer(request, signal);
+    return waitForConsumer(this.resolveBlob(resourceId, variant), signal);
   }
 
   getByResourceId(
@@ -129,6 +125,7 @@ export class MediaCache {
     const budget = await this.getBudgetBytes();
     if (blob.size > budget * 0.25) return;
     const key = this.cacheKey(resourceId, variant);
+    this.variantAliases.set(this.accessKey(resourceId, variant), variant);
     await this.storeBestEffort(
       key,
       new Response(blob),
@@ -148,6 +145,8 @@ export class MediaCache {
     for (const mediaUrl of mediaUrls) {
       const resourceId = mediaUrl ? getResourceId(mediaUrl) : null;
       if (!resourceId) continue;
+      for (const key of this.variantAliases.keys())
+        if (key.startsWith(`${resourceId}:`)) this.variantAliases.delete(key);
       for (const variant of ["original", "thumb", "display"] as const)
         keys.push(this.cacheKey(resourceId, variant));
     }
@@ -162,13 +161,60 @@ export class MediaCache {
       .map((record) => record.key);
     if (keys.length) await this.store.delete(keys);
     this.accessUrls.clear();
+    this.variantAliases.clear();
   }
 
-  private async load(
-    key: string,
+  private async resolveBlob(
     resourceId: string,
-    variant: MediaVariant,
+    requestedVariant: MediaVariant,
   ) {
+    const requestedKey = this.cacheKey(resourceId, requestedVariant);
+    const knownVariant =
+      this.variantAliases.get(this.accessKey(resourceId, requestedVariant)) ??
+      requestedVariant;
+    const knownKey = this.cacheKey(resourceId, knownVariant);
+    const activeRequest =
+      this.inFlight.get(knownKey) ?? this.inFlight.get(requestedKey);
+    if (activeRequest) return activeRequest;
+
+    const cached = await this.readCached(knownKey);
+    if (cached) return cached;
+
+    const access = await this.resolveAccess(resourceId, requestedVariant);
+    if (!access) return null;
+    const canonicalVariant = access.variant;
+    const canonicalKey = this.cacheKey(resourceId, canonicalVariant);
+    this.variantAliases.set(
+      this.accessKey(resourceId, requestedVariant),
+      canonicalVariant,
+    );
+    this.variantAliases.set(
+      this.accessKey(resourceId, canonicalVariant),
+      canonicalVariant,
+    );
+
+    const canonicalRequest = this.inFlight.get(canonicalKey);
+    if (canonicalRequest) return canonicalRequest;
+    if (canonicalKey !== knownKey) {
+      const canonicalCached = await this.readCached(canonicalKey);
+      if (canonicalCached) return canonicalCached;
+      const requestAfterRead = this.inFlight.get(canonicalKey);
+      if (requestAfterRead) return requestAfterRead;
+    }
+
+    const request = this.download(canonicalKey, access);
+    this.inFlight.set(canonicalKey, request);
+    this.inFlight.set(requestedKey, request);
+    void request.finally(() => {
+      if (this.inFlight.get(canonicalKey) === request)
+        this.inFlight.delete(canonicalKey);
+      if (this.inFlight.get(requestedKey) === request)
+        this.inFlight.delete(requestedKey);
+    });
+    return request;
+  }
+
+  private async readCached(key: string) {
     try {
       const cached = await within(this.store.get(key), CACHE_READ_TIMEOUT_MS);
       if (cached !== CACHE_TIMEOUT && cached) {
@@ -183,11 +229,12 @@ export class MediaCache {
     } catch {
       // Continue with an authorized network request.
     }
+    return null;
+  }
 
+  private async download(key: string, access: MediaAccessItem) {
     await this.acquireDownloadSlot();
     try {
-      const access = await this.resolveAccess(resourceId, variant);
-      if (!access) return null;
       const response = await this.fetcher(resolveMediaUrl(access.url)!, {
         cache: "no-store",
       });
@@ -220,8 +267,13 @@ export class MediaCache {
 
   private async resolveAccess(resourceId: string, variant: MediaVariant) {
     if (!this.session) return null;
-    const key = `${resourceId}:${variant}`;
-    const cached = this.accessUrls.get(key);
+    const key = this.accessKey(resourceId, variant);
+    const actualVariant = this.variantAliases.get(key);
+    const cached =
+      this.accessUrls.get(key) ??
+      (actualVariant
+        ? this.accessUrls.get(this.accessKey(resourceId, actualVariant))
+        : undefined);
     if (cached && cached.expiresAt > this.now() + 30_000) return cached;
     return new Promise<MediaAccessItem | null>((resolve) => {
       const pending = this.pendingAccess.get(key) ?? [];
@@ -267,15 +319,27 @@ export class MediaCache {
         const payload = response.ok
           ? ((await response.json()) as { items?: MediaAccessItem[] })
           : {};
-        for (const [key, waiters] of chunk) {
+        for (const [index, [key, waiters]] of chunk.entries()) {
           const first = waiters[0]!;
-          const item = payload.items?.find(
-            (candidate) =>
-              "url" in candidate &&
-              candidate.resourceId === first.resourceId &&
-              candidate.variant === first.variant,
-          );
-          if (item) this.accessUrls.set(key, item);
+          const candidate = payload.items?.[index];
+          const item =
+            candidate &&
+            "url" in candidate &&
+            candidate.resourceId === first.resourceId
+              ? candidate
+              : undefined;
+          if (item) {
+            this.accessUrls.set(key, item);
+            this.accessUrls.set(
+              this.accessKey(item.resourceId, item.variant),
+              item,
+            );
+            this.variantAliases.set(key, item.variant);
+            this.variantAliases.set(
+              this.accessKey(item.resourceId, item.variant),
+              item.variant,
+            );
+          }
           waiters.forEach((waiter) => waiter.resolve(item ?? null));
         }
       } catch {
@@ -341,6 +405,10 @@ export class MediaCache {
 
   private cacheKey(resourceId: string, variant: MediaVariant) {
     return `${this.session!.userId}:${resourceId}:${variant}`;
+  }
+
+  private accessKey(resourceId: string, variant: MediaVariant) {
+    return `${resourceId}:${variant}`;
   }
 
   private async storeBestEffort(
@@ -511,10 +579,7 @@ function transactionToPromise(transaction: IDBTransaction) {
   });
 }
 
-function waitForConsumer(
-  request: Promise<Blob | null>,
-  signal?: AbortSignal,
-) {
+function waitForConsumer(request: Promise<Blob | null>, signal?: AbortSignal) {
   if (!signal) return request;
   if (signal.aborted) return Promise.resolve(null);
   return new Promise<Blob | null>((resolve) => {

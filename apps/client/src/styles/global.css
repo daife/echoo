@@ -59,7 +59,9 @@ button {
 }
 
 button:focus-visible,
-input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus-visible,
+input:not([type="checkbox"]):not([type="radio"]):not(
+    [type="file"]
+  ):focus-visible,
 textarea:focus-visible,
 select:focus-visible {
   outline: 2px solid rgb(255 255 255 / 0.72);
@@ -74,10 +76,10 @@ select:focus-visible {
 }
 
 .input-focus-shell:has(
-    :is(input, textarea, select):not([type="checkbox"]):not([type="radio"]):not(
-        [type="file"]
-      ):focus-visible
-  ) {
+  :is(input, textarea, select):not([type="checkbox"]):not([type="radio"]):not(
+      [type="file"]
+    ):focus-visible
+) {
   outline: 2px solid rgb(255 255 255 / 0.72);
   outline-offset: 2px;
 }
@@ -130,6 +132,17 @@ select:focus-visible {
 
 .app-overlay.app-media-viewer {
   align-items: center;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.app-media-viewer video {
+  touch-action: auto;
+  user-select: auto;
 }
 
 body:has(.app-overlay) .app-mobile-bottom-nav {
@@ -147,10 +160,8 @@ body:has(.app-overlay) .app-mobile-bottom-nav {
 
   .app-overlay > :is(form, [role="dialog"]) {
     max-height: calc(
-      100dvh - max(1rem, env(safe-area-inset-top)) - max(
-          1rem,
-          env(safe-area-inset-bottom)
-        )
+      100dvh - max(1rem, env(safe-area-inset-top)) -
+        max(1rem, env(safe-area-inset-bottom))
     );
     overflow-y: auto;
   }

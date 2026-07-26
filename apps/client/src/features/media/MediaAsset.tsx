@@ -23,7 +23,7 @@ export function MediaAsset({
   eager?: boolean;
   fallbackLabel?: string;
 }) {
-  const { source, unavailable, fallbackToDirect } = useMediaObjectUrl(
+  const { source, unavailable, fallbackToDirect } = useMediaSource(
     mediaUrl,
     variant,
     true,
@@ -75,7 +75,7 @@ export function useMediaDirectUrl(
   return source;
 }
 
-function useMediaObjectUrl(
+export function useMediaSource(
   mediaUrl: string | undefined,
   variant: MediaVariant,
   enabled: boolean,
@@ -105,6 +105,7 @@ function useMediaObjectUrl(
       setSource(undefined);
       return;
     }
+    setSource(undefined);
     if (preferDirect) {
       let cancelled = false;
       void mediaCache.getDirectUrl(mediaUrl, variant).then((url) => {

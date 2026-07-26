@@ -73,4 +73,40 @@ describe("PostCard", () => {
     expect(html).toContain('href="https://echoo.example/?card=asset_1"');
     expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>).)*<a/s);
   });
+
+  it("renders each dynamic image as its own custom preview trigger", () => {
+    const html = renderToStaticMarkup(
+      <PostCard
+        post={{
+          id: "post_images",
+          author: { id: "user_1", displayName: "Aether", isAdmin: false },
+          body: "配图动态",
+          images: [
+            {
+              resourceId: "res_1",
+              resourcePath: "/api/resources/res_1/file",
+              position: 0,
+            },
+            {
+              resourceId: "res_2",
+              resourcePath: "/api/resources/res_2/file",
+              position: 1,
+            },
+          ],
+          likeCount: 0,
+          commentCount: 0,
+          viewerHasLiked: false,
+          canEdit: false,
+          canDelete: false,
+          createdAt: 1,
+          updatedAt: 1,
+        }}
+        onOpen={vi.fn()}
+      />,
+    );
+
+    expect(html.match(/data-media-frame="image"/g)).toHaveLength(2);
+    expect(html).toContain("Aether 的动态图片 1，点击放大查看");
+    expect(html).toContain("Aether 的动态图片 2，点击放大查看");
+  });
 });

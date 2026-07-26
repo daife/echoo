@@ -104,12 +104,12 @@ describe("MediaCache access URL batching", () => {
     const cache = new MediaCache(store, fetcher, Date.now, 1024 * 1024);
     cache.configure({ userId: "user_1", getAccessToken: async () => "token" });
 
-    expect(await (await cache.getByResourceId("res_shared", "display"))?.text()).toBe(
-      "media",
-    );
-    expect(await (await cache.getByResourceId("res_shared", "display"))?.text()).toBe(
-      "media",
-    );
+    expect(
+      await (await cache.getByResourceId("res_shared", "display"))?.text(),
+    ).toBe("media");
+    expect(
+      await (await cache.getByResourceId("res_shared", "display"))?.text(),
+    ).toBe("media");
 
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
@@ -137,7 +137,133 @@ describe("MediaCache access URL batching", () => {
     expect(await (await active)?.text()).toBe("media");
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+
+  it("aliases a missing display variant to original without downloading twice", async () => {
+    const store = createMemoryStore();
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).endsWith("/api/resources/access")) {
+          const requested = JSON.parse(String(init?.body)).items as Array<{
+            resourceId: string;
+            variant: string;
+          }>;
+          return Response.json({
+            items: requested.map(({ resourceId }) => ({
+              resourceId,
+              variant: "original",
+              url: `https://download.test/${resourceId}/original`,
+              expiresAt: Date.now() + 60_000,
+              mimeType: "image/jpeg",
+            })),
+          });
+        }
+        return new Response(new Blob(["original"], { type: "image/jpeg" }));
+      },
+    );
+    const cache = new MediaCache(store, fetcher, Date.now, 1024 * 1024);
+    cache.configure({ userId: "user_1", getAccessToken: async () => "token" });
+
+    expect(
+      await (await cache.getByResourceId("res_fallback", "display"))?.text(),
+    ).toBe("original");
+    expect(
+      await (await cache.getByResourceId("res_fallback", "original"))?.text(),
+    ).toBe("original");
+
+    const downloadCalls = fetcher.mock.calls.filter(
+      ([input]) => !String(input).endsWith("/api/resources/access"),
+    );
+    expect(downloadCalls).toHaveLength(1);
+  });
+
+  it("coalesces concurrent requested and actual fallback variants", async () => {
+    const store = createMemoryStore();
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).endsWith("/api/resources/access")) {
+          const requested = JSON.parse(String(init?.body)).items as Array<{
+            resourceId: string;
+          }>;
+          return Response.json({
+            items: requested.map(({ resourceId }) => ({
+              resourceId,
+              variant: "original",
+              url: `https://download.test/${resourceId}/original`,
+              expiresAt: Date.now() + 60_000,
+              mimeType: "video/mp4",
+            })),
+          });
+        }
+        return new Response(new Blob(["video"], { type: "video/mp4" }));
+      },
+    );
+    const cache = new MediaCache(store, fetcher, Date.now, 1024 * 1024);
+    cache.configure({ userId: "user_1", getAccessToken: async () => "token" });
+
+    const [display, original] = await Promise.all([
+      cache.getByResourceId("res_video", "display"),
+      cache.getByResourceId("res_video", "original"),
+    ]);
+
+    expect(await display?.text()).toBe("video");
+    expect(await original?.text()).toBe("video");
+    expect(
+      fetcher.mock.calls.filter(
+        ([input]) => !String(input).endsWith("/api/resources/access"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("downloads distinct display and original variants once each", async () => {
+    const store = createMemoryStore();
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).endsWith("/api/resources/access")) {
+          const requested = JSON.parse(String(init?.body)).items as Array<{
+            resourceId: string;
+            variant: "display" | "original";
+          }>;
+          return Response.json({
+            items: requested.map(({ resourceId, variant }) => ({
+              resourceId,
+              variant,
+              url: `https://download.test/${resourceId}/${variant}`,
+              expiresAt: Date.now() + 60_000,
+              mimeType: "image/webp",
+            })),
+          });
+        }
+        const variant = String(input).endsWith("/original")
+          ? "original"
+          : "display";
+        return new Response(new Blob([variant], { type: "image/webp" }));
+      },
+    );
+    const cache = new MediaCache(store, fetcher, Date.now, 1024 * 1024);
+    cache.configure({ userId: "user_1", getAccessToken: async () => "token" });
+
+    await cache.getByResourceId("res_image", "display");
+    await cache.getByResourceId("res_image", "original");
+    await cache.getByResourceId("res_image", "original");
+
+    expect(
+      fetcher.mock.calls.filter(
+        ([input]) => !String(input).endsWith("/api/resources/access"),
+      ),
+    ).toHaveLength(2);
+  });
 });
+
+function createMemoryStore(): MediaCacheStore {
+  const records = new Map<string, CachedMediaEntry>();
+  return {
+    ...emptyStore,
+    get: async (key) => records.get(key),
+    put: async (key, response, metadata) => {
+      records.set(key, { response, metadata });
+    },
+  };
+}
 
 function mediaFetcher(downloadReady: Promise<void> = Promise.resolve()) {
   return vi.fn(async (input: RequestInfo | URL) => {

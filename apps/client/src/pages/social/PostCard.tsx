@@ -1,6 +1,6 @@
 import { ChatCircleDots, Heart } from "@phosphor-icons/react";
 import type { SocialPostSummary } from "@echoo/shared";
-import { MediaAsset } from "../../features/media/MediaAsset";
+import { ExpandableMedia } from "../../features/media/ExpandableMedia";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
 import { LinkedText } from "../../shared/components/LinkedText";
 
@@ -67,22 +67,21 @@ export function PostCard({
         ) : null}
       </div>
       {post.images.length ? (
-        <button
-          type="button"
-          onClick={onOpen}
+        <div
           className={`grid w-full gap-px bg-white/5 ${post.images.length === 1 ? "grid-cols-1" : post.images.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}
         >
-          {post.images.map((image) => (
-            <MediaAsset
+          {post.images.map((image, index) => (
+            <ExpandableMedia
               key={image.resourceId}
               mediaUrl={image.resourcePath}
-              variant="display"
-              alt="动态图片"
-              containerClassName="aspect-square bg-black/20"
-              className="h-full w-full object-cover"
+              kind="image"
+              previewVariant="display"
+              alt={`${post.author.displayName} 的动态图片 ${index + 1}`}
+              triggerClassName="group relative block aspect-square w-full overflow-hidden bg-black/20"
+              mediaClassName="h-full w-full object-cover"
             />
           ))}
-        </button>
+        </div>
       ) : null}
       <div className="flex items-center gap-6 border-t border-white/8 px-5 py-4 text-sm text-white/42">
         <button
