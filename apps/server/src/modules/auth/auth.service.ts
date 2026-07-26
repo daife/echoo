@@ -229,16 +229,16 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string) {
-    const rotated = await this.sessions.rotate(refreshToken);
-    if (!rotated)
+    const renewed = await this.sessions.renew(refreshToken);
+    if (!renewed)
       throw new AuthError("REFRESH_TOKEN_INVALID", "登录会话已失效。", 401);
-    const user = await this.users.findById(rotated.userId);
+    const user = await this.users.findById(renewed.userId);
     if (!user) throw new AuthError("USER_NOT_FOUND", "用户不存在。", 404);
     return {
       user: toUserProfile(user),
       tokens: {
         accessToken: this.tokenService.createAccessToken(user.id),
-        refreshToken: rotated.token,
+        refreshToken: renewed.token,
         expiresAt: Date.now() + accessTokenTtlMs,
       },
     };
