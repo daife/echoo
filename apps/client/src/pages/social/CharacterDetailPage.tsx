@@ -1,4 +1,9 @@
-import { ArrowClockwise, DownloadSimple, Heart } from "@phosphor-icons/react";
+import {
+  ArrowClockwise,
+  ChatCircleDots,
+  DownloadSimple,
+  Heart,
+} from "@phosphor-icons/react";
 import type { Agent } from "@echoo/shared";
 import type { PublicAssetSummary } from "@echoo/shared/public-assets";
 import { useQueryClient } from "@tanstack/react-query";
@@ -210,7 +215,8 @@ export function CharacterDetailPage({
                   });
                 }
               }}
-              className={`flex items-center gap-2 text-sm ${asset.viewerHasLiked ? "text-[#c7b9ed]" : "text-white/45"}`}
+              aria-label={asset.viewerHasLiked ? "取消点赞" : "点赞"}
+              className={`flex min-h-10 items-center gap-2 rounded-lg px-2 -mx-2 text-sm transition hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.98] ${asset.viewerHasLiked ? "text-[#c7b9ed]" : "text-white/45"}`}
             >
               <Heart
                 size={19}
@@ -218,9 +224,20 @@ export function CharacterDetailPage({
               />
               {asset.likeCount}
             </button>
-            <span className="text-sm text-white/38">
-              {asset.commentCount} 条评论
-            </span>
+            <button
+              type="button"
+              onClick={() => {
+                document.getElementById("social-comments")?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                });
+              }}
+              aria-label="查看评论"
+              className="flex min-h-10 items-center gap-2 rounded-lg px-2 -mx-2 text-sm text-white/38 transition hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.98]"
+            >
+              <ChatCircleDots size={19} />
+              {asset.commentCount}
+            </button>
             <ShareButton
               target={{ type: "card", id: asset.id }}
               title={snapshot.name}
@@ -264,7 +281,7 @@ export function CharacterDetailPage({
                     : "添加角色"}
             </button>
           </div>
-          <div className="mt-7">
+          <div id="social-comments" className="mt-7">
             {error ? (
               <p className="mb-4 text-xs text-red-200/80">{error}</p>
             ) : null}

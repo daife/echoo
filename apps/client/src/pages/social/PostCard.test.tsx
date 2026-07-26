@@ -22,7 +22,8 @@ describe("PostCard", () => {
         onOpen={vi.fn()}
       />,
     );
-    expect(html).toContain("进入动态查看评论");
+    expect(html).toContain('aria-label="查看评论"');
+    expect(html).not.toContain("进入动态查看评论");
     expect(html).toContain("动态正文");
     expect(html).not.toContain("评论正文");
   });

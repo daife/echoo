@@ -1,4 +1,4 @@
-import { ShareNetwork } from "@phosphor-icons/react";
+import { Check, ShareNetwork, WarningCircle } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { publicLinkUrl, type PublicLinkTarget } from "../../app/publicLinks";
 import { shareOrCopy } from "../utils/share";
@@ -7,7 +7,8 @@ export function ShareButton({
   target,
   title,
   text,
-  className = "flex items-center gap-2 text-sm text-white/45 hover:text-white",
+  className =
+    "grid h-10 w-10 shrink-0 place-items-center rounded-lg text-white/45 transition hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.98]",
 }: {
   target: PublicLinkTarget;
   title: string;
@@ -40,12 +41,16 @@ export function ShareButton({
         }
       }}
     >
-      <ShareNetwork size={18} />
-      {status === "copied"
-        ? "已复制"
-        : status === "error"
-          ? "分享失败"
-          : "分享"}
+      {status === "copied" ? (
+        <Check size={18} weight="bold" />
+      ) : status === "error" ? (
+        <WarningCircle size={18} />
+      ) : (
+        <ShareNetwork size={18} />
+      )}
+      <span className="sr-only" aria-live="polite">
+        {status === "copied" ? "已复制" : status === "error" ? "分享失败" : ""}
+      </span>
     </button>
   );
 }

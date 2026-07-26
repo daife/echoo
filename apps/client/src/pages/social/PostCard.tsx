@@ -87,7 +87,8 @@ export function PostCard({
         <button
           type="button"
           onClick={onToggleLike}
-          className={`flex items-center gap-2 transition hover:text-white ${post.viewerHasLiked ? "text-[#c7b9ed]" : ""}`}
+          aria-label={post.viewerHasLiked ? "取消点赞" : "点赞"}
+          className={`flex min-h-9 items-center gap-2 rounded-lg px-2 -mx-2 transition hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.98] ${post.viewerHasLiked ? "text-[#c7b9ed]" : ""}`}
         >
           <Heart size={18} weight={post.viewerHasLiked ? "fill" : "regular"} />{" "}
           {post.likeCount}
@@ -95,13 +96,11 @@ export function PostCard({
         <button
           type="button"
           onClick={onOpen}
-          className="flex items-center gap-2 transition hover:text-white"
+          aria-label="查看评论"
+          className="flex min-h-9 items-center gap-2 rounded-lg px-2 -mx-2 transition hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.98]"
         >
           <ChatCircleDots size={18} /> {post.commentCount}
         </button>
-        <span className="ml-auto text-[11px] text-white/24">
-          进入动态查看评论
-        </span>
       </div>
     </article>
   );

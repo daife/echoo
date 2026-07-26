@@ -1,4 +1,4 @@
-import { Heart, NotePencil, Trash } from "@phosphor-icons/react";
+import { ChatCircleDots, Heart, NotePencil, Trash } from "@phosphor-icons/react";
 import type { SocialPostSummary } from "@echoo/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -213,13 +213,28 @@ export function PostDetailPage({
                     );
                   }
                 }}
-                className={`flex items-center gap-2 text-sm ${post.viewerHasLiked ? "text-[#c7b9ed]" : "text-white/45"}`}
+                aria-label={post.viewerHasLiked ? "取消点赞" : "点赞"}
+                className={`flex min-h-10 items-center gap-2 rounded-lg px-2 -mx-2 text-sm transition hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.98] ${post.viewerHasLiked ? "text-[#c7b9ed]" : "text-white/45"}`}
               >
                 <Heart
                   size={19}
                   weight={post.viewerHasLiked ? "fill" : "regular"}
                 />
-                {post.likeCount} 人喜欢
+                {post.likeCount}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  document.getElementById("social-comments")?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                  });
+                }}
+                aria-label="查看评论"
+                className="flex min-h-10 items-center gap-2 rounded-lg px-2 -mx-2 text-sm text-white/45 transition hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.98]"
+              >
+                <ChatCircleDots size={19} />
+                {post.commentCount}
               </button>
               <ShareButton
                 target={{ type: "post", id: post.id }}
@@ -227,34 +242,36 @@ export function PostDetailPage({
                 text={post.body.slice(0, 120)}
               />
             </div>
-            <SocialComments
-              objectId={post.id}
-              service={service}
-              isAuthenticated={isAuthenticated}
-              onRequireAuth={onRequireAuth}
-              onCountChange={(delta) => {
-                setPost((current) =>
-                  current
-                    ? {
-                        ...current,
-                        commentCount: Math.max(0, current.commentCount + delta),
-                      }
-                    : current,
-                );
-                patchPostInSocialCaches(
-                  queryClient,
-                  viewerId,
-                  post.id,
-                  (current) => ({
-                    ...current,
-                    commentCount: Math.max(0, current.commentCount + delta),
-                  }),
-                );
-              }}
-              onOpenUser={onOpenUser}
-              onOpenPost={onOpenPost}
-              onOpenAsset={onOpenAsset}
-            />
+            <div id="social-comments">
+              <SocialComments
+                objectId={post.id}
+                service={service}
+                isAuthenticated={isAuthenticated}
+                onRequireAuth={onRequireAuth}
+                onCountChange={(delta) => {
+                  setPost((current) =>
+                    current
+                      ? {
+                          ...current,
+                          commentCount: Math.max(0, current.commentCount + delta),
+                        }
+                      : current,
+                  );
+                  patchPostInSocialCaches(
+                    queryClient,
+                    viewerId,
+                    post.id,
+                    (current) => ({
+                      ...current,
+                      commentCount: Math.max(0, current.commentCount + delta),
+                    }),
+                  );
+                }}
+                onOpenUser={onOpenUser}
+                onOpenPost={onOpenPost}
+                onOpenAsset={onOpenAsset}
+              />
+            </div>
           </div>
         </article>
       )}
