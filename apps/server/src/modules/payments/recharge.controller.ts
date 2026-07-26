@@ -171,14 +171,16 @@ function sendCheckoutPage(
   formAction?: string,
 ) {
   const nonce = randomBytes(18).toString("base64");
-  const formOrigin = formAction ? new URL(formAction).origin : "'none'";
+  const formActionSource = formAction
+    ? new URL(formAction).protocol
+    : "'none'";
   return reply
     .header("Cache-Control", "no-store")
     .header("Referrer-Policy", "no-referrer")
     .header("X-Content-Type-Options", "nosniff")
     .header(
       "Content-Security-Policy",
-      `default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action ${formOrigin}; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'`,
+      `default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action ${formActionSource}; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'`,
     )
     .type("text/html; charset=utf-8")
     .send(page.html(nonce));

@@ -40,7 +40,7 @@ test("serves a no-store native checkout that posts signed fields", async (t) => 
   assert.equal(response.headers["referrer-policy"], "no-referrer");
   assert.match(
     response.headers["content-security-policy"] ?? "",
-    /form-action https:\/\/zpayz\.cn/,
+    /form-action https:;/,
   );
   assert.match(response.body, /method="post"/);
   assert.match(response.body, /Echoo &lt;充值&gt;/);
@@ -64,6 +64,10 @@ test("does not resubmit paid orders and rejects invalid checkout links", async (
   assert.equal(paid.statusCode, 200);
   assert.match(paid.body, /该订单已完成/);
   assert.doesNotMatch(paid.body, /<form/);
+  assert.match(
+    paid.headers["content-security-policy"] ?? "",
+    /form-action 'none';/,
+  );
 
   invalid = true;
   const rejected = await app.inject({
@@ -73,6 +77,10 @@ test("does not resubmit paid orders and rejects invalid checkout links", async (
   assert.equal(rejected.statusCode, 400);
   assert.equal(rejected.headers["cache-control"], "no-store");
   assert.match(rejected.body, /收银台链接无效/);
+  assert.match(
+    rejected.headers["content-security-policy"] ?? "",
+    /form-action 'none';/,
+  );
 });
 
 test("renders native payment return results without redirecting to the web app", async (t) => {
