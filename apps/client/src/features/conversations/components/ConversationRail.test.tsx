@@ -33,6 +33,24 @@ const agent = {
 } as Agent;
 
 describe("ConversationRail identity", () => {
+  it("keeps the desktop rail constrained so its conversation list can scroll", () => {
+    const html = renderToStaticMarkup(
+      <ConversationRail
+        agents={[agent]}
+        onOpenAgent={vi.fn()}
+        onOpenBindings={vi.fn()}
+        onOpenChat={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain(
+      '<aside class="hidden min-h-0 min-w-0 md:block">',
+    );
+    expect(html).toContain(
+      'class="min-h-0 flex-1 overflow-y-auto p-2 no-scrollbar"',
+    );
+  });
+
   it("uses the role avatar when one exists", () => {
     const html = renderToStaticMarkup(
       <ConversationRail

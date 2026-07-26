@@ -42,7 +42,7 @@ export function ConversationRail({
       className={
         layout === "mobile"
           ? "min-h-0 min-w-0 md:hidden"
-          : "hidden min-w-0 md:block"
+          : "hidden min-h-0 min-w-0 md:block"
       }
     >
       <div
