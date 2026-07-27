@@ -828,7 +828,7 @@ function RuntimeConfigDialog({
       const next = await update({ mode: "custom", config });
       setResponse(next);
       onChange(next);
-      setNotice(withConfigWarnings("会话独立配置已保存。", next.warnings));
+      setNotice("会话独立配置已保存。");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "配置保存失败。");
       throw caught;
