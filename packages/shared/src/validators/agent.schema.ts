@@ -546,7 +546,10 @@ export const primeFigureDecisionSchema = z.object({
       itinerary: z.string().trim().nullish(),
       relationshipStatus: z.string().trim().nullish(),
     })
-    .optional()
+    // Models occasionally emit the whole field as null to indicate no update.
+    // Normalize it so downstream consumers retain the same "no changes" shape.
+    .nullish()
+    .transform((value) => value ?? {})
     .default({}),
   actions: z.array(primeFigureActionSchema).optional().default([]),
 });
