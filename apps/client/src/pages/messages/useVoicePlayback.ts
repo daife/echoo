@@ -40,6 +40,10 @@ export class VoicePlaybackController {
 
   constructor(
     private readonly onChange: (snapshot: VoicePlaybackSnapshot) => void,
+    private readonly loadCachedBlob: (
+      mediaUrl: string,
+    ) => Promise<Blob | null> = (mediaUrl) =>
+      mediaCache.get(mediaUrl, "original"),
   ) {}
 
   setAutoPlay(enabled: boolean) {
@@ -356,7 +360,15 @@ export class VoicePlaybackController {
 
   private async prepareCompleteSource(track: VoiceTrack) {
     if (track.audio.src || !track.mediaUrl) return;
+    const blob = await this.loadCachedBlob(track.mediaUrl);
+    if (track.failed || track.audio.src) return;
+    if (blob) {
+      track.objectUrl = URL.createObjectURL(blob);
+      track.audio.src = track.objectUrl;
+      return;
+    }
     const directUrl = await mediaCache.getDirectUrl(track.mediaUrl, "original");
+    if (track.failed || track.audio.src) return;
     const source = resolveMediaUrl(directUrl);
     if (source) track.audio.src = source;
   }

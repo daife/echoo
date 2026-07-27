@@ -252,6 +252,32 @@ describe("MediaCache access URL batching", () => {
       ),
     ).toHaveLength(2);
   });
+
+  it("serves a just-completed blob while persistence is still pending", async () => {
+    let releasePersistence!: () => void;
+    const persistence = new Promise<void>((resolve) => {
+      releasePersistence = resolve;
+    });
+    const store: MediaCacheStore = {
+      ...emptyStore,
+      put: async () => persistence,
+    };
+    const fetcher = vi.fn(mediaFetcher());
+    const cache = new MediaCache(store, fetcher, Date.now, 1024 * 1024);
+    cache.configure({ userId: "user_1", getAccessToken: async () => "token" });
+
+    const writing = cache.putByResourceId(
+      "res_voice",
+      new Blob(["cached voice"], { type: "audio/mpeg" }),
+    );
+    expect(await (await cache.getByResourceId("res_voice", "original"))?.text()).toBe(
+      "cached voice",
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+
+    releasePersistence();
+    await writing;
+  });
 });
 
 function createMemoryStore(): MediaCacheStore {

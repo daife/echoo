@@ -169,6 +169,18 @@ describe("VoicePlaybackController", () => {
     expect(controller.snapshot().currentMessageId).toBeUndefined();
   });
 
+  it("plays a cached resource blob without resolving a direct URL", async () => {
+    const controller = new VoicePlaybackController(
+      () => undefined,
+      async () => new Blob(["cached"], { type: "audio/mpeg" }),
+    );
+
+    await controller.toggle("voice_cached", "/api/resources/res_cached/file");
+
+    expect(FakeAudio.instances[0]?.src).toMatch(/^blob:test-/);
+    expect(controller.snapshot().isPlaying).toBe(true);
+  });
+
   it("skips failed tracks and clears resources on reset", async () => {
     const controller = new VoicePlaybackController(() => undefined);
     controller.setAutoPlay(true);

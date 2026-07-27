@@ -143,6 +143,10 @@ export class PrimeWorldService {
     return blob ? URL.createObjectURL(blob) : undefined;
   }
 
+  cacheAudioResource(resourceId: string, blob: Blob) {
+    return mediaCache.putByResourceId(resourceId, blob, "original");
+  }
+
   cacheCommittedView(
     conversationId: string,
     view: WorldView,

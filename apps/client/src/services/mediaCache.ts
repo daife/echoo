@@ -102,6 +102,14 @@ export class MediaCache {
     return this.get(resourcePath(resourceId), variant, signal);
   }
 
+  putByResourceId(
+    resourceId: string,
+    blob: Blob,
+    variant: MediaVariant = "original",
+  ) {
+    return this.put(resourcePath(resourceId), blob, variant);
+  }
+
   getDirectUrlByResourceId(
     resourceId: string,
     variant: MediaVariant = "display",
@@ -122,11 +130,16 @@ export class MediaCache {
   ): Promise<void> {
     const resourceId = getResourceId(mediaUrl);
     if (!resourceId || !this.session || !blob.size) return;
-    const budget = await this.getBudgetBytes();
-    if (blob.size > budget * 0.25) return;
     const key = this.cacheKey(resourceId, variant);
     this.variantAliases.set(this.accessKey(resourceId, variant), variant);
-    await this.storeBestEffort(
+    const available = Promise.resolve(blob);
+    this.inFlight.set(key, available);
+    const budget = await this.getBudgetBytes();
+    if (blob.size > budget * 0.25) {
+      if (this.inFlight.get(key) === available) this.inFlight.delete(key);
+      return;
+    }
+    const persistence = this.storeBestEffort(
       key,
       new Response(blob),
       {
@@ -137,6 +150,11 @@ export class MediaCache {
       },
       budget,
     );
+    try {
+      await persistence;
+    } finally {
+      if (this.inFlight.get(key) === available) this.inFlight.delete(key);
+    }
   }
 
   async delete(mediaUrls: Iterable<string | undefined>): Promise<void> {

@@ -44,6 +44,9 @@ export function useConversationRealtime(input: {
 }) {
   const streamBuffersRef = useRef(new Map<string, StreamDisplayBuffer>());
   const audioChunksRef = useRef(new Map<string, Uint8Array[]>());
+  const audioChunkSequencesRef = useRef(
+    new Map<string, Map<number, Uint8Array>>(),
+  );
   const audioByteCountsRef = useRef(new Map<string, number>());
 
   const clearStreamBuffers = useCallback(() => {
@@ -52,6 +55,7 @@ export function useConversationRealtime(input: {
     });
     streamBuffersRef.current.clear();
     audioChunksRef.current.clear();
+    audioChunkSequencesRef.current.clear();
     audioByteCountsRef.current.clear();
   }, []);
 
@@ -252,6 +256,7 @@ export function useConversationRealtime(input: {
             });
           });
           audioChunksRef.current.delete(message.id);
+          audioChunkSequencesRef.current.delete(message.id);
           audioByteCountsRef.current.delete(message.id);
         } else {
           completeStreamedMessage({ ...message, syncStatus: "synced" });
@@ -285,6 +290,7 @@ export function useConversationRealtime(input: {
         if (event.conversationId !== conversationId) return;
         input.voicePlayback.handleStarted(event);
         audioChunksRef.current.set(event.messageId, []);
+        audioChunkSequencesRef.current.set(event.messageId, new Map());
         audioByteCountsRef.current.set(event.messageId, 0);
         updateAudioMessage(input.setMessages, event.messageId, {
           audioStreaming: true,
@@ -297,6 +303,10 @@ export function useConversationRealtime(input: {
         const chunks = audioChunksRef.current.get(event.messageId) ?? [];
         chunks.push(event.data);
         audioChunksRef.current.set(event.messageId, chunks);
+        const sequenceChunks =
+          audioChunkSequencesRef.current.get(event.messageId) ?? new Map();
+        sequenceChunks.set(event.sequence, event.data);
+        audioChunkSequencesRef.current.set(event.messageId, sequenceChunks);
         const byteCount =
           (audioByteCountsRef.current.get(event.messageId) ?? 0) +
           event.data.byteLength;
@@ -309,11 +319,12 @@ export function useConversationRealtime(input: {
       input.runtime.onMessageAudioCompleted((event) => {
         if (event.conversationId !== conversationId) return;
         input.voicePlayback.handleCompleted(event);
-        const chunks = audioChunksRef.current.get(event.messageId);
-        if (event.mediaUrl && chunks?.length)
+        const chunks = audioChunkSequencesRef.current.get(event.messageId);
+        const orderedChunks = chunks ? getContiguousChunks(chunks) : null;
+        if (event.mediaUrl && orderedChunks?.length)
           void mediaCache.put(
             event.mediaUrl,
-            new Blob([concatBytes(chunks)], { type: "audio/mpeg" }),
+            new Blob([concatBytes(orderedChunks)], { type: "audio/mpeg" }),
           );
         updateAudioMessage(input.setMessages, event.messageId, {
           audioStreaming: true,
@@ -327,6 +338,7 @@ export function useConversationRealtime(input: {
           audioStreaming: false,
         });
         audioChunksRef.current.delete(event.messageId);
+        audioChunkSequencesRef.current.delete(event.messageId);
         audioByteCountsRef.current.delete(event.messageId);
       }),
     ];
@@ -449,4 +461,14 @@ function concatBytes(chunks: Uint8Array[]) {
     offset += chunk.length;
   }
   return bytes;
+}
+
+function getContiguousChunks(chunks: Map<number, Uint8Array>) {
+  const ordered: Uint8Array[] = [];
+  for (let sequence = 0; ; sequence += 1) {
+    const chunk = chunks.get(sequence);
+    if (!chunk) break;
+    ordered.push(chunk);
+  }
+  return ordered.length === chunks.size ? ordered : null;
 }

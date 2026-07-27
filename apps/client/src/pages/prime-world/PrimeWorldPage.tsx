@@ -185,7 +185,9 @@ export function PrimeWorldPage({
                 event.resourceId && player.current.requiresFullResource()
                   ? await service.resolveAudioResource(event.resourceId)
                   : undefined;
-              await player.current.complete(fallbackUrl);
+              const receivedBlob = await player.current.complete(fallbackUrl);
+              if (event.resourceId && receivedBlob)
+                void service.cacheAudioResource(event.resourceId, receivedBlob);
             })();
           } else if (event.type === "world.audio.failed") {
             player.current.stop();

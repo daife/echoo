@@ -7,11 +7,13 @@ export class PrimeWorldAudioPlayer {
   private expectedSequence = 0;
   private missingChunk = false;
   private objectUrl?: string;
+  private mimeType = "audio/mpeg";
 
   start(mimeType = "audio/mpeg") {
     this.stop();
     this.expectedSequence = 0;
     this.missingChunk = false;
+    this.mimeType = mimeType;
     this.audio = new Audio();
     if (
       typeof MediaSource === "undefined" ||
@@ -49,7 +51,7 @@ export class PrimeWorldAudioPlayer {
     this.flush();
   }
 
-  async complete(fallbackUrl?: string) {
+  async complete(fallbackUrl?: string): Promise<Blob | undefined> {
     if (this.missingChunk && fallbackUrl) {
       this.stop();
       if (fallbackUrl.startsWith("blob:")) this.objectUrl = fallbackUrl;
@@ -57,6 +59,9 @@ export class PrimeWorldAudioPlayer {
       await this.audio.play().catch(() => undefined);
       return;
     }
+    const completedBlob = !this.missingChunk && this.fallback.length
+      ? new Blob(this.fallback, { type: this.mimeType })
+      : undefined;
     if (this.mediaSource && this.sourceBuffer) {
       const finish = () => {
         if (this.queue.length || this.sourceBuffer?.updating) return;
@@ -65,14 +70,14 @@ export class PrimeWorldAudioPlayer {
       };
       this.sourceBuffer.addEventListener("updateend", finish, { once: true });
       finish();
-      return;
+      return completedBlob;
     }
-    if (!this.fallback.length) return;
-    const blob = new Blob(this.fallback, { type: "audio/mpeg" });
-    this.objectUrl = URL.createObjectURL(blob);
+    if (!completedBlob) return;
+    this.objectUrl = URL.createObjectURL(completedBlob);
     this.audio ??= new Audio();
     this.audio.src = this.objectUrl;
     await this.audio.play().catch(() => undefined);
+    return completedBlob;
   }
 
   requiresFullResource() {
