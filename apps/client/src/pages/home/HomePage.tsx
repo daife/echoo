@@ -1,4 +1,4 @@
-import { MegaphoneSimple, Plus, Sparkle } from "@phosphor-icons/react";
+import { Plus, Sparkle } from "@phosphor-icons/react";
 import type { Agent } from "@echoo/shared";
 import type { PublicAssetListItem } from "@echoo/shared/public-assets";
 import { useEffect, useState } from "react";
@@ -100,17 +100,21 @@ export function HomePage({
       {announcement ? (
         <section
           aria-label="平台公告"
-          className="rounded-2xl border border-[#aaa0c7]/20 bg-[#aaa0c7]/[0.055] px-6 py-5 md:px-7"
+          className="border-t border-white/10 pt-8"
         >
-          <div className="flex items-center gap-2 text-xs font-medium text-[#c7b9ed]">
-            <MegaphoneSimple size={17} weight="duotone" />
-            平台公告
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.28em] text-[#aaa0c7]">
+              PLATFORM NEWS
+            </p>
+            <h2 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-white">
+              平台公告
+            </h2>
           </div>
           <MarkdownText
             text={announcement}
             onOpenPost={onOpenPost}
             onOpenAsset={onOpenAsset}
-            className="mt-4 text-sm leading-7 text-white/68"
+            className="mt-5 max-w-3xl text-sm leading-7 text-white/68"
           />
         </section>
       ) : null}
