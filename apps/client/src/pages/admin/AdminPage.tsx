@@ -12,10 +12,15 @@ import type {
 import { ApiClient } from "@echoo/api-client";
 import { useEffect, useState, type FormEvent } from "react";
 import {
+  SITE_ANNOUNCEMENT_MAX_LENGTH,
+  type SiteContentView,
+} from "@echoo/shared/site-content";
+import {
   PrimeRuntimeConfigForm,
   PrimeWorldRuntimeConfigForm,
   SliceRuntimeConfigForm,
 } from "../../features/runtime-config/RuntimeConfigForms";
+import { MarkdownText } from "../../shared/components/LinkedText";
 
 export type AdminUser = {
   id: string;
@@ -134,6 +139,7 @@ function AdminConsole({
     | "models"
     | "recommendations"
     | "runtime-defaults"
+    | "content"
   >("billing");
   return (
     <main className="min-h-screen bg-[#09090b] p-5 text-[#e5e2e1] md:p-10">
@@ -161,6 +167,7 @@ function AdminConsole({
               ["models", "OpenRouter 模型"],
               ["recommendations", "推荐与计费"],
               ["runtime-defaults", "新用户默认配置"],
+              ["content", "内容管理"],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -190,8 +197,92 @@ function AdminConsole({
         {section === "runtime-defaults" ? (
           <RuntimeDefaultsPanel token={token} onExpired={onExpired} />
         ) : null}
+        {section === "content" ? (
+          <SiteContentPanel token={token} onExpired={onExpired} />
+        ) : null}
       </div>
     </main>
+  );
+}
+
+function SiteContentPanel({ token, onExpired }: PanelProps) {
+  const [announcement, setAnnouncement] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    void authed<SiteContentView>(token, "/site-content")
+      .then((content) => setAnnouncement(content.announcement))
+      .catch((error) => handlePanelError(error, setStatus, onExpired))
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  const save = async () => {
+    setSaving(true);
+    setStatus("");
+    try {
+      const content = await authed<SiteContentView>(token, "/site-content", {
+        method: "PATCH",
+        body: { announcement },
+      });
+      setAnnouncement(content.announcement);
+      setStatus(content.announcement ? "公告已保存。" : "公告已清空并隐藏。");
+    } catch (error) {
+      handlePanelError(error, setStatus, onExpired);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="grid gap-6 lg:grid-cols-2">
+      <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-6">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold text-white">主页公告</h2>
+            <p className="mt-2 text-sm leading-6 text-white/42">
+              留空并保存即可隐藏。支持 # 标题、命名链接和裸网址。
+            </p>
+          </div>
+          <span className="shrink-0 text-xs text-white/30">
+            {announcement.length}/{SITE_ANNOUNCEMENT_MAX_LENGTH}
+          </span>
+        </div>
+        <textarea
+          value={announcement}
+          disabled={loading || saving}
+          maxLength={SITE_ANNOUNCEMENT_MAX_LENGTH}
+          onChange={(event) => setAnnouncement(event.target.value)}
+          placeholder={loading ? "正在加载公告……" : "输入主页公告"}
+          className="mt-5 min-h-72 w-full resize-y rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm leading-7 text-white outline-none placeholder:text-white/22 focus:border-[#aaa0c7]/55 disabled:opacity-50"
+        />
+        <div className="mt-4 flex items-center justify-between gap-4">
+          <p className="text-xs text-white/42" role="status">
+            {status}
+          </p>
+          <button
+            type="button"
+            disabled={loading || saving}
+            onClick={() => void save()}
+            className="shrink-0 rounded-lg bg-white px-5 py-2.5 text-sm font-medium text-black transition active:scale-[0.98] disabled:opacity-40"
+          >
+            {saving ? "正在保存……" : "保存公告"}
+          </button>
+        </div>
+      </div>
+      <div className="rounded-2xl border border-white/10 bg-[#0d0d10] p-6">
+        <p className="text-xs font-medium text-[#c7b9ed]">主页预览</p>
+        {announcement.trim() ? (
+          <MarkdownText
+            text={announcement}
+            className="mt-4 text-sm leading-7 text-white/68"
+          />
+        ) : (
+          <p className="mt-4 text-sm text-white/30">公告为空时主页不会显示公告区域。</p>
+        )}
+      </div>
+    </section>
   );
 }
 

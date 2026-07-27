@@ -12,7 +12,7 @@ import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
 import { useBackHandler } from "../../app/providers/BackNavigationProvider";
 import { MediaAsset } from "../../features/media/MediaAsset";
 import { BackButton } from "../../shared/components/BackButton";
-import { LinkedText } from "../../shared/components/LinkedText";
+import { MarkdownText } from "../../shared/components/LinkedText";
 import { ShareButton } from "../../shared/components/ShareButton";
 import type { PublicAssetService } from "../../services/PublicAssetService";
 import type { SocialService } from "../../services/SocialService";
@@ -167,8 +167,8 @@ export function CharacterDetailPage({
           </div>
         </div>
         <div className="p-7 md:p-10">
-          <p className="whitespace-pre-wrap text-sm leading-7 text-white/62">
-            <LinkedText
+          <MarkdownText
+            className="text-sm leading-7 text-white/62"
               text={
                 snapshot.introduction ||
                 (snapshot.type === "prime-world"
@@ -178,8 +178,7 @@ export function CharacterDetailPage({
               }
               onOpenPost={onOpenPost}
               onOpenAsset={onOpenAsset}
-            />
-          </p>
+          />
           <div className="mt-5 flex flex-wrap gap-2">
             {snapshot.tags.map((tag) => (
               <span

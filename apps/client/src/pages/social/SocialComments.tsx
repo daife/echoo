@@ -3,7 +3,7 @@ import type { SocialComment } from "@echoo/shared";
 import { useEffect, useMemo, useState } from "react";
 import type { SocialService } from "../../services/SocialService";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
-import { LinkedText } from "../../shared/components/LinkedText";
+import { MarkdownText } from "../../shared/components/LinkedText";
 import { formatDate } from "./PostCard";
 
 export function SocialComments({
@@ -118,11 +118,12 @@ export function SocialComments({
       </div>
       {editingId === comment.id ? (
         <div className="mt-3 flex gap-2">
-          <input
+          <textarea
             value={editingDraft}
             onChange={(event) => setEditingDraft(event.target.value)}
             maxLength={4000}
-            className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none"
+            rows={3}
+            className="min-w-0 flex-1 resize-y rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm leading-6 text-white outline-none"
           />
           <button
             type="button"
@@ -152,17 +153,18 @@ export function SocialComments({
           </button>
         </div>
       ) : (
-        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/58">
+        <div className="mt-2 text-sm leading-6 text-white/58">
           {comment.status === "visible" ? (
-            <LinkedText
+            <MarkdownText
               text={comment.body}
               onOpenPost={onOpenPost}
               onOpenAsset={onOpenAsset}
+              variant="compact"
             />
           ) : (
             "这条评论已不可见。"
           )}
-        </p>
+        </div>
       )}
       {comment.status === "visible" ? (
         <div className="mt-3 flex gap-4 text-[11px] text-white/32">
@@ -245,17 +247,21 @@ export function SocialComments({
         </div>
       ) : null}
       <div className="mt-4 flex gap-3">
-        <input
+        <textarea
           value={draft}
           maxLength={4000}
+          rows={2}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") void submit();
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              void submit();
+            }
           }}
           placeholder={
             isAuthenticated ? "写下具体、有帮助的评论" : "登录后参与评论"
           }
-          className="min-w-0 flex-1 rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none focus:border-[#aaa0c7]/50"
+          className="min-w-0 flex-1 resize-y rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm leading-6 text-white outline-none focus:border-[#aaa0c7]/50"
         />
         <button
           type="button"

@@ -3,6 +3,10 @@ import type {
   AdminRewardSettingsRequest,
   RewardSettingsView,
 } from "@echoo/shared";
+import {
+  updateSiteContentSchema,
+  type SiteContentView,
+} from "@echoo/shared/site-content";
 import { execute, queryOne } from "../../infra/database/mysql.js";
 import {
   normalizeNonNegativeUsd,
@@ -22,9 +26,33 @@ const NEW_USER_RUNTIME_DEFAULTS = "new_user_runtime_defaults";
 const RUNTIME_CONFIG_PRESETS = "runtime_config_presets";
 const REWARD_SETTINGS = "reward_settings";
 const USD_TO_CNY_RATE = "usd_to_cny_rate";
+const SITE_CONTENT = "site_content";
 const DEFAULT_NEW_USER_INITIAL_CREDIT_USD = "0.015";
 
 export class PlatformSettingsService {
+  async getSiteContent(): Promise<SiteContentView> {
+    const row = await this.find(SITE_CONTENT);
+    const parsed = parseJson(row?.value_json) as
+      | { announcement?: unknown }
+      | string
+      | null;
+    return {
+      announcement:
+        typeof parsed === "string"
+          ? parsed
+          : typeof parsed?.announcement === "string"
+            ? parsed.announcement
+            : "",
+    };
+  }
+
+  async setSiteContent(input: unknown): Promise<SiteContentView> {
+    const parsed = updateSiteContentSchema.parse(input);
+    const value = { announcement: parsed.announcement.trim() };
+    await this.save(SITE_CONTENT, value);
+    return value;
+  }
+
   async getUsdToCnyRate(): Promise<string | null> {
     const row = await this.find(USD_TO_CNY_RATE);
     const parsed = parseJson(row?.value_json);

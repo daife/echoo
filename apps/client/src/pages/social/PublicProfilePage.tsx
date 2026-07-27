@@ -14,6 +14,7 @@ import { useServices } from "../../app/providers/ServicesProvider";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
 import { BackButton } from "../../shared/components/BackButton";
 import { PostCard } from "./PostCard";
+import { MarkdownText } from "../../shared/components/LinkedText";
 import { PostComposer } from "./PostComposer";
 import {
   filterPublicAssets,
@@ -230,24 +231,34 @@ export function PublicProfilePage({
       ) : assets.length ? (
         <div className="grid gap-4 md:grid-cols-2">
           {assets.map((asset) => (
-            <button
+            <div
               key={asset.id}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => onOpenAsset(asset.id)}
+              onKeyDown={(event) => {
+                if ((event.target as HTMLElement).closest?.("a")) return;
+                if (event.key === "Enter" || event.key === " ")
+                  onOpenAsset(asset.id);
+              }}
               className="overflow-hidden rounded-2xl border border-white/8 bg-white/[0.025] text-left"
             >
               <div className="p-5">
                 <p className="text-xl font-semibold text-white">
                   {asset.snapshot.name}
                 </p>
-                <p className="mt-2 line-clamp-3 text-sm leading-6 text-white/48">
-                  {asset.snapshot.preview}
-                </p>
+                <MarkdownText
+                  text={asset.snapshot.preview}
+                  onOpenPost={onOpenPost}
+                  onOpenAsset={onOpenAsset}
+                  variant="compact"
+                  className="mt-2 line-clamp-3 text-sm leading-6 text-white/48"
+                />
                 <p className="mt-4 text-xs text-white/28">
                   {asset.likeCount} 喜欢 · {asset.commentCount} 评论
                 </p>
               </div>
-            </button>
+            </div>
           ))}
         </div>
       ) : assetsQuery.hasNextPage && assetType !== "all" ? (

@@ -1,31 +1,38 @@
-import { Plus, Sparkle } from "@phosphor-icons/react";
+import { MegaphoneSimple, Plus, Sparkle } from "@phosphor-icons/react";
 import type { Agent } from "@echoo/shared";
 import type { PublicAssetListItem } from "@echoo/shared/public-assets";
 import { useEffect, useState } from "react";
 import { PublicAssetCatalog } from "../explore/ExplorePage";
 import { MediaAsset } from "../../features/media/MediaAsset";
 import type { PublicAssetService } from "../../services/PublicAssetService";
+import type { SiteContentService } from "../../services/SiteContentService";
+import { MarkdownText } from "../../shared/components/LinkedText";
 
 export function HomePage({
   service,
+  siteContentService,
   isAuthenticated,
   onCreateAgent,
   onAgentInstalled,
   onRequireAuth,
   onOpenAsset,
+  onOpenPost,
   onOpenUser,
 }: {
   service: PublicAssetService;
+  siteContentService: SiteContentService;
   isAuthenticated: boolean;
   onCreateAgent: () => void;
   onAgentInstalled: (agent: Agent) => void;
   onRequireAuth: () => void;
   onOpenAsset: (assetId: string) => void;
+  onOpenPost: (postId: string) => void;
   onOpenUser: (userId: string) => void;
 }) {
   const [featured, setFeatured] = useState<PublicAssetListItem[]>([]);
   const [featuredLoading, setFeaturedLoading] = useState(true);
   const [featuredError, setFeaturedError] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -54,6 +61,23 @@ export function HomePage({
     };
   }, [service]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    void siteContentService
+      .get({ signal: controller.signal })
+      .then((content) => {
+        if (!cancelled) setAnnouncement(content.announcement);
+      })
+      .catch(() => {
+        if (!cancelled) setAnnouncement("");
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [siteContentService]);
+
   return (
     <section className="relative space-y-16 pb-24">
       <header className="relative overflow-hidden border-b border-white/10 pb-12 pt-4">
@@ -73,6 +97,24 @@ export function HomePage({
         </div>
       </header>
 
+      {announcement ? (
+        <section
+          aria-label="平台公告"
+          className="rounded-2xl border border-[#aaa0c7]/20 bg-[#aaa0c7]/[0.055] px-6 py-5 md:px-7"
+        >
+          <div className="flex items-center gap-2 text-xs font-medium text-[#c7b9ed]">
+            <MegaphoneSimple size={17} weight="duotone" />
+            平台公告
+          </div>
+          <MarkdownText
+            text={announcement}
+            onOpenPost={onOpenPost}
+            onOpenAsset={onOpenAsset}
+            className="mt-4 text-sm leading-7 text-white/68"
+          />
+        </section>
+      ) : null}
+
       <section>
         <div className="mb-6 flex items-end justify-between gap-5">
           <div>
@@ -91,10 +133,16 @@ export function HomePage({
         ) : featured.length ? (
           <div className="grid gap-4 md:grid-cols-3">
             {featured.map((asset, index) => (
-              <button
+              <div
                 key={asset.id}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => onOpenAsset(asset.id)}
+                onKeyDown={(event) => {
+                  if ((event.target as HTMLElement).closest?.("a")) return;
+                  if (event.key === "Enter" || event.key === " ")
+                    onOpenAsset(asset.id);
+                }}
                 className={`group relative min-h-72 overflow-hidden rounded-2xl border border-white/10 bg-[#101014] p-6 ${index === 0 ? "md:col-span-2" : ""}`}
               >
                 {asset.snapshot.coverResourcePath ? (
@@ -115,15 +163,19 @@ export function HomePage({
                     <h3 className="text-2xl font-semibold text-white">
                       {asset.snapshot.name}
                     </h3>
-                    <p className="mt-2 line-clamp-2 max-w-lg text-sm leading-6 text-white/48">
-                      {asset.snapshot.preview}
-                    </p>
+                    <MarkdownText
+                      text={asset.snapshot.preview}
+                      onOpenPost={onOpenPost}
+                      onOpenAsset={onOpenAsset}
+                      variant="compact"
+                      className="mt-2 line-clamp-2 max-w-lg text-sm leading-6 text-white/48"
+                    />
                     <p className="mt-4 text-xs text-white/30">
                       {asset.author.displayName}
                     </p>
                   </div>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         ) : (
@@ -141,6 +193,7 @@ export function HomePage({
         onAgentInstalled={onAgentInstalled}
         onRequireAuth={onRequireAuth}
         onOpenAsset={onOpenAsset}
+        onOpenPost={onOpenPost}
         onOpenUser={onOpenUser}
       />
 

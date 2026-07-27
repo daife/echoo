@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../app/providers/AuthProvider";
 import { useServices } from "../../app/providers/ServicesProvider";
 import { MediaAsset } from "../../features/media/MediaAsset";
+import { MarkdownText } from "../../shared/components/LinkedText";
 import type { PublicAssetService } from "../../services/PublicAssetService";
 import { PostCard } from "../social/PostCard";
 import { PostComposer } from "../social/PostComposer";
@@ -58,6 +59,7 @@ export function PublicAssetCatalog({
   onAgentInstalled,
   onRequireAuth,
   onOpenAsset,
+  onOpenPost,
   onOpenUser,
 }: {
   service: PublicAssetService;
@@ -65,6 +67,7 @@ export function PublicAssetCatalog({
   onAgentInstalled: (agent: Agent) => void;
   onRequireAuth: () => void;
   onOpenAsset: (assetId: string) => void;
+  onOpenPost?: (postId: string) => void;
   onOpenUser?: (userId: string) => void;
 }) {
   const auth = useAuth();
@@ -177,6 +180,8 @@ export function PublicAssetCatalog({
               asset={asset}
               busy={busyId === asset.id}
               onOpen={() => onOpenAsset(asset.id)}
+              onOpenPost={onOpenPost}
+              onOpenAsset={onOpenAsset}
               onOpenUser={onOpenUser}
               onToggleLike={async () => {
                 if (!isAuthenticated) return onRequireAuth();
@@ -466,6 +471,8 @@ export function ExplorePage({
               key={asset.id}
               asset={asset}
               onOpen={() => onOpenAsset(asset.id)}
+              onOpenPost={onOpenPost}
+              onOpenAsset={onOpenAsset}
               onOpenUser={onOpenUser}
               onToggleLike={async () => {
                 const liked = !asset.viewerHasLiked;
@@ -544,6 +551,8 @@ function PublicAssetCard({
   asset,
   busy = false,
   onOpen,
+  onOpenPost,
+  onOpenAsset,
   onOpenUser,
   onToggleLike,
   onInstall,
@@ -551,6 +560,8 @@ function PublicAssetCard({
   asset: PublicAssetListItem;
   busy?: boolean;
   onOpen: () => void;
+  onOpenPost?: (postId: string) => void;
+  onOpenAsset?: (assetId: string) => void;
   onOpenUser?: (userId: string) => void;
   onToggleLike: () => void | Promise<void>;
   onInstall: () => void | Promise<void>;
@@ -558,9 +569,14 @@ function PublicAssetCard({
   const snapshot = asset.snapshot;
   return (
     <article className="overflow-hidden rounded-2xl border border-white/8 bg-[#111114]">
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onOpen}
+        onKeyDown={(event) => {
+          if ((event.target as HTMLElement).closest?.("a")) return;
+          if (event.key === "Enter" || event.key === " ") onOpen();
+        }}
         className="relative block h-60 w-full overflow-hidden bg-[#18171d] text-left"
       >
         {snapshot.coverResourcePath ? (
@@ -579,11 +595,15 @@ function PublicAssetCard({
         </span>
         <div className="absolute bottom-5 left-6 right-6">
           <h2 className="text-3xl font-semibold text-white">{snapshot.name}</h2>
-          <p className="mt-2 line-clamp-2 text-sm leading-6 text-white/52">
-            {snapshot.preview}
-          </p>
+          <MarkdownText
+            text={snapshot.preview}
+            onOpenPost={onOpenPost}
+            onOpenAsset={onOpenAsset}
+            variant="compact"
+            className="mt-2 line-clamp-2 text-sm leading-6 text-white/52"
+          />
         </div>
-      </button>
+      </div>
       <div className="p-5">
         {snapshot.attributes.length || snapshot.tags.length ? (
           <div className="flex flex-wrap gap-2">

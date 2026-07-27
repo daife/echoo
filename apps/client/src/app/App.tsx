@@ -911,6 +911,7 @@ export function App() {
     return (
       <HomePage
         service={services.publicAssetService}
+        siteContentService={services.siteContentService}
         isAuthenticated={Boolean(auth.user)}
         onCreateAgent={() => {
           setNavigationHistory((current) =>
@@ -923,6 +924,7 @@ export function App() {
         onAgentInstalled={handleAgentInstalled}
         onRequireAuth={() => setView("auth")}
         onOpenAsset={openAsset}
+        onOpenPost={openPost}
         onOpenUser={openPublicProfile}
       />
     );

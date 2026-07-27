@@ -2,7 +2,7 @@ import { ChatCircleDots, Heart } from "@phosphor-icons/react";
 import type { SocialPostSummary } from "@echoo/shared";
 import { ExpandableMedia } from "../../features/media/ExpandableMedia";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
-import { LinkedText } from "../../shared/components/LinkedText";
+import { MarkdownText } from "../../shared/components/LinkedText";
 
 export function PostCard({
   post,
@@ -56,12 +56,13 @@ export function PostCard({
               if ((event.target as HTMLElement).closest?.("a")) return;
               if (event.key === "Enter" || event.key === " ") onOpen();
             }}
-            className="mt-4 block w-full cursor-pointer whitespace-pre-wrap text-left text-sm leading-7 text-white/67 line-clamp-6"
+            className="mt-4 block w-full cursor-pointer text-left text-sm leading-7 text-white/67 line-clamp-6"
           >
-            <LinkedText
+            <MarkdownText
               text={post.body}
               onOpenPost={onOpenPost}
               onOpenAsset={onOpenAsset}
+              variant="compact"
             />
           </div>
         ) : null}

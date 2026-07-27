@@ -183,6 +183,23 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     };
   });
 
+  app.get("/site-content", async (request, reply) => {
+    if (!(await request.requireAdmin(reply))) return;
+    return platformSettings.getSiteContent();
+  });
+
+  app.patch<{ Body: unknown }>("/site-content", async (request, reply) => {
+    if (!(await request.requireAdmin(reply))) return;
+    try {
+      return await platformSettings.setSiteContent(request.body);
+    } catch (error) {
+      return reply.code(400).send({
+        error: "INVALID_SITE_CONTENT",
+        message: errorMessage(error),
+      });
+    }
+  });
+
   app.patch<{ Body: unknown }>(
     "/settings",
     async (request, reply) => {

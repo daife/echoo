@@ -6,7 +6,7 @@ import type { SocialService } from "../../services/SocialService";
 import { ExpandableMedia } from "../../features/media/ExpandableMedia";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
 import { BackButton } from "../../shared/components/BackButton";
-import { LinkedText } from "../../shared/components/LinkedText";
+import { MarkdownText } from "../../shared/components/LinkedText";
 import { ShareButton } from "../../shared/components/ShareButton";
 import { PostComposer } from "./PostComposer";
 import { SocialComments } from "./SocialComments";
@@ -147,13 +147,12 @@ export function PostDetailPage({
               ) : null}
             </div>
             {post.body ? (
-              <p className="mt-6 whitespace-pre-wrap text-[15px] leading-8 text-white/72">
-                <LinkedText
+              <MarkdownText
+                className="mt-6 text-[15px] leading-8 text-white/72"
                   text={post.body}
                   onOpenPost={onOpenPost}
                   onOpenAsset={onOpenAsset}
-                />
-              </p>
+              />
             ) : null}
           </div>
           {post.images.length ? (

@@ -16,6 +16,7 @@ import {
   ConversationsApi,
   NotificationsApi,
   VoiceClonesApi,
+  SiteContentApi,
 } from "@echoo/api-client";
 import { AgentService } from "../../services/AgentService";
 import { AuthService } from "../../services/AuthService";
@@ -30,6 +31,7 @@ import { PrimeWorldService } from "../../services/PrimeWorldService";
 import { ConversationService } from "../../services/ConversationService";
 import { NotificationService } from "../../services/NotificationService";
 import { VoiceCloneService } from "../../services/VoiceCloneService";
+import { SiteContentService } from "../../services/SiteContentService";
 
 export function initApp(runtime: RuntimeBundle) {
   let refreshPromise: Promise<string | null> | null = null;
@@ -57,6 +59,7 @@ export function initApp(runtime: RuntimeBundle) {
       runtime.message,
     ),
     publicAssetService: new PublicAssetService(new PublicAssetsApi(api)),
+    siteContentService: new SiteContentService(new SiteContentApi(api)),
     authService: new AuthService(
       new AuthApi(api),
       runtime.auth,

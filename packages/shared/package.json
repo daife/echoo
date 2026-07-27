@@ -21,6 +21,10 @@
     "./voice-clones": {
       "types": "./dist/domains/voice-clones/index.d.ts",
       "import": "./dist/domains/voice-clones/index.js"
+    },
+    "./site-content": {
+      "types": "./dist/domains/site-content/index.d.ts",
+      "import": "./dist/domains/site-content/index.js"
     }
   },
   "scripts": {
