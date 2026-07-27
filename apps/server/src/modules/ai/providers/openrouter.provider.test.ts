@@ -29,7 +29,11 @@ function deepSeekConfig(
 }
 
 function fakes(
-  pricing = { promptUsdPerToken: 0.000001, completionUsdPerToken: 0.000002 },
+  pricing = {
+    promptUsdPerToken: 0.000001,
+    promptCacheReadUsdPerToken: 0.0000001,
+    completionUsdPerToken: 0.000002,
+  },
 ) {
   const charges: Charge[] = [];
   const billing = {
@@ -55,7 +59,13 @@ test("official DeepSeek requests use compatible payloads and local token billing
       JSON.stringify({
         id: "deepseek-request-1",
         choices: [{ message: { content: '{"result":"ok"}' } }],
-        usage: { prompt_tokens: 10, completion_tokens: 4, total_tokens: 14 },
+        usage: {
+          prompt_tokens: 10,
+          prompt_cache_hit_tokens: 6,
+          prompt_cache_miss_tokens: 4,
+          completion_tokens: 4,
+          total_tokens: 14,
+        },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
@@ -95,19 +105,22 @@ test("official DeepSeek requests use compatible payloads and local token billing
     assert.equal(body.user_id, "sticky-session");
     assert.equal(charges.length, 1);
     const [charge] = charges;
-    assert.ok(Math.abs((charge?.upstreamCostUsd ?? 0) - 0.000018) < 1e-15);
+    assert.ok(Math.abs((charge?.upstreamCostUsd ?? 0) - 0.0000126) < 1e-15);
     assert.deepEqual(
-      { ...charge, upstreamCostUsd: 0.000018 },
+      { ...charge, upstreamCostUsd: 0.0000126 },
       {
         service: "deepseek",
         model: "deepseek/deepseek-v4-flash",
         upstreamRequestId: "deepseek-request-1",
-        upstreamCostUsd: 0.000018,
+        upstreamCostUsd: 0.0000126,
         metadata: {
           promptTokens: 10,
+          promptCacheHitTokens: 6,
+          promptCacheMissTokens: 4,
           completionTokens: 4,
           totalTokens: 14,
           promptUsdPerToken: 0.000001,
+          promptCacheReadUsdPerToken: 0.0000001,
           completionUsdPerToken: 0.000002,
           directModel: "deepseek-v4-flash",
         },

@@ -87,6 +87,10 @@ export interface ChatCompletionResult {
 export interface AiUsage {
   upstreamRequestId?: string;
   promptTokens?: number;
+  /** Tokens read from an upstream provider's prompt cache. */
+  promptCacheHitTokens?: number;
+  /** Tokens that were not available in an upstream provider's prompt cache. */
+  promptCacheMissTokens?: number;
   completionTokens?: number;
   totalTokens?: number;
   costUsd?: number;

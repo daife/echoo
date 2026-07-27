@@ -28,6 +28,8 @@ interface OpenAiCompatibleResponse {
 
 interface OpenAiCompatibleUsage {
   prompt_tokens?: number;
+  prompt_cache_hit_tokens?: number;
+  prompt_cache_miss_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
   cost?: number;
@@ -468,6 +470,12 @@ function normalizeUsage(id?: string, usage?: OpenAiCompatibleUsage) {
     ...(id ? { upstreamRequestId: id } : {}),
     ...(typeof usage?.prompt_tokens === "number"
       ? { promptTokens: usage.prompt_tokens }
+      : {}),
+    ...(typeof usage?.prompt_cache_hit_tokens === "number"
+      ? { promptCacheHitTokens: usage.prompt_cache_hit_tokens }
+      : {}),
+    ...(typeof usage?.prompt_cache_miss_tokens === "number"
+      ? { promptCacheMissTokens: usage.prompt_cache_miss_tokens }
       : {}),
     ...(typeof usage?.completion_tokens === "number"
       ? { completionTokens: usage.completion_tokens }

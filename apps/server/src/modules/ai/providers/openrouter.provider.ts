@@ -88,8 +88,20 @@ export class OpenRouterProvider implements AiTextProvider {
         throw new Error(
           "DeepSeek official API did not return the request ID and complete token usage required for platform billing.",
         );
+      const promptCacheHitTokens = usage.promptCacheHitTokens ?? 0;
+      const promptCacheMissTokens =
+        usage.promptCacheMissTokens ?? usage.promptTokens - promptCacheHitTokens;
+      if (
+        promptCacheHitTokens < 0 ||
+        promptCacheMissTokens < 0 ||
+        promptCacheHitTokens + promptCacheMissTokens !== usage.promptTokens
+      )
+        throw new Error(
+          "DeepSeek official API returned inconsistent prompt cache token usage required for platform billing.",
+        );
       const upstreamCostUsd =
-        usage.promptTokens * deepSeekPricing.promptUsdPerToken +
+        promptCacheMissTokens * deepSeekPricing.promptUsdPerToken +
+        promptCacheHitTokens * deepSeekPricing.promptCacheReadUsdPerToken +
         usage.completionTokens * deepSeekPricing.completionUsdPerToken;
       await this.billing.chargeUsage({
         service: "deepseek",
@@ -98,9 +110,13 @@ export class OpenRouterProvider implements AiTextProvider {
         upstreamCostUsd,
         metadata: {
           promptTokens: usage.promptTokens,
+          promptCacheHitTokens,
+          promptCacheMissTokens,
           completionTokens: usage.completionTokens,
           totalTokens: usage.totalTokens,
           promptUsdPerToken: deepSeekPricing.promptUsdPerToken,
+          promptCacheReadUsdPerToken:
+            deepSeekPricing.promptCacheReadUsdPerToken,
           completionUsdPerToken: deepSeekPricing.completionUsdPerToken,
           directModel: toOfficialDeepSeekModelId(this.config.model),
         },

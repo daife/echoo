@@ -39,6 +39,7 @@ interface EndpointRow extends RowDataPacket {
 
 export interface EndpointUsagePricing {
   promptUsdPerToken: number;
+  promptCacheReadUsdPerToken: number;
   completionUsdPerToken: number;
 }
 
@@ -120,10 +121,21 @@ export class PlatformCatalogService {
 
     const pricing = objectValue(row.pricing);
     const promptUsdPerToken = nonnegativeFiniteNumber(pricing.prompt);
+    const promptCacheReadUsdPerToken = nonnegativeFiniteNumber(
+      pricing.input_cache_read,
+    );
     const completionUsdPerToken = nonnegativeFiniteNumber(pricing.completion);
-    if (promptUsdPerToken === undefined || completionUsdPerToken === undefined)
+    if (
+      promptUsdPerToken === undefined ||
+      promptCacheReadUsdPerToken === undefined ||
+      completionUsdPerToken === undefined
+    )
       return undefined;
-    return { promptUsdPerToken, completionUsdPerToken };
+    return {
+      promptUsdPerToken,
+      promptCacheReadUsdPerToken,
+      completionUsdPerToken,
+    };
   }
 
   async syncModels() {
