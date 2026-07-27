@@ -150,6 +150,7 @@ export function PublicAssetEditorPage({
               type="button"
               disabled={
                 busy ||
+                !draft.snapshot.name.trim() ||
                 (draft.status === "published" && !draft.hasUnpublishedChanges)
               }
               onClick={() => void publish()}

@@ -157,6 +157,55 @@ test("new public drafts do not include a runtime recommendation by default", asy
   assert.deepEqual(recommendations, [null, null]);
 });
 
+test("cannot publish an unnamed public draft", async () => {
+  let publishCalled = false;
+  const draft: PublicAssetDraft = {
+    id: "asset_unnamed",
+    author: { id: "user_1", displayName: "Creator" },
+    status: "draft",
+    snapshot: {
+      type: "slice-figure",
+      name: "   ",
+      attributes: [],
+      tags: [],
+      introduction: "",
+      detail: {
+        prologueHtml: "",
+        currentSituation: "",
+        openingLine: "",
+        linkedAgentIds: [],
+        persona: "",
+        background: "",
+        personality: "",
+        responseStyle: "",
+        systemPrompt: "",
+        memorySummaryPrompt: "",
+      },
+    },
+    hasUnpublishedChanges: true,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const service = new PublicAssetService(
+    {
+      findDraftForAuthor: async () => draft,
+      publishDraft: async () => {
+        publishCalled = true;
+        return null;
+      },
+    } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  await assert.rejects(
+    service.publishDraft("user_1", draft.id),
+    /请先填写名称并保存角色草稿/,
+  );
+  assert.equal(publishCalled, false);
+});
+
 test("unpublished drafts and unlisted assets are deletable", () => {
   assert.equal(isDeletablePublicAssetStatus("draft"), true);
   assert.equal(isDeletablePublicAssetStatus("unlisted"), true);

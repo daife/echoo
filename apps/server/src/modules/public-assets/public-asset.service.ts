@@ -224,6 +224,10 @@ export class PublicAssetService {
 
   async publishDraft(ownerUserId: string, assetId: string) {
     const draft = await this.getDraft(ownerUserId, assetId);
+    if (!draft.snapshot.name.trim())
+      throw new PublicAssetForbiddenError(
+        "请先填写名称并保存角色草稿，再发布公共资产。",
+      );
     if (draft.snapshot.type === "prime-world") compilePrimeWorld(draft.snapshot.detail);
     const published = await this.assets.publishDraft(ownerUserId, assetId);
     if (!published)
