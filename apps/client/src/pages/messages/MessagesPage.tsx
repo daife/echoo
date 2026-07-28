@@ -65,6 +65,7 @@ import {
   PrimeRuntimeConfigForm,
   SliceRuntimeConfigForm,
 } from "../../features/runtime-config/RuntimeConfigForms";
+import { runtimeConfigNotice } from "../../features/runtime-config/runtimeConfigNotice";
 import {
   RUNTIME_ERROR_TOAST_DURATION_MS,
   RuntimeErrorToast,
@@ -811,7 +812,7 @@ function RuntimeConfigDialog({
         mode === "global"
           ? "该会话已实时使用用户全局配置。"
           : "已创建该会话的独立配置。";
-      setNotice(withConfigWarnings(base, next.warnings));
+      setNotice(runtimeConfigNotice(base, next.warnings));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "模式切换失败。");
     } finally {
@@ -828,7 +829,7 @@ function RuntimeConfigDialog({
       const next = await update({ mode: "custom", config });
       setResponse(next);
       onChange(next);
-      setNotice("会话独立配置已保存。");
+      setNotice(runtimeConfigNotice("会话独立配置已保存。", next.warnings));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "配置保存失败。");
       throw caught;
@@ -953,15 +954,6 @@ function RuntimeConfigDialog({
       </div>
     </div>
   );
-}
-
-function withConfigWarnings(
-  base: string,
-  warnings?: Array<{ message: string }>,
-) {
-  return warnings?.length
-    ? `${base} 提示：${warnings.map((warning) => warning.message).join("；")}`
-    : base;
 }
 
 function EditSliceFigureDialog({

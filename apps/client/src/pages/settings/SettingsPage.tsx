@@ -14,6 +14,7 @@ import {
   PrimeWorldRuntimeConfigForm,
   SliceRuntimeConfigForm,
 } from "../../features/runtime-config/RuntimeConfigForms";
+import { runtimeConfigNotice } from "../../features/runtime-config/runtimeConfigNotice";
 import type { RuntimeConfigService } from "../../services/RuntimeConfigService";
 import type { RewardsService } from "../../services/RewardsService";
 import type { RechargeService } from "../../services/RechargeService";
@@ -81,7 +82,7 @@ export function SettingsPage({
         sliceFigure: patch,
       });
       setConfig(next);
-      setNotice(saveNotice("切片角色全局配置已保存。", next));
+      setNotice(runtimeConfigNotice("切片角色全局配置已保存。", next.warnings));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "配置保存失败。");
       throw caught;
@@ -96,7 +97,7 @@ export function SettingsPage({
         primeFigure: patch,
       });
       setConfig(next);
-      setNotice(saveNotice("本初角色全局配置已保存。", next));
+      setNotice(runtimeConfigNotice("本初角色全局配置已保存。", next.warnings));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "配置保存失败。");
       throw caught;
@@ -111,7 +112,7 @@ export function SettingsPage({
         primeWorld: patch,
       });
       setConfig(next);
-      setNotice(saveNotice("本初世界全局配置已保存。", next));
+      setNotice(runtimeConfigNotice("本初世界全局配置已保存。", next.warnings));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "配置保存失败。");
       throw caught;
@@ -297,10 +298,4 @@ function notificationPermissionLabel(state: NotificationPermissionState) {
     return "通知已被系统阻止，请在系统或浏览器设置中允许。";
   if (state === "unsupported") return "当前环境不支持系统通知。";
   return "开启后，应用在后台时也能收到提醒。";
-}
-
-function saveNotice(base: string, config: UserRuntimeConfigView) {
-  return config.warnings?.length
-    ? `${base} 提示：${config.warnings.map((warning) => warning.message).join("；")}`
-    : base;
 }
