@@ -50,12 +50,16 @@ export class PostsApi {
           ? { avatarUrl: this.client.resolveServerPath(post.author.avatarUrl) }
           : {}),
       },
-      images: post.images.map((image) => ({
-        ...image,
-        resourcePath:
-          this.client.resolveServerPath(image.resourcePath) ??
-          image.resourcePath,
-      })),
+      content: post.content.map((block) =>
+        block.type === "text"
+          ? block
+          : {
+              ...block,
+              resourcePath:
+                this.client.resolveServerPath(block.resourcePath) ??
+                block.resourcePath,
+            },
+      ),
     };
   }
 }

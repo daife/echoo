@@ -40,6 +40,32 @@ export async function initializeDatabase() {
     for (const statement of schema.split(/;\s*(?:\r?\n|$)/)) {
       if (statement.trim()) await connection.query(statement);
     }
+    await connection.query(
+      `INSERT INTO social_post_blocks
+       (post_id, position, block_type, text_content, resource_id, created_at)
+       SELECT legacy.post_id, legacy.position, legacy.block_type,
+              legacy.text_content, legacy.resource_id, legacy.created_at
+       FROM (
+         SELECT posts.id AS post_id, 0 AS position, 'text' AS block_type,
+                posts.body AS text_content, NULL AS resource_id,
+                posts.created_at
+         FROM social_posts posts
+         WHERE TRIM(posts.body) <> ''
+           AND NOT EXISTS (
+             SELECT 1 FROM social_post_blocks blocks WHERE blocks.post_id = posts.id
+           )
+         UNION ALL
+         SELECT links.post_id,
+                links.position + IF(TRIM(posts.body) <> '', 1, 0) AS position,
+                'image' AS block_type, NULL AS text_content,
+                links.resource_id, links.created_at
+         FROM social_post_resources links
+         JOIN social_posts posts ON posts.id = links.post_id
+         WHERE NOT EXISTS (
+           SELECT 1 FROM social_post_blocks blocks WHERE blocks.post_id = links.post_id
+         )
+       ) legacy`,
+    );
     const [agentOriginColumns] = await connection.query<RowDataPacket[]>(
       `SELECT column_name FROM information_schema.columns
        WHERE table_schema = DATABASE() AND table_name = 'agents'

@@ -9,8 +9,7 @@ describe("PostCard", () => {
         post={{
           id: "post_1",
           author: { id: "user_1", displayName: "Aether", isAdmin: false },
-          body: "动态正文",
-          images: [],
+          content: [{ type: "text", text: "动态正文" }],
           likeCount: 2,
           commentCount: 7,
           viewerHasLiked: false,
@@ -34,8 +33,7 @@ describe("PostCard", () => {
         post={{
           id: "post_admin",
           author: { id: "user_admin", displayName: "Echoo", isAdmin: true },
-          body: "官方动态",
-          images: [],
+          content: [{ type: "text", text: "官方动态" }],
           likeCount: 0,
           commentCount: 0,
           viewerHasLiked: false,
@@ -58,8 +56,9 @@ describe("PostCard", () => {
         post={{
           id: "post_links",
           author: { id: "user_1", displayName: "Aether", isAdmin: false },
-          body: "看看 https://echoo.example/?card=asset_1",
-          images: [],
+          content: [
+            { type: "text", text: "看看 https://echoo.example/?card=asset_1" },
+          ],
           likeCount: 0,
           commentCount: 0,
           viewerHasLiked: false,
@@ -81,17 +80,17 @@ describe("PostCard", () => {
         post={{
           id: "post_images",
           author: { id: "user_1", displayName: "Aether", isAdmin: false },
-          body: "配图动态",
-          images: [
+          content: [
+            { type: "text", text: "配图动态" },
             {
+              type: "image",
               resourceId: "res_1",
               resourcePath: "/api/resources/res_1/file",
-              position: 0,
             },
             {
+              type: "image",
               resourceId: "res_2",
               resourcePath: "/api/resources/res_2/file",
-              position: 1,
             },
           ],
           likeCount: 0,
@@ -109,5 +108,45 @@ describe("PostCard", () => {
     expect(html.match(/data-media-frame="image"/g)).toHaveLength(2);
     expect(html).toContain("Aether 的动态图片 1，点击放大查看");
     expect(html).toContain("Aether 的动态图片 2，点击放大查看");
+  });
+
+  it("renders text, image, and audio blocks in authored order", () => {
+    const html = renderToStaticMarkup(
+      <PostCard
+        post={{
+          id: "post_mixed",
+          author: { id: "user_1", displayName: "Aether", isAdmin: false },
+          content: [
+            { type: "text", text: "之前" },
+            {
+              type: "image",
+              resourceId: "res_image",
+              resourcePath: "/api/resources/res_image/file",
+            },
+            { type: "text", text: "之后" },
+            {
+              type: "audio",
+              resourceId: "res_audio",
+              resourcePath: "/api/resources/res_audio/file",
+              durationSeconds: 12,
+            },
+          ],
+          likeCount: 0,
+          commentCount: 0,
+          viewerHasLiked: false,
+          canEdit: false,
+          canDelete: false,
+          createdAt: 1,
+          updatedAt: 1,
+        }}
+        onOpen={vi.fn()}
+      />,
+    );
+    const imageIndex = html.indexOf('data-media-frame="image"');
+    const audioIndex = html.indexOf("<audio");
+    expect(html.indexOf("之前")).toBeLessThan(imageIndex);
+    expect(imageIndex).toBeLessThan(html.indexOf("之后"));
+    expect(html.indexOf("之后")).toBeLessThan(audioIndex);
+    expect(html).toContain("0:12");
   });
 });

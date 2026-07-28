@@ -1,4 +1,8 @@
-import type { SocialPostPage, SocialPostSummary } from "@echoo/shared";
+import type {
+  SocialPostContentInput,
+  SocialPostPage,
+  SocialPostSummary,
+} from "@echoo/shared";
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 import {
   execute,
@@ -23,17 +27,20 @@ interface PostRow extends RowDataPacket {
   updated_at: number;
 }
 
-interface ImageRow extends RowDataPacket {
+interface ContentRow extends RowDataPacket {
   post_id: string;
-  resource_id: string;
-  public_path: string;
+  block_type: "text" | "image" | "audio";
+  text_content: string | null;
+  resource_id: string | null;
+  public_path: string | null;
+  duration_ms: number | null;
   position: number;
 }
 
 export class SocialPostRepository {
   constructor(private readonly notifications = new NotificationRepository()) {}
 
-  async create(authorUserId: string, body: string, resourceIds: string[]) {
+  async create(authorUserId: string, content: SocialPostContentInput[]) {
     const id = createId("post");
     const now = Date.now();
     const notifiedFollowers = await withTransaction(async (connection) => {
@@ -47,10 +54,10 @@ export class SocialPostRepository {
       await execute(
         `INSERT INTO social_posts (id, author_user_id, body, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?)`,
-        [id, authorUserId, body, now, now],
+        [id, authorUserId, legacyBody(content), now, now],
         connection,
       );
-      await replaceImages(connection, id, resourceIds, now);
+      await replaceContent(connection, id, content, now);
       return this.notifications.markActivityUnreadForFollowers(
         authorUserId,
         now,
@@ -64,8 +71,7 @@ export class SocialPostRepository {
   async update(
     authorUserId: string,
     postId: string,
-    body: string,
-    resourceIds: string[],
+    content: SocialPostContentInput[],
   ) {
     return withTransaction(async (connection) => {
       const post = await queryOne<RowDataPacket & { id: string }>(
@@ -79,10 +85,10 @@ export class SocialPostRepository {
       await execute(
         `UPDATE social_posts SET body = ?, updated_at = ?
          WHERE id = ? AND author_user_id = ?`,
-        [body, now, postId, authorUserId],
+        [legacyBody(content), now, postId, authorUserId],
         connection,
       );
-      await replaceImages(connection, postId, resourceIds, now);
+      await replaceContent(connection, postId, content, now);
       await execute(
         "UPDATE social_objects SET updated_at = ? WHERE id = ?",
         [now, postId],
@@ -185,23 +191,43 @@ export class SocialPostRepository {
   private async hydrate(rows: PostRow[], viewerUserId: string | null) {
     if (!rows.length) return [];
     const placeholders = rows.map(() => "?").join(",");
-    const images = await queryRows<ImageRow>(
-      `SELECT links.post_id, links.resource_id, resources.public_path, links.position
-       FROM social_post_resources links
-       JOIN resources ON resources.id = links.resource_id
-       WHERE links.post_id IN (${placeholders})
-       ORDER BY links.position ASC`,
+    const blocks = await queryRows<ContentRow>(
+      `SELECT blocks.post_id, blocks.block_type, blocks.text_content,
+              blocks.resource_id, resources.public_path,
+              resources.duration_ms, blocks.position
+       FROM social_post_blocks blocks
+       LEFT JOIN resources ON resources.id = blocks.resource_id
+       WHERE blocks.post_id IN (${placeholders})
+       ORDER BY blocks.post_id, blocks.position ASC`,
       rows.map((row) => row.id),
     );
-    const byPost = new Map<string, SocialPostSummary["images"]>();
-    for (const image of images) {
-      const list = byPost.get(image.post_id) ?? [];
-      list.push({
-        resourceId: image.resource_id,
-        resourcePath: image.public_path,
-        position: image.position,
-      });
-      byPost.set(image.post_id, list);
+    const byPost = new Map<string, SocialPostSummary["content"]>();
+    for (const block of blocks) {
+      const list = byPost.get(block.post_id) ?? [];
+      if (block.block_type === "text" && block.text_content !== null)
+        list.push({ type: "text", text: block.text_content });
+      else if (
+        block.block_type === "image" &&
+        block.resource_id &&
+        block.public_path
+      )
+        list.push({
+          type: "image",
+          resourceId: block.resource_id,
+          resourcePath: block.public_path,
+        });
+      else if (
+        block.block_type === "audio" &&
+        block.resource_id &&
+        block.public_path
+      )
+        list.push({
+          type: "audio",
+          resourceId: block.resource_id,
+          resourcePath: block.public_path,
+          durationSeconds: block.duration_ms === null ? 0 : block.duration_ms / 1000,
+        });
+      byPost.set(block.post_id, list);
     }
     return rows.map((row): SocialPostSummary => ({
       id: row.id,
@@ -211,8 +237,9 @@ export class SocialPostRepository {
         ...(row.avatar_url ? { avatarUrl: row.avatar_url } : {}),
         isAdmin: Boolean(row.is_admin),
       },
-      body: row.body,
-      images: byPost.get(row.id) ?? [],
+      content:
+        byPost.get(row.id) ??
+        (row.body.trim() ? [{ type: "text", text: row.body }] : []),
       likeCount: row.like_count,
       commentCount: row.comment_count,
       viewerHasLiked: Boolean(row.viewer_has_liked),
@@ -237,24 +264,54 @@ const POST_SELECT = `SELECT posts.id, posts.author_user_id, users.display_name, 
    ON avatar_link.user_id = users.id AND avatar_link.usage_kind = 'avatar'
  LEFT JOIN resources avatar ON avatar.id = avatar_link.resource_id`;
 
-async function replaceImages(
+async function replaceContent(
   connection: PoolConnection,
   postId: string,
-  resourceIds: string[],
+  content: SocialPostContentInput[],
   now: number,
 ) {
+  await execute(
+    "DELETE FROM social_post_blocks WHERE post_id = ?",
+    [postId],
+    connection,
+  );
+  for (const [position, block] of content.entries())
+    await execute(
+      `INSERT INTO social_post_blocks
+       (post_id, position, block_type, text_content, resource_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        postId,
+        position,
+        block.type,
+        block.type === "text" ? block.text : null,
+        block.type === "text" ? null : block.resourceId,
+        now,
+      ],
+      connection,
+    );
+
   await execute(
     "DELETE FROM social_post_resources WHERE post_id = ?",
     [postId],
     connection,
   );
-  for (const [position, resourceId] of resourceIds.entries())
+  const imageIds = content.flatMap((block) =>
+    block.type === "image" ? [block.resourceId] : [],
+  );
+  for (const [position, resourceId] of imageIds.entries())
     await execute(
       `INSERT INTO social_post_resources (post_id, resource_id, position, created_at)
        VALUES (?, ?, ?, ?)`,
       [postId, resourceId, position, now],
       connection,
     );
+}
+
+function legacyBody(content: SocialPostContentInput[]) {
+  return content
+    .flatMap((block) => (block.type === "text" ? [block.text] : []))
+    .join("\n");
 }
 
 function encodeCursor(row: { created_at: number; id: string }) {

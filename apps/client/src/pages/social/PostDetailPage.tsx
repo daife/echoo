@@ -3,12 +3,11 @@ import type { SocialPostSummary } from "@echoo/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { SocialService } from "../../services/SocialService";
-import { ExpandableMedia } from "../../features/media/ExpandableMedia";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
 import { BackButton } from "../../shared/components/BackButton";
-import { MarkdownText } from "../../shared/components/LinkedText";
 import { ShareButton } from "../../shared/components/ShareButton";
 import { PostComposer } from "./PostComposer";
+import { PostContent, postPlainText } from "./PostContent";
 import { SocialComments } from "./SocialComments";
 import { formatDate } from "./PostCard";
 import {
@@ -146,32 +145,17 @@ export function PostDetailPage({
                 </button>
               ) : null}
             </div>
-            {post.body ? (
-              <MarkdownText
-                className="mt-6 text-[15px] leading-8 text-white/72"
-                  text={post.body}
+            {post.content.length ? (
+              <div className="mt-6 text-[15px] leading-8 text-white/72">
+                <PostContent
+                  content={post.content}
+                  authorName={post.author.displayName}
                   onOpenPost={onOpenPost}
                   onOpenAsset={onOpenAsset}
-              />
+                />
+              </div>
             ) : null}
           </div>
-          {post.images.length ? (
-            <div
-              className={`grid gap-px bg-white/5 ${post.images.length === 1 ? "grid-cols-1" : post.images.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}
-            >
-              {post.images.map((image, index) => (
-                <ExpandableMedia
-                  key={image.resourceId}
-                  mediaUrl={image.resourcePath}
-                  kind="image"
-                  previewVariant="display"
-                  alt={`${post.author.displayName} 的动态图片 ${index + 1}`}
-                  triggerClassName="group relative block aspect-square w-full overflow-hidden bg-black/20"
-                  mediaClassName="h-full w-full object-cover"
-                />
-              ))}
-            </div>
-          ) : null}
           <div className="p-6 md:p-8">
             {error ? (
               <p className="mb-4 text-xs text-red-200/80">{error}</p>
@@ -238,7 +222,7 @@ export function PostDetailPage({
               <ShareButton
                 target={{ type: "post", id: post.id }}
                 title={`${post.author.displayName} 的动态`}
-                text={post.body.slice(0, 120)}
+                text={postPlainText(post.content).slice(0, 120)}
               />
             </div>
             <div id="social-comments">

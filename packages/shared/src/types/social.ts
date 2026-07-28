@@ -1,3 +1,8 @@
+import type {
+  SocialPostContent,
+  SocialPostContentInput,
+} from "./social-content.js";
+
 export interface SocialAuthor {
   id: string;
   displayName: string;
@@ -24,17 +29,10 @@ export interface SocialCommentPage {
   nextCursor?: string;
 }
 
-export interface SocialPostImage {
-  resourceId: string;
-  resourcePath: string;
-  position: number;
-}
-
 export interface SocialPostSummary {
   id: string;
   author: SocialAuthor;
-  body: string;
-  images: SocialPostImage[];
+  content: SocialPostContent[];
   likeCount: number;
   commentCount: number;
   viewerHasLiked: boolean;
@@ -52,8 +50,7 @@ export interface SocialPostPage {
 }
 
 export interface CreateSocialPostRequest {
-  body?: string;
-  resourceIds?: string[];
+  content: SocialPostContentInput[];
 }
 
 export type UpdateSocialPostRequest = CreateSocialPostRequest;

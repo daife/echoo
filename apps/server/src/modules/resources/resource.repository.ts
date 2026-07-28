@@ -450,6 +450,8 @@ export class ResourceRepository {
          ON asset_drafts.resource_id = resources.id
        LEFT JOIN social_post_resources post_resources
          ON post_resources.resource_id = resources.id
+       LEFT JOIN social_post_blocks post_blocks
+         ON post_blocks.resource_id = resources.id
        WHERE resources.status IN ('ready', 'failed', 'pending')
          AND resources.created_at < ?
          AND (resources.status != 'ready' OR resources.storage_key LIKE '%/original.%')
@@ -459,6 +461,7 @@ export class ResourceRepository {
          AND asset_versions.resource_id IS NULL
          AND asset_drafts.resource_id IS NULL
          AND post_resources.resource_id IS NULL
+         AND post_blocks.resource_id IS NULL
        ORDER BY resources.created_at ASC LIMIT ?`,
       [cutoff, limit],
     );
@@ -486,6 +489,8 @@ export class ResourceRepository {
          SELECT 1 FROM public_asset_draft_resources WHERE resource_id = resources.id
        ) AND NOT EXISTS (
          SELECT 1 FROM social_post_resources WHERE resource_id = resources.id
+       ) AND NOT EXISTS (
+         SELECT 1 FROM social_post_blocks WHERE resource_id = resources.id
        )`,
       [Date.now(), id],
     );
@@ -573,6 +578,9 @@ export class ResourceRepository {
            SELECT 1 FROM social_post_resources post_resources
            WHERE post_resources.resource_id = resources.id
          ) OR EXISTS (
+           SELECT 1 FROM social_post_blocks post_blocks
+           WHERE post_blocks.resource_id = resources.id
+         ) OR EXISTS (
            SELECT 1 FROM user_resources public_users
            WHERE public_users.resource_id = resources.id
              AND public_users.usage_kind = 'avatar'
@@ -597,6 +605,9 @@ export class ResourceRepository {
          ) OR EXISTS (
            SELECT 1 FROM social_post_resources post_resources
            WHERE post_resources.resource_id = resources.id
+         ) OR EXISTS (
+           SELECT 1 FROM social_post_blocks post_blocks
+           WHERE post_blocks.resource_id = resources.id
          ) OR EXISTS (
            SELECT 1 FROM user_resources public_users
            WHERE public_users.resource_id = resources.id

@@ -4,6 +4,7 @@ import type {
   SocialApi,
   UsersApi,
 } from "@echoo/api-client";
+import type { SocialPostContentInput } from "@echoo/shared";
 
 export class SocialService {
   constructor(
@@ -13,14 +14,14 @@ export class SocialService {
     private readonly resources: ResourcesApi,
   ) {}
 
-  createPost(body: string, resourceIds: string[]) {
-    return this.posts.create({ body, resourceIds });
+  createPost(content: SocialPostContentInput[]) {
+    return this.posts.create({ content });
   }
   getPost(postId: string) {
     return this.posts.get(postId);
   }
-  updatePost(postId: string, body: string, resourceIds: string[]) {
-    return this.posts.update(postId, { body, resourceIds });
+  updatePost(postId: string, content: SocialPostContentInput[]) {
+    return this.posts.update(postId, { content });
   }
   deletePost(postId: string) {
     return this.posts.delete(postId);
@@ -65,11 +66,11 @@ export class SocialService {
     return this.social.hideComment(commentId);
   }
 
-  async uploadPostImage(file: File) {
+  async uploadPostMedia(file: File, type: "image" | "audio") {
     const ticket = await this.resources.createUpload({
-      kind: "end_user_image",
+      kind: type === "image" ? "end_user_image" : "end_user_voice",
       fileName: file.name,
-      mimeType: "image/jpeg",
+      mimeType: type === "image" ? "image/jpeg" : "audio/mpeg",
       byteSize: file.size,
     });
     await this.resources.upload(ticket, file);
@@ -78,9 +79,10 @@ export class SocialService {
       await delay(delayMs);
       const status = await this.resources.status(ticket.resourceId);
       if (status.status === "ready") return ticket.resourceId;
-      if (status.status === "failed") throw new Error("图片处理失败。");
+      if (status.status === "failed")
+        throw new Error(type === "image" ? "图片处理失败。" : "语音处理失败。");
     }
-    throw new Error("图片处理超时，请稍后重试。");
+    throw new Error(`${type === "image" ? "图片" : "语音"}处理超时，请稍后重试。`);
   }
 }
 

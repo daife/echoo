@@ -406,6 +406,20 @@ CREATE TABLE IF NOT EXISTS social_post_resources (
   CONSTRAINT fk_social_post_resources_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS social_post_blocks (
+  post_id VARCHAR(64) NOT NULL,
+  position SMALLINT UNSIGNED NOT NULL,
+  block_type VARCHAR(16) NOT NULL,
+  text_content TEXT NULL,
+  resource_id VARCHAR(64) NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (post_id, position),
+  UNIQUE KEY uq_social_post_block_resource (post_id, resource_id),
+  INDEX idx_social_post_blocks_resource (resource_id),
+  CONSTRAINT fk_social_post_blocks_post FOREIGN KEY (post_id) REFERENCES social_posts(id) ON DELETE CASCADE,
+  CONSTRAINT fk_social_post_blocks_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS public_assets (
   id VARCHAR(64) PRIMARY KEY,
   author_user_id VARCHAR(64) NOT NULL,

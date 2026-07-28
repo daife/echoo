@@ -1,3 +1,4 @@
+import type { SocialPostContentInput } from "@echoo/shared";
 import { ResourceRepository } from "../resources/resource.repository.js";
 import { SocialPostRepository } from "./social-post.repository.js";
 
@@ -31,22 +32,19 @@ export class SocialPostService {
     return post;
   }
 
-  async create(authorUserId: string, body: string, resourceIds: string[]) {
-    await this.validateContent(authorUserId, body, resourceIds);
-    const id = await this.posts.create(authorUserId, body.trim(), resourceIds);
+  async create(authorUserId: string, content: SocialPostContentInput[]) {
+    const normalized = await this.validateContent(authorUserId, content);
+    const id = await this.posts.create(authorUserId, normalized);
     return this.get(authorUserId, id);
   }
 
   async update(
     authorUserId: string,
     postId: string,
-    body: string,
-    resourceIds: string[],
+    content: SocialPostContentInput[],
   ) {
-    await this.validateContent(authorUserId, body, resourceIds);
-    if (
-      !(await this.posts.update(authorUserId, postId, body.trim(), resourceIds))
-    )
+    const normalized = await this.validateContent(authorUserId, content);
+    if (!(await this.posts.update(authorUserId, postId, normalized)))
       throw new SocialPostNotFoundError("未找到可编辑的动态。");
     return this.get(authorUserId, postId);
   }
@@ -58,27 +56,60 @@ export class SocialPostService {
 
   private async validateContent(
     authorUserId: string,
-    body: string,
-    resourceIds: string[],
+    content: SocialPostContentInput[],
   ) {
-    if (!body.trim() && !resourceIds.length)
-      throw new SocialPostForbiddenError("动态需要包含文字或图片。");
-    if (body.length > 4000)
+    const normalized = normalizePostContent(content);
+    const textLength = normalized.reduce(
+      (total, block) => total + (block.type === "text" ? block.text.length : 0),
+      0,
+    );
+    const images = normalized.filter((block) => block.type === "image");
+    const audio = normalized.filter((block) => block.type === "audio");
+    const media = normalized.filter(
+      (block): block is Exclude<SocialPostContentInput, { type: "text" }> =>
+        block.type !== "text",
+    );
+    if (!normalized.length)
+      throw new SocialPostForbiddenError("动态需要包含文字、图片或语音。");
+    if (textLength > 4000)
       throw new SocialPostForbiddenError("动态正文不能超过 4000 字。");
-    if (resourceIds.length > 3)
+    if (images.length > 3)
       throw new SocialPostForbiddenError("每条动态最多添加 3 张图片。");
-    if (new Set(resourceIds).size !== resourceIds.length)
-      throw new SocialPostForbiddenError("动态不能重复添加同一张图片。");
-    for (const resourceId of resourceIds) {
-      const resource = await this.resources.findById(resourceId);
+    if (audio.length > 10)
+      throw new SocialPostForbiddenError("每条动态最多添加 10 条语音。");
+    if (new Set(media.map((block) => block.resourceId)).size !== media.length)
+      throw new SocialPostForbiddenError("动态不能重复添加同一媒体资源。");
+    for (const block of media) {
+      const resource = await this.resources.findById(block.resourceId);
+      const matchesType =
+        block.type === "image"
+          ? resource?.kind === "end_user_image" &&
+            resource.mimeType === "image/jpeg"
+          : resource?.kind === "end_user_voice" &&
+            resource.mimeType === "audio/mpeg";
       if (
         !resource ||
         resource.ownerUserId !== authorUserId ||
         resource.status !== "ready" ||
-        resource.kind !== "end_user_image" ||
-        resource.mimeType !== "image/jpeg"
+        !matchesType
       )
-        throw new SocialPostForbiddenError("动态包含不可用的图片资源。");
+        throw new SocialPostForbiddenError("动态包含不可用或类型不匹配的媒体资源。");
     }
+    return normalized;
   }
+}
+
+export function normalizePostContent(content: SocialPostContentInput[]) {
+  const normalized: SocialPostContentInput[] = [];
+  for (const block of content) {
+    if (block.type !== "text") {
+      normalized.push({ ...block, resourceId: block.resourceId.trim() });
+      continue;
+    }
+    if (!block.text.trim()) continue;
+    const previous = normalized.at(-1);
+    if (previous?.type === "text") previous.text += block.text;
+    else normalized.push({ type: "text", text: block.text });
+  }
+  return normalized;
 }

@@ -9,6 +9,7 @@ export * from "./types/agent.js";
 export * from "./types/prime-world.js";
 export * from "./fixtures/prime-world.js";
 export * from "./types/social.js";
+export * from "./types/social-content.js";
 export * from "./types/interfaceBinding.js";
 export * from "./types/conversation.js";
 export * from "./types/message.js";

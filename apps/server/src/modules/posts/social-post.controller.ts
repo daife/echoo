@@ -6,10 +6,25 @@ import {
   SocialPostService,
 } from "./social-post.service.js";
 
+const postContentSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("text"), text: z.string().max(4000) }).strict(),
+  z
+    .object({
+      type: z.literal("image"),
+      resourceId: z.string().trim().min(1).max(120),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("audio"),
+      resourceId: z.string().trim().min(1).max(120),
+    })
+    .strict(),
+]);
+
 const postSchema = z
   .object({
-    body: z.string().max(4000).default(""),
-    resourceIds: z.array(z.string().trim().min(1).max(120)).max(3).default([]),
+    content: z.array(postContentSchema).max(64),
   })
   .strict();
 
@@ -26,7 +41,7 @@ export async function registerSocialPostRoutes(app: FastifyInstance) {
       return reply
         .code(201)
         .send(
-          await posts.create(userId, parsed.data.body, parsed.data.resourceIds),
+          await posts.create(userId, parsed.data.content),
         );
     } catch (error) {
       return postError(reply, error);
@@ -59,8 +74,7 @@ export async function registerSocialPostRoutes(app: FastifyInstance) {
         return await posts.update(
           userId,
           request.params.postId,
-          parsed.data.body,
-          parsed.data.resourceIds,
+          parsed.data.content,
         );
       } catch (error) {
         return postError(reply, error);

@@ -1,8 +1,7 @@
 import { ChatCircleDots, Heart } from "@phosphor-icons/react";
 import type { SocialPostSummary } from "@echoo/shared";
-import { ExpandableMedia } from "../../features/media/ExpandableMedia";
 import { IdentityAvatar } from "../../shared/components/IdentityAvatar";
-import { MarkdownText } from "../../shared/components/LinkedText";
+import { PostContent } from "./PostContent";
 
 export function PostCard({
   post,
@@ -47,19 +46,25 @@ export function PostCard({
             </span>
           </span>
         </button>
-        {post.body ? (
+        {post.content.length ? (
           <div
             role="button"
             tabIndex={0}
             onClick={onOpen}
             onKeyDown={(event) => {
-              if ((event.target as HTMLElement).closest?.("a")) return;
+              if (
+                (event.target as HTMLElement).closest?.(
+                  "a,button,audio,input,textarea,select",
+                )
+              )
+                return;
               if (event.key === "Enter" || event.key === " ") onOpen();
             }}
-            className="mt-4 block w-full cursor-pointer text-left text-sm leading-7 text-white/67 line-clamp-6"
+            className="mt-4 block w-full cursor-pointer text-left text-sm leading-7 text-white/67"
           >
-            <MarkdownText
-              text={post.body}
+            <PostContent
+              content={post.content}
+              authorName={post.author.displayName}
               onOpenPost={onOpenPost}
               onOpenAsset={onOpenAsset}
               variant="compact"
@@ -67,23 +72,6 @@ export function PostCard({
           </div>
         ) : null}
       </div>
-      {post.images.length ? (
-        <div
-          className={`grid w-full gap-px bg-white/5 ${post.images.length === 1 ? "grid-cols-1" : post.images.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}
-        >
-          {post.images.map((image, index) => (
-            <ExpandableMedia
-              key={image.resourceId}
-              mediaUrl={image.resourcePath}
-              kind="image"
-              previewVariant="display"
-              alt={`${post.author.displayName} 的动态图片 ${index + 1}`}
-              triggerClassName="group relative block aspect-square w-full overflow-hidden bg-black/20"
-              mediaClassName="h-full w-full object-cover"
-            />
-          ))}
-        </div>
-      ) : null}
       <div className="flex items-center gap-6 border-t border-white/8 px-5 py-4 text-sm text-white/42">
         <button
           type="button"
