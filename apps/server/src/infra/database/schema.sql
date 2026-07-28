@@ -124,6 +124,11 @@ CREATE TABLE IF NOT EXISTS agent_resources (
   CONSTRAINT fk_agent_resources_resource FOREIGN KEY (resource_id) REFERENCES resources(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  id VARCHAR(160) PRIMARY KEY,
+  applied_at BIGINT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS conversations (
   id VARCHAR(64) PRIMARY KEY,
   owner_user_id VARCHAR(64) NOT NULL,

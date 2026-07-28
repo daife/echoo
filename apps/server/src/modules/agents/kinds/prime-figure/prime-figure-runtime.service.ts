@@ -738,7 +738,10 @@ async function streamPrimeChatCompletion(
     }
     if (delta.reasoningContent) reasoningContent += delta.reasoningContent;
     if (typeof delta.reasoningDetails !== "undefined")
-      reasoningDetails = mergeReasoningDetails(reasoningDetails, delta.reasoningDetails);
+      reasoningDetails = mergeReasoningDetails(
+        reasoningDetails,
+        delta.reasoningDetails,
+      );
     for (const toolDelta of delta.toolCalls ?? []) {
       const current = toolCalls.get(toolDelta.index) ?? {
         id: "",
@@ -766,15 +769,14 @@ async function streamPrimeChatCompletion(
     text,
     ...(completedToolCalls.length ? { toolCalls: completedToolCalls } : {}),
     ...(reasoningContent ? { reasoningContent } : {}),
-    ...(typeof reasoningDetails !== "undefined"
-      ? { reasoningDetails }
-      : {}),
+    ...(typeof reasoningDetails !== "undefined" ? { reasoningDetails } : {}),
   };
 }
 
 function mergeReasoningDetails(current: unknown, next: unknown) {
   if (typeof current === "undefined") return next;
-  if (Array.isArray(current) && Array.isArray(next)) return [...current, ...next];
+  if (Array.isArray(current) && Array.isArray(next))
+    return [...current, ...next];
   return next;
 }
 
@@ -937,36 +939,12 @@ export async function buildPrimeChatMessages(
   const pendingMedia: PendingMediaAnnotation[] = [];
   const auxiliaryMedia: PendingMediaAnnotation[] = [];
   const sttMedia: PendingMediaAnnotation[] = [];
-  if (agent.coverResourcePath) {
-    const cover = await resources.findByPublicPath(
-      ownerUserId,
-      agent.coverResourcePath,
-    );
-    if (!cover) throw new Error("figure 封面资源不存在或不属于当前用户。");
-    await conversationMedia.ensure({
-      ownerUserId,
-      conversationId: agent.conversationId,
-      resourceId: cover.id,
-      mediaType: "image",
-      description: "figure角色立绘",
-      source: "figure_cover",
-    });
-  }
-  for (const referenceImage of agent.detail.referenceImages) {
-    const resource = await resources.findById(referenceImage.resourceId);
-    if (!resource || resource.ownerUserId !== ownerUserId)
-      throw new Error(
-        `figure 创作者参考图片不存在或不属于当前用户：${referenceImage.resourceId}。`,
-      );
-    await conversationMedia.ensure({
-      ownerUserId,
-      conversationId: agent.conversationId,
-      resourceId: resource.id,
-      mediaType: "image",
-      description: referenceImage.description,
-      source: "figure_reference",
-    });
-  }
+  const availableStickers = await registerPrimeFigureResources({
+    ownerUserId,
+    agent,
+    resources,
+    conversationMedia,
+  });
   for (const message of timeline) {
     const at = formatReadableMinute(message.occurredAtMs, timezone);
     const sender = toLlmSender(message.sender);
@@ -1177,12 +1155,6 @@ export async function buildPrimeChatMessages(
     id: media.mediaId,
     description: sanitizeVisibleText(media.description ?? "", timezone),
   }));
-  const availableStickers = (agent.detail.stickers ?? []).map((sticker) => ({
-    id: sticker.resourceId,
-    description: sanitizeVisibleText(sticker.description, timezone),
-    resourceUrl: sticker.resourcePath,
-  }));
-
   content.push({
     type: "text",
     text: JSON.stringify({
@@ -1249,6 +1221,107 @@ export async function buildPrimeChatMessages(
     pendingEndUserTransfers: pendingTransferSummaries,
     recallAvailable,
   };
+}
+
+export async function registerPrimeFigureResources(input: {
+  ownerUserId: string;
+  agent: PrimeFigureAgent;
+  resources: ResourceRepository;
+  conversationMedia: PrimeConversationMediaRepository;
+}) {
+  const { ownerUserId, agent, resources, conversationMedia } = input;
+  if (agent.coverResourcePath) {
+    const cover = await resources.findAgentResourceByPublicPath(
+      ownerUserId,
+      agent.id,
+      agent.coverResourcePath,
+      "cover",
+    );
+    if (cover?.status === "ready" && cover.mimeType.startsWith("image/"))
+      await conversationMedia.ensure({
+        ownerUserId,
+        conversationId: agent.conversationId,
+        resourceId: cover.id,
+        mediaType: "image",
+        description: "figure角色立绘",
+        source: "figure_cover",
+      });
+    else
+      console.warn(
+        "figure cover resource is unavailable; continuing without it",
+        {
+          agentId: agent.id,
+          conversationId: agent.conversationId,
+        },
+      );
+  }
+
+  for (const referenceImage of agent.detail.referenceImages) {
+    const resource = await resources.findAgentResourceById(
+      ownerUserId,
+      agent.id,
+      referenceImage.resourceId,
+      "reference",
+    );
+    if (
+      !resource ||
+      resource.status !== "ready" ||
+      !resource.mimeType.startsWith("image/")
+    ) {
+      console.warn(
+        "figure reference resource is unavailable; continuing without it",
+        {
+          agentId: agent.id,
+          conversationId: agent.conversationId,
+          resourceId: referenceImage.resourceId,
+        },
+      );
+      continue;
+    }
+    await conversationMedia.ensure({
+      ownerUserId,
+      conversationId: agent.conversationId,
+      resourceId: resource.id,
+      mediaType: "image",
+      description: referenceImage.description,
+      source: "figure_reference",
+    });
+  }
+
+  const availableStickers: Array<{
+    id: string;
+    description: string;
+    resourceUrl: string;
+  }> = [];
+  for (const sticker of agent.detail.stickers ?? []) {
+    const resource = await resources.findAgentResourceById(
+      ownerUserId,
+      agent.id,
+      sticker.resourceId,
+      "sticker",
+    );
+    if (
+      !resource ||
+      resource.status !== "ready" ||
+      !resource.mimeType.startsWith("image/")
+    ) {
+      console.warn(
+        "figure sticker resource is unavailable; omitting it from available stickers",
+        {
+          agentId: agent.id,
+          conversationId: agent.conversationId,
+          resourceId: sticker.resourceId,
+        },
+      );
+      continue;
+    }
+    availableStickers.push({
+      id: sticker.resourceId,
+      description: sanitizeVisibleText(sticker.description, APP_TIME_ZONE),
+      resourceUrl: resource.publicPath,
+    });
+  }
+  return availableStickers;
 }
 
 const IMAGE_MIME_TYPES = new Set([
@@ -1370,8 +1443,7 @@ const SEARCH_RECALL_TOOL: ChatToolDefinition = {
   type: "function",
   function: {
     name: "search_recall",
-    description:
-      "按关键词搜索角色更早的记忆和对话历史。",
+    description: "按关键词搜索角色更早的记忆和对话历史。",
     parameters: {
       type: "object",
       description: "设置用于检索的关键词以及返回结果的数量。",
@@ -1650,8 +1722,7 @@ function buildSendMessageActionSchema(
                     },
                     generationPrompt: {
                       type: "string",
-                      description:
-                        "供实际图像生成服务直接使用的提示词。",
+                      description: "供实际图像生成服务直接使用的提示词。",
                     },
                     referenceMediaIds: {
                       type: "array",

@@ -9,10 +9,7 @@ import { ResourceRepository } from "../../../resources/resource.repository.js";
 
 export type PrimeConversationMediaType = "image" | "video" | "voice";
 export type PrimeConversationMediaSource =
-  | "message"
-  | "figure_cover"
-  | "figure_reference"
-  | "generated";
+  "message" | "figure_cover" | "figure_reference" | "generated";
 export interface PrimeConversationMedia {
   conversationId: string;
   ownerUserId: string;
@@ -51,8 +48,16 @@ export class PrimeConversationMediaRepository {
     source?: PrimeConversationMediaSource;
   }) {
     const resource = await this.resources.findById(input.resourceId);
-    if (!resource || resource.ownerUserId !== input.ownerUserId)
-      throw new Error(`媒体资源不存在或不属于当前用户：${input.resourceId}。`);
+    if (
+      !resource ||
+      resource.status !== "ready" ||
+      !(await this.resources.canConversationAccess(
+        input.ownerUserId,
+        input.conversationId,
+        input.resourceId,
+      ))
+    )
+      throw new Error(`媒体资源不存在或不属于当前会话：${input.resourceId}。`);
     if (!matchesMediaType(resource.mimeType, input.mediaType))
       throw new Error(`资源 MIME 与媒体类型不匹配：${resource.mimeType}。`);
 
@@ -77,7 +82,8 @@ export class PrimeConversationMediaRepository {
            WHERE conversation_id = ? AND resource_id = ?`,
           [
             description ?? null,
-            input.source === "figure_cover" || input.source === "figure_reference"
+            input.source === "figure_cover" ||
+            input.source === "figure_reference"
               ? input.source
               : existing.source,
             Date.now(),
@@ -134,10 +140,9 @@ export class PrimeConversationMediaRepository {
     if (new Set(mediaIds).size !== mediaIds.length)
       throw new Error("参考图片资源 ID 不得重复。");
     const byId = new Map(
-      (await this.listAvailableImages(ownerUserId, conversationId)).map((media) => [
-        media.mediaId,
-        media,
-      ]),
+      (await this.listAvailableImages(ownerUserId, conversationId)).map(
+        (media) => [media.mediaId, media],
+      ),
     );
     return mediaIds.map((id) => {
       const media = byId.get(id);

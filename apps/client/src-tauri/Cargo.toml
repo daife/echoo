@@ -1,6 +1,6 @@
 [package]
 name = "echoo-client"
-version = "0.1.0"
+version = "0.1.1"
 description = "Echoo desktop and mobile shell"
 authors = ["Echoo"]
 edition = "2021"

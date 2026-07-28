@@ -83,6 +83,55 @@ export class AgentRepository {
     return row ? rowToAgent(row) : null;
   }
 
+  async repairLegacyResourceReferences() {
+    const migrationId = "2026-07-28-agent-resource-access-backfill";
+    await withTransaction(async (connection) => {
+      const claimed = await execute(
+        `INSERT IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)`,
+        [migrationId, Date.now()],
+        connection,
+      );
+      if (!claimed.affectedRows) return;
+
+      await execute(
+        `INSERT IGNORE INTO agent_resources
+         (agent_id, resource_id, usage_kind, created_at)
+         SELECT installations.agent_id, linked.resource_id, linked.usage_kind, ?
+         FROM public_asset_installations installations
+         JOIN public_asset_version_resources linked
+           ON linked.version_id = installations.version_id`,
+        [Date.now()],
+        connection,
+      );
+
+      const rows = await queryRows<AgentRow>(SELECT_AGENT, [], connection);
+      const now = Date.now();
+      for (const row of rows) {
+        const agent = rowToAgent(row);
+        for (const reference of collectAgentResourceReferences(agent)) {
+          if ("resourceId" in reference)
+            await execute(
+              `INSERT IGNORE INTO agent_resources
+               (agent_id, resource_id, usage_kind, created_at)
+               SELECT ?, resources.id, ?, ? FROM resources
+               WHERE resources.id = ? LIMIT 1`,
+              [agent.id, reference.usageKind, now, reference.resourceId],
+              connection,
+            );
+          else
+            await execute(
+              `INSERT IGNORE INTO agent_resources
+               (agent_id, resource_id, usage_kind, created_at)
+               SELECT ?, resources.id, ?, ? FROM resources
+               WHERE resources.public_path = ? LIMIT 1`,
+              [agent.id, reference.usageKind, now, reference.resourcePath],
+              connection,
+            );
+        }
+      }
+    });
+  }
+
   async create(ownerUserId: string, input: CreateAgentInput) {
     const now = Date.now();
     const id = createId("agent");
@@ -256,7 +305,9 @@ export class AgentRepository {
             input,
             now,
           )
-        : existing.type === "prime-world" && "detail" in input && !input.preserveRuntimeState
+        : existing.type === "prime-world" &&
+            "detail" in input &&
+            !input.preserveRuntimeState
           ? {
               schemaVersion: 1 as const,
               variables: structuredClone(input.detail.initialState),
@@ -1022,6 +1073,47 @@ export class AgentRepository {
       sticker.resourcePath,
     );
   }
+}
+
+export function collectAgentResourceReferences(agent: Agent) {
+  const references: Array<
+    | { resourceId: string; usageKind: string }
+    | { resourcePath: string; usageKind: string }
+  > = [];
+  if (agent.avatarResourcePath)
+    references.push({
+      resourcePath: agent.avatarResourcePath,
+      usageKind: "avatar",
+    });
+  if (agent.coverResourcePath)
+    references.push({
+      resourcePath: agent.coverResourcePath,
+      usageKind: "cover",
+    });
+  if (agent.type === "prime-figure") {
+    const detail = agent.detail as PrimeFigureAgent["detail"] | undefined;
+    references.push(
+      ...(detail?.referenceImages ?? []).map((item) => ({
+        resourceId: item.resourceId,
+        usageKind: "reference",
+      })),
+      ...(detail?.stickers ?? []).map((item) => ({
+        resourceId: item.resourceId,
+        usageKind: "sticker",
+      })),
+    );
+  }
+  if (agent.type === "prime-world") {
+    const detail = agent.detail as
+      Extract<Agent, { type: "prime-world" }>["detail"] | undefined;
+    references.push(
+      ...collectPrimeWorldResourceIds(
+        detail?.workflow?.nodes ?? [],
+        detail?.presentation?.startView,
+      ).map((resourceId) => ({ resourceId, usageKind: "world" })),
+    );
+  }
+  return references;
 }
 
 async function saveRuntimeStateRecord(

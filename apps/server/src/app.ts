@@ -7,6 +7,7 @@ import { closeDatabase, initializeDatabase } from "./infra/database/mysql.js";
 import { AgentRunQueue } from "./infra/redis/run-queue.js";
 import { closeRedis, getRedis } from "./infra/redis/redis.js";
 import { registerAgentRoutes } from "./modules/agents/agents.controller.js";
+import { AgentRepository } from "./modules/agents/agent.repository.js";
 import { registerPrimeWorldRoutes } from "./modules/agents/kinds/prime-world/prime-world.controller.js";
 import { PrimeWorldService } from "./modules/agents/kinds/prime-world/prime-world.service.js";
 import { PrimeWorldRetentionScheduler } from "./modules/agents/kinds/prime-world/prime-world-retention.scheduler.js";
@@ -43,6 +44,7 @@ import { registerSiteContentRoutes } from "./modules/platform-settings/site-cont
 
 export async function buildApp() {
   await initializeDatabase();
+  await new AgentRepository().repairLegacyResourceReferences();
   await getRedis().catch((error) => {
     console.warn(
       "Redis is unavailable; cache and distributed jobs are degraded.",

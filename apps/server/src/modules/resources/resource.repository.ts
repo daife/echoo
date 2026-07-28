@@ -160,7 +160,10 @@ export class ResourceRepository {
     data: Buffer,
   ) {
     const extension = generatedMimeTypes.get(mimeType);
-    if (!extension) throw new Error(`Unsupported Prime World bundle media type: ${mimeType}.`);
+    if (!extension)
+      throw new Error(
+        `Unsupported Prime World bundle media type: ${mimeType}.`,
+      );
     if (!data.length || data.byteLength > 12 * 1024 * 1024)
       throw new Error("Prime World bundle resource size is invalid.");
     return this.persistReadyResource({
@@ -343,9 +346,9 @@ export class ResourceRepository {
           ? "voice_clone_sample"
           : record.kind === "end_user_voice"
             ? "end_user_voice"
-          : record.kind === "end_user_video"
-            ? "end_user_video"
-            : "end_user_image",
+            : record.kind === "end_user_video"
+              ? "end_user_video"
+              : "end_user_image",
         data,
         record.mimeType,
       );
@@ -559,11 +562,85 @@ export class ResourceRepository {
     return row ? rowToResource(row) : null;
   }
 
+  async findAgentResourceById(
+    ownerUserId: string,
+    agentId: string,
+    resourceId: string,
+    usageKind?: string,
+  ) {
+    const row = await queryOne<ResourceRow>(
+      `SELECT resources.* FROM resources
+       JOIN agent_resources linked ON linked.resource_id = resources.id
+       JOIN agents ON agents.id = linked.agent_id
+       WHERE agents.id = ? AND agents.owner_user_id = ?
+         AND resources.id = ?
+         ${usageKind ? "AND linked.usage_kind = ?" : ""}
+       LIMIT 1`,
+      usageKind
+        ? [agentId, ownerUserId, resourceId, usageKind]
+        : [agentId, ownerUserId, resourceId],
+    );
+    return row ? rowToResource(row) : null;
+  }
+
+  async findAgentResourceByPublicPath(
+    ownerUserId: string,
+    agentId: string,
+    publicPath: string,
+    usageKind?: string,
+  ) {
+    const row = await queryOne<ResourceRow>(
+      `SELECT resources.* FROM resources
+       JOIN agent_resources linked ON linked.resource_id = resources.id
+       JOIN agents ON agents.id = linked.agent_id
+       WHERE agents.id = ? AND agents.owner_user_id = ?
+         AND resources.public_path = ?
+         ${usageKind ? "AND linked.usage_kind = ?" : ""}
+       LIMIT 1`,
+      usageKind
+        ? [agentId, ownerUserId, publicPath, usageKind]
+        : [agentId, ownerUserId, publicPath],
+    );
+    return row ? rowToResource(row) : null;
+  }
+
+  async canConversationAccess(
+    ownerUserId: string,
+    conversationId: string,
+    resourceId: string,
+  ) {
+    const row = await queryOne<RowDataPacket>(
+      `SELECT resources.id FROM resources
+       JOIN conversations ON conversations.id = ?
+        AND conversations.owner_user_id = ?
+       WHERE resources.id = ? AND (
+         resources.owner_user_id = ? OR EXISTS (
+           SELECT 1 FROM agent_resources linked
+           WHERE linked.agent_id = conversations.agent_id
+             AND linked.resource_id = resources.id
+         ) OR EXISTS (
+           SELECT 1 FROM message_resources linked
+           JOIN messages ON messages.id = linked.message_id
+           WHERE messages.conversation_id = conversations.id
+             AND linked.resource_id = resources.id
+         )
+       ) LIMIT 1`,
+      [conversationId, ownerUserId, resourceId, ownerUserId],
+    );
+    return Boolean(row);
+  }
+
   async canUserAccess(userId: string, resourceId: string) {
     const row = await queryOne<RowDataPacket>(
       `SELECT resources.id FROM resources
        WHERE resources.id = ? AND (
          resources.owner_user_id = ? OR
+         EXISTS (
+           SELECT 1 FROM agent_resources linked
+           JOIN agents ON agents.id = linked.agent_id
+           WHERE linked.resource_id = resources.id
+             AND agents.owner_user_id = ?
+         ) OR
          EXISTS (
            SELECT 1 FROM public_asset_version_resources version_resources
            JOIN public_asset_versions versions
@@ -586,7 +663,7 @@ export class ResourceRepository {
              AND public_users.usage_kind = 'avatar'
          )
        ) LIMIT 1`,
-      [resourceId, userId, userId],
+      [resourceId, userId, userId, userId],
     );
     return Boolean(row);
   }

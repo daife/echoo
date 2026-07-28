@@ -228,13 +228,18 @@ export class PrimeActionExecutor {
             (item) => item.resourceId === stickerId,
           );
           const resource = sticker
-            ? await this.resources.findById(sticker.resourceId)
+            ? await this.resources.findAgentResourceById(
+                input.ownerUserId,
+                input.agent.id,
+                sticker.resourceId,
+                "sticker",
+              )
             : null;
           if (
             !sticker ||
             !resource ||
-            resource.ownerUserId !== input.ownerUserId ||
-            resource.status !== "ready"
+            resource.status !== "ready" ||
+            !resource.mimeType.startsWith("image/")
           )
             continue;
         }

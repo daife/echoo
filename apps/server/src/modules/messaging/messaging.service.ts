@@ -252,7 +252,22 @@ export class MessagingService {
               (item) => item.resourceId === input.stickerId,
             )
           : undefined;
-      if (!sticker) return { kind: "invalid_sticker" };
+      const stickerResource =
+        sticker && agent
+          ? await this.resources.findAgentResourceById(
+              input.ownerUserId,
+              agent.id,
+              sticker.resourceId,
+              "sticker",
+            )
+          : null;
+      if (
+        !sticker ||
+        !stickerResource ||
+        stickerResource.status !== "ready" ||
+        !stickerResource.mimeType.startsWith("image/")
+      )
+        return { kind: "invalid_sticker" };
       const now = Date.now();
       const message = await this.repository.save({
         ownerUserId: input.ownerUserId,
@@ -264,7 +279,7 @@ export class MessagingService {
         role: "user",
         contentType: "image",
         content: {
-          mediaUrl: sticker.resourcePath,
+          mediaUrl: stickerResource.publicPath,
           resourceId: sticker.resourceId,
           media: createVisualMediaReference({
             resourceId: sticker.resourceId,
@@ -280,7 +295,7 @@ export class MessagingService {
             stickerId: sticker.resourceId,
             description: sticker.description,
             resourceId: sticker.resourceId,
-            resourceUrl: sticker.resourcePath,
+            resourceUrl: stickerResource.publicPath,
           } satisfies PrimeMessageContent,
         },
         createdAt: now,
@@ -433,11 +448,11 @@ export class MessagingService {
                     resourceId: resource.id,
                     resourceUrl: resource.publicPath,
                   } satisfies PrimeMessageContent,
-                mediaIntent: {
-                  status: "ready",
-                  durationSeconds:
-                    resource.durationSeconds ?? input.durationSeconds,
-                },
+                  mediaIntent: {
+                    status: "ready",
+                    durationSeconds:
+                      resource.durationSeconds ?? input.durationSeconds,
+                  },
                 }
               : {
                   kind: "prime_figure",
