@@ -3,6 +3,7 @@ import {
   parsePublicLinkTarget,
   publicLinkTargetForOrigins,
   publicLinkUrl,
+  isSiteLinkForOrigins,
   syncPublicLinkTarget,
 } from "./publicLinks";
 
@@ -58,6 +59,25 @@ describe("public links", () => {
         ["https://echoo.example"],
       ),
     ).toBeNull();
+  });
+
+  it("treats every same-origin path as internal without matching similar hosts or ports", () => {
+    const origins = ["https://echoo.example/app"];
+    expect(
+      isSiteLinkForOrigins(
+        new URL("https://echoo.example/announcements/latest?from=app"),
+        origins,
+      ),
+    ).toBe(true);
+    expect(
+      isSiteLinkForOrigins(new URL("https://outside.example/app"), origins),
+    ).toBe(false);
+    expect(
+      isSiteLinkForOrigins(new URL("https://echoo.example.evil/app"), origins),
+    ).toBe(false);
+    expect(
+      isSiteLinkForOrigins(new URL("https://echoo.example:8443/app"), origins),
+    ).toBe(false);
   });
 
   it("synchronizes one target without disturbing unrelated app parameters", () => {

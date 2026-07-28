@@ -58,6 +58,21 @@ export function configuredPublicWebUrl() {
 }
 
 export function isInternalPublicLink(url: URL) {
+  return isInternalSiteLink(url) ? parsePublicLinkTarget(url) : null;
+}
+
+export function isInternalSiteLink(url: URL) {
+  return isSiteLinkForOrigins(url, internalSiteOrigins());
+}
+
+export function isSiteLinkForOrigins(url: URL, origins: Iterable<string>) {
+  const allowedOrigins = new Set(
+    [...origins].map((origin) => new URL(origin).origin),
+  );
+  return allowedOrigins.has(url.origin);
+}
+
+function internalSiteOrigins() {
   const origins = new Set<string>();
   try {
     origins.add(new URL(configuredPublicWebUrl()).origin);
@@ -66,17 +81,14 @@ export function isInternalPublicLink(url: URL) {
   }
   if (/^https?:$/.test(window.location.protocol))
     origins.add(window.location.origin);
-  return publicLinkTargetForOrigins(url, origins);
+  return origins;
 }
 
 export function publicLinkTargetForOrigins(
   url: URL,
   origins: Iterable<string>,
 ) {
-  const allowedOrigins = new Set(
-    [...origins].map((origin) => new URL(origin).origin),
-  );
-  return allowedOrigins.has(url.origin) ? parsePublicLinkTarget(url) : null;
+  return isSiteLinkForOrigins(url, origins) ? parsePublicLinkTarget(url) : null;
 }
 
 function normalizeRootPath(pathname: string) {

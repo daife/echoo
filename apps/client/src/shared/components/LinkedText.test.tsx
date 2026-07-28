@@ -1,10 +1,48 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MarkdownText,
+  openLinkedTarget,
   parseMarkdownBlocks,
   tokenizeLinkedText,
 } from "./LinkedText";
+
+const { openUrl } = vi.hoisted(() => ({ openUrl: vi.fn() }));
+
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
+
+const originalWindow = globalThis.window;
+
+beforeEach(() => {
+  openUrl.mockReset();
+  vi.stubEnv("VITE_PUBLIC_WEB_URL", "https://echoo.example/");
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      location: {
+        href: "tauri://localhost/",
+        origin: "tauri://localhost",
+        protocol: "tauri:",
+      },
+    },
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: originalWindow,
+  });
+});
+
+function linkedClickEvent() {
+  return {
+    preventDefault: vi.fn(),
+    stopPropagation: vi.fn(),
+  };
+}
 
 describe("MarkdownText", () => {
   it("recognizes HTTP links while preserving punctuation and newlines", () => {
@@ -67,5 +105,60 @@ describe("MarkdownText", () => {
     expect(html).toContain('target="_blank"');
     expect(html).toContain('rel="noopener noreferrer"');
     expect(html).toContain('href="https://outside.example/a"');
+  });
+
+  it("opens internal post and card deep links through app callbacks", () => {
+    const onOpenPost = vi.fn();
+    const postEvent = linkedClickEvent();
+    openLinkedTarget(
+      postEvent,
+      "https://echoo.example/?post=post_1",
+      onOpenPost,
+    );
+    expect(postEvent.stopPropagation).toHaveBeenCalledOnce();
+    expect(postEvent.preventDefault).toHaveBeenCalledOnce();
+    expect(onOpenPost).toHaveBeenCalledWith("post_1");
+
+    const onOpenAsset = vi.fn();
+    const cardEvent = linkedClickEvent();
+    openLinkedTarget(
+      cardEvent,
+      "https://echoo.example/?card=asset_1",
+      undefined,
+      onOpenAsset,
+    );
+    expect(cardEvent.preventDefault).toHaveBeenCalledOnce();
+    expect(onOpenAsset).toHaveBeenCalledWith("asset_1");
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  it("leaves ordinary internal links in the app webview", () => {
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    const event = linkedClickEvent();
+    openLinkedTarget(event, "https://echoo.example/announcements/latest");
+    expect(event.stopPropagation).toHaveBeenCalledOnce();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  it("opens external links in the system browser for Tauri clients", async () => {
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    const event = linkedClickEvent();
+    openLinkedTarget(event, "https://outside.example/changelog");
+    expect(event.stopPropagation).toHaveBeenCalledOnce();
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    await vi.waitFor(() =>
+      expect(openUrl).toHaveBeenCalledWith(
+        "https://outside.example/changelog",
+      ),
+    );
+  });
+
+  it("keeps the browser's default external-link behavior on the web", () => {
+    const event = linkedClickEvent();
+    openLinkedTarget(event, "https://outside.example/changelog");
+    expect(event.stopPropagation).toHaveBeenCalledOnce();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(openUrl).not.toHaveBeenCalled();
   });
 });

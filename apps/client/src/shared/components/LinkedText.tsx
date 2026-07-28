@@ -3,7 +3,11 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { isInternalPublicLink } from "../../app/publicLinks";
+import {
+  isInternalPublicLink,
+  isInternalSiteLink,
+} from "../../app/publicLinks";
+import { isTauri } from "../../runtimes/factory/detectPlatform";
 
 export interface MarkdownTextProps {
   text: string;
@@ -168,17 +172,35 @@ function isSafeHttpUrl(value: string) {
   }
 }
 
-function openLinkedTarget(
-  event: MouseEvent<HTMLAnchorElement>,
+export function openLinkedTarget(
+  event: Pick<
+    MouseEvent<HTMLAnchorElement>,
+    "preventDefault" | "stopPropagation"
+  >,
   href: string,
   onOpenPost?: (postId: string) => void,
   onOpenAsset?: (assetId: string) => void,
 ) {
   event.stopPropagation();
-  const target = isInternalPublicLink(new URL(href));
-  if (!target) return;
-  const handler = target.type === "post" ? onOpenPost : onOpenAsset;
-  if (!handler) return;
+  const url = new URL(href);
+  const target = isInternalPublicLink(url);
+  if (target) {
+    const handler = target.type === "post" ? onOpenPost : onOpenAsset;
+    if (!handler) return;
+    event.preventDefault();
+    handler(target.id);
+    return;
+  }
+  if (isInternalSiteLink(url) || !isTauri()) return;
   event.preventDefault();
-  handler(target.id);
+  void openExternalUrl(href);
+}
+
+async function openExternalUrl(href: string) {
+  try {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(href);
+  } catch (error) {
+    console.error("无法在系统浏览器中打开外部链接。", error);
+  }
 }
