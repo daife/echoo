@@ -10,13 +10,15 @@ import {
 } from "./recharge-money.js";
 
 test("parses supported recharge amounts as integer micro USD", () => {
+  assert.equal(parseRechargeUsd("0.1"), 100_000);
+  assert.equal(parseRechargeUsd("0.10"), 100_000);
   assert.equal(parseRechargeUsd("1"), 1_000_000);
   assert.equal(parseRechargeUsd("10.25"), 10_250_000);
   assert.equal(parseRechargeUsd("1000.00"), 1_000_000_000);
 });
 
 test("rejects recharge amounts outside limits or with excess precision", () => {
-  for (const value of ["0.99", "1000.01", "1.001", "-1", "1e2"])
+  for (const value of ["0.09", "1000.01", "1.001", "-1", "1e2"])
     assert.throws(() => parseRechargeUsd(value));
 });
 
@@ -36,4 +38,3 @@ test("rounds the locked RMB amount half up to fen", () => {
   assert.equal(formatFen(7_235), "72.35");
   assert.equal(parseCnyToFen("72.35"), 7_235);
 });
-

@@ -7,7 +7,7 @@ export interface RechargeConfigView {
   /** Whether the server has a complete payment-provider configuration. */
   paymentConfigured: boolean;
   usdToCnyRate: string | null;
-  minimumCreditUsd: "1";
+  minimumCreditUsd: "0.1";
   maximumCreditUsd: "1000";
   quickAmountsUsd: ["5", "10", "20", "50", "100"];
   paymentTypes: RechargePaymentType[];

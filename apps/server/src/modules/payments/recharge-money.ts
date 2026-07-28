@@ -1,7 +1,7 @@
 import { formatMicroUsd } from "../billing/money.js";
 import { normalizeUsdToCnyRate } from "../platform-settings/platform-settings.service.js";
 
-export const MINIMUM_RECHARGE_MICRO_USD = 1_000_000;
+export const MINIMUM_RECHARGE_MICRO_USD = 100_000;
 export const MAXIMUM_RECHARGE_MICRO_USD = 1_000_000_000;
 
 export function parseRechargeUsd(value: string) {
@@ -15,7 +15,7 @@ export function parseRechargeUsd(value: string) {
     micro < BigInt(MINIMUM_RECHARGE_MICRO_USD) ||
     micro > BigInt(MAXIMUM_RECHARGE_MICRO_USD)
   )
-    throw new Error("充值额度必须在 1 到 1000 美元之间。");
+    throw new Error("充值额度必须在 0.1 到 1000 美元之间。");
   return Number(micro);
 }
 
@@ -62,4 +62,3 @@ export function formatFen(value: number) {
 export function formatRechargeUsd(value: number) {
   return formatMicroUsd(value);
 }
-

@@ -204,7 +204,7 @@ export function RechargePanel({
               <input
                 required
                 type="number"
-                min="1"
+                min={config?.minimumCreditUsd ?? "0.1"}
                 max="1000"
                 step="0.01"
                 inputMode="decimal"

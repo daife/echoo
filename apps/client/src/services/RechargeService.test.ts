@@ -27,7 +27,7 @@ describe("recharge checkout form", () => {
         enabled: false,
         paymentConfigured: false,
         usdToCnyRate: "7.2",
-        minimumCreditUsd: "1",
+        minimumCreditUsd: "0.1",
         maximumCreditUsd: "1000",
         quickAmountsUsd: ["5", "10", "20", "50", "100"],
         paymentTypes: ["alipay", "wxpay"],

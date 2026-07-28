@@ -129,7 +129,7 @@ export class RechargeService {
       enabled: this.isPaymentConfigured() && rate !== null,
       paymentConfigured: this.isPaymentConfigured(),
       usdToCnyRate: rate,
-      minimumCreditUsd: "1",
+      minimumCreditUsd: "0.1",
       maximumCreditUsd: "1000",
       quickAmountsUsd: [...QUICK_AMOUNTS],
       paymentTypes: ["alipay", "wxpay"],
