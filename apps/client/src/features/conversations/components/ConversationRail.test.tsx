@@ -43,9 +43,7 @@ describe("ConversationRail identity", () => {
       />,
     );
 
-    expect(html).toContain(
-      '<aside class="hidden min-h-0 min-w-0 md:block">',
-    );
+    expect(html).toContain('<aside class="hidden min-h-0 min-w-0 md:block">');
     expect(html).toContain(
       'class="min-h-0 flex-1 overflow-y-auto p-2 no-scrollbar"',
     );
@@ -114,5 +112,31 @@ describe("ConversationRail identity", () => {
     expect(html).toContain("小霁，有新消息");
     expect(html).toContain("bg-[#ff5b63]");
     expect(html).not.toContain(">3<");
+  });
+
+  it("filters bracketed directions from the last message preview", () => {
+    const html = renderToStaticMarkup(
+      <ConversationRail
+        agents={[agent]}
+        conversations={[
+          {
+            id: agent.conversationId,
+            title: agent.name,
+            type: "slice-figure",
+            lastMessagePreview: "你好【轻声】 [挥手] 很高兴见到你",
+            unreadCount: 0,
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        ]}
+        onOpenAgent={vi.fn()}
+        onOpenBindings={vi.fn()}
+        onOpenChat={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("你好 很高兴见到你");
+    expect(html).not.toContain("轻声");
+    expect(html).not.toContain("挥手");
   });
 });

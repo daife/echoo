@@ -1011,9 +1011,12 @@ function EditSliceFigureDialog({
   };
 
   return (
-    <div className="app-overlay fixed inset-0 grid place-items-center bg-black/55 px-4 backdrop-blur-sm md:py-8">
+    <div className="app-overlay app-overlay-contained fixed inset-0 grid place-items-center bg-black/55 px-4 backdrop-blur-sm md:py-8">
       <form
         className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/10 bg-[#101014] p-5 shadow-[0_24px_100px_rgba(0,0,0,0.55)] md:p-7"
+        role="dialog"
+        aria-modal="true"
+        aria-label="修改切片角色"
         onSubmit={submit}
       >
         <div className="mb-5 flex items-start justify-between gap-4">
@@ -1123,8 +1126,13 @@ function EditPrimeFigureDialog({
   }, [loadSnapshot]);
 
   return (
-    <div className="app-overlay fixed inset-0 grid place-items-center bg-black/55 px-4 backdrop-blur-sm md:py-8">
-      <div className="max-h-[90dvh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-[#101014]">
+    <div className="app-overlay app-overlay-contained fixed inset-0 grid place-items-center bg-black/55 px-4 backdrop-blur-sm md:py-8">
+      <div
+        className="max-h-[90dvh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-[#101014]"
+        role="dialog"
+        aria-modal="true"
+        aria-label="修改本初角色"
+      >
         {snapshot ? (
           <PrimeFigureForm
             mode="edit"

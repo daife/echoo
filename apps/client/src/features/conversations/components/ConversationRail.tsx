@@ -1,6 +1,7 @@
 import { LinkSimple } from "@phosphor-icons/react";
 import type { Agent, Conversation } from "@echoo/shared";
 import { IdentityAvatar } from "../../../shared/components/IdentityAvatar";
+import { sanitizeMessagePreview } from "../../messages/messagePresentation";
 
 export function ConversationRail({
   agents,
@@ -26,12 +27,14 @@ export function ConversationRail({
   );
   const visibleConversations = agents.map((agent) => {
     const conversation = byId.get(agent.conversationId);
+    const lastMessagePreview = sanitizeMessagePreview(
+      conversation?.lastMessagePreview ?? "",
+    );
     return {
       name: agent.name,
       text:
-        conversation?.lastMessagePreview ??
-        agent.introduction ??
-        getAgentFallbackText(agent),
+        lastMessagePreview ||
+        (agent.introduction ?? getAgentFallbackText(agent)),
       unread: (conversation?.unreadCount ?? 0) > 0,
       agent,
     };

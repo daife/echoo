@@ -5,6 +5,8 @@ import {
   getPrimePresencePhaseDuration,
   getRuntimeErrorText,
   isVisibleConversationMessage,
+  sanitizeMessagePreview,
+  sanitizeVoiceTranscript,
 } from "./messagePresentation";
 
 const runtimeErrorMessage: LocalMessage = {
@@ -114,5 +116,19 @@ describe("media message presentation", () => {
     };
 
     expect(isVisibleConversationMessage(videoMessage)).toBe(true);
+  });
+});
+
+describe("message preview sanitization", () => {
+  it("removes nested square-bracket directions and normalizes spacing", () => {
+    expect(
+      sanitizeMessagePreview("你好 [轻声地[停顿]说]   很高兴见到你【微笑】"),
+    ).toBe("你好 很高兴见到你");
+  });
+
+  it("keeps voice transcripts on the same sanitization path", () => {
+    expect(sanitizeVoiceTranscript("欢迎回来【脚步声】")).toBe(
+      sanitizeMessagePreview("欢迎回来【脚步声】"),
+    );
   });
 });

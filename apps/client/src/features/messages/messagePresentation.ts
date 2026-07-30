@@ -93,7 +93,7 @@ export function shouldShowFigurePendingIndicator(
   );
 }
 
-export function sanitizeVoiceTranscript(value: string) {
+export function sanitizeMessagePreview(value: string) {
   let clean = value;
   let previous = "";
   while (clean !== previous) {
@@ -101,6 +101,10 @@ export function sanitizeVoiceTranscript(value: string) {
     clean = clean.replace(/\[[^\[\]]*\]|【[^【】]*】/g, " ");
   }
   return clean.replace(/\s+/g, " ").trim();
+}
+
+export function sanitizeVoiceTranscript(value: string) {
+  return sanitizeMessagePreview(value);
 }
 
 export function splitFigureReply(value: string) {
