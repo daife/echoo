@@ -21,3 +21,9 @@ Android 构建约定：
 - 移动端入口须保留 `#[cfg_attr(mobile, tauri::mobile_entry_point)]`；Android 插件模块需依赖 `project(":tauri-android")`，并让 Kotlin 与 Java 的 JVM target 一致。
 - 图标必须使用 `CI=true pnpm --filter @echoo/client tauri icon src-tauri/app-icon.json` 生成，不得直接以 `app-icon.png` 作为 Android 自适应前景。`app-icon-android-foreground.png` 需在透明方形画布中将完整图形居中缩放到约 66% 安全区，`app-icon-android-background.png` 提供 Android 专用背景；当前 Tauri 2.11.4 的 `android_fg_scale` 不作用于自适应 `ic_launcher_foreground`，不能依赖该参数避免启动器裁切。
 - 图标生成后必须检查 `mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi` 的普通、圆形、前景和背景资源；普通与圆形图标应分别为 48/72/96/144/192px，前景与背景应分别为 108/162/216/324/432px。当前 Tauri 生成器会错误地产生 49px 的 hdpi 普通/圆形图标，构建前需修正为 72px，并确认自适应前景四周仍有透明安全边距。
+
+Windows 构建约定：
+- x64 正式构建使用 `CI=true TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm --filter @echoo/client tauri build --target x86_64-pc-windows-msvc`，产物位于 `apps/client/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/{msi,nsis}`。构建日志中的“iOS 工程尚未生成”在仅构建 Windows 时属于无害提示。
+- `apps/client/src-tauri/src/main.rs` 必须保留仅对 Windows release 生效的 `windows_subsystem = "windows"` 属性；构建后应确认主程序 PE Subsystem 为 `Windows GUI (2)`，避免安装后启动时出现额外终端窗口。debug 构建继续保留控制台便于排错。
+- Tauri 默认生成的 Windows EXE、MSI 与 NSIS 安装包可能未带 Authenticode 签名。对外发布前必须使用受信任的正式代码签名证书和 SHA-256 时间戳签署并验证主程序与最终安装包；不得使用本机 `WDKTestCert` 等测试证书冒充发布签名，也不得将 Tauri updater 私钥误认为 Windows Authenticode 证书。
+- Tauri 构建可能刷新 `apps/client/src-tauri/gen/schemas/desktop-schema.json` 与 `windows-schema.json`。若本次确实修改了插件、命令或权限定义，应一并审查并提交生成结果；若只是普通构建且没有相关源码变化，不得盲目提交生成噪音。
