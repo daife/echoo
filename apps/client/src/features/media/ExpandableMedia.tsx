@@ -86,7 +86,7 @@ export function ExpandableMedia({
         className={`${triggerClassName} ${failed ? "outline outline-1 outline-red-300/25" : ""}`}
         type="button"
         data-media-frame={kind}
-        aria-label={`${alt}，点击放大查看`}
+        aria-label={`${alt}，点击${onOpen ? "查看动态" : "放大查看"}`}
         onClick={openViewer}
       >
         {preview.source ? (

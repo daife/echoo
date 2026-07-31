@@ -9,15 +9,19 @@ export function PostContent({
   authorName,
   onOpenPost,
   onOpenAsset,
+  onOpenMedia,
   variant = "full",
 }: {
   content: SocialPostContentBlock[];
   authorName: string;
   onOpenPost?: (postId: string) => void;
   onOpenAsset?: (assetId: string) => void;
+  onOpenMedia?: (resourceId: string) => void;
   variant?: "full" | "compact";
 }) {
-  const groups = groupContent(content);
+  const groups = groupContent(
+    variant === "compact" ? compactPostContent(content) : content,
+  );
   return (
     <div className={variant === "compact" ? "space-y-3" : "space-y-4"}>
       {groups.map((group, index) =>
@@ -35,6 +39,8 @@ export function PostContent({
                 alt={`${authorName} 的动态图片 ${imageIndex + 1}`}
                 triggerClassName="group relative block aspect-square w-full overflow-hidden rounded-xl bg-black/20"
                 mediaClassName="h-full w-full object-cover"
+                open={onOpenMedia ? false : undefined}
+                onOpen={onOpenMedia ? () => onOpenMedia(image.resourceId) : undefined}
               />
             ))}
           </div>
@@ -52,6 +58,37 @@ export function PostContent({
       )}
     </div>
   );
+}
+
+const COMPACT_TEXT_LIMIT = 240;
+const COMPACT_IMAGE_LIMIT = 2;
+const COMPACT_BLOCK_LIMIT = 5;
+
+function compactPostContent(content: SocialPostContentBlock[]) {
+  const result: SocialPostContentBlock[] = [];
+  let textLength = 0;
+  let imageCount = 0;
+
+  for (const block of content) {
+    if (result.length >= COMPACT_BLOCK_LIMIT) break;
+    if (block.type === "text") {
+      const remaining = COMPACT_TEXT_LIMIT - textLength;
+      if (remaining <= 0) continue;
+      const text = block.text.slice(0, remaining);
+      textLength += text.length;
+      result.push({
+        ...block,
+        text: text + (block.text.length > text.length ? "……" : ""),
+      });
+    } else if (block.type === "image") {
+      if (imageCount >= COMPACT_IMAGE_LIMIT) continue;
+      imageCount += 1;
+      result.push(block);
+    } else {
+      result.push(block);
+    }
+  }
+  return result;
 }
 
 export function postPlainText(content: SocialPostContentBlock[]) {

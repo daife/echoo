@@ -50,7 +50,11 @@ export function PostCard({
           <div
             role="button"
             tabIndex={0}
-            onClick={onOpen}
+            onClick={(event) => {
+              if ((event.target as HTMLElement).closest?.("[data-media-frame]"))
+                return;
+              onOpen();
+            }}
             onKeyDown={(event) => {
               if (
                 (event.target as HTMLElement).closest?.(
@@ -67,6 +71,7 @@ export function PostCard({
               authorName={post.author.displayName}
               onOpenPost={onOpenPost}
               onOpenAsset={onOpenAsset}
+              onOpenMedia={onOpen}
               variant="compact"
             />
           </div>

@@ -106,8 +106,39 @@ describe("PostCard", () => {
     );
 
     expect(html.match(/data-media-frame="image"/g)).toHaveLength(2);
-    expect(html).toContain("Aether 的动态图片 1，点击放大查看");
-    expect(html).toContain("Aether 的动态图片 2，点击放大查看");
+    expect(html).toContain("Aether 的动态图片 1，点击查看动态");
+    expect(html).toContain("Aether 的动态图片 2，点击查看动态");
+  });
+
+  it("truncates long body previews and routes image clicks to the detail view", () => {
+    const onOpen = vi.fn();
+    const html = renderToStaticMarkup(
+      <PostCard
+        post={{
+          id: "post_preview",
+          author: { id: "user_1", displayName: "Aether", isAdmin: false },
+          content: [
+            { type: "text", text: "前文" + "很长的正文".repeat(100) },
+            {
+              type: "image",
+              resourceId: "res_preview",
+              resourcePath: "/api/resources/res_preview/file",
+            },
+          ],
+          likeCount: 0,
+          commentCount: 0,
+          viewerHasLiked: false,
+          canEdit: false,
+          canDelete: false,
+          createdAt: 1,
+          updatedAt: 1,
+        }}
+        onOpen={onOpen}
+      />,
+    );
+    expect(html).toContain("……");
+    expect(html).not.toContain("很长的正文".repeat(100));
+    expect(html).toContain("点击查看动态");
   });
 
   it("renders text, image, and audio blocks in authored order", () => {
