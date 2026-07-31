@@ -1,7 +1,9 @@
 import type { PrimeFigureAction } from "@echoo/shared";
+import { AgentRunFailureRepository } from "../../agent-run-failure.repository.js";
 
-/** Runtime diagnostics belong in structured logs, not in a duplicate SQL audit table. */
 export class PrimeActionLogRepository {
+  constructor(private readonly failures = new AgentRunFailureRepository()) {}
+
   async save(input: {
     ownerUserId: string;
     agentId: string;
@@ -10,13 +12,25 @@ export class PrimeActionLogRepository {
     rationale?: string;
     status: "applied" | "failed";
     errorMessage?: string;
+    diagnostics?: Record<string, unknown>;
+    rawOutput?: string;
     now?: number;
   }) {
-    const payload = {
-      event: "prime_action",
-      ...input,
-      at: input.now ?? Date.now(),
-    };
-    if (input.status === "failed") console.error(JSON.stringify(payload));
+    if (input.status !== "failed") return;
+    await this.failures.record({
+      ownerUserId: input.ownerUserId,
+      conversationId: input.conversationId,
+      kind: "prime-figure",
+      phase: String(input.action.type || "prime_action"),
+      errorMessage: input.errorMessage ?? "本初角色动作执行失败。",
+      ...(input.rawOutput !== undefined ? { rawOutput: input.rawOutput } : {}),
+      diagnostics: {
+        agentId: input.agentId,
+        action: input.action,
+        ...(input.rationale ? { rationale: input.rationale } : {}),
+        ...(input.diagnostics ?? {}),
+      },
+      now: input.now,
+    });
   }
 }

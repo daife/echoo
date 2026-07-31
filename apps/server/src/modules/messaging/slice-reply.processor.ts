@@ -5,6 +5,7 @@ import {
   type AgentRunJob,
 } from "../../infra/redis/run-queue.js";
 import { SliceFigureRuntimeService } from "../agents/kinds/slice-figure/slice-figure-runtime.service.js";
+import { AgentRunFailureRepository } from "../agents/agent-run-failure.repository.js";
 import { ConversationRepository } from "../conversations/conversation.repository.js";
 import { AppPushService } from "../realtime/delivery.service.js";
 import { MessageRepository } from "./message.repository.js";
@@ -16,6 +17,7 @@ export class SliceReplyProcessor {
     private readonly appPush = new AppPushService(),
     private readonly runtime = new SliceFigureRuntimeService(),
     private readonly runQueue = new AgentRunQueue(),
+    private readonly failures = new AgentRunFailureRepository(),
   ) {}
 
   async createPlaceholder(
@@ -58,7 +60,7 @@ export class SliceReplyProcessor {
       job.assistantMessageId,
     );
     if (!pending || pending.status !== "pending") return;
-    await this.streamReply(job.ownerUserId, job.conversationId, pending);
+    await this.streamReply(job.ownerUserId, job.conversationId, pending, job);
   }
 
   async enqueueMemorySummary(ownerUserId: string, conversationId: string) {
@@ -74,6 +76,7 @@ export class SliceReplyProcessor {
     ownerUserId: string,
     conversationId: string,
     pendingMessage: Message,
+    job: AgentRunJob,
   ) {
     let streamedText = "";
     let liveCacheWrite = Promise.resolve();
@@ -159,7 +162,7 @@ export class SliceReplyProcessor {
       );
       await this.createMemorySummariesOrQueueRetry(ownerUserId, conversationId);
       return message;
-    } catch {
+    } catch (error) {
       flushDelta();
       await liveCacheWrite;
       if (
@@ -170,6 +173,19 @@ export class SliceReplyProcessor {
         ))
       )
         return undefined;
+      await this.failures.record({
+        ownerUserId,
+        conversationId,
+        kind: "slice-figure",
+        runId: job.runId,
+        phase: "reply_generation",
+        errorMessage:
+          error instanceof Error ? error.message : "切片角色回复生成失败。",
+        diagnostics: {
+          assistantMessageId: pendingMessage.id,
+          trigger: job.trigger,
+        },
+      });
       const now = Date.now();
       const message = await this.repository.save({
         ownerUserId,

@@ -15,6 +15,7 @@ import {
   type AgentRunJob,
 } from "../../../../infra/redis/run-queue.js";
 import { AgentRepository } from "../../agent.repository.js";
+import { AgentRunFailureRepository } from "../../agent-run-failure.repository.js";
 import { AppPushService } from "../../../realtime/delivery.service.js";
 import { AiProviderRegistry } from "../../../ai/ai-provider.registry.js";
 import { ResourceRepository } from "../../../resources/resource.repository.js";
@@ -64,6 +65,7 @@ export class PrimeWorldService {
     private readonly providers = new AiProviderRegistry(),
     private readonly resources = new ResourceRepository(),
     private readonly stt = new FishAudioSttService(),
+    private readonly failures = new AgentRunFailureRepository(),
   ) {}
 
   async snapshot(ownerUserId: string, conversationId: string) {
@@ -75,7 +77,15 @@ export class PrimeWorldService {
       state: state.state,
       stateVersion: state.version,
       run,
-      ...(run ? { resources: await this.worlds.listRunResources(ownerUserId, conversationId, run.id) } : {}),
+      ...(run
+        ? {
+            resources: await this.worlds.listRunResources(
+              ownerUserId,
+              conversationId,
+              run.id,
+            ),
+          }
+        : {}),
     };
   }
 
@@ -94,39 +104,88 @@ export class PrimeWorldService {
     if (agent.origin.kind !== "original") return null;
     const run = await this.worlds.getRun(ownerUserId, runId);
     if (run?.conversationId !== conversationId) return null;
-    return run ? this.worlds.listTrace(ownerUserId, conversationId, runId) : null;
+    return run
+      ? this.worlds.listTrace(ownerUserId, conversationId, runId)
+      : null;
   }
 
   async reset(ownerUserId: string, conversationId: string) {
     const agent = await this.requireWorld(ownerUserId, conversationId);
-    const active = await this.worlds.cancelOtherActiveRuns(ownerUserId, conversationId, "");
-    await Promise.all(active.map((runId) => publishPrimeWorldCancellation(runId)));
-    for (const runId of active) this.publish(ownerUserId, "world.run.cancelled", conversationId, runId);
-    const reset = await this.worlds.resetConversation({ ownerUserId, conversationId, definition: agent.detail });
-    await this.queue.enqueue({ ownerUserId, conversationId, kind: "prime-world", runId: reset.runId }).catch(() => undefined);
+    const active = await this.worlds.cancelOtherActiveRuns(
+      ownerUserId,
+      conversationId,
+      "",
+    );
+    await Promise.all(
+      active.map((runId) => publishPrimeWorldCancellation(runId)),
+    );
+    for (const runId of active)
+      this.publish(ownerUserId, "world.run.cancelled", conversationId, runId);
+    const reset = await this.worlds.resetConversation({
+      ownerUserId,
+      conversationId,
+      definition: agent.detail,
+    });
+    await this.queue
+      .enqueue({
+        ownerUserId,
+        conversationId,
+        kind: "prime-world",
+        runId: reset.runId,
+      })
+      .catch(() => undefined);
     return reset;
   }
 
-  async exportBundle(ownerUserId: string, conversationId: string): Promise<PrimeWorldExportBundle> {
+  async exportBundle(
+    ownerUserId: string,
+    conversationId: string,
+  ): Promise<PrimeWorldExportBundle> {
     const agent = await this.requireWorld(ownerUserId, conversationId);
     const detail = structuredClone(agent.detail);
     detail.definitionRevision = 0;
-    const resourceIds = collectPrimeWorldResourceIds(detail.workflow.nodes, detail.presentation.startView);
+    const resourceIds = collectPrimeWorldResourceIds(
+      detail.workflow.nodes,
+      detail.presentation.startView,
+    );
     const replacements = new Map<string, string>();
     const resources: PrimeWorldExportBundle["resources"] = [];
     for (const [index, resourceId] of resourceIds.entries()) {
       const value = await this.resources.readForOwner(ownerUserId, resourceId);
-      if (!value || value.record.status !== "ready") throw new Error(`WORLD_RESOURCE_NOT_READY:${resourceId}`);
+      if (!value || value.record.status !== "ready")
+        throw new Error(`WORLD_RESOURCE_NOT_READY:${resourceId}`);
       const key = `resource-${index + 1}`;
       replacements.set(resourceId, key);
-      resources.push({ key, usageKind: "world", mimeType: value.record.mimeType, fileName: value.record.originalFileName, dataBase64: value.data.toString("base64") });
+      resources.push({
+        key,
+        usageKind: "world",
+        mimeType: value.record.mimeType,
+        fileName: value.record.originalFileName,
+        dataBase64: value.data.toString("base64"),
+      });
     }
-    rewritePrimeWorldResourceIds(detail as unknown as JsonValue, (id) => replacements.has(id) ? `bundle:${replacements.get(id)}` : id);
-    return { format: "echoo-prime-world", formatVersion: 1, name: agent.name, attributes: agent.attributes, tags: agent.tags, introduction: agent.introduction, isPublic: agent.isPublic, detail, resources };
+    rewritePrimeWorldResourceIds(detail as unknown as JsonValue, (id) =>
+      replacements.has(id) ? `bundle:${replacements.get(id)}` : id,
+    );
+    return {
+      format: "echoo-prime-world",
+      formatVersion: 1,
+      name: agent.name,
+      attributes: agent.attributes,
+      tags: agent.tags,
+      introduction: agent.introduction,
+      isPublic: agent.isPublic,
+      detail,
+      resources,
+    };
   }
 
   async importBundle(ownerUserId: string, input: unknown) {
-    const materialized = await materializePrimeWorldBundle(ownerUserId, input, this.resources);
+    const materialized = await materializePrimeWorldBundle(
+      ownerUserId,
+      input,
+      this.resources,
+    );
     try {
       return await this.agents.create(ownerUserId, materialized.request);
     } catch (error) {
@@ -149,9 +208,19 @@ export class PrimeWorldService {
     if (Buffer.byteLength(JSON.stringify(event), "utf8") > 64 * 1024)
       throw new Error("EVENT_QUOTA_EXCEEDED");
     if (event.type === "input.voice") {
-      const resourceId = typeof event.payload?.resourceId === "string" ? event.payload.resourceId : "";
-      const resource = resourceId ? await this.resources.findById(resourceId) : null;
-      if (!resource || resource.ownerUserId !== ownerUserId || resource.status !== "ready" || !resource.mimeType.startsWith("audio/"))
+      const resourceId =
+        typeof event.payload?.resourceId === "string"
+          ? event.payload.resourceId
+          : "";
+      const resource = resourceId
+        ? await this.resources.findById(resourceId)
+        : null;
+      if (
+        !resource ||
+        resource.ownerUserId !== ownerUserId ||
+        resource.status !== "ready" ||
+        !resource.mimeType.startsWith("audio/")
+      )
         throw new Error("WORLD_AUDIO_RESOURCE_INVALID");
     }
     const created = await this.worlds.createEventAndRun({
@@ -167,8 +236,16 @@ export class PrimeWorldService {
           conversationId,
           created.run.id,
         );
-        await Promise.all(cancelled.map((runId) => publishPrimeWorldCancellation(runId)));
-        for (const runId of cancelled) this.publish(ownerUserId, "world.run.cancelled", conversationId, runId);
+        await Promise.all(
+          cancelled.map((runId) => publishPrimeWorldCancellation(runId)),
+        );
+        for (const runId of cancelled)
+          this.publish(
+            ownerUserId,
+            "world.run.cancelled",
+            conversationId,
+            runId,
+          );
       }
       await this.queue
         .enqueue({
@@ -220,23 +297,30 @@ export class PrimeWorldService {
       return;
     const abort = new AbortController();
     this.activeRuns.set(job.runId, abort);
-    const unregisterCancellation = await registerPrimeWorldCancellation(job.runId, abort);
+    const unregisterCancellation = await registerPrimeWorldCancellation(
+      job.runId,
+      abort,
+    );
     this.publish(
       job.ownerUserId,
       "world.run.started",
       job.conversationId,
       job.runId,
     );
-    let executionResult: Awaited<ReturnType<typeof executePrimeWorldGraph>> | undefined;
+    let executionResult:
+      Awaited<ReturnType<typeof executePrimeWorldGraph>> | undefined;
     try {
       const compiled = compilePrimeWorld(input.definition);
       const draft = structuredClone(stored.state);
       const history: HistoryDraft[] = [];
-      const resolvedConfig = await this.runtimeConfigs.resolveConversationConfig(
-        job.ownerUserId,
-        job.conversationId,
-      );
-      const traceEnabled = (await this.requireWorld(job.ownerUserId, job.conversationId)).origin.kind === "original";
+      const resolvedConfig =
+        await this.runtimeConfigs.resolveConversationConfig(
+          job.ownerUserId,
+          job.conversationId,
+        );
+      const traceEnabled =
+        (await this.requireWorld(job.ownerUserId, job.conversationId)).origin
+          .kind === "original";
       executionResult = await executePrimeWorldGraph(
         compiled,
         draft,
@@ -283,16 +367,19 @@ export class PrimeWorldService {
         { stateVersion },
       );
     } catch (error) {
-      const failure = error instanceof PrimeWorldExecutionFailure ? error : undefined;
+      const failure =
+        error instanceof PrimeWorldExecutionFailure ? error : undefined;
       const cause = failure?.original ?? error;
       executionResult = failure?.partial ?? executionResult;
       if (executionResult) {
-        await this.worlds.saveTrace({
-          ownerUserId: job.ownerUserId,
-          conversationId: job.conversationId,
-          runId: job.runId,
-          trace: executionResult.trace,
-        }).catch(() => undefined);
+        await this.worlds
+          .saveTrace({
+            ownerUserId: job.ownerUserId,
+            conversationId: job.conversationId,
+            runId: job.runId,
+            trace: executionResult.trace,
+          })
+          .catch(() => undefined);
         await executionResult.cleanup();
       }
       if (
@@ -312,15 +399,22 @@ export class PrimeWorldService {
           job.runId,
         );
       } else {
-        const authored = cause instanceof PrimeWorldAuthoredError ? cause : undefined;
+        const authored =
+          cause instanceof PrimeWorldAuthoredError ? cause : undefined;
         const code = authored?.code ?? stableWorldErrorCode(cause);
-        const detail = authored?.userMessage ?? (cause instanceof Error ? cause.message : "Unknown world error");
-        await this.worlds.fail(
-          job.ownerUserId,
-          job.runId,
-          code,
-          detail,
-        );
+        const detail =
+          authored?.userMessage ??
+          (cause instanceof Error ? cause.message : "Unknown world error");
+        await this.worlds.fail(job.ownerUserId, job.runId, code, detail);
+        await this.failures.record({
+          ownerUserId: job.ownerUserId,
+          conversationId: job.conversationId,
+          kind: "prime-world",
+          runId: job.runId,
+          phase: "world_execution",
+          errorMessage: detail,
+          diagnostics: { errorCode: code },
+        });
         this.publish(
           job.ownerUserId,
           "world.run.failed",
@@ -338,8 +432,13 @@ export class PrimeWorldService {
   async cancel(ownerUserId: string, conversationId: string, runId: string) {
     await this.requireWorld(ownerUserId, conversationId);
     await publishPrimeWorldCancellation(runId);
-    const cancelled = await this.worlds.cancel(ownerUserId, conversationId, runId);
-    if (cancelled) this.publish(ownerUserId, "world.run.cancelled", conversationId, runId);
+    const cancelled = await this.worlds.cancel(
+      ownerUserId,
+      conversationId,
+      runId,
+    );
+    if (cancelled)
+      this.publish(ownerUserId, "world.run.cancelled", conversationId, runId);
     return cancelled;
   }
 
@@ -369,7 +468,10 @@ export class PrimeWorldService {
         });
         await this.worlds.markTimerFired(timer.id);
       } catch (error) {
-        console.warn("Prime World timer dispatch failed; lease will retry.", error);
+        console.warn(
+          "Prime World timer dispatch failed; lease will retry.",
+          error,
+        );
       }
     }
     return due.length;

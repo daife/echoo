@@ -32,6 +32,26 @@ export type AdminUser = {
   isDefaultFollow: boolean;
 };
 
+type AgentRunFailure = {
+  id: string;
+  ownerUserId: string;
+  conversationId: string;
+  kind: "slice-figure" | "prime-figure" | "prime-world";
+  runId?: string;
+  phase: string;
+  errorMessage: string;
+  rawOutput?: string;
+  rawOutputTruncated: boolean;
+  diagnostics?: unknown;
+  retryPayload?: Record<string, unknown>;
+  attempts: number;
+  reviewStatus: "open" | "reviewed" | "retrying" | "retried" | "resolved";
+  reviewNote?: string;
+  reviewedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
 type CatalogModel = {
   modelId: string;
   name: string;
@@ -139,6 +159,7 @@ function AdminConsole({
     | "models"
     | "recommendations"
     | "runtime-defaults"
+    | "run-failures"
     | "content"
   >("billing");
   return (
@@ -167,6 +188,7 @@ function AdminConsole({
               ["models", "OpenRouter 模型"],
               ["recommendations", "推荐与计费"],
               ["runtime-defaults", "新用户默认配置"],
+              ["run-failures", "失败轮次"],
               ["content", "内容管理"],
             ] as const
           ).map(([id, label]) => (
@@ -197,11 +219,225 @@ function AdminConsole({
         {section === "runtime-defaults" ? (
           <RuntimeDefaultsPanel token={token} onExpired={onExpired} />
         ) : null}
+        {section === "run-failures" ? (
+          <RunFailuresPanel token={token} onExpired={onExpired} />
+        ) : null}
         {section === "content" ? (
           <SiteContentPanel token={token} onExpired={onExpired} />
         ) : null}
       </div>
     </main>
+  );
+}
+
+function RunFailuresPanel({ token, onExpired }: PanelProps) {
+  const [items, setItems] = useState<AgentRunFailure[]>([]);
+  const [status, setStatus] = useState("open");
+  const [kind, setKind] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const [busyId, setBusyId] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    setMessage("");
+    try {
+      const query = new URLSearchParams({ limit: "100" });
+      if (status) query.set("status", status);
+      if (kind) query.set("kind", kind);
+      setItems(
+        await authed<AgentRunFailure[]>(token, `/run-failures?${query}`),
+      );
+    } catch (error) {
+      handlePanelError(error, setMessage, onExpired);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, [token, status, kind]);
+
+  const update = async (
+    item: AgentRunFailure,
+    nextStatus: "open" | "reviewed" | "resolved",
+  ) => {
+    setBusyId(item.id);
+    setMessage("");
+    try {
+      await authed<AgentRunFailure>(token, `/run-failures/${item.id}`, {
+        method: "PATCH",
+        body: { status: nextStatus, note: item.reviewNote },
+      });
+      await load();
+    } catch (error) {
+      handlePanelError(error, setMessage, onExpired);
+    } finally {
+      setBusyId("");
+    }
+  };
+
+  const retry = async (item: AgentRunFailure) => {
+    setBusyId(item.id);
+    setMessage("");
+    try {
+      await authed<AgentRunFailure>(token, `/run-failures/${item.id}/retry`, {
+        method: "POST",
+      });
+      await load();
+      setMessage("失败轮次已重新入队。");
+    } catch (error) {
+      handlePanelError(error, setMessage, onExpired);
+    } finally {
+      setBusyId("");
+    }
+  };
+
+  return (
+    <section className="space-y-4">
+      <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold text-white">失败轮次审查</h2>
+            <p className="mt-2 text-sm text-white/42">
+              查看运行阶段、错误详情与诊断信息；自动重试仅适用于已耗尽重试次数的队列任务。
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <select
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+              className="rounded-lg border border-white/10 bg-[#111114] px-3 py-2 text-sm"
+            >
+              <option value="open">待审查</option>
+              <option value="reviewed">已审查</option>
+              <option value="resolved">已解决</option>
+              <option value="retrying">重试中</option>
+              <option value="retried">已重试</option>
+              <option value="">全部状态</option>
+            </select>
+            <select
+              value={kind}
+              onChange={(event) => setKind(event.target.value)}
+              className="rounded-lg border border-white/10 bg-[#111114] px-3 py-2 text-sm"
+            >
+              <option value="">全部类型</option>
+              <option value="slice-figure">切片角色</option>
+              <option value="prime-figure">本初角色</option>
+              <option value="prime-world">本初世界</option>
+            </select>
+            <button
+              onClick={() => void load()}
+              className="rounded-lg border border-white/10 px-3 py-2 text-sm text-white/65"
+            >
+              刷新
+            </button>
+          </div>
+        </div>
+        {message ? (
+          <p className="mt-4 text-sm text-amber-100/75">{message}</p>
+        ) : null}
+      </div>
+
+      {loading ? (
+        <div className="rounded-2xl border border-white/10 p-8 text-center text-white/40">
+          正在加载失败轮次…
+        </div>
+      ) : items.length === 0 ? (
+        <div className="rounded-2xl border border-white/10 p-8 text-center text-white/40">
+          当前筛选条件下没有失败记录。
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {items.map((item) => (
+            <article
+              key={item.id}
+              className="rounded-2xl border border-white/10 bg-white/[0.025] p-5"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="rounded bg-red-400/10 px-2 py-1 text-red-200/80">
+                      {item.kind}
+                    </span>
+                    <span className="rounded bg-white/[0.06] px-2 py-1 text-white/55">
+                      {item.phase}
+                    </span>
+                    <span className="text-white/35">{item.reviewStatus}</span>
+                    <span className="text-white/35">
+                      {new Date(item.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="break-words text-sm leading-6 text-red-100/80">
+                    {item.errorMessage}
+                  </p>
+                  <p className="break-all text-xs text-white/35">
+                    用户 {item.ownerUserId} · 会话 {item.conversationId}
+                    {item.runId ? ` · Run ${item.runId}` : ""} · 尝试{" "}
+                    {item.attempts}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {item.reviewStatus === "open" ? (
+                    <button
+                      disabled={busyId === item.id}
+                      onClick={() => void update(item, "reviewed")}
+                      className="rounded-lg border border-white/10 px-3 py-2 text-xs text-white/65 disabled:opacity-40"
+                    >
+                      标记已审查
+                    </button>
+                  ) : null}
+                  {item.reviewStatus !== "resolved" ? (
+                    <button
+                      disabled={busyId === item.id}
+                      onClick={() => void update(item, "resolved")}
+                      className="rounded-lg border border-emerald-300/15 px-3 py-2 text-xs text-emerald-100/70 disabled:opacity-40"
+                    >
+                      标记已解决
+                    </button>
+                  ) : null}
+                  {item.retryPayload &&
+                  item.reviewStatus !== "retrying" &&
+                  item.reviewStatus !== "retried" ? (
+                    <button
+                      disabled={busyId === item.id}
+                      onClick={() => void retry(item)}
+                      className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-black disabled:opacity-40"
+                    >
+                      重新入队
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              {item.diagnostics !== undefined ? (
+                <details className="mt-4 rounded-xl border border-white/[0.07] bg-black/20 p-3">
+                  <summary className="cursor-pointer text-xs text-white/45">
+                    诊断详情
+                  </summary>
+                  <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs leading-5 text-white/50">
+                    {JSON.stringify(item.diagnostics, null, 2)}
+                  </pre>
+                </details>
+              ) : null}
+              {item.rawOutput !== undefined ? (
+                <details
+                  open
+                  className="mt-3 rounded-xl border border-red-300/10 bg-black/30 p-3"
+                >
+                  <summary className="cursor-pointer text-xs text-red-100/65">
+                    模型原始输出{item.rawOutputTruncated ? "（已截断）" : ""}
+                  </summary>
+                  <pre className="mt-3 max-h-[32rem] overflow-auto whitespace-pre-wrap break-all text-xs leading-5 text-white/65">
+                    {item.rawOutput}
+                  </pre>
+                </details>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -279,7 +515,9 @@ function SiteContentPanel({ token, onExpired }: PanelProps) {
             className="mt-4 text-sm leading-7 text-white/68"
           />
         ) : (
-          <p className="mt-4 text-sm text-white/30">公告为空时主页不会显示公告区域。</p>
+          <p className="mt-4 text-sm text-white/30">
+            公告为空时主页不会显示公告区域。
+          </p>
         )}
       </div>
     </section>

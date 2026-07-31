@@ -18,6 +18,7 @@ export type EntityPrefix =
   | "pwh"
   | "pws"
   | "pwt"
+  | "runfail"
   | "vclone";
 
 export function createId(prefix: EntityPrefix) {

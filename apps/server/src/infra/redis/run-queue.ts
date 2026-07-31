@@ -1,6 +1,7 @@
 import { hostname } from "node:os";
 import { environment } from "../config/environment.js";
 import { createId } from "../../shared/utils/id.js";
+import { AgentRunFailureRepository } from "../../modules/agents/agent-run-failure.repository.js";
 import {
   acknowledgeAndDeleteStreamEntry,
   getRedis,
@@ -47,28 +48,50 @@ export class AgentRunQueue {
   private lastPendingClaimAt = 0;
   private retryCount = 0;
 
+  constructor(private readonly failures = new AgentRunFailureRepository()) {}
+
   async enqueue(job: AgentRunJob) {
-    const redis = await getRedis();
-    if (await redis.exists(this.cancelledKey(job.conversationId))) return;
-    await redis.xAdd(
-      STREAM,
-      "*",
-      {
+    try {
+      const redis = await getRedis();
+      if (await redis.exists(this.cancelledKey(job.conversationId))) return;
+      await redis.xAdd(
+        STREAM,
+        "*",
+        {
+          ownerUserId: job.ownerUserId,
+          conversationId: job.conversationId,
+          kind: job.kind,
+          runId: job.runId ?? "",
+          assistantMessageId: job.assistantMessageId ?? "",
+          attempts: String(job.attempts ?? 0),
+          trigger: job.trigger ?? "end_user_message",
+          debugInstruction: job.debugInstruction ?? "",
+          wakeupToken: job.wakeupToken ?? "",
+          passiveStage: job.passiveStage ? String(job.passiveStage) : "",
+        },
+        {
+          TRIM: {
+            strategy: "MAXLEN",
+            strategyModifier: "~",
+            threshold: 100_000,
+          },
+        },
+      );
+    } catch (error) {
+      const { id: _entryId, ...retryPayload } = job;
+      await this.failures.record({
         ownerUserId: job.ownerUserId,
         conversationId: job.conversationId,
         kind: job.kind,
-        runId: job.runId ?? "",
-        assistantMessageId: job.assistantMessageId ?? "",
-        attempts: String(job.attempts ?? 0),
-        trigger: job.trigger ?? "end_user_message",
-        debugInstruction: job.debugInstruction ?? "",
-        wakeupToken: job.wakeupToken ?? "",
-        passiveStage: job.passiveStage ? String(job.passiveStage) : "",
-      },
-      {
-        TRIM: { strategy: "MAXLEN", strategyModifier: "~", threshold: 100_000 },
-      },
-    );
+        runId: job.runId,
+        phase: "queue_enqueue",
+        errorMessage:
+          error instanceof Error ? error.message : "Failed to enqueue run",
+        retryPayload: { ...retryPayload, attempts: 0 },
+        attempts: job.attempts ?? 0,
+      });
+      throw error;
+    }
   }
 
   async cancelConversation(conversationId: string) {
@@ -168,12 +191,26 @@ export class AgentRunQueue {
         await delay(retryDelay(job.attempts ?? 0));
         await this.enqueue({ ...job, attempts: (job.attempts ?? 0) + 1 });
       } else {
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown run error";
+        const { id: _entryId, ...retryPayload } = job;
+        await this.failures.record({
+          ownerUserId: job.ownerUserId,
+          conversationId: job.conversationId,
+          kind: job.kind,
+          runId: job.runId,
+          phase: "queue_exhausted",
+          errorMessage,
+          diagnostics: { queueEntryId: entryId },
+          retryPayload: { ...retryPayload, attempts: 0 },
+          attempts: job.attempts ?? 0,
+        });
         await redis.xAdd(
           FAILED_STREAM,
           "*",
           {
             job: JSON.stringify(job),
-            error: error instanceof Error ? error.message : "Unknown run error",
+            error: errorMessage,
           },
           {
             TRIM: {

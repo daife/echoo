@@ -335,6 +335,32 @@ CREATE TABLE IF NOT EXISTS scheduled_runs (
   CONSTRAINT fk_scheduled_runs_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS agent_run_failures (
+  id VARCHAR(64) PRIMARY KEY,
+  owner_user_id VARCHAR(64) NOT NULL,
+  conversation_id VARCHAR(64) NOT NULL,
+  kind VARCHAR(32) NOT NULL,
+  run_id VARCHAR(64) NULL,
+  phase VARCHAR(80) NOT NULL,
+  error_message VARCHAR(2000) NOT NULL,
+  raw_output MEDIUMTEXT NULL,
+  raw_output_truncated BOOLEAN NOT NULL DEFAULT FALSE,
+  diagnostics_json JSON NULL,
+  retry_payload_json JSON NULL,
+  attempts INT UNSIGNED NOT NULL DEFAULT 0,
+  review_status ENUM('open', 'reviewed', 'retrying', 'retried', 'resolved') NOT NULL DEFAULT 'open',
+  review_note VARCHAR(1000) NULL,
+  reviewed_at BIGINT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  INDEX idx_agent_run_failures_review (review_status, created_at),
+  INDEX idx_agent_run_failures_owner (owner_user_id, created_at),
+  INDEX idx_agent_run_failures_conversation (conversation_id, created_at),
+  INDEX idx_agent_run_failures_run (run_id),
+  CONSTRAINT fk_agent_run_failures_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_agent_run_failures_conversation FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS conversation_media (
   conversation_id VARCHAR(64) NOT NULL,
   owner_user_id VARCHAR(64) NOT NULL,

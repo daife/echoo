@@ -15,6 +15,15 @@ import { RuntimeConfigService } from "../runtime-config/runtime-config.service.j
 import { PlatformSettingsService } from "../platform-settings/platform-settings.service.js";
 import { RechargeService } from "../payments/recharge.service.js";
 import {
+  AgentRunFailureRepository,
+  type AgentRunFailureKind,
+  type AgentRunFailureReviewStatus,
+} from "../agents/agent-run-failure.repository.js";
+import {
+  AgentRunQueue,
+  type AgentRunJob,
+} from "../../infra/redis/run-queue.js";
+import {
   AdminAccountService,
   InvalidAccountFlagsError,
 } from "./admin-account.service.js";
@@ -73,6 +82,34 @@ const adminSettingsSchema = z.object({
     .optional(),
 });
 
+const failureReviewSchema = z.object({
+  status: z.enum(["open", "reviewed", "resolved"]),
+  note: z.string().trim().max(1000).optional(),
+});
+
+const agentRunJobSchema = z.object({
+  ownerUserId: z.string().min(1).max(64),
+  conversationId: z.string().min(1).max(64),
+  kind: z.enum(["slice-figure", "prime-figure", "prime-world"]),
+  runId: z.string().max(64).optional(),
+  assistantMessageId: z.string().max(64).optional(),
+  attempts: z.number().int().nonnegative().optional(),
+  trigger: z
+    .enum([
+      "end_user_message",
+      "mute_ended",
+      "scheduled_wakeup",
+      "passive_wakeup",
+      "coalesced_messages",
+      "debug_hint",
+      "memory_summary",
+    ])
+    .optional(),
+  debugInstruction: z.string().optional(),
+  wakeupToken: z.string().optional(),
+  passiveStage: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+});
+
 export async function registerAdminRoutes(app: FastifyInstance) {
   const billing = new BillingService();
   const catalog = new PlatformCatalogService();
@@ -80,6 +117,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   const platformSettings = new PlatformSettingsService();
   const recharge = new RechargeService({ settings: platformSettings });
   const adminAccounts = new AdminAccountService();
+  const runFailures = new AgentRunFailureRepository();
+  const runQueue = new AgentRunQueue(runFailures);
 
   app.post<{ Body: { password?: string } }>(
     "/login",
@@ -117,6 +156,90 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         query: request.query.q,
         adminsOnly: request.query.role === "admin",
       });
+    },
+  );
+
+  app.get<{
+    Querystring: {
+      status?: string;
+      kind?: string;
+      limit?: string;
+      before?: string;
+    };
+  }>("/run-failures", async (request, reply) => {
+    if (!(await request.requireAdmin(reply))) return;
+    const status = request.query.status;
+    const kind = request.query.kind;
+    if (status && !isFailureStatus(status))
+      return reply.code(400).send({
+        error: "INVALID_FAILURE_STATUS",
+        message: "失败轮次审查状态无效。",
+      });
+    if (kind && !isFailureKind(kind))
+      return reply.code(400).send({
+        error: "INVALID_FAILURE_KIND",
+        message: "失败轮次类型无效。",
+      });
+    const parsedStatus = status && isFailureStatus(status) ? status : undefined;
+    const parsedKind = kind && isFailureKind(kind) ? kind : undefined;
+    return runFailures.list({
+      status: parsedStatus,
+      kind: parsedKind,
+      limit: Number(request.query.limit ?? 50),
+      before: request.query.before ? Number(request.query.before) : undefined,
+    });
+  });
+
+  app.patch<{ Params: { failureId: string }; Body: unknown }>(
+    "/run-failures/:failureId",
+    async (request, reply) => {
+      if (!(await request.requireAdmin(reply))) return;
+      const body = failureReviewSchema.parse(request.body);
+      const failure = await runFailures.review({
+        id: request.params.failureId,
+        ...body,
+      });
+      return (
+        failure ??
+        reply.code(404).send({
+          error: "RUN_FAILURE_NOT_FOUND",
+          message: "失败轮次不存在。",
+        })
+      );
+    },
+  );
+
+  app.post<{ Params: { failureId: string } }>(
+    "/run-failures/:failureId/retry",
+    async (request, reply) => {
+      if (!(await request.requireAdmin(reply))) return;
+      const current = await runFailures.findById(request.params.failureId);
+      if (!current)
+        return reply.code(404).send({
+          error: "RUN_FAILURE_NOT_FOUND",
+          message: "失败轮次不存在。",
+        });
+      if (!current.retryPayload)
+        return reply.code(409).send({
+          error: "RUN_FAILURE_NOT_RETRYABLE",
+          message: "该失败记录不是队列终态失败，不能自动重试。",
+        });
+      const claimed = await runFailures.beginRetry(current.id);
+      if (!claimed)
+        return reply.code(409).send({
+          error: "RUN_FAILURE_ALREADY_RETRIED",
+          message: "该失败轮次正在重试或已经重试。",
+        });
+      try {
+        const job = agentRunJobSchema.parse(
+          claimed.retryPayload,
+        ) as AgentRunJob;
+        await runQueue.enqueue({ ...job, attempts: 0 });
+        return await runFailures.finishRetry(current.id, true);
+      } catch (error) {
+        await runFailures.finishRetry(current.id, false);
+        throw error;
+      }
     },
   );
 
@@ -200,43 +323,40 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     }
   });
 
-  app.patch<{ Body: unknown }>(
-    "/settings",
-    async (request, reply) => {
-      if (!(await request.requireAdmin(reply))) return;
-      try {
-        const body = adminSettingsSchema.parse(request.body);
-        if (body.billingMultiplier !== undefined)
-          await billing.setMultiplier(body.billingMultiplier);
-        if (body.usdToCnyRate !== undefined)
-          await platformSettings.setUsdToCnyRate(body.usdToCnyRate);
-        if (
-          body.newUserInitialCreditUsd !== undefined ||
-          body.invitation ||
-          body.promotion
-        )
-          await platformSettings.setRewardSettings({
-            ...(body.newUserInitialCreditUsd !== undefined
-              ? { newUserInitialCreditUsd: body.newUserInitialCreditUsd }
-              : {}),
-            ...(body.invitation ? { invitation: body.invitation } : {}),
-            ...(body.promotion ? { promotion: body.promotion } : {}),
-          });
-        return {
-          billingMultiplier: await billing.getMultiplier(),
-          recharge: {
-            usdToCnyRate: await platformSettings.getUsdToCnyRate(),
-            paymentConfigured: recharge.isPaymentConfigured(),
-          },
-          ...(await platformSettings.getRewardSettings()),
-        };
-      } catch (error) {
-        return reply
-          .code(400)
-          .send({ error: "INVALID_SETTINGS", message: errorMessage(error) });
-      }
-    },
-  );
+  app.patch<{ Body: unknown }>("/settings", async (request, reply) => {
+    if (!(await request.requireAdmin(reply))) return;
+    try {
+      const body = adminSettingsSchema.parse(request.body);
+      if (body.billingMultiplier !== undefined)
+        await billing.setMultiplier(body.billingMultiplier);
+      if (body.usdToCnyRate !== undefined)
+        await platformSettings.setUsdToCnyRate(body.usdToCnyRate);
+      if (
+        body.newUserInitialCreditUsd !== undefined ||
+        body.invitation ||
+        body.promotion
+      )
+        await platformSettings.setRewardSettings({
+          ...(body.newUserInitialCreditUsd !== undefined
+            ? { newUserInitialCreditUsd: body.newUserInitialCreditUsd }
+            : {}),
+          ...(body.invitation ? { invitation: body.invitation } : {}),
+          ...(body.promotion ? { promotion: body.promotion } : {}),
+        });
+      return {
+        billingMultiplier: await billing.getMultiplier(),
+        recharge: {
+          usdToCnyRate: await platformSettings.getUsdToCnyRate(),
+          paymentConfigured: recharge.isPaymentConfigured(),
+        },
+        ...(await platformSettings.getRewardSettings()),
+      };
+    } catch (error) {
+      return reply
+        .code(400)
+        .send({ error: "INVALID_SETTINGS", message: errorMessage(error) });
+    }
+  });
 
   app.get("/runtime-defaults", async (request, reply) => {
     if (!(await request.requireAdmin(reply))) return;
@@ -360,27 +480,23 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       category?: string;
       includeProviders?: string;
     };
-  }>(
-    "/models",
-    async (request, reply) => {
-      if (!(await request.requireAdmin(reply))) return;
-      const category = request.query.category;
-      if (category && !isRecommendationCategory(category))
-        return reply.code(400).send({
-          error: "INVALID_CATEGORY",
-          message: "推荐模型分类无效。",
-        });
-      const recommendationCategory = category as
-        | ModelRecommendationCategory
-        | undefined;
-      return catalog.listModels(
-        request.query.q,
-        Number(request.query.limit ?? 100),
-        recommendationCategory,
-        request.query.includeProviders !== "false",
-      );
-    },
-  );
+  }>("/models", async (request, reply) => {
+    if (!(await request.requireAdmin(reply))) return;
+    const category = request.query.category;
+    if (category && !isRecommendationCategory(category))
+      return reply.code(400).send({
+        error: "INVALID_CATEGORY",
+        message: "推荐模型分类无效。",
+      });
+    const recommendationCategory = category as
+      ModelRecommendationCategory | undefined;
+    return catalog.listModels(
+      request.query.q,
+      Number(request.query.limit ?? 100),
+      recommendationCategory,
+      request.query.includeProviders !== "false",
+    );
+  });
 
   app.get<{ Params: { category: string } }>(
     "/recommendations/:category",
@@ -431,4 +547,14 @@ function errorMessage(error: unknown) {
 function parsePresetType(value: string): "slice-figure" | "prime-figure" {
   if (value === "slice-figure" || value === "prime-figure") return value;
   throw new Error("推荐配置类型无效。");
+}
+
+function isFailureStatus(value: string): value is AgentRunFailureReviewStatus {
+  return ["open", "reviewed", "retrying", "retried", "resolved"].includes(
+    value,
+  );
+}
+
+function isFailureKind(value: string): value is AgentRunFailureKind {
+  return ["slice-figure", "prime-figure", "prime-world"].includes(value);
 }

@@ -61,6 +61,7 @@ import { advanceHandledSequenceAfterSuccessfulRun } from "./prime-run-commit.js"
 import { requiresDirectMediaReply } from "./prime-media-trigger.js";
 
 const PRIME_VISIBLE_MEMORY_LIMIT = 20;
+const PRIME_FAILURE_RAW_RESPONSE_LIMIT = 65_536;
 const RECALL_HINT_PATTERN = /记得|不记得|忘了|还记得|remember|forgot|recal+l/i;
 const primeFigureDecisionWithoutVariablesSchema =
   primeFigureDecisionSchema.omit({ variables: true });
@@ -200,6 +201,7 @@ export class PrimeFigureRuntimeService {
         runtimeConfig,
       });
     } catch (error) {
+      const diagnostics = readPrimeFailureDiagnostics(error);
       await this.recordTerminalFailure({
         ownerUserId: input.ownerUserId,
         agentId: agent.id,
@@ -207,6 +209,7 @@ export class PrimeFigureRuntimeService {
         trigger,
         errorMessage:
           error instanceof Error ? error.message : "本初角色运行时执行失败。",
+        diagnostics,
       });
       return null;
     }
@@ -218,15 +221,33 @@ export class PrimeFigureRuntimeService {
     conversationId: string;
     trigger: PrimeDecisionTrigger;
     errorMessage: string;
+    diagnostics?: Record<string, unknown>;
   }) {
     const now = Date.now();
+    const rawOutput =
+      typeof input.diagnostics?.rawResponse === "string"
+        ? input.diagnostics.rawResponse
+        : undefined;
+    const diagnostics = input.diagnostics
+      ? Object.fromEntries(
+          Object.entries(input.diagnostics).filter(
+            ([key]) => key !== "rawResponse",
+          ),
+        )
+      : undefined;
     await this.logs.save({
       ownerUserId: input.ownerUserId,
       agentId: input.agentId,
       conversationId: input.conversationId,
-      action: { type: "prime_runtime", trigger: input.trigger },
+      action: {
+        type: "prime_runtime",
+        trigger: input.trigger,
+        ...(input.diagnostics ?? {}),
+      },
       status: "failed",
       errorMessage: input.errorMessage,
+      rawOutput,
+      diagnostics,
       now,
     });
     await this.failureNotifier.notify({
@@ -453,7 +474,7 @@ export class PrimeFigureRuntimeService {
       );
     } catch (error) {
       await streamSession.fail(error, diagnostics);
-      throw error;
+      throw attachPrimeFailureDiagnostics(error, diagnostics);
     }
   }
 
@@ -574,6 +595,9 @@ export class PrimeFigureRuntimeService {
           ),
         },
         input.streamSession,
+        (rawResponse) => {
+          input.diagnostics.rawResponse = rawResponse;
+        },
       ),
     );
     const recallCall = input.packet.recallAvailable
@@ -599,6 +623,7 @@ export class PrimeFigureRuntimeService {
       name: recallCall.function.name,
       content: await this.executeRecallTool(recallCall, input.request),
     });
+    input.diagnostics.rawResponse = "";
     return recordResponse(
       await streamPrimeChatCompletion(
         input.provider,
@@ -618,6 +643,9 @@ export class PrimeFigureRuntimeService {
           toolChoice: "none",
         },
         input.streamSession,
+        (rawResponse) => {
+          input.diagnostics.rawResponse = rawResponse;
+        },
       ),
     );
   }
@@ -710,13 +738,53 @@ export class PrimeFigureRuntimeService {
   }
 }
 
+interface PrimeFailureWithDiagnostics extends Error {
+  primeDiagnostics?: Record<string, unknown>;
+}
+
+function attachPrimeFailureDiagnostics(
+  error: unknown,
+  diagnostics: PrimeCompletionDiagnostics,
+) {
+  const failure =
+    error instanceof Error
+      ? (error as PrimeFailureWithDiagnostics)
+      : (new Error(String(error), { cause: error }) as PrimeFailureWithDiagnostics);
+  failure.primeDiagnostics = buildPrimeFailureDiagnostics(diagnostics);
+  return failure;
+}
+
+function readPrimeFailureDiagnostics(error: unknown) {
+  return error instanceof Error
+    ? (error as PrimeFailureWithDiagnostics).primeDiagnostics
+    : undefined;
+}
+
+export function buildPrimeFailureDiagnostics(
+  diagnostics: PrimeCompletionDiagnostics,
+) {
+  const rawResponse = diagnostics.rawResponse.slice(
+    0,
+    PRIME_FAILURE_RAW_RESPONSE_LIMIT,
+  );
+  return {
+    providerId: diagnostics.providerId,
+    model: diagnostics.model,
+    rawResponse,
+    rawResponseTruncated: rawResponse.length < diagnostics.rawResponse.length,
+    rawResponseLength: diagnostics.rawResponse.length,
+  };
+}
+
 async function streamPrimeChatCompletion(
   provider: AiTextProvider,
   completion: ChatCompletionInput,
   session: PrimeDecisionStreamSession,
+  onRawResponse?: (rawResponse: string) => void,
 ): Promise<ChatCompletionResult> {
   if (!provider.streamChatCompletion) {
     const result = await provider.createChatCompletion(completion);
+    onRawResponse?.(result.text);
     const parser = new PrimeDecisionStreamParser((event) =>
       session.handleField(event),
     );
@@ -734,6 +802,7 @@ async function streamPrimeChatCompletion(
   for await (const delta of provider.streamChatCompletion(completion)) {
     if (delta.text) {
       text += delta.text;
+      onRawResponse?.(text);
       parser.push(delta.text);
     }
     if (delta.reasoningContent) reasoningContent += delta.reasoningContent;
