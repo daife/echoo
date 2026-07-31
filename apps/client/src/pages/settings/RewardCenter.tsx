@@ -6,13 +6,17 @@ import type {
 import { useEffect, useState, type FormEvent } from "react";
 import { BACK_HANDLER_PRIORITY } from "../../app/backNavigation";
 import { useBackHandler } from "../../app/providers/BackNavigationProvider";
+import type { RechargeService } from "../../services/RechargeService";
 import type { RewardsService } from "../../services/RewardsService";
+import { RechargePanel } from "./RechargePanel";
 
 export function RewardCenter({
   service,
+  rechargeService,
   onWalletChanged,
 }: {
   service: RewardsService;
+  rechargeService: RechargeService;
   onWalletChanged: () => Promise<void>;
 }) {
   const [center, setCenter] = useState<RewardCenterView | null>(null);
@@ -178,21 +182,10 @@ export function RewardCenter({
             </form>
           </article>
 
-          <article className="glass-panel rounded-2xl p-5">
-            <p className="text-xs uppercase tracking-[0.16em] text-sky-100/45">
-              Recharge
-            </p>
-            <h3 className="mt-2 text-lg font-semibold text-white">充值获取</h3>
-            <p className="mt-2 text-sm leading-6 text-white/42">
-              充值功能暂未开放。开放后也请按实际需要小额充值，不要一次性充值过多。
-            </p>
-            <button
-              disabled
-              className="mt-4 rounded-lg border border-white/10 px-4 py-2 text-sm text-white/35"
-            >
-              暂未开放
-            </button>
-          </article>
+          <RechargePanel
+            service={rechargeService}
+            onWalletChanged={onWalletChanged}
+          />
 
           <article className="glass-panel rounded-2xl p-5 md:col-span-2">
             <div className="flex flex-wrap items-start justify-between gap-4">

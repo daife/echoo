@@ -171,7 +171,7 @@ export function RechargePanel({
           <p className="text-xs uppercase tracking-[0.18em] text-white/35">
             Recharge
           </p>
-          <h2 className="mt-2 text-xl font-semibold text-white">充值额度</h2>
+          <h2 className="mt-2 text-xl font-semibold text-white">充值获取</h2>
           <p className="mt-2 text-sm leading-6 text-white/42">
             购买美元额度，人民币实付按下单时汇率锁定。
           </p>

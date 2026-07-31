@@ -20,7 +20,6 @@ import type { RewardsService } from "../../services/RewardsService";
 import type { RechargeService } from "../../services/RechargeService";
 import { BackButton } from "../../shared/components/BackButton";
 import { RewardCenter } from "./RewardCenter";
-import { RechargePanel } from "./RechargePanel";
 
 export function SettingsPage({
   runtimeConfigService,
@@ -219,11 +218,11 @@ export function SettingsPage({
           </details>
         ) : null}
       </div>
-      <RechargePanel
-        service={rechargeService}
+      <RewardCenter
+        service={rewardsService}
+        rechargeService={rechargeService}
         onWalletChanged={refreshWallet}
       />
-      <RewardCenter service={rewardsService} onWalletChanged={refreshWallet} />
       <div className="glass-panel rounded-2xl p-5 md:p-6">
         <div className="mb-6">
           <h2 className="text-xl font-semibold text-white">用户全局运行配置</h2>
