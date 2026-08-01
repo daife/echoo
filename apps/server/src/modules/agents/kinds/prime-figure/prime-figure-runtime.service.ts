@@ -59,6 +59,7 @@ import {
 } from "./prime-output-capabilities.js";
 import { advanceHandledSequenceAfterSuccessfulRun } from "./prime-run-commit.js";
 import { requiresDirectMediaReply } from "./prime-media-trigger.js";
+import { parseFirstJsonObject } from "./prime-json-response.js";
 
 const PRIME_VISIBLE_MEMORY_LIMIT = 20;
 const PRIME_FAILURE_RAW_RESPONSE_LIMIT = 65_536;
@@ -1994,7 +1995,7 @@ export function parsePrimeDecisionEnvelope(
   availableStickerIds: string[] = [],
   pendingTransferIds: string[] = [],
 ) {
-  const raw = JSON.parse(responseText) as Record<string, unknown>;
+  const raw = parseFirstJsonObject(responseText);
   const rawActionFilter = Array.isArray(raw.actions)
     ? filterPrimeActionsByCapabilities(raw.actions, runtimeConfig)
     : null;
