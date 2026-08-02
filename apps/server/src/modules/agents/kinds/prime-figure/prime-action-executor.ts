@@ -662,7 +662,17 @@ function toMessageContent(
   }
   return {
     text: message.transcript,
-    ...(voiceMedia ? { mediaUrl: voiceMedia.mediaUrl } : {}),
+    ...(voiceMedia
+      ? {
+          mediaUrl: voiceMedia.mediaUrl,
+          resourceId: voiceMedia.resourceId,
+          media: {
+            resourceId: voiceMedia.resourceId,
+            kind: "voice" as const,
+            variants: ["original" as const],
+          },
+        }
+      : {}),
   };
 }
 

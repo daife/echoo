@@ -447,6 +447,7 @@ export class ResourceRepository {
        LEFT JOIN message_resources ON message_resources.resource_id = resources.id
        LEFT JOIN agent_resources ON agent_resources.resource_id = resources.id
        LEFT JOIN user_resources ON user_resources.resource_id = resources.id
+       LEFT JOIN conversation_media ON conversation_media.resource_id = resources.id
        LEFT JOIN public_asset_version_resources asset_versions
          ON asset_versions.resource_id = resources.id
        LEFT JOIN public_asset_draft_resources asset_drafts
@@ -461,6 +462,7 @@ export class ResourceRepository {
          AND message_resources.resource_id IS NULL
          AND agent_resources.resource_id IS NULL
          AND user_resources.resource_id IS NULL
+         AND conversation_media.resource_id IS NULL
          AND asset_versions.resource_id IS NULL
          AND asset_drafts.resource_id IS NULL
          AND post_resources.resource_id IS NULL
@@ -482,6 +484,8 @@ export class ResourceRepository {
       `UPDATE resources SET status = 'deleting', updated_at = ?
        WHERE id = ? AND NOT EXISTS (
          SELECT 1 FROM message_resources WHERE resource_id = resources.id
+       ) AND NOT EXISTS (
+         SELECT 1 FROM conversation_media WHERE resource_id = resources.id
        ) AND NOT EXISTS (
          SELECT 1 FROM user_resources WHERE resource_id = resources.id
        ) AND NOT EXISTS (

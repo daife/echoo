@@ -132,6 +132,21 @@ export class PrimeConversationMediaRepository {
     );
   }
 
+  async findByResource(
+    ownerUserId: string,
+    conversationId: string,
+    resourceId: string,
+  ) {
+    const row = await queryOne<MediaRow>(
+      `SELECT media.*, resources.mime_type, resources.public_path
+       FROM conversation_media media JOIN resources ON resources.id = media.resource_id
+       WHERE media.owner_user_id = ? AND media.conversation_id = ?
+         AND media.resource_id = ?`,
+      [ownerUserId, conversationId, resourceId],
+    );
+    return row ? rowToMedia(row) : null;
+  }
+
   async resolveImageReferences(
     ownerUserId: string,
     conversationId: string,

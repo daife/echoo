@@ -750,7 +750,9 @@ function attachPrimeFailureDiagnostics(
   const failure =
     error instanceof Error
       ? (error as PrimeFailureWithDiagnostics)
-      : (new Error(String(error), { cause: error }) as PrimeFailureWithDiagnostics);
+      : (new Error(String(error), {
+          cause: error,
+        }) as PrimeFailureWithDiagnostics);
   failure.primeDiagnostics = buildPrimeFailureDiagnostics(diagnostics);
   return failure;
 }
@@ -1037,7 +1039,29 @@ export async function buildPrimeChatMessages(
 
     if (messageContent.type === "image" || messageContent.type === "video") {
       let description = messageContent.description?.trim();
-      const registeredMedia = messageContent.resourceId
+      let registeredMedia = null;
+      if (!description && messageContent.resourceId) {
+        registeredMedia = await conversationMedia.findByResource(
+          ownerUserId,
+          message.conversationId,
+          messageContent.resourceId,
+        );
+        description = registeredMedia?.description?.trim();
+      }
+      if (description) {
+        content.push({
+          type: "text",
+          text: JSON.stringify({
+            at,
+            sender,
+            ...(attentionId ? { attentionId } : {}),
+            type: messageContent.type,
+            description: sanitizeVisibleText(description, timezone),
+          }),
+        });
+        continue;
+      }
+      registeredMedia = messageContent.resourceId
         ? await conversationMedia.ensure({
             ownerUserId,
             conversationId: message.conversationId,
@@ -1100,7 +1124,29 @@ export async function buildPrimeChatMessages(
 
     if (messageContent.type === "voice") {
       let transcript = messageContent.transcript?.trim();
-      const registeredMedia = messageContent.resourceId
+      let registeredMedia = null;
+      if (!transcript && messageContent.resourceId) {
+        registeredMedia = await conversationMedia.findByResource(
+          ownerUserId,
+          message.conversationId,
+          messageContent.resourceId,
+        );
+        transcript = registeredMedia?.description?.trim();
+      }
+      if (transcript) {
+        content.push({
+          type: "text",
+          text: JSON.stringify({
+            at,
+            sender,
+            ...(attentionId ? { attentionId } : {}),
+            type: "voice",
+            transcript: sanitizeVisibleText(transcript, timezone),
+          }),
+        });
+        continue;
+      }
+      registeredMedia = messageContent.resourceId
         ? await conversationMedia.ensure({
             ownerUserId,
             conversationId: message.conversationId,

@@ -133,8 +133,37 @@ export async function initializeDatabase() {
       throw new Error(
         "检测到不兼容的旧 Echoo schema。请确认备份后运行 ECHOO_CONFIRM_RECREATE=echoo pnpm db:recreate。",
       );
+    await backfillPrimeMessageResourceLinks(connection);
   } finally {
     connection.release();
+  }
+}
+
+async function backfillPrimeMessageResourceLinks(connection: PoolConnection) {
+  const migrationId = "2026-08-02-prime-message-resource-links";
+  await connection.beginTransaction();
+  try {
+    const [claimed] = await connection.query<ResultSetHeader>(
+      "INSERT IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)",
+      [migrationId, Date.now()],
+    );
+    if (claimed.affectedRows)
+      await connection.query(
+        `INSERT IGNORE INTO message_resources (message_id, resource_id, created_at)
+         SELECT messages.id,
+                JSON_UNQUOTE(JSON_EXTRACT(messages.run_metadata, '$.primeContent.resourceId')),
+                messages.created_at
+         FROM messages
+         JOIN resources ON resources.id =
+           JSON_UNQUOTE(JSON_EXTRACT(messages.run_metadata, '$.primeContent.resourceId'))
+         WHERE JSON_TYPE(
+           JSON_EXTRACT(messages.run_metadata, '$.primeContent.resourceId')
+         ) = 'STRING'`,
+      );
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
   }
 }
 
