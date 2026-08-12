@@ -87,6 +87,7 @@ export class AgentRunQueue {
         phase: "queue_enqueue",
         errorMessage:
           error instanceof Error ? error.message : "Failed to enqueue run",
+        cause: error,
         retryPayload: { ...retryPayload, attempts: 0 },
         attempts: job.attempts ?? 0,
       });
@@ -201,6 +202,7 @@ export class AgentRunQueue {
           runId: job.runId,
           phase: "queue_exhausted",
           errorMessage,
+          cause: error,
           diagnostics: { queueEntryId: entryId },
           retryPayload: { ...retryPayload, attempts: 0 },
           attempts: job.attempts ?? 0,

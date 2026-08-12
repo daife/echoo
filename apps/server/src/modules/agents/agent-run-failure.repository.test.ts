@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { RowDataPacket } from "mysql2";
-import { rowToFailure } from "./agent-run-failure.repository.js";
+import {
+  rowToFailure,
+  shouldAuditAgentRunFailure,
+} from "./agent-run-failure.repository.js";
+import { InsufficientPlatformBalanceError } from "../billing/billing-error.js";
 
 test("maps persisted run failure diagnostics and retry payloads", () => {
   const failure = rowToFailure({
@@ -40,4 +44,19 @@ test("maps persisted run failure diagnostics and retry payloads", () => {
     createdAt: 100,
     updatedAt: 101,
   });
+});
+
+test("excludes user balance failures from platform failure review", () => {
+  assert.equal(
+    shouldAuditAgentRunFailure(
+      new InsufficientPlatformBalanceError(
+        "平台余额不足，请充值后再使用平台提供的 AI 服务。",
+      ),
+    ),
+    false,
+  );
+  assert.equal(
+    shouldAuditAgentRunFailure(new Error("provider unavailable")),
+    true,
+  );
 });

@@ -431,6 +431,7 @@ export class PrimeActionExecutor {
         status: "failed",
         errorMessage:
           error instanceof Error ? error.message : "本初角色决定执行失败。",
+        cause: error,
       });
       throw error;
     }

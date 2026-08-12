@@ -6,6 +6,10 @@ import {
   queryRows,
   withTransaction,
 } from "../../infra/database/mysql.js";
+import {
+  INSUFFICIENT_PLATFORM_BALANCE_MESSAGE,
+  isInsufficientPlatformBalanceError,
+} from "../billing/billing-error.js";
 
 export type AgentRunFailureKind =
   "slice-figure" | "prime-figure" | "prime-world";
@@ -65,7 +69,10 @@ export class AgentRunFailureRepository {
     retryPayload?: Record<string, unknown>;
     attempts?: number;
     now?: number;
+    cause?: unknown;
   }) {
+    if (!shouldAuditAgentRunFailure(input.cause ?? input.errorMessage))
+      return null;
     const now = input.now ?? Date.now();
     const id = createId("runfail");
     const rawOutput = truncateUtf8(input.rawOutput, 256 * 1_024);
@@ -110,6 +117,7 @@ export class AgentRunFailureRepository {
        WHERE (? IS NULL OR review_status = ?)
          AND (? IS NULL OR kind = ?)
          AND (? IS NULL OR created_at < ?)
+         AND error_message <> ?
        ORDER BY created_at DESC, id DESC LIMIT ?`,
       [
         input.status ?? null,
@@ -118,6 +126,7 @@ export class AgentRunFailureRepository {
         input.kind ?? null,
         input.before ?? null,
         input.before ?? null,
+        INSUFFICIENT_PLATFORM_BALANCE_MESSAGE,
         limit,
       ],
     );
@@ -184,6 +193,10 @@ export class AgentRunFailureRepository {
     );
     return this.findById(id);
   }
+}
+
+export function shouldAuditAgentRunFailure(error: unknown) {
+  return !isInsufficientPlatformBalanceError(error);
 }
 
 function serializeJson(value: unknown) {

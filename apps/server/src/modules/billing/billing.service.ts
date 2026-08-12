@@ -9,8 +9,13 @@ import {
 import { BillingContext, type BillingRunContext } from "./billing-context.js";
 import { PlatformSettingsService } from "../platform-settings/platform-settings.service.js";
 import { formatMicroUsd, parseUsdToMicro } from "./money.js";
+import {
+  INSUFFICIENT_PLATFORM_BALANCE_MESSAGE,
+  InsufficientPlatformBalanceError,
+} from "./billing-error.js";
 
 export { formatMicroUsd } from "./money.js";
+export { InsufficientPlatformBalanceError } from "./billing-error.js";
 
 interface AccountRow extends RowDataPacket {
   owner_user_id: string;
@@ -42,10 +47,6 @@ interface LedgerRow extends RowDataPacket {
   created_at: number;
 }
 
-export class InsufficientPlatformBalanceError extends Error {
-  readonly code = "INSUFFICIENT_PLATFORM_BALANCE";
-}
-
 export class BillingService {
   constructor(
     private readonly platformSettings = new PlatformSettingsService(),
@@ -67,7 +68,7 @@ export class BillingService {
     const balance = await context.balanceSnapshot;
     if (balance <= 0)
       throw new InsufficientPlatformBalanceError(
-        "平台余额不足，请充值后再使用平台提供的 AI 服务。",
+        INSUFFICIENT_PLATFORM_BALANCE_MESSAGE,
       );
   }
 

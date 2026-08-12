@@ -211,6 +211,7 @@ export class PrimeFigureRuntimeService {
         errorMessage:
           error instanceof Error ? error.message : "本初角色运行时执行失败。",
         diagnostics,
+        cause: error,
       });
       return null;
     }
@@ -223,6 +224,7 @@ export class PrimeFigureRuntimeService {
     trigger: PrimeDecisionTrigger;
     errorMessage: string;
     diagnostics?: Record<string, unknown>;
+    cause?: unknown;
   }) {
     const now = Date.now();
     const rawOutput =
@@ -249,6 +251,7 @@ export class PrimeFigureRuntimeService {
       errorMessage: input.errorMessage,
       rawOutput,
       diagnostics,
+      ...(input.cause !== undefined ? { cause: input.cause } : {}),
       now,
     });
     await this.failureNotifier.notify({
@@ -694,6 +697,7 @@ export class PrimeFigureRuntimeService {
           status: "failed",
           errorMessage:
             error instanceof Error ? error.message : "媒体标注写入失败。",
+          cause: error,
         });
         if (strict) throw error;
       }

@@ -413,6 +413,7 @@ export class PrimeWorldService {
           runId: job.runId,
           phase: "world_execution",
           errorMessage: detail,
+          cause,
           diagnostics: { errorCode: code },
         });
         this.publish(

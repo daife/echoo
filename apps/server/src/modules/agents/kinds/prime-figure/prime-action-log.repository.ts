@@ -14,6 +14,7 @@ export class PrimeActionLogRepository {
     errorMessage?: string;
     diagnostics?: Record<string, unknown>;
     rawOutput?: string;
+    cause?: unknown;
     now?: number;
   }) {
     if (input.status !== "failed") return;
@@ -30,6 +31,7 @@ export class PrimeActionLogRepository {
         ...(input.rationale ? { rationale: input.rationale } : {}),
         ...(input.diagnostics ?? {}),
       },
+      ...(input.cause !== undefined ? { cause: input.cause } : {}),
       now: input.now,
     });
   }

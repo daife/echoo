@@ -181,6 +181,7 @@ export class SliceReplyProcessor {
         phase: "reply_generation",
         errorMessage:
           error instanceof Error ? error.message : "切片角色回复生成失败。",
+        cause: error,
         diagnostics: {
           assistantMessageId: pendingMessage.id,
           trigger: job.trigger,
